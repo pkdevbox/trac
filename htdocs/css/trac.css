@@ -10,7 +10,7 @@ h1, h1, h2, h3, h4 {
   font-weight: bold;
   letter-spacing: -0.018em;
 }
-h1 { font-size: 21px; margin: .15em 1em 0 0 }
+h1 { font-size: 20px }
 h2 { font-size: 16px }
 h3 { font-size: 14px }
 hr { border: none;  border-top: 1px solid #ccc; margin: 2em 0; }
@@ -34,6 +34,12 @@ h4 :link, h4 :visited, h5 :link, h5 :visited, h6 :link, h6 :visited {
 }
 .noline:link, .noline:visited { border: none }
 .noline:link:hover, .noline:visited:hover { background: transparent }
+
+#browser-rev, #file-hdr, #log-hdr,#log-hdr,#timeline-hdr,#chg-hdr,#report-hdr,#tkt-hdr {
+  font-size: 21px;
+  margin-right: 1em;
+  margin-top: .5em;
+}
 
 /* Forms */
 input, textarea, select { margin: 2px }
@@ -67,8 +73,6 @@ legend {
 }
 form.inline { float: left }
 form.inline input { margin: 1em }
-.att-label { float:left; width: 7em; text-align: right; margin-right: .5em; }
-.buttons { margin: .5em; }
 
 /* Header */
 #header hr { display: none }
@@ -174,27 +178,6 @@ form.inline input { margin: 1em }
 }
 .menulist a:hover { background: #ccb; color: #000; }
 
-/* Alternate links */
-#altlinks { text-align: center }
-#altlinks h3 { font-size: 12px; letter-spacing: normal; margin: 0 }
-#altlinks ul { margin: 0; padding: 0 0 1em }
-#altlinks li {
- border-right: 1px solid black;
- display: inline;
- font-size: 11px;
- list-style-type: none;
- padding: 0 1em;
- white-space: nowrap;
-}
-#altlinks li.last { border-right: none }
-#altlinks li :link, #altlinks li :visited { border: 0 }
-#altlinks li a.rss {
- background-image: url(../xml.png);
- background-position: center left;
- background-repeat: no-repeat;
- padding-left: 42px
-}
-
 /* Footer */
 #footer {
   clear: both;
@@ -221,17 +204,11 @@ form.inline input { margin: 1em }
   text-align: right;
 }
 
-#main { margin-bottom: 2em }
-
-#help {
- clear: both;
- color: #999;
- font-size: 90%;
- margin: 1em;
- text-align: right
-}
+#page-content { }
+#main {  margin-bottom: 2em; }
+#main-footer { margin-top: 3em; text-align: center; }
+#help { margin: 1em; font-size: 90%; color: #999; text-align: right}
 #help a { color: #b44 }
-#help hr { display: none }
 
 /* Wiki */
 #wiki-history {
@@ -255,8 +232,7 @@ form.inline input { margin: 1em }
 }
 a.missing:link,a.missing:visited { background: #fafaf0; color: #998 }
 a.missing:hover { color: #000; }
-
-#main.wiki { line-height: 140%; margin: 1em; }
+#wiki-body { line-height: 140%; margin: 1em; }
 #wiki-formatting-help {
   font: normal 11px Verdana, 'Bitstream Vera Sans', Helvetica, Arial, sans-serif;
   float: right;
@@ -287,24 +263,18 @@ table.wiki {
 }
 table.wiki td { border: 1px solid #ccc;  padding: .1em .25em; }
 #wiki-edit-page:hover { background: #ccb }
-
-/* Styles for the error page */
-#main.error .message {
+.error {
  background: #fdc;
- border: 2px solid #d00;
- color: #500;
- padding: .5em;
+ border: 1px solid #b00;
+ color: #b00;
+ padding: .25em;
  margin: 1em 0;
 }
-
-/* Styles for search word highlighting */
 .searchword0 { background: #ff9; }
 .searchword1 { background: #cfc; }
 .searchword2 { background: #cff; }
 .searchword3 { background: #ccf; }
 .searchword4 { background: #fcf; }
+.att-label { float:left; width: 7em; text-align: right; margin-right: .5em; }
+.buttons { margin: .5em; }
 
-@media print {
- #header, #footer { display: none }
- .nav, form { display: none }
-}

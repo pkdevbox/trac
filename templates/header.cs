@@ -8,14 +8,6 @@
   <?cs else ?>
    <title>Trac: <?cs var:title ?></title>
   <?cs /if ?>
-  <?cs if:html.norobots ?>
-  <meta name="ROBOTS" content="NOINDEX, NOFOLLOW" />
-  <?cs /if ?>
-  <?cs each:rel = links ?><?cs each:link = rel ?><link rel="<?cs
-   var:name(rel) ?>" href="<?cs var:link.href ?>"<?cs
-   if:link.title ?> title="<?cs var:link.title ?>"<?cs /if ?><?cs
-   if:link.type ?> type="<?cs var:link.type ?>"<?cs /if ?> />
-  <?cs /each ?><?cs /each ?>
   <style type="text/css">
    @import url("<?cs var:htdocs_location ?>css/trac.css");
    @import url("<?cs var:htdocs_location ?>css/code.css");
@@ -23,17 +15,12 @@
    @import url("<?cs var:htdocs_location ?>css/browser.css");
    <?cs elif:trac.active_module == 'timeline' ?>
    @import url("<?cs var:htdocs_location ?>css/timeline.css");
-   <?cs elif:trac.active_module == 'changeset'?>
+   <?cs elif:trac.active_module == 'changeset' || trac.active_module == 'wiki' ?>
    @import url("<?cs var:htdocs_location ?>css/changeset.css");
-   @import url("<?cs var:htdocs_location ?>css/diff.css");
-   <?cs elif:trac.active_module == 'wiki' ?>
-   @import url("<?cs var:htdocs_location ?>css/diff.css");
    <?cs elif:trac.active_module == 'newticket' || trac.active_module == 'ticket' ?>
    @import url("<?cs var:htdocs_location ?>css/ticket.css");
    <?cs elif:trac.active_module == 'report' ?>
    @import url("<?cs var:htdocs_location ?>css/report.css");
-   <?cs elif:trac.active_module == 'roadmap' || trac.active_module == 'milestone' ?>
-   @import url("<?cs var:htdocs_location ?>css/roadmap.css");
    <?cs elif:trac.active_module == 'search' ?>
    @import url("<?cs var:htdocs_location ?>css/search.css");
    <?cs /if ?>
@@ -43,6 +30,7 @@
  </head>
 <body>
 <?cs include "site_header.cs" ?>
+<div id="trac-main">
 <div id="header">
   <a id="logo" href="<?cs var:header_logo.link ?>"><img src="<?cs var:header_logo.src ?>"
       width="<?cs var:header_logo.width ?>" height="<?cs var:header_logo.height ?>"
@@ -52,12 +40,12 @@
 
 <form id="search" action="<?cs var:trac.href.search ?>" method="get">
  <div>
- <label for="proj-search">Search:</label>
- <input type="text" id="proj-search" name="q" size="10" value="" />
- <input type="submit" value="Search" />
- <input type="hidden" name="wiki" value="on" />
- <input type="hidden" name="changeset" value="on" />
- <input type="hidden" name="ticket" value="on" />
+  <label for="proj-search">Search:</label>
+  <input type="text" id="proj-search" name="q" size="10" value="" />
+  <input type="submit" value="Search" />
+  <input type="hidden" name="wiki" value="on" />
+  <input type="hidden" name="changeset" value="on" />
+  <input type="hidden" name="ticket" value="on" />
  </div>
 </form>
 
@@ -70,7 +58,6 @@
     logged in as <?cs var:trac.authname ?> </li>
     <li><a href="<?cs var:trac.href.logout ?>">Logout</a>
   <?cs /if ?></li>
-  <li><a href="<?cs var:trac.href.settings ?>">Settings</a></li>
   <li><a accesskey="6" href="<?cs var:trac.href.wiki ?>/TracGuide">Help/Guide</a></li>
   <li style="display: none"><a accesskey="5" href="http://projects.edgewall.com/trac/wiki/TracFaq">FAQ</a></li>
   <li style="display: none"><a accesskey="0" href="<?cs var:trac.href.wiki ?>/TracAccessibility">Accessibility</a></li>
@@ -102,11 +89,6 @@
   <?cs else  ?>
     <?cs set:$browser_view="browser" ?>
   <?cs /if  ?>
-  <?cs if $trac.active_module == "milestone" ?>
-    <?cs set:$roadmap_view="milestone" ?>
-  <?cs else ?>
-    <?cs set:$roadmap_view="roadmap" ?>
-  <?cs /if ?>
 
 <div id="navbar" class="nav">
  <ul>
@@ -114,8 +96,6 @@
                     $trac.acl.WIKI_VIEW, "1") ?>
   <?cs call:navlink("Timeline", $trac.href.timeline, "timeline",
                     $trac.acl.TIMELINE_VIEW, "2") ?>
-  <?cs call:navlink("Roadmap", trac.href.roadmap, $roadmap_view,
-                    $trac.acl.ROADMAP_VIEW, "") ?>
   <?cs call:navlink("Browse Source", $trac.href.browser, $browser_view,
                     $trac.acl.BROWSER_VIEW, "") ?>
   <li style="display: none"><a href="<?cs var:$trac.href.newticket ?>"

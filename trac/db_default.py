@@ -21,7 +21,7 @@
 
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 6
+db_version = 3
 
 def __mkreports(reps):
     """Utility function used to create report data in same syntax as the
@@ -105,12 +105,6 @@ CREATE TABLE ticket_change (
         newvalue        text,
         UNIQUE(ticket, time, field)
 );
-CREATE TABLE ticket_custom (
-       ticket               integer,
-       name             text,
-       value            text,
-       UNIQUE(ticket,name)
-);
 CREATE TABLE report (
         id              integer PRIMARY KEY,
         author          text,
@@ -128,11 +122,8 @@ CREATE TABLE component (
          owner           text
 );
 CREATE TABLE milestone (
-         id              integer PRIMARY KEY,
-         name            text,
-         time            integer,
-         descr           text,
-         UNIQUE(name)
+         name            text PRIMARY KEY,
+         time            integer
 );
 CREATE TABLE version (
          name            text PRIMARY KEY,
@@ -160,18 +151,9 @@ CREATE TABLE attachment (
          UNIQUE(type,id,filename)
 );
 
-CREATE TABLE session (
-         sid             text,
-         username        text,
-         var_name        text,
-         var_value       text,
-         UNIQUE(sid,var_name)
-);
-
 CREATE INDEX node_change_idx ON node_change(rev);
 CREATE INDEX ticket_change_idx  ON ticket_change(ticket, time);
 CREATE INDEX wiki_idx           ON wiki(name,version);
-CREATE INDEX session_idx        ON session(sid,var_name);
 """
 
 ##
@@ -399,9 +381,7 @@ data = (('component',
                 ('anonymous', 'TICKET_MODIFY'),
                 ('anonymous', 'BROWSER_VIEW'),
                 ('anonymous', 'TIMELINE_VIEW'),
-                ('anonymous', 'CHANGESET_VIEW'),
-                ('anonymous', 'ROADMAP_VIEW'),
-                ('anonymous', 'MILESTONE_VIEW'))),
+                ('anonymous', 'CHANGESET_VIEW'))),
            ('system',
              ('name', 'value'),
                (('database_version', str(db_version)),)),
@@ -434,7 +414,6 @@ default_config = \
   ('header_logo', 'width', '236'),
   ('header_logo', 'height', '73'),
   ('attachment', 'max_size', '262144'),
-  ('diff', 'tab_width', '8'),
   ('mimeviewer', 'enscript_path', 'enscript'),
   ('notification', 'smtp_enabled', 'false'),
   ('notification', 'smtp_server', 'localhost'),

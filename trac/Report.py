@@ -19,11 +19,11 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import os, os.path
+import os,os.path
 import time
 import re
+import cgi
 import types
-import urllib
 
 from util import *
 from Module import Module
@@ -119,14 +119,11 @@ class Report (Module):
 
     def delete_report(self, id):
         self.perm.assert_permission(perm.REPORT_DELETE)
-
-        if self.args.has_key('delete'):
-            cursor = self.db.cursor ()
-            cursor.execute('DELETE FROM report WHERE id=%s', id)
-            self.db.commit()
-            self.req.redirect(self.env.href.report())
-        else:
-            self.req.redirect(self.env.href.report(id))
+        
+        cursor = self.db.cursor ()
+        cursor.execute('DELETE FROM report WHERE id=%s', id)
+        self.db.commit()
+        self.req.redirect(self.env.href.report())
 
     def execute_report(self, sql, args):
         cursor = self.db.cursor()
@@ -163,20 +160,6 @@ class Report (Module):
         self.db.commit()
         self.req.redirect(self.env.href.report(id))
 
-    def render_confirm_delete(self, id):
-        self.perm.assert_permission(perm.REPORT_DELETE)
-        cursor = self.db.cursor()
-
-        cursor.execute('SELECT title FROM report WHERE id = %s', id)
-        row = cursor.fetchone()
-        if not row:
-            raise TracError('Report %s does not exist.' % id,
-                            'Invalid Report Number')
-        self.req.hdf.setValue('title', '%s (report)' % row['title'])
-        self.req.hdf.setValue('report.mode', 'delete')
-        self.req.hdf.setValue('report.id', str(id))
-        self.req.hdf.setValue('report.title', row['title'])
-
     def render_report_editor(self, id, action='commit', copy=0):
         self.perm.assert_permission(perm.REPORT_MODIFY)
         cursor = self.db.cursor()
@@ -187,10 +170,7 @@ class Report (Module):
             cursor.execute('SELECT title, description, sql FROM report '
                            ' WHERE id=%s', id)
             row = cursor.fetchone()
-            if not row:
-                raise TracError('Report %s does not exist.' % id,
-                                'Invalid Report Number')
-            sql = row[2] or ''
+            sql = row[2]or ''
             description = row[1] or ''
             title = row[0] or ''
 
@@ -203,27 +183,8 @@ class Report (Module):
         self.req.hdf.setValue('report.action', action)
         self.req.hdf.setValue('report.sql', sql)
         self.req.hdf.setValue('report.description', description)
-
-    def add_alternate_links(self, args):
-        params = args
-        if self.args.has_key('sort'):
-            params['sort'] = self.args['sort']
-        if self.args.has_key('asc'):
-            params['asc'] = self.args['asc']
-        href = ''
-        if params:
-            href = '&amp;' + urllib.urlencode(params).replace('&', '&amp;')
-        self.add_link('alternate', '?format=rss' + href, 'RSS Feed',
-            'application/rss+xml', 'rss')
-        self.add_link('alternate', '?format=csv' + href,
-            'Comma-delimited Text', 'text/plain')
-        self.add_link('alternate', '?format=tab' + href,
-            'Tab-delimited Text', 'text/plain')
-        if self.perm.has_permission(perm.REPORT_SQL_VIEW):
-            self.add_link('alternate', '?format=sql', 'SQL Query',
-                'text/plain')
-
-    def render_report_list(self, id):
+    
+    def render_report_list(self, id, args={}):
         """
         uses a user specified sql query to extract some information
         from the database and presents it as a html table.
@@ -231,15 +192,8 @@ class Report (Module):
         if self.perm.has_permission(perm.REPORT_CREATE):
             self.req.hdf.setValue('report.create_href',
                                   self.env.href.report(None, 'new'))
-
-        try:
-            args = self.get_var_args()
-        except ValueError,e:
-            self.req.hdf.setValue('report.message', 'report failed: %s' % e)
-            return
-        
+            
         if id != -1:
-            self.add_alternate_links(args)
             if self.perm.has_permission(perm.REPORT_MODIFY):
                 self.req.hdf.setValue('report.edit_href',
                                       self.env.href.report(id, 'edit'))
@@ -388,6 +342,12 @@ class Report (Module):
         id = int(self.args.get('id', -1))
         action = self.args.get('action', 'list')
 
+        try:
+            report_args = self.get_var_args()
+        except ValueError,e:
+            self.req.hdf.setValue('report.message', 'report failed: %s' % e)
+            return
+        
         if action == 'create':
             if not (self.args.has_key('sql') or self.args.has_key('title')):
                 action = 'list'
@@ -396,11 +356,9 @@ class Report (Module):
                                    self.args.get('description', ''),
                                    self.args.get('sql', ''))
         if action == 'delete':
-            self.render_confirm_delete(id)
+            self.delete_report(id)
         elif action == 'commit':
             self.commit_changes(id)
-        elif action == 'confirm_delete':
-            self.delete_report(id)
         elif action == 'new':
             self.render_report_editor(-1, 'create')
         elif action == 'copy':
@@ -408,7 +366,7 @@ class Report (Module):
         elif action == 'edit':
             self.render_report_editor(id, 'commit')
         elif action == 'list':
-            self.render_report_list(id)
+            self.render_report_list(id, report_args)
 
     def display_rss(self):
         item = self.req.hdf.getObj('report.items')

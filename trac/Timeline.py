@@ -26,7 +26,6 @@ import perm
 
 import time
 import string
-import urllib
 
 class Timeline (Module):
     template_name = 'timeline.cs'
@@ -35,11 +34,6 @@ class Timeline (Module):
     def get_info (self, start, stop, maxrows, tickets,
                   changeset, wiki, milestone):
         cursor = self.db.cursor ()
-
-        tickets = tickets and self.perm.has_permission(perm.TICKET_VIEW)
-        changeset = changeset and self.perm.has_permission(perm.CHANGESET_VIEW)
-        wiki = wiki and self.perm.has_permission(perm.WIKI_VIEW)
-        milestone = milestone and self.perm.has_permission(perm.MILESTONE_VIEW)
 
         if tickets == changeset == wiki == milestone == 0:
             return []
@@ -54,7 +48,7 @@ class Timeline (Module):
         q = []
         if changeset:
             q.append("SELECT time, rev AS idata, '' AS tdata, 1 AS type, message, author "
-                     "FROM revision WHERE time>=%s AND time<=%s" %
+                        "FROM revision WHERE time>=%s AND time<=%s" %
                      (start, stop))
         if tickets:
             q.append("SELECT time, id AS idata, '' AS tdata, 2 AS type, "
@@ -62,9 +56,9 @@ class Timeline (Module):
                      "FROM ticket WHERE time>=%s AND time<=%s" %
                      (start, stop))
             q.append("SELECT time, ticket AS idata, '' AS tdata, 3 AS type, "
-                     "'' AS message, author "
-                     "FROM ticket_change WHERE field='status' "
-                     "AND newvalue='closed' AND time>=%s AND time<=%s" %
+                        "'' AS message, author "
+                        "FROM ticket_change WHERE field='status' "
+                        "AND newvalue='closed' AND time>=%s AND time<=%s" %
                      (start, stop))
             q.append("SELECT time, ticket AS idata, '' AS tdata, 4 AS type, "
                      "'' AS message, author "
@@ -76,11 +70,13 @@ class Timeline (Module):
                      "comment AS message, author "
                         "FROM wiki WHERE time>=%s AND time<=%s" %
                      (start, stop))
-        if milestone:
-            q.append("SELECT time, -1 AS idata, '' AS tdata, 6 AS type, "
-                     "name AS message, '' AS author " 
-                     "FROM milestone WHERE time>=%s AND time<=%s" %
-                     (start, stop))
+            pass
+
+	if milestone:
+	    q.append("SELECT time, -1 AS idata, '' AS tdata, 6 AS type, "
+	             "name AS message, '' AS author " 
+		     "FROM milestone WHERE time>=%s AND time<=%s" %
+		     (start, stop))
 
         q_str = string.join(q, ' UNION ALL ')
         q_str += ' ORDER BY time DESC'
@@ -108,7 +104,7 @@ class Timeline (Module):
                     }
 
             if item['type'] == CHANGESET:
-                item['href'] = self.env.href.changeset(item['idata'])
+                item['changeset_href'] = self.env.href.changeset(item['idata'])
                 msg = item['message']
                 item['shortmsg'] = escape(shorten_line(msg))
                 item['msg_nowiki'] = escape(msg)
@@ -116,14 +112,13 @@ class Timeline (Module):
                                                    self.env)
 
             elif item['type'] == WIKI:
-                item['href'] = self.env.href.wiki(row['tdata'])
+                item['wiki_href'] = self.env.href.wiki(row['tdata'])
                 item['message'] = wiki_to_oneliner(shorten_line(item['message']),
                                                    self.req.hdf, self.env)
             elif item['type'] == MILESTONE:
-                item['href'] = self.env.href.milestone(item['message'])
                 item['message'] = escape(item['message'])
             else:
-                item['href'] = self.env.href.ticket(item['idata'])
+                item['ticket_href'] = self.env.href.ticket(item['idata'])
                 msg = item['message']
                 item['shortmsg'] = escape(shorten_line(msg))
                 item['message'] = escape(item['message'])
@@ -133,10 +128,7 @@ class Timeline (Module):
         
     def render (self):
         self.perm.assert_permission(perm.TIMELINE_VIEW)
-
-        self.add_link('alternate', '?daysback=90&amp;max=50&amp;format=rss',
-            'RSS Feed', 'application/rss+xml', 'rss')
-
+        
         _from = self.args.get('from', '')
         _daysback = self.args.get('daysback', '')
 
@@ -178,6 +170,7 @@ class Timeline (Module):
                               changeset, wiki, milestone)
         add_dictlist_to_hdf(info, self.req.hdf, 'timeline.items')
         self.req.hdf.setValue('title', 'Timeline')
+
 
     def display_rss(self):
         self.req.display(self.template_rss_name, 'text/xml')

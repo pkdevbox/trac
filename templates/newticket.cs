@@ -12,30 +12,23 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
 
 <h3>Create New Ticket:</h3>
 <div id="nt-ticket">
-<form action="<?cs var:cgi_location ?>#preview" method="post">
+<form action="<?cs var:cgi_location ?>" method="post">
 
  <div id="nt-body" style="width: 100%">
   <div class="tkt-prop">
    <label for="reporter">Your email or username:</label><br />
    <input type="text" id="reporter" name="reporter" size="40"
-           class="textwidget" value="<?cs var:newticket.reporter ?>" /><br />
+           class="textwidget" value="<?cs var:trac.authname ?>" /><br />
   </div>
   <div class="tkt-prop">
    <label for="summary">Short Summary:</label>&nbsp;<br />
-   <input id="summary" type="text" name="summary" class="textwidget" size="80" value="<?cs var:newticket.summary ?>"/>
+   <input id="summary" type="text" name="summary" class="textwidget" size="80"/>
   </div>
   <div class="tkt-prop">
    <label for="description">Full Description (You may use 
       <a tabindex="42" href="<?cs var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
    <textarea id="description" name="description" class="textwidget" 
-            rows="10" cols="78" style="width: 97%"><?cs var:newticket.description ?></textarea>
-   <?cs if newticket.description_preview ?>
-     <a name="preview" />
-     <fieldset>
-     <legend>Description Preview</legend>
-       <?cs var:newticket.description_preview ?>
-     </fieldset>
-   <?cs /if ?>
+            rows="10" cols="78" style="width: 97%"></textarea>
   </div>
  </div>
 
@@ -43,45 +36,42 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
  <legend>Ticket Properties</legend>
  <div id="nt-props">
   <div id="nt-left">
-  <input type="hidden" name="mode" value="newticket" />
+  <input type="hidden" name="mode" value="ticket" />
   <input type="hidden" name="action" value="create" />
   <input type="hidden" name="status" value="new" />
    <label for="component" class="nt-label">Component:</label>
    <?cs call:hdf_select(newticket.components, "component",
-                        newticket.component) ?><br />
+                        newticket.default_component) ?><br />
    <label for="version" class="nt-label">Version:</label>
    <?cs call:hdf_select(newticket.versions, "version",
-                        newticket.version) ?><br />
+                        newticket.default_version) ?><br />
    <label for="severity" class="nt-label">Severity:</label>
     <?cs call:hdf_select(enums.severity, "severity",
-                         newticket.severity) ?><br />
+                         newticket.default_severity) ?><br />
   <label for="keywords" class="nt-label">Keywords:</label>
    <input type="text" id="keywords" name="keywords" size="28" class="textwidget" 
-          value="<?cs var:newticket.keywords ?>" /><br />
+          value="" /><br />
   </div>
  <div  id="nt-right" style="">
   <label for="priority" class="nt-label">Priority:</label>
   <?cs call:hdf_select(enums.priority, "priority", 
-                       newticket.priority) ?><br />
+                       newticket.default_priority) ?><br />
   <label for="milestone" class="nt-label">Milestone:</label>
   <?cs call:hdf_select(newticket.milestones, "milestone",
-                       newticket.milestone) ?><br />
+                       newticket.default_milestone) ?><br />
   <label for="owner" class="nt-label">Assign to:</label>
    <input type="text" id="owner" name="owner" size="35" class="textwidget" 
-          value="<?cs var:newticket.owner ?>" /><br />
+          value="<?cs var:newticket.default_owner ?>" /><br />
   <label for="cc" class="nt-label">Cc:</label>
    <input type="text" id="cc" name="cc" size="35" class="textwidget" 
-	value="<?cs var:newticket.cc ?>" /><br />
+	value="" /><br />
   </div>
  </div>
-
-<?cs call:ticket_custom_props(ticket) ?>
  </fieldset>
 
  <div id="nt-buttons">
   <input type="reset" value="Reset" />&nbsp;
-  <input type="submit" value="Preview" />&nbsp;
-  <input type="submit" name="create" value="Submit ticket" />
+  <input type="submit" value="Submit ticket" />
  </div>
 
 </form>

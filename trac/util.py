@@ -153,9 +153,10 @@ def hdf_add_if_missing(hdf, prefix, value):
         i += 1
     hdf.setValue(prefix + '.%d.name' % i, value)
         
-def shorten_line(text, maxlen = 75):
+def shorten_line(text):
     if not text:
-        return ''
+        return text
+    maxlen = 75
     if len(text) < maxlen:
         shortline = text
     else:
@@ -211,19 +212,6 @@ def create_unique_file(path):
             if idx > 100:
                 raise Exception('Failed to create unique name: ' + path)
             path = '%s.%d%s' % (parts[0], idx, parts[1])
-
-def get_reporter_id(req):
-    name = req.session.get('name', None)
-    email = req.session.get('email', None)
-    
-    if req.authname != 'anonymous':
-        return req.authname
-    elif name and email:
-        return '%s <%s>' % (name, email)
-    elif not name and email:
-        return email
-    else:
-        return req.authname
 
 
 class TracError(Exception):

@@ -1,19 +1,18 @@
 <?cs include "header.cs"?>
-<div id="main" class="error">
 
 <?cs if error.type == "TracError" ?>
 
 <h3><?cs var:error.title ?></h3>
 
-<p class="message">
+<div class="error">
 <?cs var:error.message ?>
-</p>
+</div>
 
 <?cs elif error.type == "internal" ?>
 
 <h3>Oops...</h3>
 
-<p class="message">
+<div class="error">
 Trac detected an internal error:
 <pre>
 <?cs var:error.message ?>
@@ -36,15 +35,15 @@ traceback found below.
 
 <h3>Permission Denied</h3>
 
-<p class="message">
+<div class="error">
 This action requires <tt><?cs var:error.action ?></tt> permission.
-</p>
-
-<div id="help">
- <strong>Note</strong>: See
- <a href="<?cs var:trac.href.wiki ?>/TracPermissions">TracPermissions</a> for
- help on managing Trac permissions.
 </div>
+
+<p>
+<b>Note</b>: See
+<a href="<?cs var:trac.href.wiki ?>/TracPermissions">TracPermissions</a>
+for help on managing Trac permissions.
+</p>
 
 <?cs /if ?>
 
@@ -60,5 +59,4 @@ This action requires <tt><?cs var:error.action ?></tt> permission.
 </pre>
 <?cs /if ?>
 
-</div>
 <?cs include "footer.cs"?>

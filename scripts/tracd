@@ -42,7 +42,6 @@ import svn.core
 
 import trac.core
 import trac.util
-from trac import Session
 from trac.Href import Href
 from trac import auth, Wiki, siteconfig
 from trac.Environment import Environment

@@ -29,22 +29,17 @@ import string
 from svn import fs, util, delta, repos, core
 
 line_re = re.compile('@@ [+-]([0-9]+),([0-9]+) [+-]([0-9]+),([0-9]+) @@')
-#header_re = re.compile('header ([^\|]+) \| ([^\|]+) redaeh')
-header_re = re.compile('header ([^\|]+) ([^\|]+) \| ([^\|]+) ([^\|]+) redaeh')
+header_re = re.compile('header ([^\|]+) \| ([^\|]+) redaeh')
 space_re = re.compile(' ( +)|^ ')
 
-cnt = 1
-
-
 class DiffColorizer:
-    def __init__(self, hdf, prefix, tabwidth=8):
+    def __init__(self, hdf, prefix='changeset.diff'):
         self.block = []
         self.ttype  = None
         self.p_block = []
         self.p_type  = None
         self.hdf = hdf
         self.prefix = prefix
-        self.tabwidth = tabwidth
         self.changeno = -1
         self.blockno = 0
 
@@ -71,15 +66,10 @@ class DiffColorizer:
         self.blockno += 1
 
     def writeline(self, text):
-        global cnt
-        self.hdf.setValue('foo.%s.rawtext' % cnt, text)
-        cnt += 1
         match = header_re.search(text)
         if match:
             self.hdf.setValue('%s.name.old' % self.prefix, match.group(1))
-            self.hdf.setValue('%s.rev.old' % self.prefix, match.group(2))
-            self.hdf.setValue('%s.name.new' % self.prefix, match.group(3))
-            self.hdf.setValue('%s.rev.new' % self.prefix, match.group(4))
+            self.hdf.setValue('%s.name.new' % self.prefix, match.group(2))
             return
         if text[0:2] in ['++', '--']:
             return
@@ -96,7 +86,7 @@ class DiffColorizer:
         text = text[1:]
         text = space_re.sub(lambda m:
             len(m.group(0)) / 2 * '&nbsp; ' + len(m.group(0)) % 2 * '&nbsp;',
-            text.expandtabs(self.tabwidth))
+            text.expandtabs(8))
         if ttype == self.ttype:
             self.block.append(text)
         else:
@@ -117,29 +107,24 @@ class HtmlDiffEditor (delta.Editor):
     generates a htmlized unified diff of the changes for a given changeset.
     the output is written to stdout.
     """
-    def __init__(self, old_root, new_root, rev, req, env):
+    def __init__(self, old_root, new_root, rev, req):
         self.old_root = old_root
         self.new_root = new_root
         self.rev = rev
         self.hdf = req.hdf
-        self.env = env
         self.fileno = 0
 
     def print_diff (self, old_path, new_path, pool):
         if not old_path or not new_path:
             return
-        old_rev = fs.node_created_rev(self.old_root, old_path, pool)
-        new_rev = fs.node_created_rev(self.new_root, new_path, pool)
         differ = fs.FileDiff(self.old_root, old_path,
                              self.new_root, new_path, pool, ['-u'])
         differ.get_files()
         pobj = differ.get_pipe()
         prefix = 'changeset.diff.files.%d' % (self.fileno)
-        tabwidth = int(self.env.get_config('diff', 'tab_width', '8'))
-        filtr = DiffColorizer(self.hdf, prefix, tabwidth)
+        filtr = DiffColorizer(self.hdf, prefix)
         self.fileno += 1
-        filtr.writeline('header %s %s | %s %s redaeh' % (old_path, old_rev,
-                                                         new_path, new_rev))
+        filtr.writeline('header %s | %s redaeh' % (old_path, new_path))
         while 1:
             line = pobj.readline()
             if not line:
@@ -164,8 +149,8 @@ class UnifiedDiffEditor(HtmlDiffEditor):
     the output is written to stdout.
     """
 
-    def __init__(self, old_root, new_root, rev, req, env):
-        HtmlDiffEditor.__init__(self, old_root, new_root, rev, req, env)
+    def __init__(self, old_root, new_root, rev, req):
+        HtmlDiffEditor.__init__(self, old_root, new_root, rev, req)
         self.output = req
 
     def print_diff (self, old_path, new_path, pool):
@@ -185,7 +170,7 @@ class UnifiedDiffEditor(HtmlDiffEditor):
             line = pobj.readline()
 
 
-def render_diffs(fs_ptr, rev, pool, req, env, editor_class=HtmlDiffEditor):
+def render_diffs(fs_ptr, rev, pool, req, editor_class=HtmlDiffEditor):
     """
     generates a unified diff of the changes for a given changeset.
     the output is written to stdout.
@@ -196,7 +181,7 @@ def render_diffs(fs_ptr, rev, pool, req, env, editor_class=HtmlDiffEditor):
     except core.SubversionException:
         raise TracError('Invalid revision number: %d' % rev)
 
-    editor = editor_class(old_root, new_root, rev, req, env)
+    editor = editor_class(old_root, new_root, rev, req)
     e_ptr, e_baton = delta.make_editor(editor, pool)
 
     if util.SVN_VER_MAJOR == 0 and util.SVN_VER_MINOR == 37:
@@ -244,9 +229,6 @@ class Changeset (Module):
     def render (self):
         self.perm.assert_permission (perm.CHANGESET_VIEW)
 
-        self.add_link('alternate', '?format=diff', 'Unified Diff',
-            'text/plain', 'diff')
-
         if self.args.has_key('rev'):
             self.rev = int(self.args.get('rev'))
         else:
@@ -271,11 +253,11 @@ class Changeset (Module):
 
     def display(self):
         """Pretty HTML view of the changeset"""
-        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req, self.env)
+        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req)
         Module.display(self)
 
     def display_hdf(self):
-        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req, self.env)
+        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req)
         Module.display_hdf(self)
 
     def display_diff (self):
@@ -283,6 +265,6 @@ class Changeset (Module):
         self.req.send_response(200)
         self.req.send_header('Content-Type', 'text/plain')
         self.req.end_headers()
-        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req, self.env,
+        render_diffs(self.fs_ptr, int(self.rev), self.pool, self.req,
                      UnifiedDiffEditor)
 

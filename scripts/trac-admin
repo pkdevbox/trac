@@ -355,22 +355,22 @@ class TracAdmin(cmd.Cmd):
 
     ## Permission
     _help_permission = [('permission list', 'List permission rules'),
-                       ('permission add <user> <action> [action] [...]', 'Add a new permission rule'),
-                       ('permission remove <user> <action> [action] [...]', 'Remove permission rule')]
+                       ('permission add <user> <action>', 'Add a new permission rule'),
+                       ('permission remove <user> <action>', 'Remove permission rule')]
 
     def do_permission(self, line):
         arg = self.arg_tokenize(line)
         try:
             if arg[0]  == 'list':
                 self._do_permission_list()
-            elif arg[0] == 'add' and len(arg) >= 3:
+            elif arg[0] == 'add' and len(arg)==3:
                 user = arg[1]
-                for action in arg[2:]:
-                    self._do_permission_add(user, action)
-            elif arg[0] == 'remove'  and len(arg) >= 3:
+                action = arg[2]
+                self._do_permission_add(user, action)
+            elif arg[0] == 'remove'  and len(arg)==3:
                 user = arg[1]
-                for action in arg[2:]:
-                    self._do_permission_remove(user, action)
+                action = arg[2]
+                self._do_permission_remove(user, action)
             else:    
                 self.do_help ('permission')
         except Exception, e:
@@ -385,9 +385,8 @@ class TracAdmin(cmd.Cmd):
         print ' TICKET_VIEW, TICKET_CREATE, TICKET_MODIFY, TICKET_ADMIN, '
         print ' REPORT_VIEW, REPORT_CREATE, REPORT_MODIFY, REPORT_DELETE, REPORT_ADMIN, '
         print ' WIKI_VIEW, WIKI_CREATE, WIKI_MODIFY, WIKI_DELETE, WIKI_ADMIN, '
-        print ' MILESTONE_VIEW, MILESTONE_CREATE, MILESTONE_MODIFY, MILESTONE_DELETE, '
-        print ' ROADMAP_VIEW, ROADMAP_ADMIN, TIMELINE_VIEW, SEARCH_VIEW, '
-        print ' CONFIG_VIEW and TRAC_ADMIN.'
+        print ' TIMELINE_VIEW and SEARCH_VIEW.'
+        print ' CONFIG_VIEW, TRAC_ADMIN.'
         print
         
     def _do_permission_add(self, user, action):
@@ -818,8 +817,8 @@ class TracAdmin(cmd.Cmd):
                                " WHERE name='%(name)s'" % d)
 
     def _do_mile_ver_add(self, type, name):
-        sql = ("INSERT INTO %(type)s('name', 'time') "
-               " VALUES('%(name)s', 0)" 
+        sql = ("INSERT INTO %(type)s('name') "
+               " VALUES('%(name)s')" 
                % {'type':type, 'name':name})
         data = self.db_execsql(sql)
 

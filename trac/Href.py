@@ -68,22 +68,6 @@ class Href:
     def newticket(self):
         return href_join(self.base, 'newticket')
 
-    def roadmap(self):
-        return href_join(self.base, 'roadmap')
-
-    def milestone(self, milestone, action=None):
-        if milestone:
-            milestone = urllib.quote_plus(milestone)
-            href = href_join(self.base, 'milestone', str(milestone))
-        else:
-            href = href_join(self.base, 'milestone')
-        if action:
-            href = href + '?action=' + action
-        return href
-
-    def settings(self):
-        return href_join(self.base, 'settings')
-
     def search(self, query=None):
         uri = 'search'
         if query:
@@ -114,7 +98,7 @@ class Href:
         if action:
             href = href + '?action=' + action
         return href
-
+    
     def attachment(self, module, id, filename, format=None):
         id = urllib.quote(urllib.quote(id, ''))
         filename = urllib.quote(filename)

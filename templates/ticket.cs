@@ -54,16 +54,6 @@
    <?cs call:ticketprop("Keywords", ticket.keywords) ?>
   </tr>
  </table>
-<?cs if ticket.custom.0.name ?>
- <hr class="hide" />
- <h3 id="tkt-custom-hdr">Custom Properties</h3>
- <table style="width: 100%">
-  <tr>
-  <?cs each c=ticket.custom ?>
-   <?cs call:ticketprop(c.label, c.value) ?>
-  <?cs /each ?>
-  </tr>
- </table><?cs /if ?>
  <hr class="hide" />
  <h3 id="tkt-descr-hdr">Description by <?cs var:ticket.reporter ?>:</h3>
     <?cs var:ticket.description ?>
@@ -159,27 +149,21 @@
 <h3><a name="edit"
 onfocus="document.getElementById('comment').focus()">Add/Change
 #<?cs var:ticket.id ?> (<?cs var:ticket.summary ?>)</a></h3>
-<form action="<?cs var:cgi_location ?>#preview" method="post" enctype="multipart/form-data">
+<form action="<?cs var:cgi_location ?>" method="post" enctype="multipart/form-data">
   <div class="tkt-prop">
    <input type="hidden" name="mode" value="ticket" />
    <input type="hidden" name="id"   value="<?cs var:ticket.id ?>" />
    <label for="reporter">Your email or username:</label><br />
     <input type="text" id="reporter" name="reporter" class="textwidget" size="40"
-           value="<?cs var:ticket.reporter_id ?>" /><br />
+           value="<?cs var:trac.authname ?>" /><br />
   </div>
   <div class="tkt-prop">
   <label for="comment">Add Comment (You may use 
       <a tabindex="42" href="<?cs var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
 
   <textarea id="comment" name="comment" class="textwidget"
-            rows="10" cols="78" style="width: 97%; max-width: 694px"><?cs var:ticket.comment ?></textarea>
-   <?cs if ticket.comment_preview ?>
-     <a name="preview" />
-     <fieldset>
-     <legend>Comment Preview</legend>
-       <?cs var:ticket.comment_preview ?>
-     </fieldset>
-   <?cs /if ?>
+            rows="10" cols="78" style="width: 97%; max-width: 694px"></textarea>
+ <br />&nbsp;
   </div>
 
  <fieldset>
@@ -220,9 +204,6 @@ onfocus="document.getElementById('comment').focus()">Add/Change
           value="<?cs var:ticket.cc ?>" size="35" />
   </div>
  </div>
-
-<?cs call:ticket_custom_props(ticket) ?>
-
   </fieldset>
 
 
@@ -258,7 +239,6 @@ onfocus="document.getElementById('comment').focus()">Add/Change
 
   <div id="nt-buttons" style="clear: both">
    <input type="reset" value="Reset" />&nbsp;
-   <input type="submit" name="preview" value="Preview" />&nbsp;
    <input type="submit" value="Submit changes" /> 
   </div>
  </div>
