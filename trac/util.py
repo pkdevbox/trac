@@ -25,8 +25,6 @@ import time
 import tempfile
 import StringIO
 from types import *
-from UserDict import UserDict
-from UserList import UserList
 
 TRUE =  ['yes', '1', 1, 'true',  'on',  'aye']
 FALSE = ['no',  '0', 0, 'false', 'off', 'nay']
@@ -38,6 +36,27 @@ def svn_date_to_string(date, pool):
     date_seconds = util.svn_time_from_cstring(date,
                                               pool) / 1000000
     return time.strftime('%x %X', time.localtime(date_seconds))
+
+def enum_selector (db, sql, name, selected=None,default_empty=0):
+    out = StringIO.StringIO()
+    out.write ('<select size="1" name="%s">' % name)
+
+    cursor = db.cursor ()
+    cursor.execute (sql)
+
+    if default_empty:
+        out.write ('<option></option>')
+    while 1:
+        row = cursor.fetchone()
+        if not row:
+            break
+        if selected == row[0]:
+            out.write ('<option selected>%s</option>' % row[0])
+        else:
+            out.write ('<option>%s</option>' % row[0])
+
+    out.write ('</select>')
+    return out.getvalue()
 
 def wiki_escape_newline(text):
     return text.replace(os.linesep, '[[BR]]' + os.linesep)
@@ -111,13 +130,41 @@ def sql_escape(text):
     """
     return text.replace("'", "''").replace("\\", "\\\\")
 
+def add_to_hdf(obj, hdf, prefix):
+    """
+    Adds an object to the given HDF under the specified prefix.
+    Lists and dictionaries are expanded, all other objects are added
+    as strings.
+    """
+    if type(obj) is DictType:
+        for k in obj.keys():
+            add_to_hdf(obj[k], hdf, '%s.%s' % (prefix, k))
+    elif type(obj) is ListType:
+        for i in range(len(obj)):
+            add_to_hdf(obj[i], hdf, '%s.%d' % (prefix, i))
+    else:
+        hdf.setValue(prefix, str(obj))
+
+def add_dictlist_to_hdf(list, hdf, prefix):
+    """ Deprecated. Use add_to_hdf instead. """
+    idx = 0
+    for item in list:
+        for key in item.keys():
+            hdf.setValue('%s.%d.%s' % (prefix, idx, key), str(item[key]))
+        idx = idx + 1
+
+def add_dict_to_hdf(dict, hdf, prefix):
+    """ Deprecated. Use add_to_hdf instead. """
+    for key in dict.keys():
+        hdf.setValue('%s.%s' % (prefix, key), str(dict[key]))
+
 def sql_to_hdf (db, sql, hdf, prefix):
     """
     executes a sql query and insert the first result column
     into the hdf at the given prefix
     """
-    cursor = db.cursor()
-    cursor.execute(sql)
+    cursor = db.cursor ()
+    cursor.execute (sql)
     idx = 0
     while 1:
         row = cursor.fetchone()
@@ -169,27 +216,23 @@ def pretty_size(size):
     else:
         return '%d MB' % (size / 1024 / 1024)
 
-def pretty_timedelta(time1, time2=None):
-    """Calculate time delta (inaccurately, only for decorative purposes ;-) for
-    prettyprinting. If time1 is None, the current time is used."""
-    if not time1: time1 = time.time()
-    if not time2: time2 = time.time()
-    if time1 > time2:
-        time2, time1 = time1, time2
+def pretty_age(then):
+    """Calculate age (inaccurately, only for decorative purposes ;-) for
+    prettyprinting."""
     units = ((3600 * 24 * 365, 'year',   'years'),
              (3600 * 24 * 30,  'month',  'months'),
              (3600 * 24 * 7,   'week',   'weeks'),
              (3600 * 24,       'day',    'days'),
              (3600,            'hour',   'hours'),
              (60,              'minute', 'minutes'))
-    age_s = int(time2 - time1)
+    now = time.time()
+    age_s = int(now - then)
     if age_s < 60:
         return '%i second%s' % (age_s, age_s > 1 and 's' or '')
     for u, unit, unit_plural in units:
-        r = float(age_s) / float(u)
-        if r >= 0.9:
-            r = int(round(r))
-            return '%d %s' % (r, r == 1 and unit or unit_plural)
+        r = int(age_s / u)
+        if r:
+            return '%i %s' % (r, r == 1 and unit or unit_plural)
     return ''
 
 def create_unique_file(path):
@@ -227,16 +270,7 @@ def get_date_format_hint():
     t = (1999, 10, 29, t[3], t[4], t[5], t[6], t[7], t[8])
     tmpl = time.strftime('%x', t)
     return tmpl.replace('1999', 'YYYY', 1).replace('99', 'YY', 1) \
-               .replace('10', 'MM', 1).replace('29', 'DD', 1)
-
-def get_datetime_format_hint():
-    t = time.localtime(0)
-    t = (1999, 10, 29, 23, 59, 58, t[6], t[7], t[8])
-    tmpl = time.strftime('%x %X', t)
-    return tmpl.replace('1999', 'YYYY', 1).replace('99', 'YY', 1) \
-               .replace('10', 'MM', 1).replace('29', 'DD', 1) \
-               .replace('23', 'hh', 1).replace('59', 'mm', 1) \
-               .replace('58', 'ss', 1)
+               .replace('29', 'DD', 1).replace('10', 'MM')
 
 
 class TracError(Exception):
@@ -283,19 +317,7 @@ def mydict(items):
     return d
 
 
-def wrap(t, cols=75, initial_indent='', subsequent_indent='',
-         linesep=os.linesep):
-    try:
-        import textwrap
-        t = t.strip().replace('\r\n', '\n').replace('\r', '\n')
-        wrapper = textwrap.TextWrapper(cols, replace_whitespace = 0,
-                                       break_long_words = 0,
-                                       initial_indent = initial_indent,
-                                       subsequent_indent = subsequent_indent)
-        wrappedLines = []
-        for line in t.split('\n'):
-            wrappedLines += wrapper.wrap(line.rstrip()) or ['']
-        return linesep.join(wrappedLines)
+if __name__ == '__main__ ':
+    pass
+    #print pre
 
-    except ImportError:
-        return t

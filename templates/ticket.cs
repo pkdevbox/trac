@@ -6,34 +6,21 @@
  <h2>Ticket Navigation</h2>
  <ul><?cs
   if:len(links.prev) ?>
-   <li class="first<?cs if:!len(links.up) && !len(links.next) ?> last<?cs /if ?>">
-    &larr; <a href="<?cs var:links.prev.0.href ?>" title="<?cs
+   <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
+    <a href="<?cs var:links.prev.0.href ?>" title="<?cs
       var:links.prev.0.title ?>">Previous Ticket</a>
    </li><?cs
   /if ?><?cs
-  if:len(links.up) ?>
-   <li class="<?cs if:!len(links.prev) ?>first<?cs /if ?><?cs
-                   if:!len(links.next) ?> last<?cs /if ?>">
-    <a href="<?cs var:links.up.0.href ?>" title="<?cs
-      var:links.up.0.title ?>">Back to Query</a>
-   </li><?cs
-  /if ?><?cs
   if:len(links.next) ?>
-   <li class="<?cs if:!len(links.prev) && !len(links.up) ?>first <?cs /if ?>last">
+   <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
     <a href="<?cs var:links.next.0.href ?>" title="<?cs
-      var:links.next.0.title ?>">Next Ticket</a> &rarr;
+      var:links.next.0.title ?>">Next Ticket</a>
    </li><?cs
   /if ?>
  </ul>
 </div>
 
 <div id="content" class="ticket">
-
- <h1>Ticket #<?cs var:ticket.id ?> <?cs
- if:ticket.status == 'closed' ?>(Closed: <?cs var:ticket.resolution ?>)<?cs
- elif:ticket.status != 'new' ?>(<?cs var:ticket.status ?>)<?cs
- /if ?></h1>
-
  <div id="searchable">
  <?cs def:ticketprop(label, name, value, fullrow) ?>
   <th id="h_<?cs var:name ?>"><?cs var:$label ?>:</th>
@@ -44,13 +31,13 @@
  /def ?>
 
 <div id="ticket">
- <div class="date">
-  <p title="<?cs var:ticket.opened ?>">Opened <?cs var:ticket.opened_delta ?> ago</p><?cs
-  if:ticket.lastmod ?>
-   <p title="<?cs var:ticket.lastmod ?>">Last modified <?cs var:ticket.lastmod_delta ?> ago</p>
-  <?cs /if ?>
- </div>
+ <div class="date"><?cs var:ticket.opened ?></div>
+ <h1>Ticket #<?cs var:ticket.id ?> <?cs
+ if:ticket.status == 'closed' ?>(Closed: <?cs var:ticket.resolution ?>)<?cs
+ elif:ticket.status != 'new' ?>(<?cs var:ticket.status ?>)<?cs
+ /if ?></h1>
  <h2><?cs var:ticket.summary ?></h2>
+ <hr />
  <table><tr><?cs
   call:ticketprop("Priority", "priority", ticket.priority, 0) ?><?cs
   call:ticketprop("Reporter", "reporter", ticket.reporter, 0) ?><?cs
@@ -69,9 +56,8 @@
   call:ticketprop("Keywords", "keywords", ticket.keywords, 0) ?><?cs
   set:last_prop = #0 ?>
  </tr></table><?cs if ticket.custom.0.name ?>
+ <hr />
  <table><tr><?cs each:prop = ticket.custom ?><?cs
-   if:name(prop) == len(ticket.custom) - 1 ?><?cs set:last_prop = #1 ?><?cs
-   /if ?><?cs
    if:prop.type == "textarea" ?><?cs
     call:ticketprop(prop.label, prop.name, prop.value, 1) ?><?cs
    else ?><?cs
@@ -79,9 +65,12 @@
    /if?><?cs
   /each ?>
  </tr></table><?cs /if ?>
- <?cs if:ticket.description ?><div class="description">
+ <hr />
+ <h3>Description<?cs if:ticket.reporter ?> by <?cs
+   var:ticket.reporter ?><?cs /if ?>:</h3>
+ <div class="description">
   <?cs var:ticket.description.formatted ?>
- </div><?cs /if ?>
+ </div>
 </div>
 
 <?cs if trac.acl.TICKET_MODIFY || ticket.attachments.0.name ?>
@@ -104,29 +93,42 @@
  /if ?><?cs if ticket.attachments.0.name ?></div><?cs /if ?>
 <?cs /if ?>
 
-<?cs if:len(ticket.changes) ?><h2>Changelog</h2>
-<div id="changelog"><?cs
- each:change = ticket.changes ?>
-  <h3 id="change_<?cs var:name(change) ?>" class="change"><?cs
-   var:change.date ?>: Modified by <?cs var:change.author ?></h3><?cs
-  if:len(change.fields) ?>
+<?cs if ticket.changes.0.time ?><h2>Changelog</h2>
+<div id="changelog">
+ <?cs set:comment = "" ?>
+ <?cs set:curr_time = "" ?>
+ <?cs set:curr_author = "" ?>
+ <?cs each:change = ticket.changes ?><?cs
+  if $change.time != $curr_time || $change.author != $curr_author ?><?cs
+  if:name(change) > 0 ?></ul><?cs /if ?><?cs
+   if $comment != "" ?>
+    <div class="comment"><?cs var:$comment ?></div><?cs set:comment = "" ?><?cs
+   /if ?>
+   <?cs set:curr_time = $change.time ?>
+   <?cs set:curr_author = $change.author ?>
+   <h3 id="change_<?cs var:name(change) ?>" class="change"><?cs
+     var:change.date ?>: Modified by <?cs var:curr_author ?></h3>
    <ul class="changes"><?cs
-   each:field = change.fields ?>
-    <li><strong><?cs var:name(field) ?></strong> <?cs
-    if:name(field) == 'attachment' ?><em><?cs var:field.new ?></em> added<?cs
-    elif:field.old && field.new ?>changed from <em><?cs
-     var:field.old ?></em> to <em><?cs var:field.new ?></em><?cs
-    elif:!field.old && field.new ?>set to <em><?cs var:field.new ?></em><?cs
-    elif:field.old && !field.new ?>deleted<?cs
-    else ?>changed<?cs
-    /if ?>.</li>
-    <?cs
-   /each ?>
-   </ul><?cs
-  /if ?>
-  <div class="comment"><?cs var:change.comment ?></div><?cs
- /each ?></div><?cs
-/if ?>
+  /if ?><?cs
+  if $change.field == "comment" ?><?cs
+   set:$comment = $change.new ?><?cs
+  elif $change.new == "" ?>
+   <li><strong><?cs var:change.field ?></strong> cleared</li><?cs
+  elif $change.field == "attachment" ?>
+   <li><strong>attachment</strong> added: <?cs var:change.new ?></li><?cs
+  elif $change.field == "description" ?>
+   <li><strong><?cs var:change.field ?></strong> changed.</li><?cs
+  elif $change.old == "" ?>
+   <li><strong><?cs var:change.field ?></strong> set to <em><?cs var:change.new ?></em></li><?cs
+  else ?>
+   <li><strong><?cs var:change.field ?></strong> changed from <em><?cs
+     var:change.old ?></em> to <em><?cs var:change.new ?></em></li><?cs
+  /if ?><?cs
+ /each ?></ul><?cs
+ if $comment != "" ?>
+  <div class="comment"><?cs var:$comment ?></div><?cs
+ /if ?>
+</div><?cs /if ?>
 
 <?cs if $trac.acl.TICKET_MODIFY ?>
 <form action="<?cs var:cgi_location ?>#preview" method="post">
@@ -144,8 +146,9 @@
   <fieldset class="iefix">
    <label for="comment">Comment (you may use <a tabindex="42" href="<?cs
      var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
-   <p><textarea id="comment" name="comment" class="wikitext" rows="10" cols="78"><?cs
-     var:ticket.comment ?></textarea></p>
+   <p><textarea id="comment" name="comment" rows="10" cols="78"><?cs
+     var:ticket.comment ?></textarea></p><?cs
+   call:wiki_toolbar('comment') ?>
   </fieldset><?cs
   if ticket.comment_preview ?>
    <fieldset id="preview">
@@ -165,8 +168,9 @@
     <br />
     <label for="description">Description:</label>
     <div style="float: left">
-     <textarea id="description" name="description" class="wikitext" rows="10" cols="68"><?cs
+     <textarea id="description" name="description" rows="10" cols="68"><?cs
        var:ticket.description ?></textarea>
+     <?cs call:wiki_toolbar('description') ?>
     </div>
     <br style="clear: left" />
     <label for="reporter">Reporter:</label>
@@ -176,13 +180,13 @@
   </div>
   <div class="col1">
    <label for="component">Component:</label><?cs
-   call:hdf_select(ticket.components, "component", ticket.component, 0) ?>
+   call:hdf_select(ticket.components, "component", ticket.component) ?>
    <br />
    <label for="version">Version:</label><?cs
-   call:hdf_select(ticket.versions, "version", ticket.version, 0) ?>
+   call:hdf_select(ticket.versions, "version", ticket.version) ?>
    <br />
    <label for="severity">Severity:</label><?cs
-   call:hdf_select(enums.severity, "severity", ticket.severity, 0) ?>
+   call:hdf_select(enums.severity, "severity", ticket.severity) ?>
    <br />
    <label for="keywords">Keywords:</label>
    <input type="text" id="keywords" name="keywords" size="20"
@@ -190,9 +194,9 @@
   </div>
   <div class="col2">
    <label for="priority">Priority:</label><?cs
-   call:hdf_select(enums.priority, "priority", ticket.priority, 0) ?><br />
+   call:hdf_select(enums.priority, "priority", ticket.priority) ?><br />
    <label for="milestone">Milestone:</label><?cs
-   call:hdf_select(ticket.milestones, "milestone", ticket.milestone, 1) ?><br />
+   call:hdf_select(ticket.milestones, "milestone", ticket.milestone) ?><br />
    <label for="owner">Assigned to:</label>
    <input type="text" id="owner" name="owner" size="20" value="<?cs
      var:ticket.owner ?>" disabled="disabled" /><br />
@@ -227,7 +231,7 @@
    <?cs call:action_radio('resolve') ?>
    <label for="resolve">resolve</label>
    <label for="resolve_resolution">as:</label>
-   <?cs call:hdf_select(enums.resolution, "resolve_resolution", args.resolve_resolution, 0) ?><br />
+   <?cs call:hdf_select(enums.resolution, "resolve_resolution", args.resolve_resolution) ?><br />
    <?cs call:action_radio('reassign') ?>
    <label for="reassign">reassign</label>
    <label for="reassign_owner">to:</label>
@@ -253,9 +257,6 @@
    </script><?cs
   /if ?>
  </fieldset>
-
- <script type="text/javascript" src="<?cs
-   var:htdocs_location ?>js/wikitoolbar.js"></script>
 
  <div class="buttons">
   <input type="reset" value="Reset" />&nbsp;

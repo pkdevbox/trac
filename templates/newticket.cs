@@ -18,14 +18,14 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
  </div>
  <div class="field">
   <label for="summary">Short summary:</label><br />
-  <input id="summary" type="text" name="summary" size="80" value="<?cs
-    var:newticket.summary ?>"/>
+  <input id="summary" type="text" name="summary" size="80" value="<?cs var:newticket.summary ?>"/>
  </div>
  <div class="field">
   <label for="description">Full description (you may use <a tabindex="42" href="<?cs
     var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
-  <textarea id="description" name="description" class="wikitext" rows="10" cols="78"><?cs
+  <textarea id="description" name="description" rows="10" cols="78"><?cs
     var:newticket.description ?></textarea><?cs
+  call:wiki_toolbar('description') ?><?cs
   if:newticket.description_preview ?>
    <fieldset id="preview">
     <legend>Description Preview</legend>
@@ -41,13 +41,13 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
   <input type="hidden" name="status" value="new" />
   <div class="col1">
    <label for="component">Component:</label><?cs
-   call:hdf_select(newticket.components, "component", newticket.component, 0) ?>
+   call:hdf_select(newticket.components, "component", newticket.component) ?>
    <br />
    <label for="version">Version:</label><?cs
-   call:hdf_select(newticket.versions, "version", newticket.version, 0) ?>
+   call:hdf_select(newticket.versions, "version", newticket.version) ?>
    <br />
    <label for="severity">Severity:</label><?cs
-   call:hdf_select(enums.severity, "severity", newticket.severity, 0) ?>
+   call:hdf_select(enums.severity, "severity", newticket.severity) ?>
    <br />
    <label for="keywords">Keywords:</label>
    <input type="text" id="keywords" name="keywords" size="20"
@@ -55,9 +55,9 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
   </div>
   <div class="col2">
    <label for="priority">Priority:</label><?cs
-   call:hdf_select(enums.priority, "priority", newticket.priority, 0) ?><br />
+   call:hdf_select(enums.priority, "priority", newticket.priority) ?><br />
    <label for="milestone">Milestone:</label><?cs
-   call:hdf_select(newticket.milestones, "milestone", newticket.milestone, 1) ?><br />
+   call:hdf_select(newticket.milestones, "milestone", newticket.milestone) ?><br />
    <label for="owner">Assign to:</label>
    <input type="text" id="owner" name="owner" size="20" value="<?cs
      var:newticket.owner ?>" /><br />
@@ -68,9 +68,6 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
    <?cs call:ticket_custom_props(ticket) ?>
   </div><?cs /if ?>
  </fieldset>
-
- <script type="text/javascript" src="<?cs
-   var:htdocs_location ?>js/wikitoolbar.js"></script>
 
  <div class="buttons">
   <input type="submit" value="Preview" />&nbsp;

@@ -1,7 +1,7 @@
 # -*- coding: iso8859-1 -*-
 #
-# Copyright (C) 2004, 2005 Edgewall Software
-# Copyright (C) 2004, 2005 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2004 Edgewall Software
+# Copyright (C) 2004 Christopher Lenz <cmlenz@gmx.de>
 #
 # Trac is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -19,38 +19,22 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from trac import core, Environment, Href
-from trac.util import TracError, href_join, rstrip
-from trac.web.main import Request, dispatch_request, send_pretty_error
+import locale
+locale.setlocale(locale.LC_ALL, '')
+
+import os
+import re, threading
+import auth, core, Environment, Href
+from util import TracError, href_join, rstrip
 
 from mod_python import apache, util
 
-import locale
-import os
-import re
-import threading
-
-
-class ModPythonRequest(Request):
-
-    idx_location = None
-
+class ModPythonRequest(core.Request):
     def __init__(self, req):
-        Request.__init__(self)
         self.req = req
 
-        self.method = self.req.method
-        self.server_name = self.req.server.server_hostname
-        self.server_port = self.req.connection.local_addr[1]
-        self.remote_addr = self.req.connection.remote_ip
-        self.remote_user = self.req.user
-        self.scheme = 'http'
-        if self.req.subprocess_env.get('HTTPS') in ('on', '1') or self.server_port == 443:
-            self.scheme = 'https'
-        if self.req.headers_in.has_key('Cookie'):
-            self.incookie.load(self.req.headers_in['Cookie'])
-        self.args = FieldStorageWrapper(self.req, keep_blank_values=1)
-
+    def init_request(self):
+        core.Request.init_request(self)
         options = self.req.get_options()
 
         # The root uri sometimes has to be explicitly specified because apache
@@ -80,6 +64,34 @@ class ModPythonRequest(Request):
         else:
             self.cgi_location = self.req.uri
 
+        # TODO This will need proxy host name support (see #437 and [581])
+        host = self.req.hostname
+        port = self.req.connection.local_addr[1]
+
+        proto_port = ''
+        if port == 443:
+           proto = 'https'
+        else:
+           proto = 'http'
+           if port != 80:
+               proto_port = ':%d' % port
+
+        self.base_url = '%s://%s%s%s' % (proto, host, proto_port,
+                                         self.cgi_location)
+
+        self.remote_addr = self.req.connection.remote_ip
+        self.remote_user = self.req.user
+        self.command = self.req.method
+
+        if self.req.headers_in.has_key('Cookie'):
+            self.incookie.load(self.req.headers_in['Cookie'])
+
+        self.hdf.setValue('HTTP.PathInfo', self.path_info)
+        self.hdf.setValue('HTTP.Host', self.req.hostname)
+        self.hdf.setValue('HTTP.Protocol', proto)
+        if proto_port:
+            self.hdf.setValue('HTTP.Port', str(port))
+
     def read(self, len):
         return self.req.read(len)
 
@@ -102,13 +114,11 @@ class ModPythonRequest(Request):
         pass
 
 
-class FieldStorageWrapper(util.FieldStorage):
+class TracFieldStorage(util.FieldStorage):
     """
     FieldStorage class with a get function that provides an empty string as the
-    default value for the 'default' parameter, mimicking
-    trac.web.cgi_frontend.TracFieldStorage
+    default value for the 'default' parameter, mimicking the CGI interface.
     """
-
     def get(self, key, default=''):
         return util.FieldStorage.get(self, key, default)
 
@@ -130,6 +140,9 @@ def open_environment(env_path, mpr):
                         'Run "trac-admin %s upgrade"' % env_path)
     elif version > Environment.db_version:
         raise TracError('Unknown Trac Environment version (%d).' % version)
+
+    env.href = Href.Href(mpr.cgi_location)
+    env.abs_href = Href.Href(mpr.base_url)
 
     return env
 
@@ -167,16 +180,19 @@ def get_environment(req, mpr):
     return env
 
 def handler(req):
-    locale.setlocale(locale.LC_ALL, '')
-
     mpr = ModPythonRequest(req)
+    mpr.init_request()
+
     env = get_environment(req, mpr)
     if not env:
         return apache.OK
 
+    args = TracFieldStorage(req, keep_blank_values=1)
+    core.parse_path_info(args, mpr.path_info)
+
     req.content_type = 'text/html'
     try:
-        dispatch_request(mpr.path_info, mpr, env)
+        core.dispatch_request(mpr.path_info, args, mpr, env)
     except Exception, e:
-        send_pretty_error(e, env, mpr)
+        core.send_pretty_error(e, env, mpr)
     return apache.OK

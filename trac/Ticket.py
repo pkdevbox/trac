@@ -1,7 +1,7 @@
 # -*- coding: iso8859-1 -*-
 #
-# Copyright (C) 2003, 2004, 2005 Edgewall Software
-# Copyright (C) 2003, 2004, 2005 Jonas Borgström <jonas@edgewall.com>
+# Copyright (C) 2003, 2004 Edgewall Software
+# Copyright (C) 2003, 2004 Jonas Borgström <jonas@edgewall.com>
 #
 # Trac is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -36,9 +36,8 @@ __all__ = ['Ticket', 'NewticketModule', 'TicketModule']
 
 class Ticket(UserDict):
     std_fields = ['time', 'component', 'severity', 'priority', 'milestone',
-                  'reporter', 'owner', 'cc', 'url', 'version', 'status',
-                  'resolution', 'keywords', 'summary', 'description',
-                  'changetime']
+                  'reporter', 'owner', 'cc', 'url', 'version', 'status', 'resolution',
+                  'keywords', 'summary', 'description']
 
     def __init__(self, *args):
         UserDict.__init__(self)
@@ -248,36 +247,36 @@ def insert_custom_fields(env, hdf, vals = {}):
         name = f['name']
         val = vals.get('custom_' + name, f['value'])
         pfx = 'ticket.custom.%i' % i
-        hdf['%s.name' % pfx] = f['name']
-        hdf['%s.type' % pfx] = f['type']
-        hdf['%s.label' % pfx] = f['label']
-        hdf['%s.value' % pfx] = val
+        hdf.setValue('%s.name' % pfx, f['name'])
+        hdf.setValue('%s.type' % pfx, f['type'])
+        hdf.setValue('%s.label' % pfx, f['label'])
+        hdf.setValue('%s.value' % pfx, val)
         if f['type'] == 'select' or f['type'] == 'radio':
             j = 0
             for option in f['options']:
-                hdf['%s.option.%d' % (pfx, j)] = option
+                hdf.setValue('%s.option.%d' % (pfx, j), option)
                 if val and (option == val or str(j) == val):
-                    hdf['%s.option.%i.selected' % (pfx, j)] = 1
+                    hdf.setValue('%s.option.%i.selected' % (pfx, j), '1')
                 j += 1
         elif f['type'] == 'checkbox':
             if val in util.TRUE:
-                hdf['%s.selected' % pfx] = 1
+                hdf.setValue('%s.selected' % pfx, '1')
         elif f['type'] == 'textarea':
-            hdf['%s.width' % pfx] = f['width']
-            hdf['%s.height' % pfx] = f['height']
+            hdf.setValue('%s.width' % pfx, f['width'])
+            hdf.setValue('%s.height' % pfx, f['height'])
         i += 1
 
 
 class NewticketModule(Module):
     template_name = 'newticket.cs'
 
-    def create_ticket(self, req):
-        if not req.args.get('summary'):
+    def create_ticket(self):
+        if not self.args.get('summary'):
             raise util.TracError('Tickets must contain Summary.')
 
         ticket = Ticket()
-        ticket.populate(req.args)
-        ticket.setdefault('reporter', req.authname)
+        ticket.populate(self.args)
+        ticket.setdefault('reporter',self.req.authname)
 
         # The owner field defaults to the component owner
         cursor = self.db.cursor()
@@ -292,16 +291,17 @@ class NewticketModule(Module):
         # Notify
         tn = TicketNotifyEmail(self.env)
         tn.notify(ticket, newticket=1)
-        req.redirect(self.env.href.ticket(tktid))
+        self.req.redirect(self.env.href.ticket(tktid))
 
-    def render(self, req):
+
+    def render (self):
         self.perm.assert_permission(perm.TICKET_CREATE)
 
-        if req.args.has_key('create'):
-            self.create_ticket(req)
+        if self.args.has_key('create'):
+            self.create_ticket()
 
         ticket = Ticket()
-        ticket.populate(req.args)
+        ticket.populate(self.args)
         ticket.setdefault('component',
                           self.env.get_config('ticket', 'default_component'))
         ticket.setdefault('milestone',
@@ -312,198 +312,171 @@ class NewticketModule(Module):
                           self.env.get_config('ticket', 'default_severity'))
         ticket.setdefault('version',
                           self.env.get_config('ticket', 'default_version'))
-        ticket.setdefault('reporter', util.get_reporter_id(req))
+        ticket.setdefault('reporter', util.get_reporter_id(self.req))
 
         if ticket.has_key('description'):
-            req.hdf['newticket.description_preview'] = wiki_to_html(ticket['description'],
-                                                                    req.hdf, self.env,
-                                                                    self.db)
+            self.req.hdf.setValue('newticket.description_preview',
+                                  wiki_to_html(ticket['description'],
+                                               self.req.hdf, self.env, self.db))
 
-        req.hdf['title'] = 'New Ticket'
+        self.req.hdf.setValue('title', 'New Ticket')
         evals = util.mydict(zip(ticket.keys(),
                                 map(lambda x: util.escape(x), ticket.values())))
-        req.hdf['newticket'] = evals
+        util.add_to_hdf(evals, self.req.hdf, 'newticket')
 
         util.sql_to_hdf(self.db, 'SELECT name FROM component ORDER BY name',
-                        req.hdf, 'newticket.components')
+                        self.req.hdf, 'newticket.components')
         util.sql_to_hdf(self.db, 'SELECT name FROM milestone ORDER BY name',
-                        req.hdf, 'newticket.milestones')
+                        self.req.hdf, 'newticket.milestones')
         util.sql_to_hdf(self.db, 'SELECT name FROM version ORDER BY name',
-                        req.hdf, 'newticket.versions')
-        util.sql_to_hdf(self.db, "SELECT name FROM enum WHERE type='priority'"
-                                 " ORDER BY value",
-                        req.hdf, 'enums.priority')
-        util.sql_to_hdf(self.db, "SELECT name FROM enum WHERE type='severity'"
-                                 " ORDER BY value",
-                        req.hdf, 'enums.severity')
+                        self.req.hdf, 'newticket.versions')
 
-        insert_custom_fields(self.env, req.hdf, ticket)
+        insert_custom_fields(self.env, self.req.hdf, ticket)
 
 
 class TicketModule (Module):
     template_name = 'ticket.cs'
 
-    def save_changes(self, req, id):
+    def save_changes (self, id):
         self.perm.assert_permission (perm.TICKET_MODIFY)
         ticket = Ticket(self.db, id)
 
-        if not req.args.get('summary'):
+        if not self.args.get('summary'):
             raise util.TracError('Tickets must contain Summary.')
 
-        if req.args.has_key('description'):
+        if self.args.has_key('description'):
             self.perm.assert_permission (perm.TICKET_ADMIN)
 
-        if req.args.has_key('reporter'):
+        if self.args.has_key('reporter'):
             self.perm.assert_permission (perm.TICKET_ADMIN)
 
         # TODO: this should not be hard-coded like this
-        action = req.args.get('action', None)
+        action = self.args.get('action', None)
         if action == 'accept':
             ticket['status'] =  'assigned'
-            ticket['owner'] = req.authname
+            ticket['owner'] = self.req.authname
         if action == 'resolve':
             ticket['status'] = 'closed'
-            ticket['resolution'] = req.args.get('resolve_resolution')
+            ticket['resolution'] = self.args.get('resolve_resolution')
         elif action == 'reassign':
-            ticket['owner'] = req.args.get('reassign_owner')
+            ticket['owner'] = self.args.get('reassign_owner')
             ticket['status'] = 'new'
         elif action == 'reopen':
             ticket['status'] = 'reopened'
             ticket['resolution'] = ''
 
-        ticket.populate(req.args)
+        ticket.populate(self.args)
 
         now = int(time.time())
 
         ticket.save_changes(self.db,
-                            req.args.get('author', req.authname),
-                            req.args.get('comment'),
+                            self.args.get('author', self.req.authname),
+                            self.args.get('comment'),
                             when=now)
 
         tn = TicketNotifyEmail(self.env)
         tn.notify(ticket, newticket=0, modtime=now)
-        req.redirect(self.env.href.ticket(id))
+        self.req.redirect(self.env.href.ticket(id))
 
-    def insert_ticket_data(self, req, id, ticket, reporter_id):
+    def insert_ticket_data(self, hdf, id, ticket, reporter_id):
         """Insert ticket data into the hdf"""
         evals = util.mydict(zip(ticket.keys(),
                                 map(lambda x: util.escape(x), ticket.values())))
-        req.hdf['ticket'] = evals
+        util.add_to_hdf(evals, self.req.hdf, 'ticket')
 
         util.sql_to_hdf(self.db, 'SELECT name FROM component ORDER BY name',
-                        req.hdf, 'ticket.components')
+                        self.req.hdf, 'ticket.components')
         util.sql_to_hdf(self.db, 'SELECT name FROM milestone ORDER BY name',
-                        req.hdf, 'ticket.milestones')
+                        self.req.hdf, 'ticket.milestones')
         util.sql_to_hdf(self.db, 'SELECT name FROM version ORDER BY name',
-                        req.hdf, 'ticket.versions')
-        util.sql_to_hdf(self.db, "SELECT name FROM enum WHERE type='priority'"
-                                 " ORDER BY value",
-                        req.hdf, 'enums.priority')
-        util.sql_to_hdf(self.db, "SELECT name FROM enum WHERE type='severity'"
-                                 " ORDER BY value",
-                        req.hdf, 'enums.severity')
+                        self.req.hdf, 'ticket.versions')
         util.sql_to_hdf(self.db, "SELECT name FROM enum WHERE type='resolution'"
                                  " ORDER BY value",
-                        req.hdf, 'enums.resolution')
-        util.hdf_add_if_missing(req.hdf, 'ticket.components', ticket['component'])
-        util.hdf_add_if_missing(req.hdf, 'ticket.milestones', ticket['milestone'])
-        util.hdf_add_if_missing(req.hdf, 'ticket.versions', ticket['version'])
-        util.hdf_add_if_missing(req.hdf, 'enums.priority', ticket['priority'])
-        util.hdf_add_if_missing(req.hdf, 'enums.severity', ticket['severity'])
-        util.hdf_add_if_missing(req.hdf, 'enums.resolution', 'fixed')
+                        self.req.hdf, 'enums.resolution')
+        util.hdf_add_if_missing(self.req.hdf, 'ticket.components', ticket['component'])
+        util.hdf_add_if_missing(self.req.hdf, 'ticket.milestones', ticket['milestone'])
+        util.hdf_add_if_missing(self.req.hdf, 'ticket.versions', ticket['version'])
+        util.hdf_add_if_missing(self.req.hdf, 'enums.priority', ticket['priority'])
+        util.hdf_add_if_missing(self.req.hdf, 'enums.severity', ticket['severity'])
+        util.hdf_add_if_missing(self.req.hdf, 'enums.resolution', 'fixed')
 
-        req.hdf['ticket.reporter_id'] = util.escape(reporter_id)
-        req.hdf['title'] = '#%d (%s)' % (id, util.escape(ticket['summary']))
-        req.hdf['ticket.description.formatted'] = wiki_to_html(ticket['description'],
-                                                               req.hdf, self.env,
-                                                               self.db)
-
-        opened = int(ticket['time'])
-        req.hdf['ticket.opened'] = time.strftime('%c', time.localtime(opened))
-        req.hdf['ticket.opened_delta'] = util.pretty_timedelta(opened)
-        lastmod = int(ticket['changetime'])
-        if lastmod != opened:
-            req.hdf['ticket.lastmod'] = time.strftime('%c', time.localtime(lastmod))
-            req.hdf['ticket.lastmod_delta'] = util.pretty_timedelta(lastmod)
+        self.req.hdf.setValue('ticket.reporter_id', util.escape(reporter_id))
+        self.req.hdf.setValue('title', '#%d (%s)' % (id, util.escape(ticket['summary'])))
+        self.req.hdf.setValue('ticket.description.formatted',
+                              wiki_to_html(ticket['description'], self.req.hdf,
+                                           self.env, self.db))
+        self.req.hdf.setValue('ticket.opened', time.strftime('%c', time.localtime(int(ticket['time']))))
 
         changelog = ticket.get_changelog(self.db)
         curr_author = None
         curr_date   = 0
         comment = None
-        changes = []
+        idx = 0
         for date, author, field, old, new in changelog:
-            if date != curr_date or author != curr_author:
-                changes.append({
-                    'date': time.strftime('%c', time.localtime(date)),
-                    'author': util.escape(author),
-                    'fields': {}
-                })
-                curr_date = date
-                curr_author = author
+            hdf.setValue('ticket.changes.%d.date' % idx,
+                         time.strftime('%c', time.localtime(date)))
+            hdf.setValue('ticket.changes.%d.time' % idx, str(date))
+            hdf.setValue('ticket.changes.%d.author' % idx, util.escape(author))
+            hdf.setValue('ticket.changes.%d.field' % idx, field)
+            hdf.setValue('ticket.changes.%d.old' % idx, util.escape(old))
             if field == 'comment':
-                changes[-1]['comment'] = wiki_to_html(new, req.hdf, self.env,
-                                                      self.db)
-            elif field == 'description':
-                changes[-1]['fields'][field] = {}
+                hdf.setValue('ticket.changes.%d.new' % idx,
+                             wiki_to_html(new, self.req.hdf, self.env, self.db))
             else:
-                changes[-1]['fields'][field] = {'old': old, 'new': new}
-        req.hdf['ticket.changes'] = changes
+                hdf.setValue('ticket.changes.%d.new' % idx, util.escape(new))
+            idx = idx + 1
 
-        insert_custom_fields(self.env, req.hdf, ticket)
+        insert_custom_fields(self.env, hdf, ticket)
         # List attached files
-        self.env.get_attachments_hdf(self.db, 'ticket', str(id), req.hdf,
+        self.env.get_attachments_hdf(self.db, 'ticket', str(id), self.req.hdf,
                                      'ticket.attachments')
 
-    def render(self, req):
+    def render (self):
         self.perm.assert_permission (perm.TICKET_VIEW)
 
-        action = req.args.get('action', 'view')
-        preview = req.args.has_key('preview')
+        action = self.args.get('action', 'view')
+        preview = self.args.has_key('preview')
 
-        if not req.args.has_key('id'):
-            req.redirect(self.env.href.wiki())
+        if not self.args.has_key('id'):
+            self.req.redirect(self.env.href.wiki())
 
-        id = int(req.args.get('id'))
+        id = int(self.args.get('id'))
 
         if not preview \
                and action in ['leave', 'accept', 'reopen', 'resolve', 'reassign']:
-            self.save_changes(req, id)
+            self.save_changes (id)
 
         ticket = Ticket(self.db, id)
-        reporter_id = util.get_reporter_id(req)
+        reporter_id = util.get_reporter_id(self.req)
 
         if preview:
             # Use user supplied values
             for field in Ticket.std_fields:
-                if req.args.has_key(field) and field != 'reporter':
-                    ticket[field] = req.args.get(field)
-            req.hdf['ticket.action'] = action
-            reporter_id = req.args.get('author')
-            comment = req.args.get('comment')
+                if self.args.has_key(field) and field != 'reporter':
+                    ticket[field] = self.args.get(field)
+            self.req.hdf.setValue('ticket.action', action)
+            reporter_id = self.args.get('author')
+            comment = self.args.get('comment')
             if comment:
-                req.hdf['ticket.comment'] = util.escape(comment)
+                self.req.hdf.setValue('ticket.comment', util.escape(comment))
                 # Wiki format a preview of comment
-                req.hdf['ticket.comment_preview'] = wiki_to_html(comment,
-                                                                 req.hdf,
-                                                                 self.env,
-                                                                 self.db)
+                self.req.hdf.setValue('ticket.comment_preview',
+                                  wiki_to_html(comment,
+                                               self.req.hdf, self.env, self.db))
 
-        self.insert_ticket_data(req, id, ticket, reporter_id)
+        self.insert_ticket_data(self.req.hdf, id, ticket, reporter_id)
 
-        # If the ticket is being shown in the context of a query, add
-        # links to help navigate in the query result set
-        if 'query_tickets' in req.session:
-            tickets = req.session['query_tickets'].split()
-            if str(id) in tickets:
-                idx = int(tickets.index(str(id)))
-                if idx > 0:
-                    self.add_link('first', self.env.href.ticket(tickets[0]),
-                                  'Ticket #%s' % tickets[0])
-                    self.add_link('prev', self.env.href.ticket(tickets[idx - 1]),
-                                  'Ticket #%s' % tickets[idx - 1])
-                if idx < len(tickets) - 1:
-                    self.add_link('next', self.env.href.ticket(tickets[idx + 1]),
-                                  'Ticket #%s' % tickets[idx + 1])
-                    self.add_link('last', self.env.href.ticket(tickets[-1]),
-                                  'Ticket #%s' % tickets[-1])
-            self.add_link('up', req.session['query_href'])
+        cursor = self.db.cursor()
+        cursor.execute("SELECT max(id) FROM ticket")
+        row = cursor.fetchone()
+        if row:
+            max_id = int(row[0])
+            if id > 1:
+                self.add_link('first', self.env.href.ticket(1), 'Ticket #1')
+                self.add_link('prev', self.env.href.ticket(id - 1),
+                              'Ticket #%d' % (id - 1))
+            if id < max_id:
+                self.add_link('next', self.env.href.ticket(id + 1),
+                              'Ticket #%d' % (id + 1))
+                self.add_link('last', self.env.href.ticket(max_id),
+                              'Ticket #%d' % (max_id))

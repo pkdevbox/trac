@@ -1,7 +1,7 @@
 # -*- coding: iso8859-1 -*-
 #
-# Copyright (C) 2003, 2004, 2005 Edgewall Software
-# Copyright (C) 2003, 2004, 2005 Daniel Lundin <daniel@edgewall.com>
+# Copyright (C) 2003, 2004 Edgewall Software
+# Copyright (C) 2003, 2004 Daniel Lundin <daniel@edgewall.com>
 #
 # Trac is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -25,11 +25,32 @@ import time
 import smtplib
 import os.path
 
-from trac import Environment
-from trac.__init__ import __version__
-from trac.util import CRLF, TRUE, FALSE, TracError, wrap
-from trac.web.clearsilver import HDFWrapper
-from trac.web.main import populate_hdf
+import neo_cgi
+import neo_cs
+import neo_util
+
+from __init__ import __version__
+from util import add_dict_to_hdf, CRLF, TRUE, FALSE, TracError
+import Environment
+import core
+import Ticket
+
+
+def wrap(t, cols=75, initial_indent='', subsequent_indent=''):
+    try:
+        import textwrap
+        t = t.strip().replace('\r\n', '\n').replace('\r', '\n')
+        wrapper = textwrap.TextWrapper(cols, replace_whitespace = 0,
+                                       break_long_words = 0,
+                                       initial_indent = initial_indent,
+                                       subsequent_indent = subsequent_indent)
+        wrappedLines = []
+        for line in t.split('\n'):
+            wrappedLines += wrapper.wrap(line.rstrip()) or ['']
+        return CRLF.join(wrappedLines)
+
+    except ImportError:
+        return t
 
 
 class Notify:
@@ -38,13 +59,16 @@ class Notify:
 
     db = None
     hdf = None
+    cs = None
 
-    def __init__(self, env):
+    def __init__(self, env, msg_template):
         self.env = env
         self.db = env.get_db_cnx()
-        self.hdf = HDFWrapper(loadpaths=[env.get_templates_dir(),
-                                         env.get_config('trac', 'templates_dir')])
-        populate_hdf(self.hdf, env)
+        self.hdf = neo_util.HDF()
+        core.populate_hdf(self.hdf, env, self.db, None)
+        tmpl = os.path.join(env.get_config('general','templates_dir'), msg_template)
+        self.cs = neo_cs.CS(self.hdf)
+        self.cs.parseFile(tmpl)
 
     def notify(self,resid):
         if sys.version_info[0] == 2 and (sys.version_info[1] < 2 or
@@ -104,11 +128,6 @@ class NotifyEmail(Notify):
                             ' <b>notification.reply_to</b> are unspecified'
                             ' in configuration.',
                             'SMTP Notification Error')
-
-        # Authentication info (optional)
-        self.user_name = self.env.get_config('notification', 'smtp_user')
-        self.password = self.env.get_config('notification', 'smtp_password', '')
-
         Notify.notify(self, resid)
 
     def get_email_addresses(self, txt):
@@ -118,13 +137,11 @@ class NotifyEmail(Notify):
 
     def begin_send(self):
         self.server = smtplib.SMTP(self.smtp_server)
-        if self.user_name:
-            self.server.login(self.user_name, self.password)
 
     def send(self, rcpt, mime_headers={}):
         from email.MIMEText import MIMEText
         from email.Header import Header
-        body = self.hdf.render(self.template_name)
+        body = self.cs.render()
         msg = MIMEText(body, 'plain', 'utf-8')
         msg['X-Mailer'] = 'Trac %s, by Edgewall Software' % __version__
         msg['X-Trac-Version'] =  __version__
@@ -156,7 +173,7 @@ class TicketNotifyEmail(NotifyEmail):
     COLS = 75
 
     def __init__(self, env):
-        NotifyEmail.__init__(self, env)
+        NotifyEmail.__init__(self, env, self.template_name)
         self.prev_cc = []
 
     def notify(self, ticket, newticket=1, modtime=0):
@@ -166,48 +183,47 @@ class TicketNotifyEmail(NotifyEmail):
         self.ticket['description'] = wrap(self.ticket.get('description',''),
                                           self.COLS,
                                           initial_indent=' ',
-                                          subsequent_indent=' ',
-                                          linesep=CRLF)
+                                          subsequent_indent=' ')
         self.ticket['link'] = self.env.abs_href.ticket(ticket['id'])
-        self.hdf['email.ticket_props'] = self.format_props()
-        self.hdf['email.ticket_body_hdr'] = self.format_hdr()
-        self.hdf['ticket'] = self.ticket
-        self.hdf['ticket.new'] = self.newticket and '1' or '0'
+        add_dict_to_hdf(self.ticket, self.hdf, 'ticket')
+        self.hdf.setValue('email.ticket_props', self.format_props())
+        self.hdf.setValue('email.ticket_body_hdr', self.format_hdr())
+        self.hdf.setValue('ticket.link', self.ticket['link'])
+        self.hdf.setValue('ticket.new', self.newticket and '1' or '0')
         subject = self.format_subj()
         if not self.newticket:
             subject = 'Re: ' + subject
-        self.hdf['email.subject'] = subject
+        self.hdf.setValue('email.subject', subject)
         changes=''
         if not self.newticket and modtime:  # Ticketchange
             changelog = ticket.get_changelog(self.db, modtime)
             for date, author, field, old, new in changelog:
-                self.hdf['ticket.change.author'] = author
-                pfx = 'ticket.change.%s' % field
+                self.hdf.setValue('ticket.change.author', author)
+                pfx='ticket.change.%s' % field
                 newv = ''
                 if field == 'comment':
-                    newv = wrap(new, self.COLS, ' ', ' ', CRLF)
+                    newv = wrap(new, self.COLS, ' ', ' ')
                 elif field == 'description':
-                    new_descr = wrap(new, self.COLS, ' ', ' ', CRLF)
-                    old_descr = wrap(old, self.COLS, '> ', '> ', CRLF)
+                    new_descr = wrap(new, self.COLS, ' ', ' ')
+                    old_descr = wrap(old, self.COLS, '> ', '> ')
                     old_descr = old_descr.replace(2*CRLF, CRLF + '>' + CRLF)
                     cdescr = CRLF
                     cdescr += 'Old description:' + 2*CRLF + old_descr + 2*CRLF
                     cdescr += 'New description:' + 2*CRLF + new_descr + CRLF
-                    self.hdf['email.changes_descr'] = cdescr
+                    self.hdf.setValue('email.changes_descr', cdescr)
                 else:
                     newv = new
                     l = 7 + len(field)
-                    chg = wrap('%s => %s' % (old, new), self.COLS-l,'', l*' ',
-                               CRLF)
+                    chg = wrap('%s => %s' % (old, new), self.COLS-l,'', l*' ')
                     changes += '  * %s:  %s%s' % (field, chg, CRLF)
                 if newv:
-                    self.hdf['%s.oldvalue' % pfx] = old
-                    self.hdf['%s.newvalue' % pfx] = newv
+                    self.hdf.setValue('%s.oldvalue' % pfx, old)
+                    self.hdf.setValue('%s.newvalue' % pfx, newv)
                 if field == 'cc':
                     self.prev_cc += old and self.parse_cc(old) or []
-                self.hdf['%s.author' % pfx] = author
+                self.hdf.setValue('%s.author' % pfx, author)
             if changes:
-                self.hdf['email.changes_body'] = changes
+                self.hdf.setValue('email.changes_body', changes)
         NotifyEmail.notify(self, ticket['id'], subject)
 
     def format_props(self):
@@ -267,8 +283,7 @@ class TicketNotifyEmail(NotifyEmail):
 
     def format_hdr(self):
         return '#%s: %s' % (self.ticket['id'],
-                               wrap(self.ticket['summary'], self.COLS,
-                                    linesep=CRLF))
+                               wrap(self.ticket['summary'], self.COLS))
 
     def format_subj(self):
         projname = self.env.get_config('project', 'name')

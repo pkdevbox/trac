@@ -155,10 +155,10 @@ class CommitHook:
         """Make sure the database uses a known schema version"""
         cursor = self.con.cursor()
         cursor.execute('SELECT value FROM system WHERE '
-                       'name=%s AND value=%s', 'database_version', '8')
+                       'name=%s AND value=%s', 'database_version', '7')
         if not cursor.fetchone():
-            raise Exception('Expected Trac database version 8')
-
+            raise Exception('Expected Trac database version 7')
+                        
 if __name__ == "__main__":
     if len(sys.argv) < 5:
         print "For usage: %s --help" % (sys.argv[0])

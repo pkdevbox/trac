@@ -21,15 +21,17 @@
 
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 8
+db_version = 7
 
-def __mkreports(reports):
+def __mkreports(reps):
     """Utility function used to create report data in same syntax as the
     default data. This extra step is done to simplify editing the default
     reports."""
     result = []
-    for report in reports:
-        result.append((None, report[0], report[2], report[1]))
+    i = 1
+    for r in reps:
+        result.append ((i, None, r[0], r[2], r[1]))
+        i = i + 1
     return result
 
 
@@ -126,10 +128,11 @@ CREATE TABLE component (
          owner           text
 );
 CREATE TABLE milestone (
-         name            text PRIMARY KEY,
-         due             integer,
-         completed       integer,
-         description     text
+         id              integer PRIMARY KEY,
+         name            text,
+         time            integer,
+         descr           text,
+         UNIQUE(name)
 );
 CREATE TABLE version (
          name            text PRIMARY KEY,
@@ -166,7 +169,7 @@ CREATE TABLE session (
          UNIQUE(sid,var_name)
 );
 
-CREATE INDEX node_change_idx    ON node_change(rev);
+CREATE INDEX node_change_idx ON node_change(rev);
 CREATE INDEX ticket_change_idx  ON ticket_change(ticket, time);
 CREATE INDEX wiki_idx           ON wiki(name,version);
 CREATE INDEX session_idx        ON session(sid,var_name);
@@ -293,7 +296,7 @@ SELECT p.value AS __color__,
   FROM ticket t,enum p
   WHERE p.name=t.priority AND p.type='priority'
   ORDER BY (milestone IS NULL), milestone DESC, (status = 'closed'), 
-        (CASE status WHEN 'closed' THEN modified ELSE (-1)*p.value END) DESC
+        (CASE status WHEN 'closed' THEN modified ELSE -p.value END) DESC
 """),
 #----------------------------------------------------------------------------
 ('My Tickets',
@@ -348,12 +351,12 @@ data = (('component',
                (('component1', 'somebody'),
                 ('component2', 'somebody'))),
            ('milestone',
-             ('name', 'due', 'completed'),
-               (('', 0, 0), 
-                ('milestone1', 0, 0),
-                ('milestone2', 0, 0),
-                ('milestone3', 0, 0),
-                ('milestone4', 0, 0))),
+             ('name', 'time'),
+               (('', 0), 
+                ('milestone1', 0),
+                ('milestone2', 0),
+                ('milestone3', 0),
+                ('milestone4', 0))),
            ('version',
              ('name', 'time'),
                (('', 0),
@@ -404,7 +407,7 @@ data = (('component',
              ('name', 'value'),
                (('database_version', str(db_version)),)),
            ('report',
-             ('author', 'title', 'sql', 'description'),
+             ('id', 'author', 'title', 'sql', 'description'),
                __mkreports(reports)))
 
 default_config = \
@@ -438,8 +441,6 @@ default_config = \
   ('mimeviewer', 'enscript_path', 'enscript'),
   ('notification', 'smtp_enabled', 'false'),
   ('notification', 'smtp_server', 'localhost'),
-  ('notification', 'smtp_user', ''),
-  ('notification', 'smtp_password', ''),
   ('notification', 'smtp_always_cc', ''),
   ('notification', 'always_notify_reporter', 'false'),
   ('notification', 'smtp_from', 'trac@localhost'),

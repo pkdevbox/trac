@@ -24,7 +24,7 @@ import time
 import string
 
 import perm
-from util import TracError, escape, shorten_line
+from util import TracError, escape, shorten_line, add_dictlist_to_hdf
 from Module import Module
 
 class Search(Module):
@@ -71,7 +71,7 @@ class Search(Module):
             msg = msg + ' ...'
         return msg
     
-    def perform_query(self, req, query, changeset, tickets, wiki, page=0):
+    def perform_query (self, query, changeset, tickets, wiki, page=0):
         if not query:
             return ([], 0)
         keywords = query.split(' ')
@@ -93,7 +93,7 @@ class Search(Module):
             if kwd[0] == '!':
                 keywords[0] = kwd[1:]
                 query = query[1:]
-                req.hdf['search.q'] = query
+                self.req.hdf.setValue('search.q', query)
             # Ticket quickjump
             elif kwd[0] == '#' and kwd[1:].isdigit():
                 redir = self.env.href.ticket(kwd[1:])
@@ -108,8 +108,8 @@ class Search(Module):
                 if re.match (r, kwd):
                     redir = self.env.href.wiki(kwd)
             if redir:
-                req.hdf['search.q'] = ''
-                req.redirect(redir)
+                self.req.hdf.setValue('search.q', '')
+                self.req.redirect(redir)
             elif len(query) < 3:
                 raise TracError('Search query too short. '
                                 'Query must be at least 3 characters long.',
@@ -189,39 +189,37 @@ class Search(Module):
             info.append(item)
         return info, more
         
-    def render(self, req):
+    def render (self):
         self.perm.assert_permission(perm.SEARCH_VIEW)
-        req.hdf['title'] = 'Search'
-        req.hdf['search'] = {
-            'ticket': 'checked',
-            'changeset': 'checked',
-            'wiki': 'checked',
-            'results_per_page': self.RESULTS_PER_PAGE
-        }
+        self.req.hdf.setValue('title', 'Search')
+        self.req.hdf.setValue('search.ticket', 'checked')
+        self.req.hdf.setValue('search.changeset', 'checked')
+        self.req.hdf.setValue('search.wiki', 'checked')
+        self.req.hdf.setValue('search.results_per_page', str(self.RESULTS_PER_PAGE))
         
-        if req.args.has_key('q'):
-            query = req.args.get('q')
-            req.hdf['title'] = 'Search Results'
-            req.hdf['search.q'] = query.replace('"', "&#34;")
-            tickets = req.args.has_key('ticket')
-            changesets = req.args.has_key('changeset')
-            wiki = req.args.has_key('wiki')
+        if self.args.has_key('q'):
+            query = self.args.get('q')
+            self.req.hdf.setValue('title', 'Search Results')
+            self.req.hdf.setValue('search.q', query.replace('"', "&#34;"))
+            tickets = self.args.has_key('ticket')
+            changesets = self.args.has_key('changeset')
+            wiki = self.args.has_key('wiki')
 
             # If no search options chosen, choose all
             if not (tickets or changesets or wiki):
                 tickets = changesets = wiki = 1
             if not tickets:
-                req.hdf['search.ticket'] = ''
+                self.req.hdf.setValue('search.ticket', '')
             if not changesets:
-                req.hdf['search.changeset'] = ''
+                self.req.hdf.setValue('search.changeset', '')
             if not wiki:
-                req.hdf['search.wiki'] = ''
+                self.req.hdf.setValue('search.wiki', '')
 
-            page = int(req.args.get('page', '0'))
-            req.hdf['search.result_page'] = page
-            info, more = self.perform_query(req, query, changesets, tickets,
-                                            wiki, page)
-            req.hdf['search.result'] = info
+            page = int(self.args.get('page', '0'))
+            self.req.hdf.setValue('search.result_page', str(page))
+            info, more = self.perform_query(query, changesets, tickets, wiki,
+                                            page)
+            add_dictlist_to_hdf(info, self.req.hdf, 'search.result')
 
             include = []
             if tickets: include.append('ticket')

@@ -32,7 +32,7 @@ class Log (Module):
     template_name = 'log.cs'
     template_rss_name = 'log_rss.cs'
 
-    def log_receiver(self, changed_paths, rev, author, date, log, pool):
+    def log_receiver (self, changed_paths, rev, author, date, log, pool):
         if not changed_paths: return
 
         # Store the copyfrom-information so we can follow the file/dir
@@ -51,12 +51,11 @@ class Log (Module):
             'date'     : util.svn_date_to_string (date, pool),
             'gmt'      : time.strftime('%a, %d %b %Y %H:%M:%S GMT', gmt),
             'log.raw'  : util.escape(log),
-            'log'      : wiki_to_oneliner(util.shorten_line(util.wiki_escape_newline(log)),
-                                          self.env,self.db),
+            'log'      : wiki_to_oneliner(util.shorten_line(util.wiki_escape_newline(log)), self.req.hdf, self.env,self.db),
             'shortlog' : util.escape(shortlog),
             'file_href': self.env.href.browser(self.path, rev),
             'changeset_href': self.env.href.changeset(rev)
-        }
+            }
         self.log_info.insert (0, item)
 
     def get_info (self, path, rev):
@@ -81,33 +80,32 @@ class Log (Module):
                         path = info[0]+rel_path
         return self.log_info
 
-    def generate_path_links(self, req, rev, rev_specified):
+    def generate_path_links(self, rev, rev_specified):
         links = [''] + filter(None, self.path.split('/'))
         path = '/'
         i = 0
         for part in links:
             path = path + part + '/'
-            req.hdf['log.path.%d' % i] = part or 'root'
-            url = ''
+            self.req.hdf.setValue('log.path.%d' % i, part or 'root')
             if rev_specified:
                 url = self.env.href.browser(path, rev)
             else:
                 url = self.env.href.browser(path)
-            req.hdf['log.path.%d.url' % i] = url
+            self.req.hdf.setValue('log.path.%d.url' % i, url)
             if i == len(links) - 1:
                 self.add_link('up', url, 'Parent directory')
             i = i + 1
 
-    def render(self, req):
-        self.perm.assert_permission(perm.LOG_VIEW)
+    def render (self):
+        self.perm.assert_permission (perm.LOG_VIEW)
 
         self.add_link('alternate', '?format=rss', 'RSS Feed',
             'application/rss+xml', 'rss')
 
-        self.path = req.args.get('path', '/')
-        if req.args.has_key('rev'):
+        self.path = self.args.get('path', '/')
+        if self.args.has_key('rev'):
             try:
-                rev = int(req.args.get('rev'))
+                rev = int(self.args.get('rev'))
                 rev_specified = 1
             except ValueError:
                 rev = svn.fs.youngest_rev(self.fs_ptr, self.pool)
@@ -120,7 +118,7 @@ class Log (Module):
             root = svn.fs.revision_root(self.fs_ptr, rev, self.pool)
         except svn.core.SubversionException:
             raise util.TracError('Invalid revision number: %d' % rev)
-
+        
         # We display an error message if the file doesn't exist (any more).
         # All we know is that the path isn't valid in the youngest
         # revision of the repository. The file might have existed
@@ -131,20 +129,13 @@ class Log (Module):
                                  'repository at revision %d.' % (self.path, rev),
                                  'Nonexistent path')
         else:
-            date = svn.fs.revision_prop(self.fs_ptr, rev,
-                                        svn.util.SVN_PROP_REVISION_DATE,
-                                        self.pool)
-            if date:
-                date_seconds = svn.util.svn_time_from_cstring(date, self.pool) / 1000000
-                req.check_modified(date_seconds)
+            info = self.get_info (self.path, rev)
+            util.add_dictlist_to_hdf(info, self.req.hdf, 'log.items')
 
-            info = self.get_info(self.path, rev)
-            req.hdf['log.items'] = info
+        self.generate_path_links(rev, rev_specified)
+        self.req.hdf.setValue('title', self.path + ' (log)')
+        self.req.hdf.setValue('log.path', self.path)
+        self.req.hdf.setValue('log.href', self.env.href.log(self.path))
 
-        self.generate_path_links(req, rev, rev_specified)
-        req.hdf['title'] = self.path + ' (log)'
-        req.hdf['log.path'] = self.path
-        req.hdf['log.href'] = self.env.href.log(self.path)
-
-    def display_rss(self, req):
-        req.display(self.template_rss_name, 'application/rss+xml')
+    def display_rss(self):
+        self.req.display(self.template_rss_name, 'application/rss+xml')

@@ -179,7 +179,6 @@ class proxy_bdist_rpm(bdist_rpm):
         for distro in rpm_distros.keys():
             r = generic_bdist_rpm(self.dist, distro)
             r.initialize_options()
-            self.dist._set_command_options(r, self.dist.command_options['bdist_rpm'])
             r.finalize_options()
             r.run()
 
@@ -199,11 +198,10 @@ facilities.
       author_email="info@edgewall.com",
       license=LICENSE,
       url=URL,
-      packages=['trac', 'trac.web', 'trac.upgrades', 'trac.wikimacros', 'trac.mimeviewers'],
+      packages=['trac', 'trac.upgrades', 'trac.wikimacros', 'trac.mimeviewers'],
       data_files=[(_p('share/trac/templates'), glob('templates/*')),
                   (_p('share/trac/htdocs'), glob(_p('htdocs/*.*')) + [_p('htdocs/README')]),
                   (_p('share/trac/htdocs/css'), glob(_p('htdocs/css/*'))),
-                  (_p('share/trac/htdocs/js'), glob(_p('htdocs/js/*'))),
                   (_p('share/man/man1'), glob(_p('scripts/*.1'))),
                   (_p('share/trac/wiki-default'), glob(_p('wiki-default/[A-Z]*')))],
       scripts=[_p('scripts/trac-admin'),

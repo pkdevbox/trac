@@ -72,10 +72,11 @@ class Href:
     def newticket(self):
         return href_join(self.base, 'newticket')
 
-    def query(self, constraints={}, order=None, desc=0, group=None, groupdesc=0,
-              verbose=0, format=None):
+    def query(self, constraints={}, order=None, desc=0, action=None):
         href = href_join(self.base, 'query')
         params = []
+        if action:
+            params.append('action=' + urllib.quote(action))
         for field in constraints.keys():
             values = constraints[field]
             if type(values) is not ListType:
@@ -86,14 +87,6 @@ class Href:
             params.append('order=' + urllib.quote(order))
         if desc:
             params.append('desc=1')
-        if group:
-            params.append('group=' + urllib.quote(group))
-        if groupdesc:
-            params.append('groupdesc=1')
-        if verbose:
-            params.append('verbose=1')
-        if format:
-            params.append('format=' + urllib.quote(format))
         if params:
             href += '?' + ('&').join(params)
         return href
@@ -142,19 +135,17 @@ class Href:
         else:
             return href_join(self.base, 'about_trac')
 
-    def wiki(self, page=None, version=None, action=None):
-        params = []
-        if page:
-            href = href_join(self.base, 'wiki', page)
+    def wiki(self, page=None, version=None, diff=0, history=0):
+        if page and version and diff:
+            return href_join(self.base, 'wiki', page) + '?version=' + str(version) + '&diff=yes'
+        elif page and version:
+            return href_join(self.base, 'wiki', page) + '?version=' + str(version)
+        elif page and history:
+            return href_join(self.base, 'wiki', page) + '?history=yes'
+        elif page:
+            return href_join(self.base, 'wiki', page)
         else:
-            href = href_join(self.base, 'wiki')
-        if action:
-            params.append(('action', action))
-        if version:
-            params.append(('version', version))
-        if params:
-            href += '?' + urllib.urlencode(params)
-        return href
+            return href_join(self.base, 'wiki')
 
     def report(self, report=None, action=None):
         if report:
@@ -167,10 +158,10 @@ class Href:
 
     def attachment(self, module, id, filename, format=None):
         id = urllib.quote(urllib.quote(id, ''))
-        href = href_join(self.base, 'attachment', module, id)
-        if filename:
-            filename = urllib.quote(filename)
-            href = href_join(href, filename)
+        filename = urllib.quote(filename)
         if format:
-            href += '?format=%s' % format
-        return href
+            return href_join(self.base, 'attachment', module, id, filename) + \
+                   '?format='+format
+        else:
+            return href_join(self.base, 'attachment', module, id, filename)
+

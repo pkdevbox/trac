@@ -8,7 +8,6 @@ include trac/tests/*.py
 include trac/tests/wiki-tests.txt
 recursive-include htdocs *.png *.gif *.ico *.js *README
 recursive-include htdocs/css *.css
-recursive-include htdocs/js *.js
 recursive-include doc *trac_logo.* *README
 recursive-include wiki-default *
 recursive-include templates *.cs *README

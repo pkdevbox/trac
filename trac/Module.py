@@ -1,7 +1,7 @@
 # -*- coding: iso8859-1 -*-
 #
-# Copyright (C) 2003, 2004, 2005 Edgewall Software
-# Copyright (C) 2003, 2004, 2005 Jonas Borgström <jonas@edgewall.com>
+# Copyright (C) 2003, 2004 Edgewall Software
+# Copyright (C) 2003, 2004 Jonas Borgström <jonas@edgewall.com>
 #
 # Trac is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -19,36 +19,36 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from trac.util import escape
-from trac.web.main import populate_hdf
+import core
+from util import add_to_hdf, escape
 
 
 class Module:
-
     db = None
     env = None
+    req = None
     _name = None
+    args = []
     template_name = None
-    links = None
+    links = {}
 
-    def __init__(self):
-        self.links = {}
-
-    def run(self, req):
-        if req.args.has_key('format'):
-            disp = getattr(self, 'display_' + req.args.get('format'))
+    def run(self):
+        core.populate_hdf(self.req.hdf, self.env, self.db, self.req)
+        self.req.hdf.setValue('trac.active_module', self._name)
+        if self.args.has_key('format'):
+            disp = getattr(self, 'display_' + self.args.get('format'))
         else:
             disp = self.display
-        populate_hdf(req.hdf, self.env, req)
-        for action in self.perm.permissions():
-            req.hdf['trac.acl.' + action] = 1
-        self._add_default_links(req)
-        self.render(req)
-        req.hdf['trac.active_module'] = self._name
-        req.hdf['links'] = self.links
-        disp(req)
+        self.add_default_links()
+        try:
+            self.render()
+            add_to_hdf(self.links, self.req.hdf, 'links')
+            disp()
+        except core.RedirectException:
+            pass
 
-    def _add_default_links(self, req):
+    def add_default_links(self):
+        self.links.clear()
         self.add_link('start', self.env.href.wiki())
         self.add_link('search', self.env.href.search())
         self.add_link('help', self.env.href.wiki('TracGuide'))
@@ -56,7 +56,7 @@ class Module:
         icon = self.env.get_config('project', 'icon')
         if icon:
             if not icon[0] == '/' and icon.find('://') < 0:
-                icon = req.hdf.get('htdocs_location', '') + icon
+                icon = self.req.hdf.getValue('htdocs_location', '') + icon
             mimetype = self.env.mimeview.get_mimetype(icon)
             self.add_link('icon', icon, type=mimetype)
             self.add_link('shortcut icon', icon, type=mimetype)
@@ -70,18 +70,33 @@ class Module:
         if className: link['class'] = className
         self.links[rel].append(link)
 
-    def render(self, req):
+    def render(self):
         """
         Override this function to add data the template requires
-        in the HDF.
+        to self.req.hdf.
         """
         pass
 
-    def display(self, req):
-        req.display(self.template_name)
+    def display(self):
+        self.req.display(self.template_name)
 
-    def display_hdf(self, req):
-        req.send_response(200)
-        req.send_header('Content-Type', 'text/plain;charset=utf-8')
-        req.end_headers()
-        req.write(str(req.hdf))
+    def display_hdf(self):
+        def hdf_tree_walk(node,prefix=''):
+            while node: 
+                name = node.name() or ''
+                if not node.child():
+                    value = node.value()
+                    self.req.write('%s%s = ' % (prefix, name))
+                    if value.find('\n') == -1:
+                        self.req.write('%s\r\n' % value)
+                    else:
+                        self.req.write('<< EOM\r\n%s\r\nEOM\r\n' % value)
+                else:
+                    self.req.write('%s%s {\r\n' % (prefix, name))
+                    hdf_tree_walk(node.child(), prefix + '  ')
+                    self.req.write('%s}\r\n' % prefix)
+                node = node.next()
+        self.req.send_response(200)
+        self.req.send_header('Content-Type', 'text/plain;charset=utf-8')
+        self.req.end_headers()
+        hdf_tree_walk (self.req.hdf.child())
