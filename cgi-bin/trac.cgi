@@ -21,8 +21,8 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 try:
-    import trac.core
-    trac.core.cgi_start()
+    import trac
+    trac.main()
 except Exception, e:
     print 'Content-Type: text/plain\r\n\r\n',
     print 'Oops...'
@@ -31,8 +31,3 @@ except Exception, e:
     print
     print e
     print
-    import traceback
-    import StringIO
-    tb = StringIO.StringIO()
-    traceback.print_exc(file=tb)
-    print tb.getvalue()

@@ -25,10 +25,9 @@ addEvent(window, 'load', function() { document.getElementById('q').focus()});
 </div>
 </form>
 
-<?cs def result(title, keywords, body, link) ?>
+<?cs def result(title, body, link) ?>
  <div class="result-item">
  <a class="result-title" href="<?cs var:$link ?>"><?cs var:$title ?></a>
- <?cs if:$keywords ?><div class="result-keywords"><?cs var:$keywords ?></div><?cs /if ?>
  <div class="result-body"><?cs var:$body ?></div>
  <span class="result-author">By <?cs var:$item.author ?></span>
  -  <span class="result-date"><?cs var:$item.datetime ?></span>
@@ -48,23 +47,20 @@ addEvent(window, 'load', function() { document.getElementById('q').focus()});
    <?cs each item=search.result ?> 
     <?cs if item.type == 1 ?>
      <?cs call result('['+item.data+']: '+item.shortmsg,
-                      item.keywords,
                       item.message,
                       item.changeset_href) ?>
     <?cs elif item.type == 2 ?>
      <?cs call result('#'+item.data+': '+item.title,
-                      item.keywords,
                       item.message,
                       item.ticket_href) ?>
     <?cs elif item.type == 3 ?>
      <?cs call result(item.data+': '+item.shortmsg,
-                      item.keywords,
                       item.message,
                       item.wiki_href) ?>
     <?cs /if ?>
    <?cs /each ?>
    </div>
-    <?cs set:url=$trac.href.search+'?q='+ $search.q ?>
+    <?cs set:url=$trac.href.search+'?q='+url_escape($search.q) ?>
     <?cs if $search.wiki ?><?cs set:url=$url+'&wiki=on' ?><?cs /if 
       ?><?cs if $search.ticket ?><?cs set:url=$url+'&ticket=on' ?><?cs /if 
       ?><?cs if $search.changeset ?><?cs set:url=$url+'&changeset=on'
@@ -86,12 +82,6 @@ Page</a>
  <div id="search-notfound">No matches found.</div>
 <?cs /if ?>
  </div> 
-
- <div id="help" style="text-align: left; margin-top: 2em">
-  <strong>Note:</strong> See <a href="<?cs var:$trac.href.wiki ?>TracSearch">TracSearch</a>  for help on searching.
- </div>
-
-
 </div>
 </div>
 <?cs include "footer.cs"?>

@@ -27,6 +27,7 @@ import difflib
 import StringIO
 
 import perm
+from Href import href
 from Module import Module
 from util import *
 
@@ -62,10 +63,6 @@ class CommonFormatter:
               r"""(?P<modulehref>((?P<modulename>bug|ticket|browser|source|repos|report|changeset|wiki):(?P<moduleargs>[^ ]*[^\., \)])))""",
               r"""(?P<wikilink>(^|(?<=[^A-Za-z]))[!]?[A-Z][a-z/]+(?:[A-Z][a-z/]+)+)""",
               r"""(?P<fancylink>\[(?P<fancyurl>([a-z]+:[^ ]+)) (?P<linkname>.*?)\])"""]
-
-    def __init__(self, hdf, href):
-        self.hdf = hdf
-        self.href = href
 
     def replace(self, fullmatch):
         for type, match in fullmatch.groupdict().items():
@@ -115,15 +112,15 @@ class CommonFormatter:
     
     def _tickethref_formatter(self, match, fullmatch):
         number = int(match[1:])
-        return '<a href="%s">#%d</a>' % (self.href.ticket(number), number)
+        return '<a href="%s">#%d</a>' % (href.ticket(number), number)
 
     def _changesethref_formatter(self, match, fullmatch):
         number = int(match[1:-1])
-        return '[<a href="%s">%d</a>]' % (self.href.changeset(number), number)
+        return '[<a href="%s">%d</a>]' % (href.changeset(number), number)
 
     def _reporthref_formatter(self, match, fullmatch):
         number = int(match[1:-1])
-        return '{<a href="%s">%d</a>}' % (self.href.report(number), number)
+        return '{<a href="%s">%d</a>}' % (href.report(number), number)
 
     def _expand_module_link(self, text):
         sep = text.find(':')
@@ -132,13 +129,13 @@ class CommonFormatter:
         module = text[:sep]
         args = text[sep+1:]
         if module in ['bug', 'ticket']:
-            return self.href.ticket(args), '%s:%s' % (module, args)
+            return href.ticket(args), '%s:%s' % (module, args)
         elif module == 'wiki':
-            return self.href.wiki(args), '%s:%s' % (module, args)
+            return href.wiki(args), '%s:%s' % (module, args)
         elif module == 'report':
-            return self.href.report(args), '%s:%s' % (module, args)
+            return href.report(args), '%s:%s' % (module, args)
         elif module == 'changeset':
-            return self.href.changeset(args), '%s:%s' % (module, args)
+            return href.changeset(args), '%s:%s' % (module, args)
         elif module in ['source', 'repos', 'browser']:
             rev = None
             match = re.search('([^#]+)#(.+)', args)
@@ -146,10 +143,9 @@ class CommonFormatter:
                 args = match.group(1)
                 rev = match.group(2)
             if rev:
-                return self.href.browser(args, rev), \
-                       '%s:%s#%s' % (module, args, rev)
+                return href.browser(args, rev), '%s:%s#%s' % (module, args, rev)
             else:
-                return self.href.browser(args), '%s:%s' % (module, args)
+                return href.browser(args), '%s:%s' % (module, args)
         else:
             return None, None
         
@@ -168,9 +164,9 @@ class CommonFormatter:
         global page_dict
         if page_dict and not page_dict.has_key(match):
             return '<a class="wiki-missing-page" href="%s">%s?</a>' % \
-                   (self.href.wiki(match), match)
+                   (href.wiki(match), match)
         else:
-            return '<a href="%s">%s</a>' % (self.href.wiki(match), match)
+            return '<a href="%s">%s</a>' % (href.wiki(match), match)
 
     def _url_formatter(self, match, fullmatch):
         return '<a href="%s">%s</a>' % (match, match)
@@ -243,6 +239,9 @@ class Formatter(CommonFormatter):
     builtin_processors = { 'html': html_processor,
                            'default': default_processor}
 
+    def __init__(self, hdf = None):
+        self.hdf = hdf
+
     def load_macro(self, name):
         macros = __import__('wikimacros.' + name, globals(),  locals(), [])
         module = getattr(macros, name)
@@ -272,7 +271,7 @@ class Formatter(CommonFormatter):
     def _svnimg_formatter(self, match, fullmatch):
         prefix_len = match.find(':') + 1
         return '<img src="%s" alt="%s" />' % \
-               (self.href.file(match[prefix_len:]), match[prefix_len:])
+               (href.file(match[prefix_len:]), match[prefix_len:])
 
     def _imgurl_formatter(self, match, fullmatch):
         return '<img src="%s" alt="%s" />' % (match, match)
@@ -480,14 +479,14 @@ class Formatter(CommonFormatter):
         self.close_indentation()
         self.close_list()
 
-def wiki_to_html(wikitext, hdf, href):
+def wiki_to_html(wikitext):
     out = StringIO.StringIO()
-    Formatter(hdf, href).format(wikitext, out)
+    Formatter().format(wikitext, out)
     return out.getvalue()
 
-def wiki_to_oneliner(wikitext, hdf, href):
+def wiki_to_oneliner(wikitext):
     out = StringIO.StringIO()
-    OneLinerFormatter(hdf, href).format(wikitext, out)
+    OneLinerFormatter().format(wikitext, out)
     return out.getvalue()
 
 
@@ -526,17 +525,17 @@ class Page:
         else:
             self.perm.assert_permission (perm.WIKI_MODIFY)
         cursor = self.db.cursor ()
-        cursor.execute ('SELECT MAX(version) FROM (SELECT MAX(version)+1 '
-                        'FROM wiki WHERE name=%s UNION ALL SELECT 1 '
-                        'AS version)', self.name)
+        cursor.execute ('SELECT MAX(version)+1 FROM '
+                        '(SELECT version FROM wiki WHERE name=%s '
+                        'UNION ALL SELECT 0 as version)', self.name)
         row = cursor.fetchone()
         new_version = int(row[0])
         
         cursor.execute ('INSERT INTO WIKI '
-                        '(name, version, time, author, ipnr, text) '
-                        'VALUES (%s, %s, %s, %s, %s, %s)',
+                        '(name, version, time, author, ipnr, locked, text) '
+                        'VALUES (%s, %s, %s, %s, %s, %s, %s)',
                         self.name, new_version, int(time.time()),
-                        self.authname, self.remote_addr, self.text)
+                        self.authname, self.remote_addr, 0, self.text)
         self.db.commit ()
 
 
@@ -552,8 +551,8 @@ class Wiki(Module):
             if row == None:
                 break
             n = 'wiki.title_index.%d' % i
-            self.req.hdf.setValue(n + '.title', row[0])
-            self.req.hdf.setValue(n + '.href', self.href.wiki(row[0]))
+            self.cgi.hdf.setValue(n + '.title', row[0])
+            self.cgi.hdf.setValue(n + '.href', href.wiki(row[0]))
             i = i + 1
 
     def generate_recent_changes(self):
@@ -566,9 +565,9 @@ class Wiki(Module):
                 break
             time_str = time.strftime('%x', time.localtime(int(row[1])))
             n = 'wiki.recent_changes.%d' % i
-            self.req.hdf.setValue(n + '.title', row[0])
-            self.req.hdf.setValue(n + '.href', self.href.wiki(row[0]))
-            self.req.hdf.setValue(n + '.time', time_str)
+            self.cgi.hdf.setValue(n + '.title', row[0])
+            self.cgi.hdf.setValue(n + '.href', href.wiki(row[0]))
+            self.cgi.hdf.setValue(n + '.time', time_str)
             i = i + 1
 
     def generate_history(self, pagename):
@@ -582,20 +581,18 @@ class Wiki(Module):
                 break
                    #        for row in cursor:
             elif i==0:
-                self.req.hdf.setValue('wiki.history', '1')
+                self.cgi.hdf.setValue('wiki.history', '1')
 
             time_str = time.strftime('%x', time.localtime(int(row[1])))
 
             n = 'wiki.history.%d' % i
-            self.req.hdf.setValue(n, str(i))
-            self.req.hdf.setValue(n+'.url',
-                                  self.href.wiki(pagename, str(row[0])))
-            self.req.hdf.setValue(n+'.diff_url',
-                                  self.href.wiki(pagename, str(row[0]), 1))
-            self.req.hdf.setValue(n+'.version', str(row[0]))
-            self.req.hdf.setValue(n+'.time', time_str)
-            self.req.hdf.setValue(n+'.author', str(row[2]))
-            self.req.hdf.setValue(n+'.ipnr', str(row[3]))
+            self.cgi.hdf.setValue(n, str(i))
+            self.cgi.hdf.setValue(n+'.url', href.wiki(pagename, str(row[0])))
+            self.cgi.hdf.setValue(n+'.diff_url', href.wiki(pagename, str(row[0]), 1))
+            self.cgi.hdf.setValue(n+'.version', str(row[0]))
+            self.cgi.hdf.setValue(n+'.time', time_str)
+            self.cgi.hdf.setValue(n+'.author', str(row[2]))
+            self.cgi.hdf.setValue(n+'.ipnr', str(row[3]))
             i = i + 1
 
     def generate_diff(self, pagename, version):
@@ -627,7 +624,7 @@ class Wiki(Module):
             raise TracError('Python >= 2.2 is required for diff support.')
         
         filter.close()
-        self.req.hdf.setValue('wiki.diff_output', out.getvalue())
+        self.cgi.hdf.setValue('wiki.diff_output', out.getvalue())
             
         
     def render(self):
@@ -642,57 +639,54 @@ class Wiki(Module):
 
         if name == 'TitleIndex':
             self.generate_title_index()
-            self.req.hdf.setValue('title', 'Title Index (wiki)')
+            self.cgi.hdf.setValue('title', 'Title Index (wiki)')
             return
         elif name == 'RecentChanges':
             self.generate_recent_changes()
-            self.req.hdf.setValue('title', 'Recent Changes (wiki)')
+            self.cgi.hdf.setValue('title', 'Recent Changes (wiki)')
             return
 
         if save:
-            self.req.hdf.setValue('wiki.action', 'save')
+            self.cgi.hdf.setValue('wiki.action', 'save')
         elif edit:
-            self.req.hdf.setValue('wiki.action', 'edit')
-            self.req.hdf.setValue('title', name + ' (wiki edit)')
+            self.cgi.hdf.setValue('wiki.action', 'edit')
+            self.cgi.hdf.setValue('title', name + ' (wiki edit)')
         elif preview:
-            self.req.hdf.setValue('wiki.action', 'preview')
-            self.req.hdf.setValue('title', name + ' (wiki preview)')
+            self.cgi.hdf.setValue('wiki.action', 'preview')
+            self.cgi.hdf.setValue('title', name + ' (wiki preview)')
         elif diff and version > 0:
-            self.req.hdf.setValue('wiki.action', 'diff')
+            self.cgi.hdf.setValue('wiki.action', 'diff')
             self.generate_diff(name, version)
-            self.req.hdf.setValue('title', name + ' (diff)')
+            self.cgi.hdf.setValue('title', name + ' (diff)')
         else:
             self.perm.assert_permission (perm.WIKI_VIEW)
             if self.args.has_key('text'):
                 del self.args['text']
-            self.req.hdf.setValue('wiki.action', 'view')
+            self.cgi.hdf.setValue('wiki.action', 'view')
             if name == 'WikiStart':
-                self.req.hdf.setValue('title', '')
+                self.cgi.hdf.setValue('title', '')
             else:
-                self.req.hdf.setValue('title', name + ' (wiki)')
+                self.cgi.hdf.setValue('title', name + ' (wiki)')
 
         self.page = Page(name, version, self.perm, self.db,
-                    self.req.authname, self.req.remote_addr)
+                    self.authname, self.remote_addr)
         if self.args.has_key('text'):
             self.page.set_content (self.args['text'])
         
         if save:
             self.page.commit ()
-            self.req.redirect(self.href.wiki(self.page.name))
+            redirect (href.wiki(self.page.name))
 
-        self.req.hdf.setValue('wiki.current_href',
-                              self.href.wiki(self.page.name))
-        self.req.hdf.setValue('wiki.page_name', self.page.name)
-        self.req.hdf.setValue('wiki.page_source', escape(self.page.text))
+        self.cgi.hdf.setValue('wiki.current_href', href.wiki(self.page.name))
+        self.cgi.hdf.setValue('wiki.page_name', self.page.name)
+        self.cgi.hdf.setValue('wiki.page_source', escape(self.page.text))
         out = StringIO.StringIO()
-        Formatter(self.req.hdf, self.href).format(self.page.text, out)
-        self.req.hdf.setValue('wiki.page_html', out.getvalue())
+        Formatter(self.cgi.hdf).format(self.page.text, out)
+        self.cgi.hdf.setValue('wiki.page_html', out.getvalue())
 
     def display_txt(self):
-        self.req.send_response(200)
-        self.req.send_header('Content-Type', 'text/plain')
-        self.req.end_headers()
-        self.req.write(self.page.text)
+        print "Content-type: text/plain\r\n"
+        print self.page.text
 
 ###
 ### A simple unit test

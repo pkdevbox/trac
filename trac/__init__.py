@@ -6,11 +6,10 @@ Edgewall Software
 U{http://trac.edgewall.com/}
 
 @author: Jonas Borgström <jonas@edgewall.com>
-@author: Daniel Lundin <daniel@edgewall.com>
 """
 __docformat__ = 'epytext en'
 
-__version__ = '0.7.pre'
+__version__ = '0.6.1'
 __url__ = 'http://trac.edgewall.com/'
 __copyright__ = '(C) 2003,2004 Edgewall Software'
 __license__ = 'GNU General Public License version 2'
@@ -40,3 +39,6 @@ Trac is brought to you by:
         Professional Linux and software development services
               Read more at http://www.edgewall.com/
 -----------------------------------------------------------------""" % __url__
+
+
+from trac import main

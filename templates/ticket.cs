@@ -29,7 +29,11 @@
  <?cs set numprops = $numprops + #1 ?>
 <?cs /def ?>
 
+
+
+
 <div id="tkt-main">
+
 <div id="tkt-ticket">
  <div id="tkt-date"><?cs var:ticket.opened ?></div>
 <h1 id="tkt-hdr">Ticket #<?cs var:ticket.id ?><?cs var:status ?><br />
@@ -50,7 +54,6 @@
    <?cs call:ticketprop("Version", ticket.version) ?>
    <?cs call:ticketprop("Resolution", ticket.resolution) ?>
    <?cs call:ticketprop("Milestone", ticket.milestone) ?>
-   <?cs call:ticketprop("Keywords", ticket.keywords) ?>
   </tr>
  </table>
  <hr class="hide" />
@@ -155,10 +158,6 @@ onfocus="document.getElementById('comment').focus()">Add/Change
    <br />
    <label for="severity" class="nt-label">Severity:</label>
    <?cs call:hdf_select(enums.severity, "severity", ticket.severity) ?>
-   <br />
-   <label for="keywords" class="nt-label">Keywords:</label>
-   <input type="text" id="keywords" name="keywords" size="25" class="textwidget" 
-          value="<?cs var:ticket.keywords ?>" />
    <br />&nbsp;
   </div>
  <div  id="nt-right" style="">
@@ -173,7 +172,7 @@ onfocus="document.getElementById('comment').focus()">Add/Change
   <br />
   <label for="cc" class="nt-label">Cc:</label>
    <input type="text" id="cc" name="cc" class="textwidget"
-          value="<?cs var:ticket.cc ?>" size="35" />
+          value="<?cs var:ticket.cc ?>" size="40" />
   </div>
  </div>
   </fieldset>

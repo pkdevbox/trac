@@ -80,11 +80,11 @@ class PermissionCache:
         cursor = db.cursor()
         if username == 'anonymous':
             cursor.execute ("SELECT action FROM permission "
-                            "WHERE username='anonymous'")
+                            "WHERE user='anonymous'")
         else:
             cursor.execute ("SELECT action FROM permission "
-                            "WHERE username='%s' OR username='anonymous' "
-                            "OR username = 'authenticated'" % username)
+                            "WHERE user='%s' OR user='anonymous' "
+                            "OR user = 'authenticated'" % username)
         while 1:
             row = cursor.fetchone()
             if not row:

@@ -30,7 +30,6 @@ import shlex
 import sqlite
 import StringIO
 import trac.siteconfig
-import trac.Environment
 
 def my_sum(list):
     """Python2.1 doesn't have sum()"""
@@ -44,18 +43,346 @@ class TracAdmin(cmd.Cmd):
     intro = ''
     license = trac.__license_long__
     credits = trac.__credits__
+
     doc_header = 'Trac Admin Console %(ver)s\n' \
                  'Available Commands:\n' \
                  % {'ver':trac.__version__ }
+
+    
     ruler = ''
     prompt = "Trac> "
-    __env = None
+
+    db_schema = """
+CREATE TABLE revision (
+        rev             integer PRIMARY KEY,
+        time            integer,
+        author          text,
+        message         text
+);
+CREATE TABLE node_change (
+        rev             integer,
+        name            text,
+        change          char(1),
+        UNIQUE(rev, name, change)
+);
+CREATE TABLE auth_cookie (
+        cookie          text,
+        name            text,
+        ipnr            text,
+        time            integer,
+        UNIQUE(cookie, name, ipnr)
+);
+CREATE TABLE enum (
+        type            text,
+        name            text,
+        value           text,
+        UNIQUE(name,type)
+);
+CREATE TABLE config (
+        section         text,
+        name            text,
+        value           text,
+        UNIQUE(section, name)
+);
+CREATE TABLE ticket (
+        id              integer PRIMARY KEY,
+        time            integer,        -- the time it was created
+        changetime      integer,
+        component       text,
+        severity        text,
+        priority        text,
+        owner           text,           -- who is this ticket assigned to
+        reporter        text,
+        cc              text,           -- email addresses to notify
+        url             text,           -- url related to this ticket
+        version         text,           -- 
+        milestone       text,           -- 
+        status          text,
+        resolution      text,
+        summary         text,           -- one-line summary
+        description     text            -- problem description (long)
+);
+CREATE TABLE ticket_change (
+        ticket          integer,
+        time            integer,
+        author          text,
+        field           text,
+        oldvalue        text,
+        newvalue        text
+);
+CREATE TABLE report (
+        id              integer PRIMARY KEY,
+        author          text,
+        title           text,
+        sql             text
+);
+CREATE TABLE permission (
+        user            text,           -- 
+        action          text            -- allowable activity
+);
+CREATE TABLE component (
+         name            text PRIMARY KEY,
+         owner           text
+);
+CREATE TABLE milestone (
+         name            text PRIMARY KEY,
+         time            integer
+);
+CREATE TABLE version (
+         name            text PRIMARY KEY,
+         time            integer
+);
+CREATE TABLE wiki (
+         name            text,
+         version                 integer,
+         time            integer,
+         author          text,
+         ipnr            text,
+         locked          integer,
+         text            text,
+         UNIQUE(name,version)
+);
+CREATE INDEX node_change_idx ON node_change(rev);
+CREATE INDEX ticket_change_idx  ON ticket_change(ticket, time);
+CREATE INDEX wiki_idx           ON wiki(name,version);
+"""
+
+    # Default data for database
+    # (table, (column1, column2), ((row1col1, row1col2), (row2col1, row2col2)))
+    db_data = (('component',
+                 ('name', 'owner'),
+                   (('component1', 'somebody'),
+                    ('component2', 'somebody'))),
+               ('milestone',
+                 ('name', 'time'),
+                   (('', 0), 
+                    ('milestone1', 0),
+                    ('milestone2', 0),
+                    ('milestone3', 0),
+                    ('milestone4', 0))),
+               ('version',
+                 ('name', 'time'),
+                   (('', 0),
+                    ('1.0', 0),
+                    ('2.0', 0))),
+               ('enum',
+                 ('type', 'name', 'value'),
+                   (('status', 'new', 1),
+                    ('status', 'assigned', 2),
+                    ('status', 'reopened', 3),
+                    ('status', 'closed', 4),
+                    ('resolution', 'fixed', 1),
+                    ('resolution', 'invalid', 2),
+                    ('resolution', 'wontfix', 3),
+                    ('resolution', 'duplicate', 4),
+                    ('resolution', 'worksforme', 5),
+                    ('severity', 'blocker', 1),
+                    ('severity', 'critical', 2),
+                    ('severity', 'major', 3),
+                    ('severity', 'normal', 4),
+                    ('severity', 'minor', 5),
+                    ('severity', 'trivial', 6),
+                    ('severity', 'enhancement', 7),
+                    ('priority', 'highest', 1),
+                    ('priority', 'high', 2),
+                    ('priority', 'normal', 3),
+                    ('priority', 'low', 4),
+                    ('priority', 'lowest', 5))),
+               ('permission',
+                 ('user', 'action'),
+                   (('anonymous', 'LOG_VIEW'),
+                    ('anonymous', 'FILE_VIEW'),
+                    ('anonymous', 'WIKI_VIEW'),
+                    ('anonymous', 'WIKI_CREATE'),
+                    ('anonymous', 'WIKI_MODIFY'),
+                    ('anonymous', 'SEARCH_VIEW'),
+                    ('anonymous', 'REPORT_VIEW'),
+                    ('anonymous', 'TICKET_VIEW'),
+                    ('anonymous', 'TICKET_CREATE'),
+                    ('anonymous', 'TICKET_MODIFY'),
+                    ('anonymous', 'BROWSER_VIEW'),
+                    ('anonymous', 'TIMELINE_VIEW'),
+                    ('anonymous', 'CHANGESET_VIEW'))),
+               ('config',
+                 ('section', 'name', 'value'),
+                   (('trac', 'database_version', '1'),
+                    ('general', 'htdocs_location', '/trac/'),
+                    ('general', 'repository_dir', '/var/svn/myrep'),
+                    ('general', 'templates_dir', '/usr/lib/trac/templates'),
+                    ('project', 'name', 'My Project'),
+                    ('project', 'descr', 'My example project'),
+                    ('project', 'url', 'http://example.com/'),
+                    ('ticket', 'default_version', ''),
+                    ('ticket', 'default_severity', 'normal'),
+                    ('ticket', 'default_priority', 'normal'),
+                    ('ticket', 'default_milestone', ''),
+                    ('ticket', 'default_component', 'component1'),
+                    ('header_logo', 'link', 'http://trac.edgewall.com/'),
+                    ('header_logo', 'src', 'trac_banner.png'),
+                    ('header_logo', 'alt', 'Trac'),
+                    ('header_logo', 'width', '236'),
+                    ('header_logo', 'height', '73'))),
+               ('report',
+                 ('id', 'author', 'title', 'sql'),
+
+# Active Ticket
+                   (('1', None, 'Active Tickets',
+"""
+-- List all active tickets by priority
+-- Color each row based on priority
+-- If a ticket has been accepted, a '*' is appended after the owner's name
+
+SELECT p.value AS __color__,
+       id AS ticket, summary, component, version, milestone, severity, 
+       (CASE status WHEN 'assigned' THEN owner||' *' ELSE owner END) AS owner,
+       time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE status IN ('new', 'assigned', 'reopened') 
+    AND p.name = t.priority AND p.type = 'priority'
+  ORDER BY p.value, milestone, severity, time
+"""),
+
+# Active Tickets By Version 
+                    ('2', None, 'Active Tickets by Version',
+"""
+-- This report shows how to color results based on priority,
+-- group results based on milestone. Last modification time, 
+-- description and reporter are included as hidden fields for 
+-- a useful RSS export.
+
+SELECT p.value AS __color__,
+       version AS __group__,
+       id AS ticket, summary, component, version, severity, 
+       (CASE status WHEN 'assigned' THEN owner||' *' ELSE owner END) AS owner,
+       time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE status IN ('new', 'assigned', 'reopened') 
+    AND p.name = t.priority AND p.type = 'priority'
+  ORDER BY (version IS NULL),version, p.value, severity, time
+"""),
+
+# Active Tickets By Milestone
+                    ('3', None, 'All Tickets by Milestone',
+"""
+-- This report shows how to color results based on priority,
+-- group results based on milestone. Last modification time, 
+-- description and reporter are included as hidden fields for 
+-- a useful RSS export.
+
+SELECT p.value AS __color__,
+       milestone||' Release' AS __group__,
+       id AS ticket, summary, component, version, severity, 
+       (CASE status WHEN 'assigned' THEN owner||' *' ELSE owner END) AS owner,
+       time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE status IN ('new', 'assigned', 'reopened') 
+    AND p.name = t.priority AND p.type = 'priority'
+  ORDER BY (milestone IS NULL),milestone, p.value, severity, time
+"""),
+
+# Assigned, Active Tickets by Owner
+                    ('4', None, 'Assigned, Active Tickets by Owner',
+"""
+-- List assigned tickets, group by ticket owner, sorted by priority
+
+SELECT p.value AS __color__,
+       owner AS __group__,
+       id AS ticket, summary, component, milestone, severity, time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t,enum p
+  WHERE status = 'assigned'
+    AND p.name=t.priority AND p.type='priority'
+  ORDER BY owner, p.value, severity, time
+"""),
+
+# Assigned, Active Tickets by Owner (Full Description)
+                    ('5', None, 'Assigned, Active Tickets by Owner (Full Description)',
+"""
+-- List tickets assigned, group by ticket owner
+-- This report demonstrates the use of full-row display.
+
+SELECT p.value AS __color__,
+       owner AS __group__,
+       id AS ticket, summary, component, milestone, severity, time AS created,
+       description AS _description_,
+       changetime AS _changetime, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE status = 'assigned'
+    AND p.name = t.priority AND p.type = 'priority'
+  ORDER BY owner, p.value, severity, time
+"""),
+
+# All Tickets By Milestone  (Including closed)
+                    ('6', None, 'All Tickets By Milestone  (Including closed)',
+"""
+-- A more complex example to show how to make advanced reports
+
+SELECT p.value AS __color__,
+       t.milestone AS __group__,
+       (CASE status 
+          WHEN 'closed' THEN 'color: #777; background: #ddd; border-color: #ccc;'
+          ELSE 
+            (CASE owner WHEN '$USER' THEN 'font-weight: bold' END)
+        END) AS __style__,
+       id AS ticket, summary, component, status, 
+       resolution,version, severity, priority, owner,
+       changetime AS modified,
+       time AS _time,reporter AS _reporter
+  FROM ticket t,enum p
+  WHERE p.name=t.priority AND p.type='priority'
+  ORDER BY (milestone IS NULL), milestone DESC, (status = 'closed'), 
+            (CASE status WHEN 'closed' THEN modified ELSE -p.value END) DESC
+"""),
+
+# My Tickets
+                    ('7', None, 'My Tickets',
+"""
+-- This report demonstrates the use of the automatically set 
+-- $USER dynamic variable, replaced with the username of the
+-- logged in user when executed.
+
+SELECT p.value AS __color__,
+       (CASE status WHEN 'assigned' THEN 'Assigned' ELSE 'Owned' END) AS __group__,
+       id AS ticket, summary, component, version, milestone,
+       severity, priority, time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE t.status IN ('new', 'assigned', 'reopened') 
+    AND p.name = t.priority AND p.type = 'priority' AND owner = '$USER'
+  ORDER BY (status = 'assigned') DESC, p.value, milestone, severity, time
+"""),
+
+# Active Tickets, Mine first
+                    ('8', None, 'Active Tickets, Mine first',
+"""
+-- List all active tickets by priority
+-- Show all tickets owned by the logged in user in a group first.
+
+SELECT p.value AS __color__,
+       (CASE owner 
+         WHEN '$USER' THEN 'My Tickets' 
+         ELSE 'Active Tickets' 
+        END) AS __group__,
+       id AS ticket, summary, component, version, milestone, severity, 
+       (CASE status WHEN 'assigned' THEN owner||' *' ELSE owner END) AS owner,
+       time AS created,
+       changetime AS _changetime, description AS _description, reporter AS _reporter
+  FROM ticket t, enum p
+  WHERE status IN ('new', 'assigned', 'reopened') 
+    AND p.name = t.priority AND p.type = 'priority'
+  ORDER BY (owner = '$USER') DESC, p.value, milestone, severity, time
+""")
+                    
+                    )))  # End of default values
     
-    def __init__(self,envdir=None):
+    def __init__(self,dbfile=None):
         cmd.Cmd.__init__(self)
         self.interactive = 0
-        if envdir:
-            self.env_set(envdir)
+        if dbfile:
+            self.db_set(dbfile)
 
     def docmd(self, cmd='help'):
         self.onecmd(cmd)
@@ -74,36 +401,32 @@ class TracAdmin(cmd.Cmd):
             except KeyboardInterrupt:
                 print "\n** Interrupt. Use 'quit' to exit **"
 
+
     ##
-    ## Environment methods
+    ## Database methods
     ##
 
-    def env_set(self, envname):
-        self.envname = envname
-        self.prompt = "Trac [%s]> " % self.envname
+    def db_set(self, dbfile):
+        self.dbname = dbfile
+        self.prompt = "Trac [%s]> " % self.dbname
 
-    def env_check(self):
-        try:
-            self.__db = trac.Environment.Environment(self.envname)
-        except:
-            return 0
-        return 1
+    def db_check(self):
+        if os.path.isfile(self.dbname):
+            f = open (self.dbname)
+            data = f.read (50)
+            if -1 == data.find("This file contains an SQLite"):
+                return 0
+            f.close()
+            return 1
+        return 0
         
-    def env_create(self):
-        try:
-            self.__env = trac.Environment.Environment (self.envname, create=1)
-            return self.__env
-        except Exception, e:
-            print 'Failed to create environment.', e
-            sys.exit(1)
-
     def db_open(self):
         try:
-            if not self.__env:
-                self.__env = trac.Environment.Environment (self.envname)
-            return self.__env.get_db_cnx()
+            if not self.db_check():
+                raise Exception
+            return sqlite.connect (self.dbname)
         except Exception, e:
-            print 'Failed to open environment.', e
+            print 'Failed to open/create database.', e
             sys.exit(1)
 
     def db_execsql (self, sql, cursor=None):
@@ -189,12 +512,12 @@ class TracAdmin(cmd.Cmd):
         data = self.db_execsql ("SELECT name FROM component")
         return [r[0] for r in data]
 
-#    def get_config_list (self):
-#        data = self.db_execsql ("SELECT section||'.'||name FROM config")
-#        return [r[0] for r in data]
+    def get_config_list (self):
+        data = self.db_execsql ("SELECT section||'.'||name FROM config")
+        return [r[0] for r in data]
 
     def get_user_list (self):
-        data = self.db_execsql ("SELECT DISTINCT username FROM permission")
+        data = self.db_execsql ("SELECT DISTINCT user FROM permission")
         return [r[0] for r in data]
 
     def get_wiki_list (self):
@@ -246,10 +569,8 @@ class TracAdmin(cmd.Cmd):
             except AttributeError:
                 print "No documentation found for '%s'" % arg[0]
         else:
-            docs = (self._help_about + self._help_help +
-                    self._help_initdb + self._help_upgrade +
-                    self._help_wiki +
-#                    self._help_config + self._help_wiki +
+            docs = (self._help_about + self._help_help + self._help_initdb +
+                    self._help_config + self._help_wiki +
                     self._help_permission + self._help_component +
                     self._help_priority + self._help_severity + 
                     self._help_version + self._help_milestone)
@@ -286,47 +607,49 @@ class TracAdmin(cmd.Cmd):
 
 
     ## Config
-#    _help_config = [('config list', 'Show current configuration'),
-#                     ('config set <option> <value>', 'Set config')]
+    _help_config = [('config list', 'Show current configuration'),
+                     ('config set <option> <value>', 'Set config')]
 
-#    def complete_config (self, text, line, begidx, endidx):
-#        if begidx > 10 and line.startswith('config set'):
-#            comp = self.get_config_list()
-#        else:
-#            comp = ['list','show','set']
-#        return self.word_complete(text, comp)
+    def complete_config (self, text, line, begidx, endidx):
+        if begidx > 10 and line.startswith('config set'):
+            comp = self.get_config_list()
+        else:
+            comp = ['list','show','set']
+        return self.word_complete(text, comp)
 
-#    def do_config(self, line):
-#        arg = self.arg_tokenize(line)        
-#        try:
-#            if arg[0] in ['list', 'show']:
-#                self._do_config_list()
-#            elif arg[0] == 'set' and len(arg)==3:
-#                name = arg[1]
-#                value = arg[2]
-#                self._do_config_set(name, value)
-#            else:    
-#                self.do_help('config')
-#        except Exception, e:
-#            print "Config %s failed:" % arg[0], e
+    def do_config(self, line):
+        arg = self.arg_tokenize(line)        
+        try:
+            if arg[0] in ['list', 'show']:
+                self._do_config_list()
+            elif arg[0] == 'set' and len(arg)==3:
+                name = arg[1]
+                value = arg[2]
+                self._do_config_set(name, value)
+            else:    
+                self.do_help('config')
+        except Exception, e:
+            print "Config %s failed:" % arg[0], e
 
-#    def _do_config_list(self):
-#        data = self.db_execsql ('SELECT section, name, value FROM config')
-#        ldata = [[r[0]+'.'+r[1],r[2]] for r in data]
-#        self.print_listing(['Name', 'Value'], ldata)
+    def _do_config_list(self):
+        data = self.db_execsql ('SELECT section, name, value FROM config')
+        ldata = [[r[0]+'.'+r[1],r[2]] for r in data]
+        self.print_listing(['Name', 'Value'], ldata)
 
-#    def _do_config_set(self, name, value):
-#        try:
-#            cfsection, cfname = name.split('.')
-#        except ValueError, e:
-#            raise Exception, "No such config option '%s'" % name
-#        data = self.db_execsql ("SELECT value FROM config WHERE "
-#                                    "section='%s' AND name='%s'" % (cfsection, cfname))
-#        if not data:
-#            raise Exception, "No such config option '%s'" % name
-#        self.db_execsql("UPDATE config SET value='%s' WHERE "
-#                        "section='%s' AND name='%s'" % (value, cfsection, cfname))
-#    ## Component
+    def _do_config_set(self, name, value):
+        try:
+            cfsection, cfname = name.split('.')
+        except ValueError, e:
+            raise Exception, "No such config option '%s'" % name
+        data = self.db_execsql ("SELECT value FROM config WHERE "
+                                    "section='%s' AND name='%s'" % (cfsection, cfname))
+        if not data:
+            raise Exception, "No such config option '%s'" % name
+        self.db_execsql("UPDATE config SET value='%s' WHERE "
+                        "section='%s' AND name='%s'" % (value, cfsection, cfname))
+        
+
+    ## Component
     _help_component = [('component list', 'Show available components'),
                        ('component add <name> <owner>', 'Add a new component'),
                        ('component rename <name> <newname>', 'Rename a component'),
@@ -417,7 +740,7 @@ class TracAdmin(cmd.Cmd):
             print 'Permission %s failed:' % arg[0], e
 
     def _do_permission_list(self):
-        data = self.db_execsql('SELECT username, action FROM permission') 
+        data = self.db_execsql('SELECT user, action FROM permission') 
         self.print_listing(['User', 'Action'], data)
         print
         print 'Available actions:'
@@ -433,18 +756,18 @@ class TracAdmin(cmd.Cmd):
         self.db_execsql("INSERT INTO permission VALUES('%s', '%s')" % (user, action))
 
     def _do_permission_remove(self, user, action):
-        self.db_execsql("DELETE FROM permission WHERE username='%s' AND action='%s'" %
+        self.db_execsql("DELETE FROM permission WHERE user='%s' AND action='%s'" %
                         (user, action))
 
     ## Initdb
     _help_initdb = [('initdb', 'Create and initializes a new database')]
 
     def do_initdb(self, line):
-        if self.env_check():
-            print "Initdb for '%s' failed.\nDoes aa environment already exist?" % self.envname
+        if self.db_check():
+            print "Initdb for '%s' failed.\nDoes a database already exist?" % self.dbname
             return
         try:
-            print 'Creating a new Trac project database at %s' % self.envname
+            print 'Creating a new Trac project database at %s' % self.dbname
             print
             print 'Trac will first ask a few questions about your environment '
             print 'in order to initalize and prepare the project database.'
@@ -501,25 +824,27 @@ class TracAdmin(cmd.Cmd):
             return
         try:
             print 'Creating and Initializing Project'
-            self.env_create()
+            cnx = sqlite.connect (self.dbname)
+            cursor = cnx.cursor ()
+            print ' Creating tables'
+            self.initdb_create_tables(cursor)
             print ' Inserting default data'
-            self.__env.insert_default_data()
-            
+            self.initdb_insert_default_data (cursor)
+            cnx.commit()
+
             print ' Configuring Project'
-            print '  trac.repository_dir'
-            self.__env.set_config('trac', 'repository_dir', repository_dir)
-            print '  trac.templates_dir'
-            self.__env.set_config('trac', 'templates_dir', templates_dir)
+            print '  general.repository_dir'
+            self._do_config_set('general.repository_dir', repository_dir)
+            print '  general.templates_dir'
+            self._do_config_set('general.templates_dir', templates_dir)
             print '  project.name'
-            self.__env.set_config('project', 'name', project_name)
-            self.__env.save_config()
+            self._do_config_set('project.name', project_name)
             # Add a few default wiki pages
             print ' Installing wiki pages'
-            cnx = self.__env.get_db_cnx()
-            cursor = cnx.cursor()
             self._do_wiki_load(trac.siteconfig.__default_wiki_dir__,cursor)
+            cnx.commit()
 
-            from trac import sync
+            from trac import sync, db
             print ' Indexing repository'
             sync.sync(cnx, rep, fs_ptr, pool)
             print 'Done.'
@@ -534,7 +859,7 @@ class TracAdmin(cmd.Cmd):
         print
         print ' Customize settings for your project using the command:'
         print
-        print '   trac-admin %s' % self.envname
+        print '   trac-admin %s' % self.dbname
         print
         print ' Don\'t forget, you also need to copy (or symlink) "trac/cgi-bin/trac.cgi"'
 	print ' to you web server\'s /cgi-bin/ directory, and then configure the server.'
@@ -543,7 +868,7 @@ class TracAdmin(cmd.Cmd):
 	print
 	print '    Alias /trac/ "/wherever/you/installed/trac/htdocs/"'
 	print '    <Location "/cgi-bin/trac.cgi">'
-        print '        SetEnv TRAC_ENV "%s"' % self.envname
+        print '        SetEnv TRAC_DB "%s"' % self.dbname
 	print '    </Location>'
 	print
 	print '    # You need something like this to authenticate users'
@@ -560,6 +885,25 @@ class TracAdmin(cmd.Cmd):
         print
         print 'Congratulations!'
         print
+
+    def initdb_create_tables (self, cursor):
+            cursor.execute (self.db_schema)
+
+    def initdb_insert_default_data (self, cursor):
+        def prep_value(v):
+            if v == None:
+                return 'NULL'
+            else:
+                return '"%s"' % v
+
+        for t in xrange(0, len(self.db_data)):
+            table = self.db_data[t][0]
+            cols = ','.join(self.db_data[t][1])
+            for row in self.db_data[t][2]:
+                values = ','.join(map(prep_value, row))
+                sql = "INSERT INTO %s (%s) VALUES(%s);" % (table, cols, values)
+                cursor.execute(sql)
+
 
     ## Wiki
     _help_wiki = [('wiki list', 'List wiki pages'),
@@ -623,19 +967,11 @@ class TracAdmin(cmd.Cmd):
         self.print_listing(['Title', 'Edits', 'Modified'], ldata)
 
     def _do_wiki_import(self, filename, title, cursor=None):
-        def to_utf8(text):
-            try:
-                u = unicode(text, 'utf-8')
-                return text
-            except UnicodeError:
-                u = unicode(text, 'iso-8859-15')
-                return u.encode('utf-8')
-
         if not os.path.isfile(filename):
             print "%s is not a file" % filename
             return
         f = open(filename,'r')
-        data=to_utf8(f.read())
+        data=f.read()
 
         # Make sure we don't insert the exact same page twice
         old = self.db_execsql("SELECT text FROM wiki "
@@ -873,45 +1209,6 @@ class TracAdmin(cmd.Cmd):
         data = self.db_execsql("DELETE FROM %(type)s" 
                                " WHERE name='%(name)s'" % d)
 
-    def _do_mile_ver_time(self, type, name, t):
-        seconds = None
-        if t == 'now':
-            seconds = str(int(time.time()))
-        else:
-            for format in ['%x %X', '%x, %X', '%X %x', '%X, %x', '%x']:
-                try:
-                    seconds = str(time.mktime(time.strptime(t, format)))
-                except ValueError:
-                    continue
-                break
-        if seconds:
-            data = self.db_execsql("UPDATE %s SET time='%s'" 
-                                   " WHERE name='%s'" % (type, seconds, name))
-        else:
-            print >> sys.stderr, 'Unknown time format'
-
-    _help_upgrade = [('upgrade', 'Upgrade database to current version.')]
-    def do_upgrade(self, line):
-        arg = self.arg_tokenize(line)
-        do_backup = 1
-        if arg[0] in ['-b', '--no-backup']:
-            do_backup = 0
-        db = self.db_open()
-        try:
-            curr = db.get_version()
-            latest = trac.db.__db_version__
-            if  curr < latest:
-                print "Upgrade: Upgrading %s to db version %i" % (db.db_name, latest)
-                if do_backup:
-                    print "Upgrade: Backup of old database saved in " \
-                          "%s.%i.bak" % (db.db_name, curr)
-                else:
-                    print "Upgrade: Backup disabled. Non-existant warranty voided."
-                db.upgrade(do_backup)
-            else:
-                print "Upgrade: Database is up to date, no upgrade necessary."
-        except Exception, e:
-            print "Upgrade failed: ",e
 
 
 ## ---------------------------------------------------------------------------
@@ -928,7 +1225,7 @@ def main():
         elif sys.argv[1] in ['-v','--version','about']:
             tracadm.docmd ("about")
         else:
-            tracadm.env_set(sys.argv[1])
+            tracadm.db_set(sys.argv[1])
             if len (sys.argv) > 2:
                 s_args = ' '.join(["'%s'" % c for c in sys.argv[3:]])
                 command = sys.argv[2] + ' ' +s_args

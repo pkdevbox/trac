@@ -24,14 +24,19 @@ import time
 import StringIO
 from types import *
 
-TRUE =  ['yes', '1', 1, 'true',  'on',  'aye']
-FALSE = ['no',  '0', 0, 'false', 'off', 'nay']
-
 def svn_date_to_string(date, pool):
     from svn import util
     date_seconds = util.svn_time_from_cstring(date,
                                               pool) / 1000000
     return time.asctime(time.localtime(date_seconds))[4:-8]
+
+def redirect (url):
+    """
+    redirects the user agent to a different url
+    """
+    import neo_cgi
+    neo_cgi.CGI().redirectUri(url)
+    sys.exit(0)
 
 def enum_selector (db, sql, name, selected=None,default_empty=0):
     out = StringIO.StringIO()
@@ -127,6 +132,14 @@ def hdf_add_if_missing(hdf, prefix, value):
         i += 1
     hdf.setValue(prefix + '.%d.name' % i, value)
         
+def utf8_to_iso(text):
+    """Re-encode a UTF-8 unicode string to ISO8859-15"""
+    try:
+        utf = unicode(text, 'utf-8')
+        return  utf.encode('iso-8859-15')
+    except UnicodeError:
+        return text
+    
 def shorten_line(text):
     if not text:
         return text
@@ -139,11 +152,6 @@ def shorten_line(text):
             i = maxlen
         shortline = text[:i]+' ...'
     return shortline
-
-def hex_entropy(bytes=32):
-    import md5
-    import random
-    return md5.md5(str(random.random() + time.time())).hexdigest()[:bytes]
 
 class TracError(Exception):
     def __init__(self, message, title=None, show_traceback=0):

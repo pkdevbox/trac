@@ -20,31 +20,29 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import time
-import util
+import random
 
 class Authenticator:
-    def __init__(self, db, req):
+    def __init__(self, db, cookie, remote_addr):
         self.db = db
-        self.authname = 'anonymous'
-        if 'trac_auth' in req.incookie:
-            cursor = db.cursor ()
-            cookie = req.incookie['trac_auth'].value
-            cursor.execute ("SELECT name FROM auth_cookie "
-                            "WHERE cookie='%s' AND ipnr='%s'"
-                            % (cookie, req.remote_addr))
-            if cursor.rowcount >= 1:
-                self.authname = cursor.fetchone()[0]
+        cursor = db.cursor ()
+        cursor.execute ("SELECT name FROM auth_cookie "
+                        "WHERE cookie='%s' AND ipnr='%s'"
+                        % (cookie, remote_addr))
+        if cursor.rowcount >= 1:
+            self.authname = cursor.fetchone()[0]
+        else:
+            self.authname = 'anonymous'
 
-    def login(self, req):
+    def login(self, remote_user, remote_addr):
         cursor = self.db.cursor ()
-        cookie = util.hex_entropy()
+        cookie = str(random.random())
         cursor.execute ("INSERT INTO auth_cookie (cookie, name, ipnr, time)" +
                         "VALUES ('%s', '%s', '%s', %d)"
-                        % (cookie, req.remote_user, req.remote_addr, int(time.time())));
+                        % (cookie, remote_user, remote_addr, int(time.time())));
         self.db.commit ()
-        self.authname = req.remote_user
-        req.outcookie['trac_auth'] = cookie
-        req.outcookie['trac_auth']['path'] = req.cgi_location
+        self.authname = remote_user
+        return cookie
 
     def logout(self):
         cursor = self.db.cursor ()

@@ -4,9 +4,8 @@ body {
   margin: 10px;
   padding: 0;
   color: #000;
-  font: normal 13px arial,verdana,'Bitstream Vera Sans',helvetica, sans-serif;
+  font: normal 13px 'Bitstream Vera Sans', Verdana, Helvetica, Arial, sans-serif;
 }
-h1,h1,h2,h3,h4 { font-weight:bold; letter-spacing:-0.028em; }
 .hide { display: none; }
 .tiny { font-size: 1px; height: 1px }
 hr { border: none;  border-top: 1px solid #ccc; margin: 2em 0; }
@@ -28,7 +27,7 @@ span.underline { text-decoration: underline; }
   margin-top: .5em;
 }
 /* Forms */
-input,textarea,select { background: #fff; margin: 2px;}
+input,textarea,select { background: #fff; }
 input[type="submit"]:hover,input[type="reset"]:hover,a.fake-button:hover { background: #ccb; }
 input[type="submit"],input[type="reset"],.fake-button,a.fake-button {
  background: #eee;
@@ -63,35 +62,17 @@ legend {
  font-weight: bold; 
 }
 /* Header */
-#header { 
- position: relative;
- width: 100%;
- float: left;
-}
-#header-right { 
- position: absolute;
- bottom: 0px;
- right: 0px;
-}
-#search { 
- text-align: right;
- margin: 1em 0;
- font-size: 10px;
-}
-#search input { padding: 1px;  font-size: 10px; }
-#search label { display: none; }
-#hdrlogo { }
+#header { }
 #hdrlogo,#hdrlogo img,#hdrlogo:hover {
- float: left;
- margin-bottom: 2px;
- border: none;
+  background: transparent;
+  margin-bottom: -1.25em;
+  border: none;
 }
-#header-links, #subheader-links { font-size: 11px; }
-#navbar {
-  font: normal 10px verdana, 'Bitstream Vera Sans', Helvetica, Arial, sans-serif; 
+#header-links, #subheader-links, #navbar {
+  font: normal 11px Verdana, 'Bitstream Vera Sans', Helvetica, Arial, sans-serif;
   color: #000;
 }
-#header-links,#subheader-links { padding: 2px 0em; text-align: right; }
+#header-links, #subheader-links { padding: 2px 0em; text-align: right; }
 #subheader-links a,#header-links a { padding: 0 .5em; }
 .subheader-sublinks { 
   background: #f7f7f7;
@@ -120,7 +101,6 @@ legend {
 
 /* Navbar  */
 #navbar {
-  clear: left;
   border: 1px solid #999;
   margin: .15em 0;
   min-width: 500px;          
@@ -131,22 +111,23 @@ legend {
 a.navbar-link, a.navbar-link-active,a.navbar-link-active:hover,a.navbar-link:visited,a.navbar-link-active:visited {
   display: block;
   float: left;
-  height: 14px;
   border: none;
   border-left: 1px solid #999;
   border-right: 1px solid #fff;
-  padding: 1px 15px;
+  margin: 0;
+  height: 14px;
+  padding: .1em 1.5em;
   color: #000;
   /* NOTE: Changes dynamically augmented in header.cs */
 }
 a.navbar-link-active,a.navbar-link-active:visited { 
   font-weight: bold;
   background-color: #ddd;
-  border-top: none;
-  border-right: none;
+  border-right: 1px solid #ddd;
+
 }
 a.navbar-link:hover { 
-  background-color: #ddc;
+  background-color: #ddc; 
   border-right: 1px solid #ddd;
 }
 #page-content { clear: none; }

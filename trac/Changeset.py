@@ -21,6 +21,7 @@
 
 from util import *
 from Module import Module
+from Href import href
 from Wiki import wiki_to_html
 import perm
 
@@ -199,7 +200,7 @@ class Changeset (Module):
                 break
             info.append({'name': row['name'],
                          'change': row['change'],
-                         'log_href': self.href.log(row['name'])})
+                         'log_href': href.log(row['name'])})
         return info
         
     def render (self):
@@ -212,21 +213,21 @@ class Changeset (Module):
 
         change_info = self.get_change_info (self.rev)
         for item in change_info:
-            item['log_href'] = self.href.log(item['name'])
+            item['log_href'] = href.log(item['name'])
 
         changeset_info = self.get_changeset_info (self.rev)
         
-        self.req.hdf.setValue('changeset.time',
+        self.cgi.hdf.setValue('changeset.time',
                               time.asctime (time.localtime(int(changeset_info['time']))))
         author = changeset_info['author'] or 'None'
         # Just recode this to iso8859-15 until we have propper unicode
         # support
-        self.req.hdf.setValue('changeset.author', author)
-        self.req.hdf.setValue('changeset.message', wiki_to_html(changeset_info['message'], self.req.hdf, self.href))
-        self.req.hdf.setValue('changeset.revision', str(self.rev))
+        self.cgi.hdf.setValue('changeset.author', utf8_to_iso(author))
+        self.cgi.hdf.setValue('changeset.message', wiki_to_html(utf8_to_iso(changeset_info['message'])))
+        self.cgi.hdf.setValue('changeset.revision', str(self.rev))
 
-        add_dictlist_to_hdf(change_info, self.req.hdf, 'changeset.changes')
-        self.req.hdf.setValue('title', '[%d] (changeset)' % self.rev)
+        add_dictlist_to_hdf(change_info, self.cgi.hdf, 'changeset.changes')
+        self.cgi.hdf.setValue('title', '[%d] (changeset)' % self.rev)
         
         difftext = render_diffs(self.fs_ptr, int(self.rev), self.pool)
-        self.req.hdf.setValue('changeset.diff_output', difftext)
+        self.cgi.hdf.setValue('changeset.diff_output', difftext)

@@ -25,10 +25,7 @@
     <label for="changeset">Repository checkins</label><br />
     <input type="checkbox" id="wiki" name="wiki"
            <?cs if:timeline.wiki ?>checked="checked"<?cs /if ?> />
-    <label for="wiki">Wiki changes</label><br />
-    <input type="checkbox" id="milestone" name="milestone"
-           <?cs if:timeline.milestone ?>checked="checked"<?cs /if ?> />
-    <label for="milestone">Milestones</label>
+   <label for="wiki">Wiki changes</label>
   </div>
   <div id="timeline-prefs-btns">
     <input type="submit" value="Update" /> 
@@ -61,27 +58,24 @@
   <div class="tl-day">
   <?cs if:item.type == #1 ?><!-- Changeset -->
     <?cs call:tlitem(item.changeset_href, 'changeset.png',
-      'Changeset <b class="tl-item-link">['+$item.idata+']</b>
+      'Changeset <b class="tl-item-link">['+$item.data+']</b>
        by '+$item.author, item.message) ?>
     <?cs elif:item.type == #2 ?><!-- New ticket -->
       <?cs call:tlitem(item.ticket_href, 'newticket.png',
-        'Ticket <b class="tl-item-link">#'+$item.idata+'</b>
+        'Ticket <b class="tl-item-link">#'+$item.data+'</b>
          created by '+$item.author, item.message) ?>
     <?cs elif:item.type == #3 ?><!-- Closed ticket -->
       <?cs call:tlitem(item.ticket_href, 'closedticket.png',
-        'Ticket <b class="tl-item-link">#'+$item.idata+'</b>
+        'Ticket <b class="tl-item-link">#'+$item.data+'</b>
          resolved by '+$item.author, '') ?>
     <?cs elif:item.type == #4 ?><!-- Reopened ticket -->
       <?cs call:tlitem(item.ticket_href, 'newticket.png',
-        'Ticket <b class="tl-item-link">#'+$item.idata+'</b>
+        'Ticket <b class="tl-item-link">#'+$item.data+'</b>
          reopened by '+$item.author, '') ?>
     <?cs elif:item.type == #5 ?><!-- Wiki change -->
       <?cs call:tlitem(item.wiki_href, 'wiki.png',
-        '<b class="tl-item-link">'+$item.tdata+'</b>
+        '<b class="tl-item-link">'+$item.data+'</b>
          edited by '+$item.author, '') ?>
-    <?cs elif:item.type == #6 ?><!-- milestone -->
-      <?cs call:tlitem('', 'milestone.png',
-	 '<b class="tl-item-link">Milestone '+$item.tdata+' reached</b>', '') ?>
     <?cs /if ?>
   </div>
 <?cs /each ?>

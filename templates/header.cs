@@ -34,9 +34,6 @@
       /* Dynamically/template-generated CSS below */
       #navbar { background: url("<?cs var:$htdocs_location ?>/topbar_gradient.png") top left #eee }  
       a.navbar-link { background: url(<?cs var:$htdocs_location ?>/dots.gif) top left no-repeat; }
-      a.navbar-link-active,a.navbar-link-active:visited { background:
-url("<?cs var:$htdocs_location ?>/topbar_active.png") top left repeat-x #ddd;}  
-
        -->
     </style>
     <script src="<?cs var:$htdocs_location ?>/trac.js" type="text/javascript"></script>
@@ -49,18 +46,7 @@ url("<?cs var:$htdocs_location ?>/topbar_active.png") top left repeat-x #ddd;}
       height="<?cs var:header_logo.height ?>" 
       alt="<?cs var:header_logo.alt ?>" /></a>
   <hr class="hide"/>
-  <div id="header-right">
-   <form id="search" action="<?cs var:trac.href.search ?>" method="get">
-    <div>
-     <label for="proj-search">Search:</label>
-     <input type="text" id="proj-search" name="q" size="10" value="" />
-     <input type="submit" value="search" />
-     <input type="hidden" name="wiki" value="on" />
-     <input type="hidden" name="changeset" value="on" />
-     <input type="hidden" name="ticket" value="on" />
-    </div>
-   </form>
-   <div id="header-links">
+  <div id="header-links">
     <?cs if $trac.authname == "anonymous" ?>
       <a href="<?cs var:trac.href.login ?>" 
          class="navbar-link-right">Login</a>&nbsp;| 
@@ -73,33 +59,21 @@ url("<?cs var:$htdocs_location ?>/topbar_active.png") top left repeat-x #ddd;}
        class="navbar-link-right"> Help/Guide </a>&nbsp;| 
     <a href="<?cs var:trac.href.about ?>" 
        class="navbar-link-right"> About Trac </a>
-   </div>
   </div>
- </div>
-
   <div id="navbar">
     <div id="navbar-links">
       <?cs call:navlink("Wiki", $trac.href.wiki, "wiki", 
                         "WIKI_VIEW") ?>
+      <?cs call:navlink("Browser", $trac.href.browser, "browser", 
+                        "BROWSER_VIEW") ?>
       <?cs call:navlink("Timeline", $trac.href.timeline, "timeline", 
                         "TIMELINE_VIEW") ?>
-      <?cs if $trac.active_module == "log" ?>	
-    	<?cs set:$browser_view="log" ?>
-      <?cs else  ?>	
-    	<?cs set:$browser_view="browser" ?>
-      <?cs /if  ?>	
-      <?cs call:navlink("Browse Source", $trac.href.browser, $browser_view, 
-                        "BROWSER_VIEW") ?>
-      <?cs if $trac.active_module == "ticket" ?>	
-    	<?cs set:$ticket_view="ticket" ?>
-      <?cs else  ?>	
-    	<?cs set:$ticket_view="report" ?>
-      <?cs /if  ?>	
-      <?cs call:navlink("View Tickets", $trac.href.report, $ticket_view, 
+      <?cs call:navlink("Reports", $trac.href.report, "report", 
                         "REPORT_VIEW") ?>
-      <?cs call:navlink("New Ticket", $trac.href.newticket, "newticket", 
-                        "TICKET_CREATE") ?>
       <?cs call:navlink("Search", $trac.href.search, "search", 
                         "SEARCH_VIEW") ?>
+      <?cs call:navlink("New Ticket", $trac.href.newticket, "newticket", 
+                        "TICKET_CREATE") ?>
     </div>
   </div>
+</div>

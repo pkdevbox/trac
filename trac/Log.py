@@ -22,9 +22,12 @@
 import time
 
 from util import *
+from Href import href
 from Module import Module
 from Wiki import wiki_to_oneliner
 import perm
+import neo_cgi
+import neo_cs
 
 from svn import util, repos, fs, core
 
@@ -33,19 +36,20 @@ class Log (Module):
     template_rss_name = 'log_rss.cs'
 
     def log_receiver (self, baton, rev, author, date, log, pool):
+        log = utf8_to_iso(log)
         shortlog = shorten_line(log)
         t = util.svn_time_from_cstring(date, pool) / 1000000
         gmt = time.gmtime(t)
         item = {
             'rev'    : rev,
-            'author' : author or 'None',
+            'author' : utf8_to_iso(author or 'None'),
             'date'   : svn_date_to_string (date, pool),
             'gmt'    : time.strftime('%a, %d %b %Y %H:%M:%S GMT', gmt),
             'log.raw'    : escape(log),
-            'log'    : wiki_to_oneliner(log, self.req.hdf, self.href),
+            'log'    : wiki_to_oneliner(log),
             'shortlog' : escape(shortlog),
-            'file_href': self.href.file(self.path, rev),
-            'changeset_href': self.href.changeset(rev)
+            'file_href': href.file(self.path, rev),
+            'changeset_href': href.changeset(rev)
             }
         self.log_info.insert (0, item)
 
@@ -59,19 +63,19 @@ class Log (Module):
     def generate_path_links(self):
         list = self.path.split('/')
         path = '/'
-        self.req.hdf.setValue('log.filename', list[-1])
-        self.req.hdf.setValue('log.href' , self.href.log(self.path))
-        self.req.hdf.setValue('log.path.0', '[root]')
-        self.req.hdf.setValue('log.path.0.url' , self.href.browser(path))
+        self.cgi.hdf.setValue('log.filename', list[-1])
+        self.cgi.hdf.setValue('log.href' , href.log(self.path))
+        self.cgi.hdf.setValue('log.path.0', '[root]')
+        self.cgi.hdf.setValue('log.path.0.url' , href.browser(path))
         i = 0
         for part in list[:-1]:
             i = i + 1
             if part == '':
                 break
             path = path + part + '/'
-            self.req.hdf.setValue('log.path.%d' % i, part)
-            self.req.hdf.setValue('log.path.%d.url' % i,
-                                  self.href.browser(path))
+            self.cgi.hdf.setValue('log.path.%d' % i, part)
+            self.cgi.hdf.setValue('log.path.%d.url' % i,
+                                  href.browser(path))
 
     def render (self):
         self.perm.assert_permission (perm.LOG_VIEW)
@@ -91,11 +95,16 @@ class Log (Module):
                             % self.path, 'Nonexistent path')
         else:
             info = self.get_info (self.path)
-            add_dictlist_to_hdf(info, self.req.hdf, 'log.items')
+            add_dictlist_to_hdf(info, self.cgi.hdf, 'log.items')
 
         self.generate_path_links()
-        self.req.hdf.setValue('title', self.path + ' (log)')
-        self.req.hdf.setValue('log.path', self.path)
+        self.cgi.hdf.setValue('title', self.path + ' (log)')
+        self.cgi.hdf.setValue('log.path', self.path)
+
 
     def display_rss (self):
-        self.req.display(self.template_rss_name, 'text/xml')
+        cs = neo_cs.CS(self.cgi.hdf)
+        cs.parseFile(self.template_rss_name)
+        print "Content-type: text/xml\r\n"
+        print cs.render()
+

@@ -60,15 +60,13 @@ class File (Module):
         date_seconds = util.svn_time_from_cstring(date, self.pool) / 1000000
         date = strftime("%a, %d %b %Y %H:%M:%S GMT", gmtime(date_seconds))
 
-        self.req.send_response(200)
-        self.req.send_header('Last-Modified', date)
-        self.req.send_header('Content-Length', str(size))
-        self.req.send_header('Content-Type', mime_type)
-        self.req.end_headers()
+        sys.stdout.write('Last-Modified: %s\r\n' % date)
+        sys.stdout.write('Content-Length: %d\r\n' % size) 
+        sys.stdout.write('Content-Type: %s\r\n\r\n' % mime_type)
        
         file = fs.file_contents(root, path, self.pool)
         while 1:
             data = util.svn_stream_read(file, self.CHUNK_SIZE)
             if not data:
                 break
-            self.req.write(data.replace('\r',''))
+            sys.stdout.write(data.replace('\r',''))

@@ -22,50 +22,18 @@
 import os,os.path
 import time
 import re
-import cgi
-import types
 
 from util import *
+from Href import href
 from Module import Module
 from Wiki import wiki_to_html
 import perm
+import neo_cgi
+import neo_cs
 
 dynvars_re = re.compile('\$([A-Z]+)')
 dynvars_disallowed_var_chars_re = re.compile('[^A-Z0-9_]')
 dynvars_disallowed_value_chars_re = re.compile('[^a-zA-Z0-9-_@.,]')
-
-try:
-    _StringTypes = [types.StringType, types.UnicodeType]
-except AttributeError:
-    _StringTypes = [types.StringType]
-
-class ColumnSorter:
-
-    def __init__(self, columnIndex, asc=1):
-        self.columnIndex = columnIndex
-        self.asc = asc
-
-    def sort(self, x, y):
-        const = -1
-        if not self.asc:
-            const = 1
-
-        # make sure to ignore case in comparisons
-        realX = x[self.columnIndex]
-        if type(realX) in _StringTypes:
-            realX = realX.lower()
-        realY = y[self.columnIndex]
-        if type(realY) in _StringTypes:
-            realY = realY.lower()
-
-        result = 0
-        if realX < realY:
-            result = const * 1
-        elif realX > realY:
-            result = const * -1
-
-        return result
-
 
 class Report (Module):
     template_name = 'report.cs'
@@ -81,7 +49,7 @@ class Report (Module):
             arg = args[aname]
         except KeyError:
             raise TracError("Dynamic variable '$%s' not defined." % aname)
-        self.req.hdf.setValue('report.var.'+aname , arg)
+        self.cgi.hdf.setValue('report.var.'+aname , arg)
         sql = m.string[:m.start()] + arg + m.string[m.end():]
         return self.sql_sub_vars(sql, args)
     
@@ -105,13 +73,9 @@ class Report (Module):
                 title = row[0]
                 sql   = self.sql_sub_vars(row[1], args)
                 cursor.execute(sql)
-
-                if sql.find('__group__') == -1:
-                    self.req.hdf.setValue('report.sorting.enabled', '1')
-
             except Exception, e:
                 self.error = e
-                self.req.hdf.setValue('report.message',
+                self.cgi.hdf.setValue('report.message',
                                       'report failed: %s' % e)
                 return None
 
@@ -131,7 +95,7 @@ class Report (Module):
                         'VALUES (NULL, %s, %s)', title, sql)
         id = self.db.db.sqlite_last_insert_rowid()
         self.db.commit()
-        self.req.redirect(self.href.report(id))
+        redirect (href.report(id))
 
     def delete_report(self, id):
         self.perm.assert_permission(perm.REPORT_DELETE)
@@ -139,7 +103,7 @@ class Report (Module):
         cursor = self.db.cursor ()
         cursor.execute('DELETE FROM report WHERE id=%s', id)
         self.db.commit()
-        self.req.redirect(self.href.report())
+        redirect(href.report())
 
     def commit_changes(self, id):
         """
@@ -154,7 +118,7 @@ class Report (Module):
         cursor.execute('UPDATE report SET title=%s, sql=%s WHERE id=%s',
                        title, sql, id)
         self.db.commit()
-        self.req.redirect(self.href.report(id))
+        redirect(href.report(id))
 
     def render_report_editor(self, id, action='commit', copy=0):
         self.perm.assert_permission(perm.REPORT_MODIFY)
@@ -171,11 +135,11 @@ class Report (Module):
         if copy:
             title += ' copy'
         
-        self.req.hdf.setValue('report.mode', 'editor')
-        self.req.hdf.setValue('report.title', title)
-        self.req.hdf.setValue('report.id', str(id))
-        self.req.hdf.setValue('report.action', action)
-        self.req.hdf.setValue('report.sql', sql)
+        self.cgi.hdf.setValue('report.mode', 'editor')
+        self.cgi.hdf.setValue('report.title', title)
+        self.cgi.hdf.setValue('report.id', str(id))
+        self.cgi.hdf.setValue('report.action', action)
+        self.cgi.hdf.setValue('report.sql', sql)
     
     def render_report_list(self, id, args={}):
         """
@@ -183,68 +147,48 @@ class Report (Module):
         from the database and presents it as a html table.
         """
         if self.perm.has_permission(perm.REPORT_CREATE):
-            self.req.hdf.setValue('report.create_href',
-                                  self.href.report(None, 'new'))
+            self.cgi.hdf.setValue('report.create_href',
+                                  href.report(None, 'new'))
             
         if id != -1:
             if self.perm.has_permission(perm.REPORT_MODIFY):
-                self.req.hdf.setValue('report.edit_href',
-                                      self.href.report(id, 'edit'))
+                self.cgi.hdf.setValue('report.edit_href',
+                                      href.report(id, 'edit'))
             if self.perm.has_permission(perm.REPORT_CREATE):
-                self.req.hdf.setValue('report.copy_href',
-                                      self.href.report(id, 'copy'))
+                self.cgi.hdf.setValue('report.copy_href',
+                                      href.report(id, 'copy'))
             if self.perm.has_permission(perm.REPORT_DELETE):
-                self.req.hdf.setValue('report.delete_href',
-                                      self.href.report(id, 'delete'))
+                self.cgi.hdf.setValue('report.delete_href',
+                                      href.report(id, 'delete'))
 
-        self.req.hdf.setValue('report.mode', 'list')
+        self.cgi.hdf.setValue('report.mode', 'list')
         info = self.get_info(id, args)
         if not info:
             return
         [self.cols, self.rows, title] = info
         self.error = None
         
-        self.req.hdf.setValue('title', title + ' (report)')
-        self.req.hdf.setValue('report.title', title)
-        self.req.hdf.setValue('report.id', str(id))
+        self.cgi.hdf.setValue('title', title + ' (report)')
+        self.cgi.hdf.setValue('report.title', title)
+        self.cgi.hdf.setValue('report.id', str(id))
 
         # Convert the header info to HDF-format
         idx = 0
         for col in self.cols:
             title=col[0].capitalize()
             prefix = 'report.headers.%d' % idx
-            self.req.hdf.setValue('%s.real' % prefix, col[0])
             if title[:2] == '__' and title[-2:] == '__':
                 continue
             elif title[0] == '_' and title[-1] == '_':
                 title = title[1:-1].capitalize()
-                self.req.hdf.setValue(prefix + '.fullrow', '1')
+                self.cgi.hdf.setValue(prefix + '.fullrow', '1')
             elif title[0] == '_':
                 continue
             elif title[-1] == '_':
                 title = title[:-1]
-                self.req.hdf.setValue(prefix + '.breakrow', '1')
-            self.req.hdf.setValue(prefix, title)
+                self.cgi.hdf.setValue(prefix + '.breakrow', '1')
+            self.cgi.hdf.setValue(prefix, title)
             idx = idx + 1
-
-        if self.args.has_key('sort'):
-            sortCol = self.args['sort']
-            colIndex = None
-            x = 0
-            while colIndex == None and x < len(self.cols):
-                if self.cols[x][0] == sortCol:
-                    colIndex = x
-                x = x + 1
-            if colIndex != None:
-                k = 'report.headers.%d.asc' % (colIndex-1)
-                if self.args.has_key('asc'):
-                    sorter = ColumnSorter(colIndex, int(self.args['asc']))
-                    self.req.hdf.setValue(k, self.args['asc'])
-                else:
-                    sorter = ColumnSorter(colIndex)
-                    self.req.hdf.setValue(k, '1')
-                self.rows.sort(sorter.sort)
-
 
         # Convert the rows and cells to HDF-format
         row_idx = 0
@@ -261,7 +205,7 @@ class Report (Module):
                 elif (column[0] == '_' and column[-1] == '_'):
                     value['fullrow'] = 1
                     column = column[1:-1]
-                    self.req.hdf.setValue(prefix + '.breakrow', '1')
+                    self.cgi.hdf.setValue(prefix + '.breakrow', '1')
                 elif column[-1] == '_':
                     value['breakrow'] = 1
                     value['breakafter'] = 1
@@ -270,12 +214,11 @@ class Report (Module):
                     value['hidehtml'] = 1
                     column = column[1:]
                 if column in ['ticket', '#']:
-                    value['ticket_href'] = self.href.ticket(cell)
+                    value['ticket_href'] = href.ticket(cell)
                 elif column == 'description':
-                    value['parsed'] = wiki_to_html(cell, self.req.hdf,
-                                                   self.href)
+                    value['parsed'] = wiki_to_html(cell)
                 elif column == 'report':
-                    value['report_href'] = self.href.report(cell)
+                    value['report_href'] = href.report(cell)
                 elif column in ['time', 'date','changetime', 'created', 'modified']:
                     t = time.localtime(int(cell))
                     value['date'] = time.strftime('%x', t)
@@ -284,9 +227,9 @@ class Report (Module):
                     value['gmt'] = time.strftime('%a, %d %b %Y %H:%M:%S GMT',
                                                  time.gmtime(int(cell)))
                 prefix = 'report.items.%d.%s' % (row_idx, str(column))
-                self.req.hdf.setValue(prefix, escape(str(cell)))
+                self.cgi.hdf.setValue(prefix, escape(str(cell)))
                 for key in value.keys():
-                    self.req.hdf.setValue(prefix + '.' + key, str(value[key]))
+                    self.cgi.hdf.setValue(prefix + '.' + key, str(value[key]))
 
                 col_idx += 1
             row_idx += 1
@@ -308,8 +251,8 @@ class Report (Module):
             report_args[arg] = val
 
         # Set some default dynamic variables
-        if hasattr(self.req,'authname'):  # FIXME: Is authname always there? - dln
-            report_args['USER'] = self.req.authname
+        if hasattr(self,'authname'):  # FIXME: Is authname always there? - dln
+            report_args['USER'] = self.authname
             
         return report_args
 
@@ -322,7 +265,7 @@ class Report (Module):
         try:
             report_args = self.get_var_args()
         except ValueError,e:
-            self.req.hdf.setValue('report.message', 'report failed: %s' % e)
+            self.cgi.hdf.setValue('report.message', 'report failed: %s' % e)
             return
         
         if action == 'create':
@@ -341,28 +284,20 @@ class Report (Module):
             self.render_report_list(id, report_args)
 
     def display_rss(self):
-        item = self.req.hdf.getObj('report.items')
-        item = item.child()
-        while item:
-            nodename = 'report.items.%s.summary' % item.name()
-            summary = self.req.hdf.getValue(nodename, '')
-            self.req.hdf.setValue(nodename, escape(summary))
-            item = item.next()
-        self.req.display(self.template_rss_name, 'text/xml')
+        cs = neo_cs.CS(self.cgi.hdf)
+        cs.parseFile(self.template_rss_name)
+        print "Content-type: text/xml\r\n"
+        print cs.render()
 
-
-            
     def display_csv(self,sep=','):
-        self.req.send_response(200)
-        self.req.send_header('Content-Type', 'text/plain')
-        self.req.end_headers()
+        print "Content-type: text/plain\r\n"
         titles = ''
         if self.error:
-            self.req.write('Report failed: %s' % self.error)
+            print 'Report failed: %s' % self.error
             return
-        self.req.write(sep.join([c[0] for c in self.cols]) + '\r\n')
+        print sep.join([c[0] for c in self.cols])
         for row in self.rows:
-            self.req.write(sep.join([str(c).replace(sep,"_").replace('\n',' ').replace('\r',' ') for c in row]) + '\r\n')
+            print sep.join([str(c).replace(sep,"_").replace('\n',' ').replace('\r',' ') for c in row])
 
     def display_tab(self):
         self.display_csv('\t')

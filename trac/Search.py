@@ -21,10 +21,11 @@
 
 import string
 import time
-import re
 
 from util import *
+from Href import href
 from Module import Module
+from Wiki import wiki_to_oneliner
 import perm
 
 class Search(Module):
@@ -70,52 +71,24 @@ class Search(Module):
     
     def perform_query (self, query, changeset, tickets, wiki, page=0):
         keywords = query.split(' ')
-
-        if len(keywords) == 1:
-            kwd = keywords[0]
-            redir = None
-            # Prepending a '!' disables quickjump feature
-            if kwd[0] == '!':
-                keywords[0] = kwd[1:]
-                query = query[1:]
-                self.req.hdf.setValue('search.q', query)
-            # Ticket quickjump
-            elif kwd[0] == '#' and kwd[1:].isdigit():
-                redir = self.href.ticket(kwd[1:])
-            # Changeset quickjump
-            elif kwd[0] == '[' and kwd[-1] == ']' and kwd[1:-1].isdigit():
-                redir = self.href.changeset(kwd[1:-1])
-            # Report quickjump
-            elif kwd[0] == '{' and kwd[-1] == '}' and kwd[1:-1].isdigit():
-                redir = self.href.report(kwd[1:-1])
-            elif kwd[0].isupper() and kwd[1].islower():
-                r = "((^|(?<=[^A-Za-z]))[!]?[A-Z][a-z/]+(?:[A-Z][a-z/]+)+)"
-                if re.match (r, kwd):
-                    redir = self.href.wiki(kwd)
-            if redir:
-                self.req.hdf.setValue('search.q', '')
-                self.req.redirect(redir)
-
         cursor = self.db.cursor ()
 
         q = []
         if changeset:
             q.append('SELECT 1 as type, message AS title, message, author, '
-                     ' "" AS keywords, rev AS data, time,0 AS ver'
+                     ' rev AS data, time,0 AS ver'
                      ' FROM revision WHERE %s' %
                      self.query_to_sql(query, 'message'))
         if tickets:
             q.append('SELECT 2 as type, summary AS title, '
-                     ' description AS message, reporter AS author, keywords,'
-                     ' id AS data, time,0 AS ver'
-                     ' FROM ticket WHERE %s OR %s OR %s' %
-                      (self.query_to_sql(query, 'summary'),
-                       self.query_to_sql(query, 'keywords'),
-                       self.query_to_sql(query, 'description')))
+                     ' description AS message, reporter AS author, id AS data,'
+                     ' time,0 AS ver'
+                     ' FROM ticket WHERE %s OR %s' %
+                     (self.query_to_sql(query, 'summary'),
+                      self.query_to_sql(query, 'description')))
         if wiki:
             q.append('SELECT 3 as type, text AS title, text AS message,'
-                     ' author, '' AS keywords, w1.name AS data, time,'
-                     ' w1.version as ver'
+                     ' author, w1.name AS data, time, w1.version as ver'
                      ' FROM wiki w1, '
                      ' (SELECT name,max(version) AS ver '
                      '    FROM wiki GROUP BY name) w2'
@@ -140,18 +113,17 @@ class Search(Module):
             msg = row['message']
             t = time.localtime(int(row['time']))
             item = {'type': int(row['type']),
-                    'keywords': row['keywords'] or '',
                     'data': row['data'],
                     'title': row['title'],
                     'datetime' : time.strftime('%c', t),
                     'author': row['author']}
             if item['type'] == 1:
-                item['changeset_href'] = self.href.changeset(int(row['data']))
+                item['changeset_href'] = href.changeset(int(row['data']))
                 msg = utf8_to_iso(msg)
             elif item['type'] == 2:
-                item['ticket_href'] = self.href.ticket(int(row['data']))
+                item['ticket_href'] = href.ticket(int(row['data']))
             elif item['type'] == 3:
-                item['wiki_href'] = self.href.wiki(row['data'])
+                item['wiki_href'] = href.wiki(row['data'])
 
             shortmsg = shorten_line(msg)
             item['shortmsg'] = shortmsg
@@ -161,34 +133,34 @@ class Search(Module):
         
     def render (self):
         self.perm.assert_permission(perm.SEARCH_VIEW)
-        self.req.hdf.setValue('title', 'Search')
-        self.req.hdf.setValue('search.ticket', 'checked')
-        self.req.hdf.setValue('search.changeset', 'checked')
-        self.req.hdf.setValue('search.wiki', 'checked')
-        self.req.hdf.setValue('search.results_per_page', str(self.RESULTS_PER_PAGE))
+        self.cgi.hdf.setValue('title', 'Search')
+        self.cgi.hdf.setValue('search.ticket', 'checked')
+        self.cgi.hdf.setValue('search.changeset', 'checked')
+        self.cgi.hdf.setValue('search.wiki', 'checked')
+        self.cgi.hdf.setValue('search.results_per_page', str(self.RESULTS_PER_PAGE))
         
         if self.args.has_key('q'):
             query = self.args['q']
-            self.req.hdf.setValue('title', 'Search Results (search)')
-            self.req.hdf.setValue('search.q', query)
+            self.cgi.hdf.setValue('title', 'Search Results (search)')
+            self.cgi.hdf.setValue('search.q', query)
             tickets = self.args.has_key('ticket')
             changesets = self.args.has_key('changeset')
             wiki = self.args.has_key('wiki')
 
             if self.args.has_key('page'):
                 page = int(self.args['page'])
-                self.req.hdf.setValue('search.result.page', str(page))
+                self.cgi.hdf.setValue('search.result.page', str(page))
             else:
                 page = 0
             if not tickets:
-                self.req.hdf.setValue('search.ticket', '')
+                self.cgi.hdf.setValue('search.ticket', '')
             if not changesets:
-                self.req.hdf.setValue('search.changeset', '')
+                self.cgi.hdf.setValue('search.changeset', '')
             if not wiki:
-                self.req.hdf.setValue('search.wiki', '')
+                self.cgi.hdf.setValue('search.wiki', '')
             info = self.perform_query(query, changesets, tickets, wiki, page)
-            self.req.hdf.setValue('search.result.count', str(len(info)))
+            self.cgi.hdf.setValue('search.result.count', str(len(info)))
             if len(info) == self.RESULTS_PER_PAGE:
-                self.req.hdf.setValue('search.result.more', '1')
-            add_dictlist_to_hdf(info, self.req.hdf, 'search.result')
+                self.cgi.hdf.setValue('search.result.more', '1')
+            add_dictlist_to_hdf(info, self.cgi.hdf, 'search.result')
 

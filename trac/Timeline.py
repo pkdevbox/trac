@@ -20,9 +20,12 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 from util import *
+from Href import href
 from Module import Module
 from Wiki import wiki_to_oneliner
 import perm
+import neo_cgi
+import neo_cs
 
 import time
 import string
@@ -31,52 +34,45 @@ class Timeline (Module):
     template_name = 'timeline.cs'
     template_rss_name = 'timeline_rss.cs'
 
-    def get_info (self, start, stop, maxrows, tickets,
-                  changeset, wiki, milestone):
+    MAX_MESSAGE_LEN = 75
+
+    def get_info (self, start, stop, maxrows, tickets, changeset, wiki):
         cursor = self.db.cursor ()
 
         if tickets == changeset == wiki == 0:
             return []
 
-        CHANGESET = 1
-        NEW_TICKET = 2
-        CLOSED_TICKET = 3
-        REOPENED_TICKET = 4
-        WIKI = 5
-        MILESTONE = 6
-        
+        # 1: change set
+        # 2: new tickets
+        # 3: closed tickets
+        # 4: reopened tickets
+
         q = []
         if changeset:
-            q.append("SELECT time, rev AS idata, '' AS tdata, 1 AS type, message, author "
+            q.append("SELECT time, rev AS data, 1 AS type, message, author "
                         "FROM revision WHERE time>=%s AND time<=%s" %
                      (start, stop))
         if tickets:
-            q.append("SELECT time, id AS idata, '' AS tdata, 2 AS type, "
+            q.append("SELECT time, id AS data, 2 AS type, "
                      "summary AS message, reporter AS author "
                      "FROM ticket WHERE time>=%s AND time<=%s" %
                      (start, stop))
-            q.append("SELECT time, ticket AS idata, '' AS tdata, 3 AS type, "
+            q.append("SELECT time, ticket AS data, 3 AS type, "
                         "'' AS message, author "
                         "FROM ticket_change WHERE field='status' "
                         "AND newvalue='closed' AND time>=%s AND time<=%s" %
                      (start, stop))
-            q.append("SELECT time, ticket AS idata, '' AS tdata, 4 AS type, "
+            q.append("SELECT time, ticket AS data, 4 AS type, "
                      "'' AS message, author "
                      "FROM ticket_change WHERE field='status' "
                      "AND newvalue='reopened' AND time>=%s AND time<=%s" %
                      (start, stop))
         if wiki:
-            q.append("SELECT time, -1 AS idata, name AS tdata, 5 AS type, "
+            q.append("SELECT time, name AS data, 5 AS type, "
                      "'' AS message, author "
                         "FROM wiki WHERE time>=%s AND time<=%s" %
                      (start, stop))
             pass
-
-	if milestone:
-	    q.append("SELECT time, -1 AS idata, name AS tdata, 6 AS type, "
-	             "'' AS message, '' AS author " 
-		     "FROM milestone WHERE time>=%s AND time<=%s" %
-		     (start, stop))
 
         q_str = string.join(q, ' UNION ALL ')
         q_str += ' ORDER BY time DESC'
@@ -96,30 +92,26 @@ class Timeline (Module):
             item = {'time': time.strftime('%X', t),
                     'date': time.strftime('%x', t),
                     'datetime': time.strftime('%a, %d %b %Y %H:%M:%S GMT', gmt),
-                    'idata': int(row['idata']),
-                    'tdata': row['tdata'],
-                    'type': row['type'],
+                    'data': row['data'],
+                    'type': int(row['type']),
                     'message': row['message'],
                     'author': row['author']}
-            if item['type'] == CHANGESET:
-                item['changeset_href'] = self.href.changeset(item['idata'])
-                item['shortmsg'] = wiki_to_oneliner(shorten_line(item['message']),
-                                                    self.req.hdf, self.href)
-                item['message'] = wiki_to_oneliner(item['message'],
-                                                   self.req.hdf, self.href)
-            elif item['type'] == WIKI:
-		item['wiki_href'] = self.href.wiki(row['tdata'])
-	    elif item['type'] == MILESTONE:
-		item['shortmsg'] = ''
-	    else:
-		item['ticket_href'] = self.href.ticket(item['idata'])
-		msg = item['message']
-		shortmsg = shorten_line(msg)
-		item['message'] = wiki_to_oneliner(item['message'],
-                                                   self.req.hdf, self.href)
-		item['shortmsg'] = wiki_to_oneliner(shorten_line(item['message']),
-                                                    self.req.hdf, self.href)
-
+            if item['type'] == 1:
+                item['changeset_href'] = href.changeset(int(row['data']))
+                # Just recode this to iso8859-15 until we have propper unicode
+                # support
+                msg = utf8_to_iso(item['message'])
+                shortmsg = shorten_line(msg)
+                item['shortmsg'] = wiki_to_oneliner(shortmsg)
+                item['message'] = wiki_to_oneliner(msg)
+            elif item['type'] == 5:
+                item['wiki_href'] = href.wiki(row['data'])
+            else:
+                item['ticket_href'] = href.ticket(int(row['data']))
+                msg = item['message']
+                shortmsg = shorten_line(msg)
+                item['message'] = wiki_to_oneliner(msg)
+                item['shortmsg'] = wiki_to_oneliner(shortmsg)
             info.append(item)
         return info
         
@@ -139,9 +131,9 @@ class Timeline (Module):
             assert daysback >= 0
         except:
             daysback = 90
-        self.req.hdf.setValue('timeline.from',
+        self.cgi.hdf.setValue('timeline.from',
                               time.strftime('%x', time.localtime(_from)))
-        self.req.hdf.setValue('timeline.daysback', str(daysback))
+        self.cgi.hdf.setValue('timeline.daysback', str(daysback))
 
         stop  = _from
         start = stop - daysback * 86400
@@ -150,24 +142,23 @@ class Timeline (Module):
         wiki = self.args.has_key('wiki') 
         ticket = self.args.has_key('ticket')
         changeset = self.args.has_key('changeset')
-        milestone = self.args.has_key('milestone')
-        if not (wiki or ticket or changeset or milestone):
-            wiki = ticket = changeset = milestone = 1
+        if not (wiki or ticket or changeset):
+            wiki = ticket = changeset = 1
            
         if wiki:
-            self.req.hdf.setValue('timeline.wiki', 'checked')
+            self.cgi.hdf.setValue('timeline.wiki', 'checked')
         if ticket:
-            self.req.hdf.setValue('timeline.ticket', 'checked')
+            self.cgi.hdf.setValue('timeline.ticket', 'checked')
         if changeset:
-            self.req.hdf.setValue('timeline.changeset', 'checked')
-        if milestone:
-            self.req.hdf.setValue('timeline.milestone', 'checked')
+            self.cgi.hdf.setValue('timeline.changeset', 'checked')
         
-        info = self.get_info (start, stop, maxrows, ticket,
-                              changeset, wiki, milestone)
-        add_dictlist_to_hdf(info, self.req.hdf, 'timeline.items')
-        self.req.hdf.setValue('title', 'Timeline')
+        info = self.get_info (start, stop, maxrows, ticket, changeset, wiki)
+        add_dictlist_to_hdf(info, self.cgi.hdf, 'timeline.items')
+        self.cgi.hdf.setValue('title', 'Timeline')
 
 
     def display_rss(self):
-        self.req.display(self.template_rss_name, 'text/xml')
+        cs = neo_cs.CS(self.cgi.hdf)
+        cs.parseFile(self.template_rss_name)
+        print "Content-type: text/xml\r\n"
+        print cs.render()
