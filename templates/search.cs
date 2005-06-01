@@ -1,26 +1,25 @@
+<?cs set:html.stylesheet = 'css/search.css' ?>
 <?cs include "header.cs"?>
 <script type="text/javascript">
 addEvent(window, 'load', function() { document.getElementById('q').focus()}); 
 </script>
 
 <div id="ctxtnav" class="nav">
- <h2>Search Navigation</h2><?cs
- with:links = chrome.links ?>
-  <ul><?cs
-   if:len(links.prev) ?>
-    <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
-     <a href="<?cs var:links.prev.0.href ?>" title="<?cs
-       var:links.prev.0.title ?>">Previous Page</a>
-    </li><?cs
-   /if ?><?cs
-   if:len(links.next) ?>
-    <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
-     <a href="<?cs var:links.next.0.href ?>" title="<?cs
-       var:links.next.0.title ?>">Next Page</a>
-    </li><?cs
-   /if ?>
-  </ul><?cs
- /with ?>
+ <h2>Search Navigation</h2>
+ <ul><?cs
+  if:len(links.prev) ?>
+   <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
+    <a href="<?cs var:links.prev.0.href ?>" title="<?cs
+      var:links.prev.0.title ?>">Previous Page</a>
+   </li><?cs
+  /if ?><?cs
+  if:len(links.next) ?>
+   <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
+    <a href="<?cs var:links.next.0.href ?>" title="<?cs
+      var:links.next.0.title ?>">Next Page</a>
+   </li><?cs
+  /if ?>
+ </ul>
 </div>
 
 <div id="content" class="search">
@@ -85,27 +84,25 @@ addEvent(window, 'load', function() { document.getElementById('q').focus()});
    /each ?>
   </dl>
   <hr />
- </div><?cs
- with:links = chrome.links ?><?cs
-  if:len(links.prev) || len(links.next) ?>
-   <div id="paging" class="nav">
-    <ul><?cs
-     if:len(links.prev) ?>
-      <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
-       <a href="<?cs var:links.prev.0.href ?>" title="<?cs
-         var:links.prev.0.title ?>">Previous Page</a>
-      </li><?cs
-     /if ?><?cs
-     if:len(links.next) ?>
-      <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
-       <a href="<?cs var:links.next.0.href ?>" title="<?cs
-         var:links.next.0.title ?>">Next Page</a>
-      </li><?cs
-     /if ?>
-    </ul>
-   </div><?cs
-  /if ?><?cs
- /with ?>
+ </div>
+ <?cs if:len(links.prev) || len(links.next) ?>
+  <div id="paging" class="nav">
+   <ul><?cs
+    if:len(links.prev) ?>
+     <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
+      <a href="<?cs var:links.prev.0.href ?>" title="<?cs
+        var:links.prev.0.title ?>">Previous Page</a>
+     </li><?cs
+    /if ?><?cs
+    if:len(links.next) ?>
+     <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
+      <a href="<?cs var:links.next.0.href ?>" title="<?cs
+        var:links.next.0.title ?>">Next Page</a>
+     </li><?cs
+    /if ?>
+   </ul>
+  </div>
+ <?cs /if ?>
 
 <?cs elif $search.q ?>
  <div id="notfound">No matches found.</div>

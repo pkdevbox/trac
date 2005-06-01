@@ -1,7 +1,7 @@
 # -*- coding: iso8859-1 -*-
 #
-# Copyright (C) 2003, 2004, 2005 Edgewall Software
-# Copyright (C) 2003, 2004, 2005 Jonas Borgström <jonas@edgewall.com>
+# Copyright (C) 2003, 2004 Edgewall Software
+# Copyright (C) 2003, 2004 Jonas Borgström <jonas@edgewall.com>
 #
 # Trac is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -19,367 +19,187 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import generators
 import time
+import string
+import posixpath
 
-from trac import perm, util
-from trac.core import *
-from trac.mimeview import get_mimetype, Mimeview
-from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
-from trac.web.main import IRequestHandler
-from trac.wiki import wiki_to_html, wiki_to_oneliner
-from trac.versioncontrol import Changeset
+import svn
 
-CHUNK_SIZE = 4096
-DISP_MAX_FILE_SIZE = 256 * 1024
+import util
+import perm
+import authzperm
+import Module
+from Wiki import wiki_to_oneliner
 
-def _get_changes(env, repos, revs, full=None, req=None, format=None):
-    db = env.get_db_cnx()
-    changes = {}
-    for rev in revs:
-        changeset = repos.get_changeset(rev)
-        message = changeset.message
-        files = None
-        if format == 'changelog':
-            files = [change[0] for change in changeset.get_changes()]
-        elif message:
-            if not full:
-                message = wiki_to_oneliner(util.shorten_line(message), env, db)
+class Browser(Module.Module):
+    template_name = 'browser.cs'
+
+    def get_info(self, path, revision, rev_specified):
+        """
+        Extracts information for a given path and revision
+        """
+        # We need to really make sure it's an ordinary string. The FieldStorage
+        # class provided by modpython might give us some strange string-like object
+        # that svn doesn't like.
+        path = str(path)
+        try:
+            root = svn.fs.revision_root(self.fs_ptr, revision, self.pool)
+        except svn.core.SubversionException:
+            raise util.TracError('Invalid revision number: %d' % revision)
+
+        node_type = svn.fs.check_path(root, path, self.pool)
+        if not node_type in [svn.core.svn_node_dir, svn.core.svn_node_file]:
+            raise util.TracError('"%s": no such file or directory in revision %d' \
+                            % (path, revision), 'No such file or directory')
+
+        # Redirect to the file module if the requested path happens
+        # to point to a regular file
+        if svn.fs.is_file(root, path, self.pool):
+            if rev_specified:
+                self.req.redirect(self.env.href.file(path, revision))
             else:
-                message = wiki_to_html(message, env, req, db,
-                                       absurls=(format == 'rss'),
-                                       escape_newlines=True)
-        if not message:
-            message = '--'
-        changes[rev] = {
-            'date_seconds': changeset.date,
-            'date': time.strftime('%x %X', time.localtime(changeset.date)),
-            'age': util.pretty_timedelta(changeset.date),
-            'author': changeset.author or 'anonymous',
-            'message': message,
-            'files': files
-        }
-    return changes
+                self.req.redirect(self.env.href.log(path))
 
-def _get_path_links(href, path, rev):
-    links = []
-    parts = path.split('/')
-    if not parts[-1]:
-        parts.pop()
-    path = '/'
-    for part in parts:
-        path = path + part + '/'
-        links.append({
-            'name': part or 'root',
-            'href': href.browser(path, rev=rev)
-        })
-    return links
-
-
-class BrowserModule(Component):
-
-    implements(INavigationContributor, IRequestHandler)
-
-    # INavigationContributor methods
-
-    def get_active_navigation_item(self, req):
-        return 'browser'
-
-    def get_navigation_items(self, req):
-        if not req.perm.has_permission(perm.BROWSER_VIEW):
-            return
-        yield 'mainnav', 'browser', '<a href="%s">Browse Source</a>' \
-              % util.escape(self.env.href.browser())
-
-    # IRequestHandler methods
-
-    def match_request(self, req):
-        import re
-        match = re.match(r'/(browser|file)(?:(/.*))?', req.path_info)
-        if match:
-            req.args['path'] = match.group(2) or '/'
-            if match.group(1) == 'file':
-                # FIXME: This should be a permanent redirect
-                req.redirect(self.env.href.browser(req.args.get('path'),
-                                                   rev=req.args.get('rev')))
-            return True
-
-    def process_request(self, req):
-        path = req.args.get('path', '/')
-        rev = req.args.get('rev')
-
-        repos = self.env.get_repository(req.authname)
-        node = repos.get_node(path, rev)
-
-        req.hdf['title'] = path
-        req.hdf['browser'] = {
-            'path': path,
-            'revision': rev or repos.youngest_rev,
-            'props': dict([(util.escape(name), util.escape(value))
-                           for name, value in node.get_properties().items()]),
-            'href': self.env.href.browser(path,rev=rev or repos.youngest_rev),
-            'log_href': self.env.href.log(path)
-        }
-
-        path_links = _get_path_links(self.env.href, path, rev)
-        if len(path_links) > 1:
-            add_link(req, 'up', path_links[-2]['href'], 'Parent directory')
-        req.hdf['browser.path'] = path_links
-
-        if node.isdir:
-            req.hdf['browser.is_dir'] = True
-            self._render_directory(req, repos, node, rev)
-        else:
-            self._render_file(req, repos, node, rev)
-
-        add_stylesheet(req, 'browser.css')
-        return 'browser.cs', None
-
-    # Internal methods
-
-    def _render_directory(self, req, repos, node, rev=None):
-        req.perm.assert_permission(perm.BROWSER_VIEW)
-
-        order = req.args.get('order', 'name').lower()
-        req.hdf['browser.order'] = order
-        desc = req.args.has_key('desc')
-        req.hdf['browser.desc'] = desc and 1 or 0
-
+        entries = svn.fs.dir_entries(root, path, self.pool)
         info = []
-        for entry in node.get_entries():
-            entry_rev = rev and entry.rev
-            info.append({
-                'name': entry.name,
-                'fullpath': entry.path,
-                'is_dir': int(entry.isdir),
-                'content_length': entry.content_length,
-                'size': util.pretty_size(entry.content_length),
-                'rev': entry.rev,
-                'permission': 1, # FIXME
-                'log_href': self.env.href.log(entry.path, rev=rev),
-                'browser_href': self.env.href.browser(entry.path, rev=rev)
-            })
-        changes = _get_changes(self.env, repos, [i['rev'] for i in info])
+        for item in entries.keys():
+            fullpath = posixpath.join(path, item)
 
-        def cmp_func(a, b):
-            dir_cmp = (a['is_dir'] and -1 or 0) + (b['is_dir'] and 1 or 0)
-            if dir_cmp:
-                return dir_cmp
-            neg = desc and -1 or 1
-            if order == 'date':
-                return neg * cmp(changes[b['rev']]['date_seconds'],
-                                 changes[a['rev']]['date_seconds'])
-            elif order == 'size':
-                return neg * cmp(a['content_length'], b['content_length'])
+            is_dir = svn.fs.is_dir(root, fullpath, self.pool)
+            if is_dir:
+                name = item + '/'
+                fullpath = fullpath + '/'
             else:
-                return neg * cmp(a['name'].lower(), b['name'].lower())
-        info.sort(cmp_func)
+                name = item
 
-        req.hdf['browser.items'] = info
-        req.hdf['browser.changes'] = changes
-
-    def _render_file(self, req, repos, node, rev=None):
-        req.perm.assert_permission(perm.FILE_VIEW)
-
-        changeset = repos.get_changeset(node.rev)  
-        req.hdf['file'] = {  
-            'rev': node.rev,  
-            'changeset_href': self.env.href.changeset(node.rev),  
-            'date': time.strftime('%x %X', time.localtime(changeset.date)),  
-            'age': util.pretty_timedelta(changeset.date),  
-            'author': changeset.author or 'anonymous',  
-            'message': wiki_to_html(changeset.message or '--', self.env, req,  
-                                    escape_newlines=True)  
-        } 
-        mime_type = node.content_type
-        if not mime_type or mime_type == 'application/octet-stream':
-            mime_type = get_mimetype(node.name) or mime_type or 'text/plain'
-
-        # We don't have to guess if the charset is specified in the
-        # svn:mime-type property
-        ctpos = mime_type.find('charset=')
-        if ctpos >= 0:
-            charset = mime_type[ctpos + 8:]
-        else:
-            charset = self.config.get('trac', 'default_charset')
-
-        if req.args.get('format') == 'raw':
-            req.send_response(200)
-            req.send_header('Content-Type', mime_type)
-            req.send_header('Content-Length', node.content_length)
-            req.send_header('Last-Modified', util.http_date(node.last_modified))
-            req.end_headers()
-
-            content = node.get_content()
-            while 1:
-                chunk = content.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                req.write(chunk)
-
-        else:
-            # Generate HTML preview
-            content = util.to_utf8(node.get_content().read(DISP_MAX_FILE_SIZE),
-                                   charset)
-            if len(content) == DISP_MAX_FILE_SIZE:
-                req.hdf['file.max_file_size_reached'] = 1
-                req.hdf['file.max_file_size'] = DISP_MAX_FILE_SIZE
-                preview = ' '
+            created_rev = svn.fs.node_created_rev(root, fullpath, self.pool)
+            date = svn.fs.revision_prop(self.fs_ptr, created_rev,
+                                    svn.core.SVN_PROP_REVISION_DATE,
+                                    self.pool)
+            if date:
+                date_seconds = svn.core.svn_time_from_cstring(date,
+                                                              self.pool) / 1000000
+                date = time.strftime('%x %X', time.localtime(date_seconds))
             else:
-                preview = Mimeview(self.env).render(req, mime_type, content,
-                                                    node.name, node.rev)
-            req.hdf['file.preview'] = preview
-
-            raw_href = self.env.href.browser(node.path, rev=rev and node.rev,
-                                             format='raw')
-            req.hdf['file.raw_href'] = raw_href
-            add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
-            add_stylesheet(req, 'code.css')
-
-
-class LogModule(Component):
-
-    implements(INavigationContributor, IRequestHandler)
-
-    # INavigationContributor methods
-
-    def get_active_navigation_item(self, req):
-        return 'browser'
-
-    def get_navigation_items(self, req):
-        return []
-
-    # IRequestHandler methods
-
-    def match_request(self, req):
-        import re
-        match = re.match(r'/log(?:(/.*)|$)', req.path_info)
-        if match:
-            req.args['path'] = match.group(1)
-            return 1
-
-    def process_request(self, req):
-        req.perm.assert_permission(perm.LOG_VIEW)
-
-        mode = req.args.get('mode', 'stop_on_copy')
-        path = req.args.get('path', '/')
-        rev = req.args.get('rev')
-        format = req.args.get('format')
-        stop_rev = req.args.get('stop_rev')
-        verbose = req.args.get('verbose')
-        limit = int(req.args.get('limit') or 100)
-
-        req.hdf['title'] = path + ' (log)'
-        req.hdf['log'] = {
-            'path': path,
-            'rev': rev,
-            'verbose': verbose,
-            'stop_rev': stop_rev,
-            'browser_href': self.env.href.browser(path, rev=rev),
-            'log_href': self.env.href.log(path, rev=rev)
-        }
-
-        path_links = _get_path_links(self.env.href, path, rev)
-        req.hdf['log.path'] = path_links
-        if path_links:
-            add_link(req, 'up', path_links[-1]['href'], 'Parent directory')
-
-        repos = self.env.get_repository(req.authname)
-        normpath = repos.normalize_path(path)
-        rev = str(repos.normalize_rev(rev))
-
-        # 'node' or 'path' history: use get_node()/get_history() or get_path_history()
-        if mode != 'path_history':
-            try:
-                node = repos.get_node(path, rev)
-            except TracError:
-                node = None
-            if not node:
-                # show 'path' history instead of 'node' history
-                mode = 'path_history'
-            else:
-                history = node.get_history
-
-        req.hdf['log.mode'] = mode # mode might have change (see 3 lines above)
-
-        if mode == 'path_history':
-            def history(limit):
-                for h in repos.get_path_history(path, rev, limit):
-                    yield h
-
-        # -- retrieve history, asking for limit+1 results
-        info = []
-        previous_path = repos.normalize_path(path)
-        for old_path, old_rev, old_chg in history(limit+1):
-            if stop_rev and repos.rev_older_than(old_rev, stop_rev):
-                break
-            old_path = repos.normalize_path(old_path)
+                date_seconds = 0
+                date = ''
+            author = svn.fs.revision_prop(self.fs_ptr, created_rev,
+                                          svn.core.SVN_PROP_REVISION_AUTHOR,
+                                          self.pool)
+            change = svn.fs.revision_prop(self.fs_ptr, created_rev,
+                                          svn.core.SVN_PROP_REVISION_LOG,
+                                          self.pool)
             item = {
-                'rev': str(old_rev),
-                'path': str(old_path),
-                'log_href': self.env.href.log(old_path, rev=old_rev),
-                'browser_href': self.env.href.browser(old_path, rev=old_rev),
-                'changeset_href': self.env.href.changeset(old_rev),
-                'change': old_chg
-            }
-            if not (mode == 'path_history' and old_chg == Changeset.EDIT):
-                info.append(item)
-            if old_path and old_path != previous_path \
-               and not (mode == 'path_history' and old_path == normpath):
-                item['copyfrom_path'] = old_path
-                if mode == 'stop_on_copy':
-                    break
-            if len(info) > limit: # we want limit+1 entries
-                break
-            previous_path = old_path
-        if info == []:
-            # FIXME: we should send a 404 error here
-            raise TracError("The file or directory '%s' doesn't exist "
-                            "at revision %s or at any previous revision."
-                            % (path, rev), 'Nonexistent path')
+                'name'         : name,
+                'fullpath'     : fullpath,
+                'created_rev'  : created_rev,
+                'date'         : date,
+                'date_seconds' : date_seconds,
+                'age'          : util.pretty_age(date_seconds),
+                'is_dir'       : is_dir,
+                'author'       : author,
+                'change'       : wiki_to_oneliner(util.shorten_line(util.wiki_escape_newline(change)),
+                                                  self.req.hdf, self.env,self.db),
+		'permission'   : self.authzperm.has_permission(fullpath)
+                }
+            if rev_specified:
+                item['log_href'] = self.env.href.log(fullpath, revision)
+                if is_dir:
+                    item['browser_href'] = self.env.href.browser(fullpath,
+                                                                 revision)
+                else:
+                    item['browser_href'] = self.env.href.file(fullpath, revision)
+            else:
+                item['log_href'] = self.env.href.log(fullpath)
+                if is_dir:
+                    item['browser_href'] = self.env.href.browser(fullpath)
+                else:
+                    item['browser_href'] = self.env.href.file(fullpath)
 
-        def make_log_href(path, **args):
-            params = {'rev': rev, 'mode': mode, 'limit': limit}
-            params.update(args)
-            if verbose:
-                params['verbose'] = verbose
-            return self.env.href.log(path, **params)
+            info.append(item)
+        return info
 
-        if len(info) == limit+1: # limit+1 reached, there _might_ be some more
-            next_rev = info[-1]['rev']
-            next_path = info[-1]['path']
-            add_link(req, 'next', make_log_href(next_path, rev=next_rev),
-                     'Revision Log (restarting at %s, rev. %s)'
-                     % (next_path, next_rev))
-            # now, only show 'limit' results
-            del info[-1]
+    def generate_path_links(self, path, rev, rev_specified):
+        list = filter(None, path.split('/'))
+        path = '/'
+        self.req.hdf.setValue('browser.path.0', 'root')
+        if rev_specified:
+            self.req.hdf.setValue('browser.path.0.url',
+                                  self.env.href.browser(path, rev))
+        else:
+            self.req.hdf.setValue('browser.path.0.url',
+                                  self.env.href.browser(path))
+        i = 0
+        for part in list:
+            i = i + 1
+            path = path + part + '/'
+            self.req.hdf.setValue('browser.path.%d' % i, part)
+            url = ''
+            if rev_specified:
+                url = self.env.href.browser(path, rev)
+            else:
+                url = self.env.href.browser(path)
+            self.req.hdf.setValue('browser.path.%d.url' % i, url)
+            if i == len(list) - 1:
+                self.add_link('up', url, 'Parent directory')
+
+    def render(self):
+        self.perm.assert_permission (perm.BROWSER_VIEW)
         
-        req.hdf['log.items'] = info
+        rev = self.args.get('rev', None)
+        path = self.args.get('path', '/')
+        order = self.args.get('order', 'name').lower()
+        desc = self.args.has_key('desc')
+        
+        self.authzperm.assert_permission (path)
+        
+        if not rev:
+            rev_specified = 0
+            rev = svn.fs.youngest_rev(self.fs_ptr, self.pool)
+        else:
+            try:
+                rev = int(rev)
+                rev_specified = 1
+            except:
+                rev_specified = rev.lower() in ['head', 'latest', 'trunk']
+                rev = svn.fs.youngest_rev(self.fs_ptr, self.pool)
 
-        changes = _get_changes(self.env, repos, [i['rev'] for i in info],
-                               verbose, req, format)
-        if format == 'rss':
-            for cs in changes.values():
-                cs['message'] = util.escape(cs['message'])
-        elif format == 'changelog':
-            for cs in changes.values():
-                cs['message'] = '\n'.join(['\t' + m for m in
-                                           cs['message'].split('\n')])
-        req.hdf['log.changes'] = changes
+        info = self.get_info(path, rev, rev_specified)
+        if order == 'date':
+            if desc:
+                info.sort(lambda y, x: cmp(x['date_seconds'],
+                                           y['date_seconds']))
+            else:
+                info.sort(lambda x, y: cmp(x['date_seconds'],
+                                           y['date_seconds']))
+        else:
+            if desc:
+                info.sort(lambda y, x: cmp(util.rstrip(x['name'], '/'),
+                                           util.rstrip(y['name'], '/')))
+            else:
+                info.sort(lambda x, y: cmp(util.rstrip(x['name'], '/'),
+                                           util.rstrip(y['name'], '/')))
 
-        if req.args.get('format') == 'changelog':
-            return 'log_changelog.cs', 'text/plain'
-        elif req.args.get('format') == 'rss':
-            return 'log_rss.cs', 'application/rss+xml'
+        # Always put directories before files
+        info.sort(lambda x, y: cmp(y['is_dir'], x['is_dir']))
 
-        add_stylesheet(req, 'browser.css')
-        add_stylesheet(req, 'diff.css')
+        util.add_dictlist_to_hdf(info, self.req.hdf, 'browser.items')
 
-        rss_href = make_log_href(path, format='rss', stop_rev=stop_rev)
-        add_link(req, 'alternate', rss_href, 'RSS Feed', 'application/rss+xml',
-                 'rss')
-        changelog_href = make_log_href(path, format='changelog',
-                                       stop_rev=stop_rev)
-        add_link(req, 'alternate', changelog_href, 'ChangeLog', 'text/plain')
+        self.generate_path_links(path, rev, rev_specified)
 
-        return 'log.cs', None
+        if path != '/':
+            parent = string.join(path.split('/')[:-2], '/') + '/'
+            if rev_specified:
+                self.req.hdf.setValue('browser.parent_href',
+                                      self.env.href.browser(parent, rev))
+            else:
+                self.req.hdf.setValue('browser.parent_href',
+                                      self.env.href.browser(parent))
+
+        self.req.hdf.setValue('title', path)
+        self.req.hdf.setValue('browser.path', path)
+        self.req.hdf.setValue('browser.revision', str(rev))
+        self.req.hdf.setValue('browser.order', order)
+        self.req.hdf.setValue('browser.order_dir', desc and 'desc' or 'asc')
+        self.req.hdf.setValue('browser.current_href', self.env.href.browser(path))
+        self.req.hdf.setValue('browser.log_href', self.env.href.log(path))
