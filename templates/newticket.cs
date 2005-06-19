@@ -1,3 +1,4 @@
+<?cs set:html.stylesheet = 'css/ticket.css' ?>
 <?cs include "header.cs" ?>
 <?cs include "macros.cs" ?>
 <script type="text/javascript">
@@ -8,9 +9,8 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
 
 <div id="content" class="ticket">
 
-<h1>Create New Ticket</h1>
-<form id="newticket" method="post" action="<?cs
-  var:trac.href.newticket ?>#preview">
+<h3>Create New Ticket:</h3>
+<form id="newticket" action="<?cs var:cgi_location ?>#preview" method="post">
  <div class="field">
   <label for="reporter">Your email or username:</label><br />
   <input type="text" id="reporter" name="reporter" size="40" value="<?cs
@@ -18,17 +18,14 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
  </div>
  <div class="field">
   <label for="summary">Short summary:</label><br />
-  <input id="summary" type="text" name="summary" size="80" value="<?cs
-    var:newticket.summary ?>"/>
- </div>
- <div class="field"><?cs
-  call:labelled_hdf_select("Type: ", enums.ticket_type, "type", newticket.type, 0) ?>
+  <input id="summary" type="text" name="summary" size="80" value="<?cs var:newticket.summary ?>"/>
  </div>
  <div class="field">
   <label for="description">Full description (you may use <a tabindex="42" href="<?cs
     var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
-  <textarea id="description" name="description" class="wikitext" rows="10" cols="78"><?cs
+  <textarea id="description" name="description" rows="10" cols="78"><?cs
     var:newticket.description ?></textarea><?cs
+  call:wiki_toolbar('description') ?><?cs
   if:newticket.description_preview ?>
    <fieldset id="preview">
     <legend>Description Preview</legend>
@@ -39,41 +36,42 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
 
  <fieldset id="properties">
   <legend>Ticket Properties</legend>
+  <input type="hidden" name="mode" value="newticket" />
   <input type="hidden" name="action" value="create" />
   <input type="hidden" name="status" value="new" />
-  <div class="col1"><?cs
-   call:labelled_hdf_select("Component:", newticket.components, "component", newticket.component, 0) ?><?cs
-   call:labelled_hdf_select("Version:", newticket.versions, "version", newticket.version, 1) ?><?cs
-   call:labelled_hdf_select("Severity:", enums.severity, "severity", newticket.severity, 0) ?>
+  <div class="col1">
+   <label for="component">Component:</label><?cs
+   call:hdf_select(newticket.components, "component", newticket.component) ?>
+   <br />
+   <label for="version">Version:</label><?cs
+   call:hdf_select(newticket.versions, "version", newticket.version) ?>
+   <br />
+   <label for="severity">Severity:</label><?cs
+   call:hdf_select(enums.severity, "severity", newticket.severity) ?>
+   <br />
    <label for="keywords">Keywords:</label>
    <input type="text" id="keywords" name="keywords" size="20"
        value="<?cs var:newticket.keywords ?>" />
   </div>
-  <div class="col2"><?cs
-   call:labelled_hdf_select("Priority:", enums.priority, "priority", newticket.priority, 0) ?><?cs
-   call:labelled_hdf_select("Milestone:", newticket.milestones, "milestone", newticket.milestone, 1) ?>
-   <label for="owner">Assign to:</label><?cs
-   if:len(newticket.users) ?><?cs
-    call:hdf_select(newticket.users, "owner", newticket.owner, 1) ?><?cs
-   else ?>
-    <input type="text" id="owner" name="owner" size="20" value="<?cs
-      var:newticket.owner ?>" /><?cs
-   /if ?><br /> 
+  <div class="col2">
+   <label for="priority">Priority:</label><?cs
+   call:hdf_select(enums.priority, "priority", newticket.priority) ?><br />
+   <label for="milestone">Milestone:</label><?cs
+   call:hdf_select(newticket.milestones, "milestone", newticket.milestone) ?><br />
+   <label for="owner">Assign to:</label>
+   <input type="text" id="owner" name="owner" size="20" value="<?cs
+     var:newticket.owner ?>" /><br />
    <label for="cc">Cc:</label>
-   <input type="text" id="cc" name="cc" size="30" value="<?cs
-     var:newticket.cc ?>" />
+   <input type="text" id="cc" name="cc" size="30" value="<?cs var:newticket.cc ?>" />
   </div>
   <?cs if:len(ticket.custom) ?><div class="custom">
    <?cs call:ticket_custom_props(ticket) ?>
   </div><?cs /if ?>
  </fieldset>
 
- <script type="text/javascript" src="<?cs
-   var:htdocs_location ?>js/wikitoolbar.js"></script>
-
  <div class="buttons">
-  <input type="submit" name="preview" value="Preview" />&nbsp;
-  <input type="submit" value="Submit ticket" />
+  <input type="submit" value="Preview" />&nbsp;
+  <input type="submit" name="create" value="Submit ticket" />
  </div>
 </form>
 
