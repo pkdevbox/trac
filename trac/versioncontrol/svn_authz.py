@@ -16,6 +16,7 @@
 # Author: Francois Harvey <fharvey@securiweb.net>
 #         Matthew Good <trac@matt-good.net>
 
+from __future__ import generators
 from trac.versioncontrol import Authorizer
 
 def SubversionAuthorizer(env, authname):
@@ -42,7 +43,6 @@ def parent_iter(path):
         yield path
         idx = path.rfind('/')
         path = path[:idx + 1]
-
 
 class RealSubversionAuthorizer(Authorizer):
 

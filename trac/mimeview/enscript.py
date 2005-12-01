@@ -15,6 +15,8 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
+from __future__ import generators
+
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer
 from trac.util import escape, NaivePopen, Deuglifier

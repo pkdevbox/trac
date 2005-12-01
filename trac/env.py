@@ -14,13 +14,14 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
+
 import os
 
-from trac import db_default, util
+from trac import db, db_default, util
 from trac.config import Configuration
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
-from trac.db import DatabaseManager
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
 
@@ -61,29 +62,28 @@ class Environment(Component, ComponentManager):
     """   
     setup_participants = ExtensionPoint(IEnvironmentSetupParticipant)
 
-    def __init__(self, path, create=False, options=[]):
+    def __init__(self, path, create=False, db_str=None):
         """Initialize the Trac environment.
         
         @param path:   the absolute path to the Trac environment
         @param create: if `True`, the environment is created and populated with
                        default data; otherwise, the environment is expected to
                        already exist.
-        @param options: A list of `(section, name, value)` tuples that define
-                        configuration options
+        @param db_str: the database connection string
         """
         ComponentManager.__init__(self)
 
         self.path = path
-        self.load_config()
-        self.setup_log() 
+        self.__cnx_pool = None
+        if create:
+            self.create(db_str)
+        else:
+            self.verify()
+            self.load_config()
+        self.setup_log()
 
         from trac.loader import load_components
         load_components(self)
-
-        if create:
-            self.create(options)
-        else:
-            self.verify()
 
         if create:
             for setup_participant in self.setup_participants:
@@ -132,11 +132,15 @@ class Environment(Component, ComponentManager):
 
     def get_db_cnx(self):
         """Return a database connection from the connection pool."""
-        return DatabaseManager(self).get_connection()
+        if not self.__cnx_pool:
+            self.__cnx_pool = db.get_cnx_pool(self)
+        return self.__cnx_pool.get_cnx()
 
     def shutdown(self):
         """Close the environment."""
-        DatabaseManager(self).shutdown()
+        if self.__cnx_pool:
+            self.__cnx_pool.shutdown()
+            self.__cnx_pool = None
 
     def get_repository(self, authname=None):
         """Return the version control repository configured for this
@@ -158,7 +162,7 @@ class Environment(Component, ComponentManager):
         repos = SubversionRepository(repos_dir, authz, self.log)
         return CachedRepository(self.get_db_cnx(), repos, authz, self.log)
 
-    def create(self, options=[]):
+    def create(self, db_str=None):
         """Create the basic directory structure of the environment, initialize
         the database and populate the configuration file with default values."""
         def _create_file(fname, data=None):
@@ -186,12 +190,11 @@ class Environment(Component, ComponentManager):
         self.load_config()
         for section, name, value in db_default.default_config:
             self.config.set(section, name, value)
-        for section, name, value in options:
-            self.config.set(section, name, value)
+        self.config.set('trac', 'database', db_str)
         self.config.save()
 
         # Create the database
-        DatabaseManager(self).init_db()
+        db.init_db(self.path, db_str)
 
     def get_version(self, db=None):
         """Return the current version of the database."""
