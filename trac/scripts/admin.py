@@ -14,6 +14,7 @@
 
 __copyright__ = 'Copyright (c) 2003-2005 Edgewall Software'
 
+from __future__ import generators
 import cmd
 import getpass
 import os
@@ -27,11 +28,22 @@ import urllib
 
 import trac
 from trac import perm, util, db_default
-from trac.config import default_dir, Configuration
+from trac.config import default_dir
 from trac.env import Environment
+from trac.config import Configuration
 from trac.perm import PermissionSystem
 from trac.ticket.model import *
 from trac.wiki import WikiPage
+
+try:
+    sum
+except NameError:
+    def sum(list):
+        """Python2.2 doesn't have sum()"""
+        tot = 0
+        for item in list:
+            tot += item
+        return tot
 
 def copytree(src, dst, symlinks=False, skip=[]):
     """Recursively copy a directory tree using copy2() (from shutil.copytree.)
@@ -122,6 +134,15 @@ class TracAdmin(cmd.Cmd):
             return 0
         return 1
 
+    def env_create(self, db_str):
+        try:
+            self.__env = Environment(self.envname, create=True, db_str=db_str)
+            return self.__env
+        except Exception, e:
+            print 'Failed to create environment.', e
+            traceback.print_exc()
+            sys.exit(1)
+
     def env_open(self):
         try:
             if not self.__env:
@@ -164,8 +185,20 @@ class TracAdmin(cmd.Cmd):
     ##
 
     def arg_tokenize (self, argstr):
-        argstr = util.to_utf8(argstr, sys.stdin.encoding)
-        return shlex.split(argstr) or ['']
+        if hasattr(sys.stdin, 'encoding'): # Since version 2.3
+            argstr = util.to_utf8(argstr, sys.stdin.encoding)
+        if hasattr(shlex, 'split'):
+            toks = shlex.split(argstr)
+        else:
+            lexer = shlex.shlex(StringIO.StringIO(argstr))
+            lexer.wordchars = lexer.wordchars + ".,_/"
+            toks = []
+            while True:
+                token = lexer.get_token().strip('"\'')
+                if not token:
+                    break
+                toks.append(token)
+        return toks or ['']
 
     def word_complete (self, text, words):
         return [a for a in words if a.startswith (text)]
@@ -513,7 +546,7 @@ class TracAdmin(cmd.Cmd):
         print
         ddb = 'sqlite:db/trac.db'
         prompt = 'Database connection string [%s]> ' % ddb
-        returnvals.append(raw_input(prompt).strip() or ddb)
+        returnvals.append(raw_input(prompt).strip()  or ddb)
         print
         print ' Please specify the absolute path to the project Subversion repository.'
         print ' Repository must be local, and trac-admin requires read+write'
@@ -521,14 +554,14 @@ class TracAdmin(cmd.Cmd):
         print
         drp = '/var/svn/test'
         prompt = 'Path to repository [%s]> ' % drp
-        returnvals.append(raw_input(prompt).strip() or drp)
+        returnvals.append(raw_input(prompt).strip()  or drp)
         print
         print ' Please enter location of Trac page templates.'
         print ' Default is the location of the site-wide templates installed with Trac.'
         print
         dt = default_dir('templates')
         prompt = 'Templates directory [%s]> ' % dt
-        returnvals.append(raw_input(prompt).strip() or dt)
+        returnvals.append(raw_input(prompt).strip()  or dt)
         print
         return returnvals
 
@@ -558,19 +591,19 @@ class TracAdmin(cmd.Cmd):
 
         try:
             print 'Creating and Initializing Project'
-            options = [
-                ('trac', 'database', db_str),
-                ('trac', 'repository_dir', repository_dir),
-                ('trac', 'templates_dir', templates_dir),
-                ('project', 'name', project_name)
-            ]
-            try:
-                self.__env = Environment(self.envname, create=True,
-                                         options=options)
-            except Exception, e:
-                print 'Failed to create environment.', e
-                traceback.print_exc()
-                sys.exit(1)
+            self.env_create(db_str)
+
+            print ' Configuring Project'
+            config = self.__env.config
+            print '  trac.repository_dir'
+            config.set('trac', 'repository_dir', repository_dir)
+            print '  trac.database'
+            config.set('trac', 'database', db_str)
+            print '  trac.templates_dir'
+            config.set('trac', 'templates_dir', templates_dir)
+            print '  project.name'
+            config.set('project', 'name', project_name)
+            config.save()
 
             # Add a few default wiki pages
             print ' Installing default wiki pages'
@@ -712,8 +745,8 @@ Congratulations!
 
         # Make sure we don't insert the exact same page twice
         rows = self.db_query("SELECT text FROM wiki WHERE name=%s "
-                             "ORDER BY version DESC LIMIT 1", cursor,
-                             params=(title,))
+                             "ORDER BY version DESC LIMIT 1",
+                             cursor, params=(title,))
         old = list(rows)
         if old and data == old[0][0]:
             print '  %s already up to date.' % title

@@ -17,6 +17,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 
 from trac.core import *
@@ -216,10 +217,7 @@ It provides an interface to the Subversion revision control systems, integrated 
                 plugin['path'] = module.__file__
 
             xtnpts = []
-            for name, xtnpt in [(attr, getattr(component, attr)) for attr
-                                in dir(component)]:
-                if not isinstance(xtnpt, ExtensionPoint):
-                    continue
+            for name, xtnpt in component._extension_points.items():
                 xtnpts.append({'name': name,
                                'interface': xtnpt.interface.__name__,
                                'module': xtnpt.interface.__module__})

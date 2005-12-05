@@ -436,8 +436,7 @@ default_config = \
   ('wiki', 'ignore_missing_pages', 'false'),
 )
 
-default_components = ('trac.About', 'trac.attachment',
-                      'trac.db.postgres_backend', 'trac.db.sqlite_backend',
+default_components = ('trac.About', 'trac.attachment', 
                       'trac.mimeview.enscript', 'trac.mimeview.patch',
                       'trac.mimeview.php', 'trac.mimeview.rst',
                       'trac.mimeview.silvercity', 'trac.mimeview.txtl',
