@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
+
 from ConfigParser import ConfigParser
 import os
 import sys
@@ -113,7 +115,7 @@ class Configuration:
                         self._defaults[(section, option)] = value
                 self._lastsitemtime = modtime
 
-        if not self.filename or not os.path.isfile(self.filename):
+        if not self.filename:
             return
         modtime = os.path.getmtime(self.filename)
         if modtime > self._lastmtime:

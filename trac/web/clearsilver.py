@@ -14,7 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from trac.core import TracError
+from trac.util import enum, TracError
 from trac import util
 
 
@@ -224,7 +224,7 @@ class HDFWrapper:
             else:
                 if hasattr(value, '__iter__') or \
                         isinstance(value, (list, tuple)):
-                    for idx, item in enumerate(value):
+                    for idx, item in enum(value):
                         add_value('%s.%d' % (prefix, idx), item)
                 else:
                     self.hdf.setValue(prefix, str(value))

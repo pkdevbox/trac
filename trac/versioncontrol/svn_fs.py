@@ -14,35 +14,21 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from trac.util import TracError
+from trac.versioncontrol import Changeset, Node, Repository
+
 import os.path
 import time
 import weakref
 import posixpath
 
-from trac.core import *
-from trac.versioncontrol import Changeset, Node, Repository, \
-                                IRepositoryConnector
-from trac.versioncontrol.cache import CachedRepository
-from trac.versioncontrol.svn_authz import SubversionAuthorizer
-
-try:
-    from svn import fs, repos, core, delta
-    has_subversion = True
-except ImportError:
-    has_subversion = False
-    class dummy_svn(object):
-        svn_node_dir = 1
-        svn_node_file = 2
-        def apr_pool_destroy(): pass
-        def apr_terminate(): pass
-        def apr_pool_clear(): pass
-    core = dummy_svn()
+from svn import fs, repos, core, delta
 
 _kindmap = {core.svn_node_dir: Node.DIRECTORY,
             core.svn_node_file: Node.FILE}
 
-
 application_pool = None
+
     
 def _get_history(path, authz, fs_ptr, pool, start, end, limit=None):
     history = []
@@ -65,17 +51,19 @@ def _get_history(path, authz, fs_ptr, pool, start, end, limit=None):
     for item in history:
         yield item
 
+
 def _normalize_path(path):
     """Remove leading "/", except for the root"""
     return path and path.strip('/') or '/'
 
-def _path_within_scope(scope, fullpath):
+def _scoped_path(scope, fullpath):
     """Remove the leading scope from repository paths"""
     if fullpath:
         if scope == '/':
             return _normalize_path(fullpath)
         elif fullpath.startswith(scope.rstrip('/')):
             return fullpath[len(scope):] or '/'
+
 
 def _mark_weakpool_invalid(weakpool):
     if weakpool():
@@ -177,33 +165,8 @@ class Pool(object):
             if hasattr(self, "_weakref"):
                 del self._weakref
 
-
 # Initialize application-level pool
-if has_subversion:
-    Pool()
-
-
-class SubversionConnector(Component):
-
-    implements(IRepositoryConnector)
-
-    def get_supported_types(self):
-        global has_subversion
-        if has_subversion:
-            yield ("svnfs", 4)
-            yield ("svn", 2)
-
-    def get_repository(self, type, dir, authname):
-        """Return a `SubversionRepository`.
-
-        The repository is generally wrapped in a `CachedRepository`,
-        unless `direct-svn-fs` is the specified type.
-        """
-        authz = None
-        if authname:
-            authz = SubversionAuthorizer(self.env, authname)
-        repos = SubversionRepository(dir, authz, self.log)
-        return CachedRepository(self.env.get_db_cnx(), repos, authz, self.log)
+Pool()
 
 
 class SubversionRepository(Repository):
@@ -242,8 +205,15 @@ class SubversionRepository(Repository):
             self.scope = '/'
         self.log.debug("Opening subversion file-system at %s with scope %s" \
                        % (self.path, self.scope))
-        self.youngest = None
-        self.oldest = None
+
+        self.rev = fs.youngest_rev(self.fs_ptr, self.pool())
+
+        self.history = None
+        if self.scope != '/':
+            self.history = []
+            for path,rev in _get_history(self.scope[1:], self.authz,
+                                         self.fs_ptr, self.pool, 0, self.rev):
+                self.history.append(rev)
 
     def __del__(self):
         self.close()
@@ -273,6 +243,7 @@ class SubversionRepository(Repository):
         self.log.debug("Closing subversion file-system at %s" % self.path)
         self.repos = None
         self.fs_ptr = None
+        self.rev = None
         self.pool = None
 
     def get_changeset(self, rev):
@@ -289,47 +260,40 @@ class SubversionRepository(Repository):
         return SubversionNode(path, rev, self.authz, self.scope, self.fs_ptr,
                               self.pool)
 
-    def _history(self, path, start, end, limit=None):
-        scoped_path = self.scope[1:] + path
-        return _get_history(scoped_path, self.authz, self.fs_ptr, self.pool,
-                            start, end, limit)
-
     def get_oldest_rev(self):
-        if self.oldest is None:
-            self.oldest = 1
-            if self.scope != '/':
-                self.oldest = self.next_rev(0)
-        return self.oldest
+        rev = 0
+        if self.scope == '/':
+            return rev
+        return self.history[-1]
 
     def get_youngest_rev(self):
-        if not self.youngest:
-            self.youngest = fs.youngest_rev(self.fs_ptr, self.pool())
-            if self.scope != '/':
-                for path, rev in self._history('', 0, self.youngest, limit=1):
-                    self.youngest = rev
-        return self.youngest
+        rev = self.rev
+        if self.scope == '/':
+            return rev
+        return self.history[0]
 
     def previous_rev(self, rev):
-        rev = self.normalize_rev(rev)
-        if rev > 1: # don't use oldest here, as it's too expensive
-            try:
-                for path, prev in self._history('', 0, rev-1, limit=1):
-                    return prev
-            except SystemError:
-                pass
+        rev = int(rev)
+        if rev == 0:
+            return None
+        if self.scope == '/':
+            return rev - 1
+        idx = self.history.index(rev)
+        if idx + 1 < len(self.history):
+            return self.history[idx + 1]
         return None
 
     def next_rev(self, rev):
-        rev = self.normalize_rev(rev)
-        next = rev + 1
-        youngest = self.youngest_rev
-        while next <= youngest:
-            try:
-                for path, next in self._history('', rev+1, next, limit=1):
-                    return next
-                next += 1
-            except SystemError: # i.e. "null arg to internal routine"
-                return next # a 'delete' event is also interesting... 
+        rev = int(rev)
+        if rev == self.rev:
+            return None
+        if self.scope == '/':
+            return rev + 1
+        if rev == 0:
+            return self.oldest_rev
+        idx = self.history.index(rev)
+        if idx > 0:
+            return self.history[idx - 1]
         return None
 
     def rev_older_than(self, rev1, rev2):
@@ -361,8 +325,7 @@ class SubversionRepository(Repository):
                 older = None # 'older' is the currently examined history tuple
                 for p, r in _get_history(self.scope + path, self.authz,
                                          self.fs_ptr, subpool, 0, rev, limit):
-                    older = (_path_within_scope(self.scope, p), r,
-                             Changeset.ADD)
+                    older = (_scoped_path(self.scope, p), r, Changeset.ADD)
                     rev = self.previous_rev(r)
                     if newer:
                         if older[0] == path:
@@ -439,9 +402,9 @@ class SubversionNode(Node):
         pool = Pool(self.pool)
         for path, rev in _get_history(self.scoped_path, self.authz, self.fs_ptr,
                                       pool, 0, self._requested_rev, limit):
-            path = _path_within_scope(self.scope, path)
-            if rev > 0 and path:
-                older = (path, rev, Changeset.ADD)
+            scoped_path = _scoped_path(self.scope, path)
+            if rev > 0 and scoped_path:
+                older = (scoped_path, rev, Changeset.ADD)
                 if newer:
                     change = newer[0] == older[0] and Changeset.EDIT or \
                              Changeset.COPY
@@ -529,7 +492,7 @@ class SubversionChangeset(Changeset):
                 change.base_rev = fs.node_created_rev(b_root, b_path, pool())
             kind = _kindmap[change.item_kind]
             path = path[len(self.scope) - 1:]
-            base_path = _path_within_scope(self.scope, change.base_path)
+            base_path = _scoped_path(self.scope, change.base_path)
             changes.append([path, kind, action, base_path, change.base_rev])
             idx += 1
 

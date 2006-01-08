@@ -4,19 +4,19 @@
 <div id="ctxtnav" class="nav">
  <h2>Changeset Navigation</h2><?cs
  with:links = chrome.links ?>
-  <ul>
-   <li class="first">
-    <?cs if:len(links.prev) ?> &larr; 
-     <a class="prev" href="<?cs var:links.prev.0.href ?>" title="<?cs
-      var:links.prev.0.title ?>">Previous Changeset</a>
-     <?cs else ?><span class="missing">&larr; Previous Changeset</span><?cs /if ?>
-   </li>
-   <li class="last">
-    <?cs if:len(links.next) ?>
+  <ul><?cs
+   if:len(links.prev) ?>
+    <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
+     &larr; <a class="prev" href="<?cs var:links.prev.0.href ?>" title="<?cs
+       var:links.prev.0.title ?>">Previous Changeset</a>
+    </li><?cs
+   /if ?><?cs
+   if:len(links.next) ?>
+    <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
      <a class="next" href="<?cs var:links.next.0.href ?>" title="<?cs
-      var:links.next.0.title ?>">Next Changeset</a> &rarr;
-    <?cs else ?><span class="missing">Next Changeset &rarr;</span><?cs /if ?>
-   </li>
+       var:links.next.0.title ?>">Next Changeset</a> &rarr;
+    </li><?cs
+   /if ?>
   </ul><?cs
  /with ?>
 </div>
@@ -102,8 +102,7 @@
 
 <dl id="overview">
  <dt class="time">Timestamp:</dt>
- <dd class="time"><?cs var:changeset.time ?> 
-  (<?cs alt:changeset.age ?>less than one hour<?cs /alt ?> ago)</dd>
+ <dd class="time"><?cs var:changeset.time ?></dd>
  <dt class="author">Author:</dt>
  <dd class="author"><?cs var:changeset.author ?></dd>
  <dt class="message">Message:</dt>

@@ -16,6 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import os
 import re
 import shutil
@@ -391,8 +392,7 @@ class AttachmentModule(Component):
         add_link(req, 'up', link, text)
 
         req.hdf['title'] = attachment.title
-        req.hdf['attachment'] = attachment_to_hdf(self.env, None, req,
-                                                  attachment)
+        req.hdf['attachment'] = attachment_to_hdf(self.env, None, req, attachment)
         req.hdf['attachment.parent'] = {
             'type': attachment.parent_type, 'id': attachment.parent_id,
             'name': text, 'href': link,
@@ -405,9 +405,10 @@ class AttachmentModule(Component):
         fd = attachment.open()
         try:
             mimeview = Mimeview(self.env)
-            data = fd.read(mimeview.max_preview_size())
+            max_preview_size = mimeview.max_preview_size()
+            data = fd.read(max_preview_size)
 
-            mime_type = get_mimetype(attachment.filename, data) or \
+            mime_type = get_mimetype(attachment.filename) or \
                         'application/octet-stream'
             self.log.debug("Rendering preview of file %s with mime-type %s"
                            % (attachment.filename, mime_type))
@@ -434,11 +435,10 @@ class AttachmentModule(Component):
                               mime_type + ';charset=' + charset)
 
             if render_unsafe and not binary:
-                plaintext_href = attachment.href(format='txt')
-                add_link(req, 'alternate', plaintext_href, 'Plain Text',
-                         mime_type)
+                add_link(req, 'alternate', attachment.href(format='txt'),
+                         'Plain Text', mime_type)
 
-            hdf = mimeview.preview_to_hdf(req, data, mime_type,
+            hdf = mimeview.preview_to_hdf(req, mime_type, None, data,
                                           attachment.filename, None,
                                           annotations=['lineno'])
             req.hdf['attachment'] = hdf

@@ -26,11 +26,7 @@ try:
 except ImportError:
     from StringIO import StringIO
 
-try:
-    from svn import core, repos
-    has_svn = True
-except:
-    has_svn = False
+from svn import core, repos
 
 from trac.log import logger_factory
 from trac.test import TestSetup
@@ -104,9 +100,9 @@ class SubversionRepositoryTestCase(unittest.TestCase):
         self.assertEqual(11, self.repos.normalize_rev(11))
 
     def test_rev_navigation(self):
-        self.assertEqual(1, self.repos.oldest_rev)
+        self.assertEqual(0, self.repos.oldest_rev)
         self.assertEqual(None, self.repos.previous_rev(0))
-        self.assertEqual(None, self.repos.previous_rev(1))
+        self.assertEqual(0, self.repos.previous_rev(1))
         self.assertEqual(16, self.repos.youngest_rev)
         self.assertEqual(6, self.repos.next_rev(5))
         self.assertEqual(7, self.repos.next_rev(6))
@@ -545,13 +541,11 @@ class ScopedSubversionRepositoryTestCase(unittest.TestCase):
         self.assertRaises(StopIteration, changes.next)
 
 def suite():
-    global has_svn
     suite = unittest.TestSuite()
-    if has_svn:
-        suite.addTest(unittest.makeSuite(SubversionRepositoryTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
-        suite.addTest(unittest.makeSuite(ScopedSubversionRepositoryTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
+    suite.addTest(unittest.makeSuite(SubversionRepositoryTestCase, 'test',
+                                     suiteClass=SubversionRepositoryTestSetup))
+    suite.addTest(unittest.makeSuite(ScopedSubversionRepositoryTestCase, 'test',
+                                     suiteClass=SubversionRepositoryTestSetup))
     return suite
 
 if __name__ == '__main__':

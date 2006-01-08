@@ -383,8 +383,7 @@ data = (('component',
                __mkreports(reports)))
 
 default_config = \
- (('trac', 'repository_type', 'svn'),
-  ('trac', 'repository_dir', ''),
+ (('trac', 'repository_dir', ''),
   ('trac', 'templates_dir', default_dir('templates')),
   ('trac', 'database', 'sqlite:db/trac.db'),
   ('trac', 'default_charset', 'iso-8859-15'),
@@ -438,8 +437,7 @@ default_config = \
   ('wiki', 'ignore_missing_pages', 'false'),
 )
 
-default_components = ('trac.About', 'trac.attachment',
-                      'trac.db.postgres_backend', 'trac.db.sqlite_backend',
+default_components = ('trac.About', 'trac.attachment', 
                       'trac.mimeview.enscript', 'trac.mimeview.patch',
                       'trac.mimeview.php', 'trac.mimeview.rst',
                       'trac.mimeview.silvercity', 'trac.mimeview.txtl',
@@ -448,6 +446,5 @@ default_components = ('trac.About', 'trac.attachment',
                       'trac.ticket.roadmap', 'trac.ticket.web_ui',
                       'trac.Timeline',
                       'trac.versioncontrol.web_ui',
-                      'trac.versioncontrol.svn_fs',
                       'trac.wiki.macros', 'trac.wiki.web_ui',
                       'trac.web.auth')

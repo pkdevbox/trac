@@ -16,12 +16,12 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import time
 import re
 
-from trac import util
+from trac import mimeview, util
 from trac.core import *
-from trac.mimeview import Mimeview, is_binary
 from trac.perm import IPermissionRequestor
 from trac.Search import ISearchSource, query_to_sql, shorten_result
 from trac.Timeline import ITimelineEventProvider
@@ -72,13 +72,8 @@ class ChangesetModule(Component):
             req.redirect(self.env.href.changeset(rev))
 
         chgset = repos.get_changeset(rev)
-        req.check_modified(chgset.date, [
-            diff_options[0],
-            ''.join(diff_options[1]),
-            repos.name,
-            repos.rev_older_than(rev, repos.youngest_rev),
-            chgset.message,
-            util.pretty_timedelta(chgset.date, None, 3600)])
+        req.check_modified(chgset.date,
+                           diff_options[0] + ''.join(diff_options[1]))
 
         format = req.args.get('format')
         if format == 'diff':
@@ -111,32 +106,44 @@ class ChangesetModule(Component):
                                              'changeset_show_files'))
             db = self.env.get_db_cnx()
             repos = self.env.get_repository()
-            for chgset in repos.get_changesets(start, stop):
-                message = chgset.message or '--'
-                if format == 'rss':
-                    title = util.Markup('Changeset <em>[%s]</em>: %s',
-                                        chgset.rev, util.shorten_line(message))
-                    href = self.env.abs_href.changeset(chgset.rev)
-                    message = wiki_to_html(message, self.env, req, db,
-                                           absurls=True)
-                else:
-                    title = util.Markup('Changeset <em>[%s]</em> by %s',
-                                        chgset.rev, chgset.author)
-                    href = self.env.href.changeset(chgset.rev)
-                    message = wiki_to_oneliner(message, self.env, db,
-                                               shorten=True)
-                if show_files:
-                    files = []
-                    for chg in chgset.get_changes():
-                        if show_files > 0 and len(files) >= show_files:
-                            files.append('...')
-                            break
-                        files.append('<span class="%s">%s</span>'
-                                     % (chg[2], util.escape(chg[0])))
-                    message = '<span class="changes">' + ', '.join(files) +\
-                              '</span>: ' + message
-                yield 'changeset', href, title, chgset.date, chgset.author,\
-                      util.Markup(message)
+            authzperm = SubversionAuthorizer(self.env, req.authname)
+            rev = repos.youngest_rev
+            while rev:
+                if not authzperm.has_permission_for_changeset(rev):
+                    rev = repos.previous_rev(rev)
+                    continue
+
+                chgset = repos.get_changeset(rev)
+                if chgset.date < start:
+                    return
+                if chgset.date < stop:
+                    message = chgset.message or '--'
+                    if format == 'rss':
+                        title = util.Markup('Changeset <em>[%s]</em>: %s',
+                                            chgset.rev,
+                                            util.shorten_line(message))
+                        href = self.env.abs_href.changeset(chgset.rev)
+                        message = wiki_to_html(message, self.env, req, db,
+                                               absurls=True)
+                    else:
+                        title = util.Markup('Changeset <em>[%s]</em> by %s',
+                                            chgset.rev, chgset.author)
+                        href = self.env.href.changeset(chgset.rev)
+                        message = wiki_to_oneliner(message, self.env, db,
+                                                   shorten=True)
+                    if show_files:
+                        files = []
+                        for chg in chgset.get_changes():
+                            if show_files > 0 and len(files) >= show_files:
+                                files.append('...')
+                                break
+                            files.append('<span class="%s">%s</span>'
+                                         % (chg[2], util.escape(chg[0])))
+                        message = '<span class="changes">' + ', '.join(files) +\
+                                  '</span>: ' + message
+                    yield 'changeset', href, title, chgset.date, chgset.author,\
+                          util.Markup(message)
+                rev = repos.previous_rev(rev)
 
     # Internal methods
 
@@ -146,7 +153,6 @@ class ChangesetModule(Component):
         req.hdf['changeset'] = {
             'revision': chgset.rev,
             'time': util.format_datetime(chgset.date),
-            'age': util.pretty_timedelta(chgset.date, None, 3600),
             'author': chgset.author or 'anonymous',
             'message': wiki_to_html(chgset.message or '--', self.env, req,
                                     escape_newlines=True)
@@ -162,9 +168,8 @@ class ChangesetModule(Component):
         youngest_rev = repos.youngest_rev
         if str(chgset.rev) != str(youngest_rev):
             next_rev = repos.next_rev(chgset.rev)
-            if next_rev:
-                add_link(req, 'next', self.env.href.changeset(next_rev),
-                         'Changeset %s' % next_rev)
+            add_link(req, 'next', self.env.href.changeset(next_rev),
+                     'Changeset %s' % next_rev)
             add_link(req, 'last', self.env.href.changeset(youngest_rev),
                      'Changeset %s' % youngest_rev)
 
@@ -174,12 +179,12 @@ class ChangesetModule(Component):
             info = {'change': change}
             if base_path:
                 info['path.old'] = base_path
-                info['rev.old'] = repos.short_rev(base_rev)
+                info['rev.old'] = base_rev
                 info['browser_href.old'] = self.env.href.browser(base_path,
                                                                  rev=base_rev)
             if path:
                 info['path.new'] = path
-                info['rev.new'] = repos.short_rev(chgset.rev)
+                info['rev.new'] = chgset.rev
                 info['browser_href.new'] = self.env.href.browser(path,
                                                                  rev=chgset.rev)
             if change in (Changeset.COPY, Changeset.EDIT, Changeset.MOVE):
@@ -191,8 +196,6 @@ class ChangesetModule(Component):
                              in self.config.get('browser', 'hide_properties',
                                                 'svk:merge').split(',')]
 
-        mimeview = Mimeview(self.env)
-            
         for idx, path, kind, base_path, base_rev in edits:
             old_node = repos.get_node(base_path or path, base_rev)
             new_node = repos.get_node(path, chgset.rev)
@@ -219,15 +222,22 @@ class ChangesetModule(Component):
                 continue
 
             # Content changes
-            data = old_node.get_content().read()
-            if is_binary(data):
+            default_charset = self.config.get('trac', 'default_charset')
+            old_content = old_node.get_content().read()
+            if mimeview.is_binary(old_content):
                 continue
-            old_content = mimeview.to_utf8(data, old_node.content_type)
+            charset = mimeview.get_charset(old_node.content_type)
+            if not charset:
+                charset = mimeview.detect_unicode(old_content)
+            old_content = util.to_utf8(old_content, charset or default_charset)
 
-            data = new_node.get_content().read()
-            if is_binary(data):
+            new_content = new_node.get_content().read()
+            if mimeview.is_binary(new_content):
                 continue
-            new_content = mimeview.to_utf8(data, new_node.content_type)
+            charset = mimeview.get_charset(new_node.content_type)
+            if not charset:
+                charset = mimeview.detect_unicode(new_content)
+            new_content = util.to_utf8(new_content, charset or default_charset)
 
             if old_content != new_content:
                 context = 3
@@ -256,8 +266,6 @@ class ChangesetModule(Component):
                         'filename=Changeset%s.diff' % chgset.rev)
         req.end_headers()
 
-        mimeview = Mimeview(self.env)
-
         for path, kind, change, base_path, base_rev in chgset.get_changes():
             if change == Changeset.ADD:
                 old_node = None
@@ -274,22 +282,27 @@ class ChangesetModule(Component):
             if kind == 'dir':
                 continue
 
+            default_charset = self.config.get('trac', 'default_charset')
             new_content = old_content = ''
             new_node_info = old_node_info = ('','')
 
             if old_node:
-                data = old_node.get_content().read()
-                if is_binary(data):
-                    continue
-                old_content = mimeview.to_utf8(data, old_node.content_type)
+                charset = mimeview.get_charset(old_node.content_type) or \
+                          default_charset
+                old_content = util.to_utf8(old_node.get_content().read(),
+                                           charset)
                 old_node_info = (old_node.path, old_node.rev)
+            if mimeview.is_binary(old_content):
+                continue
 
             if new_node:
-                data = new_node.get_content().read()
-                if is_binary(data):
-                    continue
-                new_content = mimeview.to_utf8(data, new_node.content_type) 
+                charset = mimeview.get_charset(new_node.content_type) or \
+                          default_charset
+                new_content = util.to_utf8(new_node.get_content().read(),
+                                           charset)
                 new_node_info = (new_node.path, new_node.rev)
+            if mimeview.is_binary(new_content):
+                continue
 
             if old_content != new_content:
                 context = 3

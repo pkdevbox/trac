@@ -78,10 +78,10 @@
  if:len(browser.props) || !browser.is_dir ?>
   <table id="info" summary="Revision info"><?cs
    if:!browser.is_dir ?><tr>
-    <th scope="col">
+    <th scope="row">
      Revision <a href="<?cs var:file.changeset_href ?>"><?cs var:file.rev ?></a>
      (checked in by <?cs var:file.author ?>, <?cs var:file.age ?> ago)
-    </th></tr><tr>
+    </th>
     <td class="message"><?cs var:file.message ?></td>
    </tr><?cs /if ?><?cs
    if:len(browser.props) ?><tr>

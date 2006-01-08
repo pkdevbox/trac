@@ -15,6 +15,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christian Boos <cboos@neuf.fr>
 
+from __future__ import generators
 import re
 import urllib
 

@@ -14,6 +14,7 @@
 
 __copyright__ = 'Copyright (c) 2003-2006 Edgewall Software'
 
+from __future__ import generators
 import cmd
 import getpass
 import os
@@ -27,16 +28,27 @@ import urllib
 
 import trac
 from trac import perm, util, db_default
-from trac.config import default_dir, Configuration
+from trac.config import default_dir
 from trac.env import Environment
+from trac.config import Configuration
 from trac.perm import PermissionSystem
 from trac.ticket.model import *
 from trac.wiki import WikiPage
 
+try:
+    sum
+except NameError:
+    def sum(list):
+        """Python2.2 doesn't have sum()"""
+        tot = 0
+        for item in list:
+            tot += item
+        return tot
+
 def copytree(src, dst, symlinks=False, skip=[]):
     """Recursively copy a directory tree using copy2() (from shutil.copytree.)
 
-    Added a `skip` parameter consisting of absolute paths
+    Added an `skip` parameter consisting of absolute paths
     which we don't want to copy.
     """
     names = os.listdir(src)
@@ -122,6 +134,15 @@ class TracAdmin(cmd.Cmd):
             return 0
         return 1
 
+    def env_create(self, db_str):
+        try:
+            self.__env = Environment(self.envname, create=True, db_str=db_str)
+            return self.__env
+        except Exception, e:
+            print 'Failed to create environment.', e
+            traceback.print_exc()
+            sys.exit(1)
+
     def env_open(self):
         try:
             if not self.__env:
@@ -164,8 +185,20 @@ class TracAdmin(cmd.Cmd):
     ##
 
     def arg_tokenize (self, argstr):
-        argstr = util.to_utf8(argstr, sys.stdin.encoding)
-        return shlex.split(argstr) or ['']
+        if hasattr(sys.stdin, 'encoding'): # Since version 2.3
+            argstr = util.to_utf8(argstr, sys.stdin.encoding)
+        if hasattr(shlex, 'split'):
+            toks = shlex.split(argstr)
+        else:
+            lexer = shlex.shlex(StringIO.StringIO(argstr))
+            lexer.wordchars = lexer.wordchars + ".,_/"
+            toks = []
+            while True:
+                token = lexer.get_token().strip('"\'')
+                if not token:
+                    break
+                toks.append(token)
+        return toks or ['']
 
     def word_complete (self, text, words):
         return [a for a in words if a.startswith (text)]
@@ -250,8 +283,8 @@ class TracAdmin(cmd.Cmd):
         if t == 'now':
             seconds = int(time.time())
         else:
-            for format in [self._date_format, '%x %X', '%x, %X', '%X %x',
-                           '%X, %x', '%x', '%c', '%b %d, %Y']:
+            for format in [self._date_format, '%x %X', '%x, %X', '%X %x', '%X, %x', '%x', '%c',
+                           '%b %d, %Y']:
                 try:
                     pt = time.strptime(t, format)
                     seconds = int(time.mktime(pt))
@@ -296,12 +329,10 @@ class TracAdmin(cmd.Cmd):
                     self._help_wiki +
 #                    self._help_config + self._help_wiki +
                     self._help_permission + self._help_component +
-                    self._help_ticket +
                     self._help_ticket_type + self._help_priority +
                     self._help_severity +  self._help_version +
                     self._help_milestone)
-            print 'trac-admin - The Trac Administration Console %s' \
-                  % trac.__version__
+            print 'trac-admin - The Trac Administration Console %s' % trac.__version__
             if not self.interactive:
                 print
                 print "Usage: trac-admin </path/to/projenv> [command [subcommand] [option ...]]\n"
@@ -488,7 +519,7 @@ class TracAdmin(cmd.Cmd):
     ## Initenv
     _help_initenv = [('initenv',
                       'Create and initialize a new environment interactively'),
-                     ('initenv <projectname> <db> <repostype> <repospath> <templatepath>',
+                     ('initenv <projectname> <db> <repospath> <templatepath>',
                       'Create and initialize a new environment from arguments')]
 
     def do_initdb(self, line):
@@ -515,32 +546,22 @@ class TracAdmin(cmd.Cmd):
         print
         ddb = 'sqlite:db/trac.db'
         prompt = 'Database connection string [%s]> ' % ddb
-        returnvals.append(raw_input(prompt).strip() or ddb)
+        returnvals.append(raw_input(prompt).strip()  or ddb)
         print
-        print ' Please specify the type of version control system,'
-        print ' By default, it will be svn.'
+        print ' Please specify the absolute path to the project Subversion repository.'
+        print ' Repository must be local, and trac-admin requires read+write'
+        print ' permission to initialize the Trac database.'
         print
-        print ' If you don\'t want to use Trac with version control integration, '
-        print ' choose the default here and don\'t specify a repository directory. '
-        print ' in the next question.'
-        print 
-        drpt = 'svn'
-        prompt = 'Repository type [%s]> ' % drpt
-        returnvals.append(raw_input(prompt).strip() or drpt)
-        print
-        print ' Please specify the absolute path to the version control '
-        print ' repository, or leave it blank to use Trac without a repository.'
-        print ' You can also set the repository location later.'
-        print 
-        prompt = 'Path to repository [/path/to/repos]> '
-        returnvals.append(raw_input(prompt).strip())
+        drp = '/var/svn/test'
+        prompt = 'Path to repository [%s]> ' % drp
+        returnvals.append(raw_input(prompt).strip()  or drp)
         print
         print ' Please enter location of Trac page templates.'
         print ' Default is the location of the site-wide templates installed with Trac.'
         print
         dt = default_dir('templates')
         prompt = 'Templates directory [%s]> ' % dt
-        returnvals.append(raw_input(prompt).strip() or dt)
+        returnvals.append(raw_input(prompt).strip()  or dt)
         print
         return returnvals
 
@@ -557,14 +578,12 @@ class TracAdmin(cmd.Cmd):
         templates_dir = None
         if len(arg) == 1 and not arg[0]:
             returnvals = self.get_initenv_args()
-            project_name, db_str, repository_type, repository_dir, \
-                          templates_dir = returnvals
-        elif len(arg) != 5:
+            project_name, db_str, repository_dir, templates_dir = returnvals
+        elif len(arg) != 4:
             print 'Wrong number of arguments to initenv: %d' % len(arg)
             return 2
         else:
-            project_name, db_str, repository_type, repository_dir, \
-                          templates_dir = arg[:5]
+            project_name, db_str, repository_dir, templates_dir = arg[:4]
 
         if not os.access(os.path.join(templates_dir, 'header.cs'), os.F_OK):
             print templates_dir, "doesn't look like a Trac templates directory"
@@ -572,20 +591,19 @@ class TracAdmin(cmd.Cmd):
 
         try:
             print 'Creating and Initializing Project'
-            options = [
-                ('trac', 'database', db_str),
-                ('trac', 'repository_type', repository_type),
-                ('trac', 'repository_dir', repository_dir),
-                ('trac', 'templates_dir', templates_dir),
-                ('project', 'name', project_name)
-            ]
-            try:
-                self.__env = Environment(self.envname, create=True,
-                                         options=options)
-            except Exception, e:
-                print 'Failed to create environment.', e
-                traceback.print_exc()
-                sys.exit(1)
+            self.env_create(db_str)
+
+            print ' Configuring Project'
+            config = self.__env.config
+            print '  trac.repository_dir'
+            config.set('trac', 'repository_dir', repository_dir)
+            print '  trac.database'
+            config.set('trac', 'database', db_str)
+            print '  trac.templates_dir'
+            config.set('trac', 'templates_dir', templates_dir)
+            print '  project.name'
+            config.set('project', 'name', project_name)
+            config.save()
 
             # Add a few default wiki pages
             print ' Installing default wiki pages'
@@ -594,22 +612,10 @@ class TracAdmin(cmd.Cmd):
             self._do_wiki_load(default_dir('wiki'), cursor)
             cnx.commit()
 
-            if repository_dir:
-                try:
-                    repos = self.__env.get_repository()
-                    if repos:
-                        print ' Indexing repository'
-                        repos.sync()
-                except util.TracError, e:
-                    print>>sys.stderr, "\nWarning:\n"
-                    if repository_type == "svn":
-                        print>>sys.stderr, "You should install the SVN bindings"
-                    else:
-                        print>>sys.stderr, ("You should install the plugin for"
-                                            " %s in the %s folder." \
-                                            % (repository_type,
-                                               os.path.join(self.envname,
-                                                            'plugins')))
+            print ' Indexing repository'
+            repos = self.__env.get_repository()
+            repos.sync()
+
         except Exception, e:
             print 'Failed to initialize environment.', e
             traceback.print_exc()
@@ -739,8 +745,8 @@ Congratulations!
 
         # Make sure we don't insert the exact same page twice
         rows = self.db_query("SELECT text FROM wiki WHERE name=%s "
-                             "ORDER BY version DESC LIMIT 1", cursor,
-                             params=(title,))
+                             "ORDER BY version DESC LIMIT 1",
+                             cursor, params=(title,))
         old = list(rows)
         if old and data == old[0][0]:
             print '  %s already up to date.' % title
@@ -782,36 +788,6 @@ Congratulations!
             if os.path.isfile(filename):
                 print " %s => %s" % (filename, page)
                 self._do_wiki_import(filename, page, cursor)
-
-    ## Ticket
-    _help_ticket = [('ticket remove <number>', 'Remove ticket')]
-
-    def complete_ticket(self, text, line, begidx, endidx):
-        argv = self.arg_tokenize(line)
-        argc = len(argv)
-        if line[-1] == ' ': # Space starts new argument
-            argc += 1
-        comp = []
-        if argc == 2:
-            comp = ['remove']
-        return self.word_complete(text, comp)
-
-    def do_ticket(self, line):
-        arg = self.arg_tokenize(line)
-        if arg[0] == 'remove'  and len(arg)==2:
-            try:
-                number = int(arg[1])
-            except ValueError:
-                print>>sys.stderr, "<number> must be a number"
-                return
-            self._do_ticket_remove(number)
-        else:    
-            self.do_help ('ticket')
-
-    def _do_ticket_remove(self, number):
-        ticket = Ticket(self.env_open(), number)
-        ticket.delete()
-        print "Ticket %d and all associated data removed." % number
 
 
     ## (Ticket) Type
