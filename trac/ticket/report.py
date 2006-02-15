@@ -15,7 +15,9 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
 import re
+import types
 import urllib
 
 from trac import util
@@ -23,7 +25,7 @@ from trac.core import *
 from trac.perm import IPermissionRequestor
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
-from trac.wiki import wiki_to_html, IWikiSyntaxProvider, Formatter
+from trac.wiki import wiki_to_html, IWikiSyntaxProvider
 
 
 class ColumnSorter:
@@ -335,7 +337,7 @@ class ReportModule(Component):
                     value['hidehtml'] = 1
                     column = column[1:]
                 if column in ('ticket', 'id', '_id', '#', 'summary'):
-                    id_cols = [idx for idx, col in enumerate(cols)
+                    id_cols = [idx for idx, col in util.enum(cols)
                                if col[0] in ('ticket', 'id', '_id')]
                     if id_cols:
                         id_val = row[id_cols[0]]
@@ -489,14 +491,9 @@ class ReportModule(Component):
         yield ('report', self._format_link)
 
     def get_wiki_syntax(self):
-        yield (r"!?\{(?P<it_report>%s\s*)?\d+\}" % Formatter.INTERTRAC_SCHEME,
-               lambda x, y, z: self._format_link(x, 'report', y[1:-1], y, z))
+        yield (r"!?\{\d+\}", lambda x, y, z: self._format_link(x, 'report', y[1:-1], y))
 
-    def _format_link(self, formatter, ns, target, label, fullmatch=None):
-        intertrac = formatter.shorthand_intertrac_helper(ns, target, label,
-                                                         fullmatch)
-        if intertrac:
-            return intertrac
+    def _format_link(self, formatter, ns, target, label):
         report, args = target, ''
         if '?' in target:
             report, args = target.split('?')

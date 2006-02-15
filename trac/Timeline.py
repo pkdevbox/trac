@@ -17,12 +17,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 import time
 
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util import format_date, format_time, http_date, Markup, rss_title
+from trac.util import enum, format_date, format_time, http_date, Markup, rss_title
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 
@@ -135,13 +136,8 @@ class TimelineModule(Component):
 
         events = []
         for event_provider in self.event_providers:
-            try:
-                events += event_provider.get_timeline_events(req, start, stop,
-                                                             filters)
-            except Exception, e: # cope with a failure of that provider
-                self._provider_failure(e, req, event_provider, filters,
-                                       [f[0] for f in available_filters])
-
+            events += event_provider.get_timeline_events(req, start, stop,
+                                                         filters)
         events.sort(lambda x,y: cmp(y[3], x[3]))
         if maxrows and len(events) > maxrows:
             del events[maxrows:]
@@ -186,30 +182,8 @@ class TimelineModule(Component):
                                           daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, 'RSS Feed', 'application/rss+xml',
                  'rss')
-        for idx,fltr in enumerate(available_filters):
+        for idx,fltr in enum(available_filters):
             req.hdf['timeline.filters.%d' % idx] = {'name': fltr[0],
                 'label': fltr[1], 'enabled': int(fltr[0] in filters)}
 
         return 'timeline.cs', None
-
-    def _provider_failure(self, exc, req, ep, current_filters, all_filters):
-        """Raise a TracError exception explaining the failure of a provider.
-
-        At the same time, the message will contain a link to the timeline
-        without the filters corresponding to the guilty event provider `ep`.
-        """
-        guilty_filters = [f[0] for f in ep.get_timeline_filters(req)]
-        guilty_kinds = [f[1] for f in ep.get_timeline_filters(req)]
-        other_filters = [f for f in current_filters if not f in guilty_filters]
-        if not other_filters:
-            other_filters = [f for f in all_filters if not f in guilty_filters]
-        args = [(a, req.args.get(a)) for a in ('from', 'format', 'max',
-                                               'daysback')]
-        href = self.env.href.timeline(args+[(f, 'on') for f in other_filters])
-        raise TracError(Markup('%s event provider failed:<br /><br />'
-                               '%s: %s'
-                               '<p>You may want to see the other kind '
-                               'of events from the <a href="%s">'
-                               'Timeline</a></p>',
-                               ", ".join(guilty_kinds),
-                               exc.__class__.__name__, str(exc), href))

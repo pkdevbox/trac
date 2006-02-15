@@ -1,8 +1,7 @@
 # -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2005-2006 Edgewall Software
+# Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
-# Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -14,39 +13,22 @@
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
-#         Christian Boos <cboos@neuf.fr>
+
+from trac.util import TracError
+from trac.versioncontrol import Changeset, Node, Repository
 
 import os.path
 import time
 import weakref
 import posixpath
 
-from trac.core import *
-from trac.versioncontrol import Changeset, Node, Repository, \
-                                IRepositoryConnector
-from trac.versioncontrol.cache import CachedRepository
-from trac.versioncontrol.svn_authz import SubversionAuthorizer
-
-try:
-    from svn import fs, repos, core, delta
-    has_subversion = True
-except ImportError:
-    has_subversion = False
-    class dummy_svn(object):
-        svn_node_dir = 1
-        svn_node_file = 2
-        def apr_pool_destroy(): pass
-        def apr_terminate(): pass
-        def apr_pool_clear(): pass
-        Editor = object
-    delta = core = dummy_svn()
-    
+from svn import fs, repos, core, delta
 
 _kindmap = {core.svn_node_dir: Node.DIRECTORY,
             core.svn_node_file: Node.FILE}
 
-
 application_pool = None
+
     
 def _get_history(path, authz, fs_ptr, pool, start, end, limit=None):
     history = []
@@ -69,17 +51,19 @@ def _get_history(path, authz, fs_ptr, pool, start, end, limit=None):
     for item in history:
         yield item
 
+
 def _normalize_path(path):
     """Remove leading "/", except for the root"""
     return path and path.strip('/') or '/'
 
-def _path_within_scope(scope, fullpath):
+def _scoped_path(scope, fullpath):
     """Remove the leading scope from repository paths"""
     if fullpath:
         if scope == '/':
             return _normalize_path(fullpath)
         elif fullpath.startswith(scope.rstrip('/')):
             return fullpath[len(scope):] or '/'
+
 
 def _mark_weakpool_invalid(weakpool):
     if weakpool():
@@ -181,33 +165,8 @@ class Pool(object):
             if hasattr(self, "_weakref"):
                 del self._weakref
 
-
 # Initialize application-level pool
-if has_subversion:
-    Pool()
-
-
-class SubversionConnector(Component):
-
-    implements(IRepositoryConnector)
-
-    def get_supported_types(self):
-        global has_subversion
-        if has_subversion:
-            yield ("svnfs", 4)
-            yield ("svn", 2)
-
-    def get_repository(self, type, dir, authname):
-        """Return a `SubversionRepository`.
-
-        The repository is generally wrapped in a `CachedRepository`,
-        unless `direct-svn-fs` is the specified type.
-        """
-        authz = None
-        if authname:
-            authz = SubversionAuthorizer(self.env, authname)
-        repos = SubversionRepository(dir, authz, self.log)
-        return CachedRepository(self.env.get_db_cnx(), repos, authz, self.log)
+Pool()
 
 
 class SubversionRepository(Repository):
@@ -216,8 +175,6 @@ class SubversionRepository(Repository):
     """
 
     def __init__(self, path, authz, log):
-        self.path = path
-        self.log = log
         if core.SVN_VER_MAJOR < 1:
             raise TracError, \
                   "Subversion >= 1.0 required: Found %d.%d.%d" % \
@@ -248,8 +205,15 @@ class SubversionRepository(Repository):
             self.scope = '/'
         self.log.debug("Opening subversion file-system at %s with scope %s" \
                        % (self.path, self.scope))
-        self.youngest = None
-        self.oldest = None
+
+        self.rev = fs.youngest_rev(self.fs_ptr, self.pool())
+
+        self.history = None
+        if self.scope != '/':
+            self.history = []
+            for path,rev in _get_history(self.scope[1:], self.authz,
+                                         self.fs_ptr, self.pool, 0, self.rev):
+                self.history.append(rev)
 
     def __del__(self):
         self.close()
@@ -279,6 +243,7 @@ class SubversionRepository(Repository):
         self.log.debug("Closing subversion file-system at %s" % self.path)
         self.repos = None
         self.fs_ptr = None
+        self.rev = None
         self.pool = None
 
     def get_changeset(self, rev):
@@ -286,7 +251,6 @@ class SubversionRepository(Repository):
                                    self.fs_ptr, self.pool)
 
     def get_node(self, path, rev=None):
-        path = path or ''
         self.authz.assert_permission(posixpath.join(self.scope, path))
         if path and path[-1] == '/':
             path = path[:-1]
@@ -296,50 +260,40 @@ class SubversionRepository(Repository):
         return SubversionNode(path, rev, self.authz, self.scope, self.fs_ptr,
                               self.pool)
 
-    def _history(self, path, start, end, limit=None):
-        scoped_path = posixpath.join(self.scope[1:], path)
-        return _get_history(scoped_path, self.authz, self.fs_ptr, self.pool,
-                            start, end, limit)
-
     def get_oldest_rev(self):
-        if self.oldest is None:
-            self.oldest = 1
-            if self.scope != '/':
-                self.oldest = self.next_rev(0, find_initial_rev=True)
-        return self.oldest
+        rev = 0
+        if self.scope == '/':
+            return rev
+        return self.history[-1]
 
     def get_youngest_rev(self):
-        if not self.youngest:
-            self.youngest = fs.youngest_rev(self.fs_ptr, self.pool())
-            if self.scope != '/':
-                for path, rev in self._history('', 0, self.youngest, limit=1):
-                    self.youngest = rev
-        return self.youngest
+        rev = self.rev
+        if self.scope == '/':
+            return rev
+        return self.history[0]
 
-    def previous_rev(self, rev, path=''):
-        rev = self.normalize_rev(rev)
-        if rev > 1: # don't use oldest here, as it's too expensive
-            try:
-                for _, prev in self._history(path, 0, rev-1, limit=1):
-                    return prev
-            except (SystemError, # "null arg to internal routine" in 1.2.x
-                    core.SubversionException): # in 1.3.x
-                pass
+    def previous_rev(self, rev):
+        rev = int(rev)
+        if rev == 0:
+            return None
+        if self.scope == '/':
+            return rev - 1
+        idx = self.history.index(rev)
+        if idx + 1 < len(self.history):
+            return self.history[idx + 1]
         return None
 
-    def next_rev(self, rev, path='', find_initial_rev=False):
-        rev = self.normalize_rev(rev)
-        next = rev + 1
-        youngest = self.youngest_rev
-        while next <= youngest:
-            try:
-                for _, next in self._history(path, rev+1, next, limit=1):
-                    return next
-            except (SystemError, # "null arg to internal routine" in 1.2.x
-                    core.SubversionException): # in 1.3.x
-                if not find_initial_rev:
-                    return next # a 'delete' event is also interesting...
-            next += 1
+    def next_rev(self, rev):
+        rev = int(rev)
+        if rev == self.rev:
+            return None
+        if self.scope == '/':
+            return rev + 1
+        if rev == 0:
+            return self.oldest_rev
+        idx = self.history.index(rev)
+        if idx > 0:
+            return self.history[idx - 1]
         return None
 
     def rev_older_than(self, rev1, rev2):
@@ -371,8 +325,7 @@ class SubversionRepository(Repository):
                 older = None # 'older' is the currently examined history tuple
                 for p, r in _get_history(self.scope + path, self.authz,
                                          self.fs_ptr, subpool, 0, rev, limit):
-                    older = (_path_within_scope(self.scope, p), r,
-                             Changeset.ADD)
+                    older = (_scoped_path(self.scope, p), r, Changeset.ADD)
                     rev = self.previous_rev(r)
                     if newer:
                         if older[0] == path:
@@ -392,68 +345,6 @@ class SubversionRepository(Repository):
             else:
                 expect_deletion = True
                 rev = self.previous_rev(rev)
-
-    def get_changes(self, old_path, old_rev, new_path, new_rev,
-                   ignore_ancestry=0):
-        old_node = new_node = None
-        old_rev = self.normalize_rev(old_rev)
-        new_rev = self.normalize_rev(new_rev)
-        if self.has_node(old_path, old_rev):
-            old_node = self.get_node(old_path, old_rev)
-        else:
-            raise TracError, ('The Base for Diff is invalid: path %s'
-                              ' doesn\'t exist in revision %s' \
-                              % (old_path, old_rev))
-        if self.has_node(new_path, new_rev):
-            new_node = self.get_node(new_path, new_rev)
-        else:
-            raise TracError, ('The Target for Diff is invalid: path %s'
-                              ' doesn\'t exist in revision %s' \
-                              % (new_path, new_rev))
-        if new_node.kind != old_node.kind:
-            raise TracError, ('Diff mismatch: Base is a %s (%s in revision %s) '
-                              'and Target is a %s (%s in revision %s).' \
-                              % (old_node.kind, old_path, old_rev,
-                                 new_node.kind, new_path, new_rev))
-        subpool = Pool(self.pool)
-        if new_node.isdir:
-            editor = DiffChangeEditor()
-            e_ptr, e_baton = delta.make_editor(editor, subpool())
-            old_root = fs.revision_root(self.fs_ptr, old_rev, subpool())
-            new_root = fs.revision_root(self.fs_ptr, new_rev, subpool())
-            def authz_cb(root, path, pool): return 1
-            text_deltas = 0 # as this is anyway re-done in Diff.py...
-            entry_props = 0 # "... typically used only for working copy updates"
-            repos.svn_repos_dir_delta(old_root,
-                                      (self.scope + old_path).strip('/'), '',
-                                      new_root,
-                                      (self.scope + new_path).strip('/'),
-                                      e_ptr, e_baton, authz_cb,
-                                      text_deltas,
-                                      1, # directory
-                                      entry_props,
-                                      ignore_ancestry,
-                                      subpool())
-            for path, kind, change in editor.deltas:
-                old_node = new_node = None
-                if change != Changeset.ADD:
-                    old_node = self.get_node(posixpath.join(old_path, path),
-                                             old_rev)
-                if change != Changeset.DELETE:
-                    new_node = self.get_node(posixpath.join(new_path, path),
-                                             new_rev)
-                else:
-                    kind = _kindmap[fs.check_path(old_root,
-                                                  self.scope + old_node.path,
-                                                  subpool())]
-                yield  (old_node, new_node, kind, change)
-        else:
-            old_root = fs.revision_root(self.fs_ptr, old_rev, subpool())
-            new_root = fs.revision_root(self.fs_ptr, new_rev, subpool())
-            if fs.contents_changed(old_root, self.scope + old_path,
-                                   new_root, self.scope + new_path,
-                                   subpool()):
-                yield (old_node, new_node, Node.FILE, Changeset.EDIT)
 
 
 class SubversionNode(Node):
@@ -477,12 +368,8 @@ class SubversionNode(Node):
                                                self.pool())
         self.created_path = fs.node_created_path(self.root, self.scoped_path,
                                                  self.pool())
-        # Note: 'created_path' differs from 'path' if the last change was a copy,
-        #        and furthermore, 'path' might not exist at 'create_rev'.
-        #        The only guarantees are:
-        #          * this node exists at (path,rev)
-        #          * the node existed at (created_path,created_rev)
-        # TODO: check node id
+        # 'created_path' differs from 'path' if the last operation is a copy,
+        # and furthermore, 'path' might not exist at 'create_rev'
         self.rev = self.created_rev
         
         Node.__init__(self, path, self.rev, _kindmap[node_type])
@@ -515,9 +402,9 @@ class SubversionNode(Node):
         pool = Pool(self.pool)
         for path, rev in _get_history(self.scoped_path, self.authz, self.fs_ptr,
                                       pool, 0, self._requested_rev, limit):
-            path = _path_within_scope(self.scope, path)
-            if rev > 0 and path:
-                older = (path, rev, Changeset.ADD)
+            scoped_path = _scoped_path(self.scope, path)
+            if rev > 0 and scoped_path:
+                older = (scoped_path, rev, Changeset.ADD)
                 if newer:
                     change = newer[0] == older[0] and Changeset.EDIT or \
                              Changeset.COPY
@@ -526,9 +413,6 @@ class SubversionNode(Node):
                 newer = older
         if newer:
             yield newer
-
-#    def get_previous(self):
-#        # FIXME: redo it with fs.node_history
 
     def get_properties(self):
         props = fs.node_proplist(self.root, self.scoped_path, self.pool())
@@ -610,7 +494,7 @@ class SubversionChangeset(Changeset):
                 change.base_rev = fs.node_created_rev(b_root, b_path, tmp())
             kind = _kindmap[change.item_kind]
             path = path[len(self.scope) - 1:]
-            base_path = _path_within_scope(self.scope, change.base_path)
+            base_path = _scoped_path(self.scope, change.base_path)
             changes.append([path, kind, action, base_path, change.base_rev])
             idx += 1
 
@@ -631,47 +515,3 @@ class SubversionChangeset(Changeset):
 
     def _get_prop(self, name):
         return fs.revision_prop(self.fs_ptr, self.rev, name, self.pool())
-
-
-#
-# Delta editor for diffs between arbitrary nodes
-#
-# Note 1: the 'copyfrom_path' and 'copyfrom_rev' information is not used
-#         because 'repos.svn_repos_dir_delta' *doesn't* provide it.
-#
-# Note 2: the 'dir_baton' is the path of the parent directory
-#
-
-class DiffChangeEditor(delta.Editor): 
-
-    def __init__(self):
-        self.deltas = []
-    
-    # -- svn.delta.Editor callbacks
-
-    def open_root(self, base_revision, dir_pool):
-        return ('/', Changeset.EDIT)
-
-    def add_directory(self, path, dir_baton, copyfrom_path, copyfrom_rev,
-                      dir_pool):
-        self.deltas.append((path, Node.DIRECTORY, Changeset.ADD))
-        return (path, Changeset.ADD)
-
-    def open_directory(self, path, dir_baton, base_revision, dir_pool):
-        return (path, dir_baton[1])
-
-    def change_dir_prop(self, dir_baton, name, value, pool):
-        path, change = dir_baton
-        if change != Changeset.ADD:
-            self.deltas.append((path, Node.DIRECTORY, change))
-
-    def delete_entry(self, path, revision, dir_baton, pool):
-        self.deltas.append((path, None, Changeset.DELETE))
-
-    def add_file(self, path, dir_baton, copyfrom_path, copyfrom_revision,
-                 dir_pool):
-        self.deltas.append((path, Node.FILE, Changeset.ADD))
-
-    def open_file(self, path, dir_baton, dummy_rev, file_pool):
-        self.deltas.append((path, Node.FILE, Changeset.EDIT))
-

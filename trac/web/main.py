@@ -17,13 +17,11 @@
 #         Matthew Good <trac@matt-good.net>
 
 import os
-import sys
-import dircache
 
 from trac.core import *
 from trac.env import open_environment
 from trac.perm import PermissionCache, PermissionError
-from trac.util import escape, format_datetime, http_date, to_utf8, Markup
+from trac.util import escape, enum, format_datetime, http_date, to_utf8, Markup
 from trac.web.api import absolute_url, Request, RequestDone, IAuthenticator, \
                          IRequestHandler
 from trac.web.chrome import Chrome
@@ -62,8 +60,6 @@ class RequestDispatcher(Component):
 
     authenticators = ExtensionPoint(IAuthenticator)
     handlers = ExtensionPoint(IRequestHandler)
-    default_handler = SingletonExtensionPoint(IRequestHandler,
-                                              'trac', 'default_handler')
 
     def authenticate(self, req):
         for authenticator in self.authenticators:
@@ -92,13 +88,14 @@ class RequestDispatcher(Component):
 
         # Select the component that should handle the request
         chosen_handler = None
+        default_handler = None
         if not req.path_info or req.path_info == '/':
-            chosen_handler = self.default_handler
-        else:
-            for handler in self.handlers:
-                if handler.match_request(req):
-                    chosen_handler = handler
-                    break
+            default_handler = self.config.get('trac', 'default_handler')
+        for handler in self.handlers:
+            if handler.match_request(req) or \
+               handler.__class__.__name__ == default_handler:
+                chosen_handler = handler
+                break
 
         chrome.populate_hdf(req, chosen_handler)
 
@@ -282,17 +279,24 @@ def send_project_index(req, options, env_paths=None):
    <a href="<?cs var:project.href ?>" title="<?cs var:project.description ?>">
     <?cs var:project.name ?></a><?cs
   else ?>
-   <?cs var:project.name ?>
-   <small><em><?cs var:project.description ?></em></small><?cs
+   <small><?cs var:project.name ?>: <em>Error</em> <br />
+   (<?cs var:project.description ?>)</small><?cs
   /if ?>
   </li><?cs
  /each ?></ul></body>
 </html>''')
 
+    if not env_paths and 'TRAC_ENV_PARENT_DIR' in options:
+        dir = options['TRAC_ENV_PARENT_DIR']
+        env_paths = [os.path.join(dir, f) for f in os.listdir(dir)]
+
     href = Href(req.idx_location)
     try:
         projects = []
-        for project, env_path in get_projects(options, env_paths).items():
+        for env_path in env_paths:
+            if not os.path.isdir(env_path):
+                continue
+            env_dir, project = os.path.split(env_path)
             try:
                 env = _open_environment(env_path)
                 proj = {
@@ -318,7 +322,7 @@ def get_environment(req, options, threaded=True):
     elif 'TRAC_ENV_PARENT_DIR' in options:
         env_parent_dir = options['TRAC_ENV_PARENT_DIR']
         env_name = req.cgi_location.split('/')[-1]
-        env_path = os.path.join(os.path.normpath(env_parent_dir), env_name)
+        env_path = os.path.join(env_parent_dir, env_name)
         if not len(env_name) or not os.path.exists(env_path):
             return None
     else:
@@ -329,34 +333,3 @@ def get_environment(req, options, threaded=True):
               'the Trac environment(s).'
 
     return _open_environment(env_path, threaded)
-
-
-def get_projects(options, env_paths, warn=False):
-    """Retrieve canonical project to environment path mapping.
-
-    The environments may not be all valid environments, though,
-    but they are serious candidates...
-    """
-    env_paths = env_paths or []
-    if 'TRAC_ENV_PARENT_DIR' in options:
-        env_parent_dir = os.path.normpath(options['TRAC_ENV_PARENT_DIR'])
-        if env_parent_dir:
-            paths = dircache.listdir(env_parent_dir)[:]
-            dircache.annotate(env_parent_dir, paths)
-            env_paths += [os.path.join(env_parent_dir, project) \
-                          for project in paths if project[-1] == '/']
-    projects = {}
-    for env_path in env_paths:
-        env_path = os.path.normpath(env_path)
-        if not os.path.isdir(env_path):
-            continue
-        project = os.path.split(env_path)[1]
-        if project in projects:
-            if warn:
-                print >>sys.stderr,('Warning: Ignoring project "%s" since ' \
-                                    'it conflicts with project "%s"' \
-                                    % (env_path, projects[project]))
-        else:
-            projects[project] = env_path
-    return projects
-

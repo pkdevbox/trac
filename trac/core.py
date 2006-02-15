@@ -18,59 +18,30 @@
 
 from trac.util import TracError
 
-__all__ = ['Component', 'ExtensionPoint', 'SingletonExtensionPoint',
-           'implements', 'Interface', 'TracError']
+__all__ = ['Component', 'ExtensionPoint', 'implements', 'Interface',
+           'TracError']
 
 
 class Interface(object):
-    """Marker base class for extension point interfaces."""
+    """Dummy base class for interfaces.
+    
+    (Might use PyProtocols in the future.)
+    """
 
-
-class ExtensionPoint(property):
+class ExtensionPoint(object):
     """Marker class for extension points in components."""
 
     def __init__(self, interface):
         """Create the extension point.
         
-        @param interface: the `Interface` subclass that defines the protocol
-            for the extension point
+        @param interface: the `Interface` class that defines the protocol for
+                          the extension point
         """
-        property.__init__(self, self.extensions)
         self.interface = interface
-        self.__doc__ = 'List of components that implement `%s`' % \
-                       self.interface.__name__
-
-    def extensions(self, component):
-        """Return a list of components that declare to implement the extension
-        point interface."""
-        extensions = ComponentMeta._registry.get(self.interface, [])
-        return filter(None, [component.compmgr[cls] for cls in extensions])
 
     def __repr__(self):
         """Return a textual representation of the extension point."""
         return '<ExtensionPoint %s>' % self.interface.__name__
-
-
-class SingletonExtensionPoint(property):
-    def __init__(self, interface, cfg_section, cfg_property, default=None):
-        property.__init__(self, self.implementation)
-        self.xtnpt = ExtensionPoint(interface)
-        self.cfg_section = cfg_section
-        self.cfg_property = cfg_property
-        self.default = default
-
-    def implementation(self, component):
-        cfgvalue = component.config.get(self.cfg_section, self.cfg_property)
-        for impl in self.xtnpt.extensions(component):
-            if impl.__class__.__name__ == cfgvalue:
-                return impl
-        if self.default is not None:
-            return self.default
-        raise AttributeError('Cannot find an implementation of the "%s" '
-                             'interface named "%s".  Please update your '
-                             'trac.ini setting "%s.%s"'
-                             % (self.xtnpt.interface.__name__, cfgvalue,
-                                self.cfg_section, self.cfg_property))
 
 
 class ComponentMeta(type):
@@ -83,8 +54,18 @@ class ComponentMeta(type):
 
     def __new__(cls, name, bases, d):
         """Create the component class."""
+        xtnpts = {}
+        for base in [base for base in bases
+                     if hasattr(base, '_extension_points')]:
+            xtnpts.update(base._extension_points)
+        for key, value in d.items():
+            if isinstance(value, ExtensionPoint):
+                xtnpts[key] = value
+                del d[key]
 
         new_class = type.__new__(cls, name, bases, d)
+        new_class._extension_points = xtnpts
+
         if name == 'Component':
             # Don't put the Component base class in the registry
             return new_class
@@ -169,6 +150,19 @@ class Component(object):
             compmgr.component_activated(self)
             return self
         return compmgr[cls]
+
+    def __getattr__(self, name):
+        """If requesting an extension point member, return a list of components
+        that declare to implement the extension point interface."""
+        xtnpt = self._extension_points.get(name)
+        if xtnpt:
+            extensions = ComponentMeta._registry.get(xtnpt.interface, [])
+            return [self.compmgr[cls] for cls in extensions
+                    if self.compmgr[cls]]
+        cls = self.__class__.__name__
+        if hasattr(self, '__module__'):
+            cls = '.'.join((self.__module__, cls))
+        raise AttributeError, "'%s' object has no attribute '%s'" % (cls, name)
 
 
 class ComponentManager(object):

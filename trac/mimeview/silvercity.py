@@ -15,9 +15,10 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 
 """Syntax highlighting module, based on the SilverCity module.
-
 Get it at: http://silvercity.sourceforge.net/
 """
+
+from __future__ import generators
 
 import re
 try:

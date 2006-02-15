@@ -1,6 +1,6 @@
 # -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
@@ -14,6 +14,7 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
 import os
 import re
 import time
@@ -22,13 +23,12 @@ from trac import util
 from trac.attachment import attachment_to_hdf, Attachment
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
+from trac.Notify import TicketNotifyEmail
 from trac.ticket import Milestone, Ticket, TicketSystem
-from trac.ticket.notification import TicketNotifyEmail
 from trac.Timeline import ITimelineEventProvider
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki import wiki_to_html, wiki_to_oneliner
-
 
 class NewticketModule(Component):
 
@@ -236,94 +236,70 @@ class TicketModule(Component):
     def get_timeline_filters(self, req):
         if req.perm.has_permission('TICKET_VIEW'):
             yield ('ticket', 'Ticket changes')
-            if self.config.getbool('timeline', 'ticket_show_details'):
-                yield ('ticket_details', 'Ticket details', False)
 
     def get_timeline_events(self, req, start, stop, filters):
-        format = req.args.get('format')
+        if 'ticket' in filters:
+            format = req.args.get('format')
+            sql = []
 
-        status_map = {'new': ('newticket', 'created'),
-                      'reopened': ('newticket', 'reopened'),
-                      'closed': ('closedticket', 'closed'),
-                      'edit': ('editedticket', 'updated')}
+            # New tickets
+            sql.append("SELECT time,id,'','new',type,summary,reporter,summary"
+                       " FROM ticket WHERE time>=%s AND time<=%s")
 
-        def produce((id, t, author, type, summary), status, fields, comment):
-            if status == 'edit':
-                if 'ticket_details' in filters:
-                    info = ''
-                    if len(fields) > 0:
-                        info = ', '.join(['<i>%s</i>' % f for f in \
-                                          fields.keys()]) + ' changed<br />'
-                else:
-                    return None
-            elif 'ticket' in filters:
-                if status == 'closed' and fields.has_key('resolution'):
-                    info = fields['resolution']
-                    if info and comment:
-                        info = '%s: ' % info
-                else:
-                    info = ''
-            else:
-                return None
-            kind, verb = status_map[status]
-            title = util.Markup('Ticket <em title="%s">#%s</em> (%s) %s by %s',
-                                summary, id, type, verb, author)
-            href = format == 'rss' and self.env.abs_href.ticket(id) or \
-                   self.env.href.ticket(id)
+            # Reopened tickets
+            sql.append("SELECT t1.time,t1.ticket,'','reopened',t.type,"
+                       "       t2.newvalue,t1.author,t.summary "
+                       " FROM ticket_change t1"
+                       "   LEFT OUTER JOIN ticket_change t2 ON (t1.time=t2.time"
+                       "     AND t1.ticket=t2.ticket AND t2.field='comment')"
+                       "   LEFT JOIN ticket t on t.id = t1.ticket "
+                       " WHERE t1.field='status' AND t1.newvalue='reopened'"
+                       "   AND t1.time>=%s AND t1.time<=%s")
 
-            if status == 'new':
-                message = summary
-            else:
-                message = util.Markup(info)
-                if comment:
-                    if format == 'rss':
-                        message += wiki_to_html(comment, self.env, req, db,
-                                                absurls=True)
-                    else:
-                        message += wiki_to_oneliner(comment, self.env, db,
-                                                    shorten=True)
-            return kind, href, title, t, author, message
+            # Closed tickets
+            sql.append("SELECT t1.time,t1.ticket,t2.newvalue,'closed',t.type,"
+                       "       t3.newvalue,t1.author,t.summary"
+                       " FROM ticket_change t1"
+                       "   INNER JOIN ticket_change t2 ON t1.ticket=t2.ticket"
+                       "     AND t1.time=t2.time"
+                       "   LEFT OUTER JOIN ticket_change t3 ON t1.time=t3.time"
+                       "     AND t1.ticket=t3.ticket AND t3.field='comment'"
+                       "   LEFT JOIN ticket t on t.id = t1.ticket "
+                       " WHERE t1.field='status' AND t1.newvalue='closed'"
+                       "   AND t2.field='resolution'"
+                       "   AND t1.time>=%s AND t1.time<=%s")
 
-        # Ticket changes
-        if 'ticket' in filters or 'ticket_details' in filters:
             db = self.env.get_db_cnx()
             cursor = db.cursor()
-
-            cursor.execute("SELECT t.id,tc.time,tc.author,t.type,t.summary, "
-                           "       tc.field,tc.oldvalue,tc.newvalue "
-                           "  FROM ticket_change tc "
-                           "    INNER JOIN ticket t ON t.id = tc.ticket "
-                           "      AND tc.time>=%s AND tc.time<=%s "
-                           "ORDER BY tc.time"
-                           % (start, stop))
-            previous_update = None
-            for id,t,author,type,summary,field,oldvalue,newvalue in cursor:
-                if not previous_update or (id,t,author) != previous_update[:3]:
-                    if previous_update:
-                        ev = produce(previous_update, status, fields, comment)
-                        if ev:
-                            yield ev
-                    status, fields, comment = 'edit', {}, ''
-                    previous_update = (id,t,author, type, summary)
-                if field == 'comment':
-                    comment = newvalue
-                elif field == 'status' and newvalue in ('reopened', 'closed'):
-                    status = newvalue
+            cursor.execute(" UNION ALL ".join(sql), (start, stop, start, stop,
+                           start, stop))
+            kinds = {'new': 'newticket', 'reopened': 'newticket',
+                     'closed': 'closedticket'}
+            verbs = {'new': 'created', 'reopened': 'reopened',
+                     'closed': 'closed'}
+            for t, id, resolution, status, type, message, author, summary \
+                    in cursor:
+                title = util.Markup('Ticket <em title="%s">#%s</em> (%s) %s by '
+                                    '%s', summary, id, type, verbs[status],
+                                    author)
+                if format == 'rss':
+                    href = self.env.abs_href.ticket(id)
+                    if status != 'new':
+                        message = wiki_to_html(message or '--', self.env, req,
+                                               db)
+                    else:
+                        message = util.escape(message)
                 else:
-                    fields[field] = newvalue
-            if previous_update:
-                ev = produce(previous_update, status, fields, comment)
-                if ev:
-                    yield ev
-            
-            # New tickets
-            if 'ticket' in filters:
-                cursor.execute("SELECT id,time,reporter,type,summary"
-                               "  FROM ticket WHERE time>=%s AND time<=%s",
-                               (start, stop))
-                for row in cursor:
-                    yield produce(row, 'new', {}, None)
- 
+                    href = self.env.href.ticket(id)
+                    if status != 'new':
+                        message = util.Markup(': ').join(filter(None, [
+                            resolution,
+                            wiki_to_oneliner(message, self.env, db,
+                                             shorten=True)
+                        ]))
+                    else:
+                        message = util.escape(util.shorten_line(message))
+                yield kinds[status], href, title, t, author, message
 
     # Internal methods
 
@@ -436,7 +412,7 @@ class TicketModule(Component):
         req.hdf['ticket.changes'] = changes
 
         # List attached files
-        for idx, attachment in enumerate(Attachment.select(self.env, 'ticket',
+        for idx, attachment in util.enum(Attachment.select(self.env, 'ticket',
                                                            ticket.id)):
             hdf = attachment_to_hdf(self.env, db, req, attachment)
             req.hdf['ticket.attachments.%s' % idx] = hdf
@@ -448,3 +424,63 @@ class TicketModule(Component):
         actions = TicketSystem(self.env).get_available_actions(ticket, req.perm)
         for action in actions:
             req.hdf['ticket.actions.' + action] = '1'
+
+
+class UpdateDetailsForTimeline(Component):
+    """Provide all details about ticket changes in the Timeline"""
+
+    implements(ITimelineEventProvider)
+
+    # ITimelineEventProvider methods
+
+    def get_timeline_filters(self, req):
+        if not self.config.getbool('timeline', 'ticket_show_details'):
+            return
+        if req.perm.has_permission('TICKET_VIEW'):
+            yield ('ticket_details', 'Ticket details', False)
+
+    def get_timeline_events(self, req, start, stop, filters):
+        if 'ticket_details' in filters:
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
+            cursor.execute("SELECT tc.time,tc.ticket,t.type,tc.field, "
+                           "       tc.oldvalue,tc.newvalue,tc.author,t.summary "
+                           "FROM ticket_change tc"
+                           "   INNER JOIN ticket t ON t.id = tc.ticket "
+                           "AND tc.time>=%s AND tc.time<=%s ORDER BY tc.time"
+                           % (start, stop))
+            previous_update = None
+            updates = []
+            ticket_change = False
+            for time,id,type,field,oldvalue,newvalue,author,summary in cursor:
+                if not previous_update or (time,id,author) != previous_update[:3]:
+                    if previous_update and not ticket_change:
+                        updates.append((previous_update,field_changes,comment))
+                    ticket_change = False
+                    field_changes = []
+                    comment = ''
+                    previous_update = (time,id,author,type,summary)
+                if field == 'comment':
+                    comment = newvalue
+                elif field == 'status' and newvalue in ['reopened', 'closed']:
+                    ticket_change = True
+                else:
+                    field_changes.append(field)
+            if previous_update and not ticket_change:
+                updates.append((previous_update,field_changes,comment))
+
+            absurls = req.args.get('format') == 'rss' # Kludge
+            for (t,id,author,type,summary),field_changes,comment in updates:
+                if absurls:
+                    href = self.env.abs_href.ticket(id)
+                else:
+                    href = self.env.href.ticket(id) 
+                title = util.Markup('Ticket <em title="%s">#%s</em> (%s) '
+                                    'updated by %s', summary, id, type, author)
+                message = util.Markup()
+                if len(field_changes) > 0:
+                    message = util.Markup(', '.join(field_changes) + \
+                                          ' changed.<br />')
+                message += wiki_to_oneliner(comment, self.env, db,
+                                            shorten=True, absurls=absurls)
+                yield 'editedticket', href, title, t, author, message

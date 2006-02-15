@@ -14,6 +14,7 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
 import re
 import time
 
@@ -217,8 +218,6 @@ class SearchModule(Component):
         elif kwd[0:len('milestone:')] == 'milestone:':
             return self.env.href.milestone(kwd[len('milestone:'):])
         # Source quickjump
-        elif kwd[0] == '/':
-            return self.env.href.browser(kwd)
         elif kwd[0:len('source:')] == 'source:':
             return self.env.href.browser(kwd[len('source:'):])
         # Wiki quickjump

@@ -15,13 +15,14 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
 import re
 import urllib
 
 from trac import util
 from trac.util import sorted
 from trac.core import *
-from trac.mimeview import Mimeview, is_binary, get_mimetype
+from trac.mimeview import get_mimetype, is_binary, detect_unicode, Mimeview
 from trac.perm import IPermissionRequestor
 from trac.web import IRequestHandler, RequestDone
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
@@ -76,23 +77,19 @@ class BrowserModule(Component):
 
         repos = self.env.get_repository(req.authname)
         node = get_existing_node(self.env, repos, path, rev)
-        rev = repos.normalize_rev(rev)
 
         hidden_properties = [p.strip() for p
                              in self.config.get('browser', 'hide_properties').split(',')]
-
         req.hdf['title'] = path
         req.hdf['browser'] = {
             'path': path,
-            'revision': rev,
+            'revision': rev or repos.youngest_rev,
             'props': dict([(name, value)
                            for name, value in node.get_properties().items()
                            if not name in hidden_properties]),
             'href': self.env.href.browser(path, rev=rev or
                                           repos.youngest_rev),
-            'log_href': self.env.href.log(path, rev=rev or None),
-            'restr_changeset_href': self.env.href.changeset(node.rev, path),
-            'anydiff_href': self.env.href.anydiff(),
+            'log_href': self.env.href.log(path, rev=rev or None)
         }
 
         path_links = get_path_links(self.env.href, path, rev)
@@ -121,6 +118,7 @@ class BrowserModule(Component):
 
         info = []
         for entry in node.get_entries():
+            entry_rev = rev and entry.rev
             info.append({
                 'name': entry.name,
                 'fullpath': entry.path,
@@ -154,14 +152,7 @@ class BrowserModule(Component):
 
         req.hdf['browser.items'] = info
         req.hdf['browser.changes'] = changes
-        if node.path != '':
-            zip_href = self.env.href.changeset(rev, node.path, old=rev,
-                                               old_path='/', # special case #238
-                                               format='zip')
-            add_link(req, 'alternate', zip_href, 'Zip Archive',
-                     'application/zip', 'zip')
-        
-        
+
     def _render_file(self, req, repos, node, rev=None):
         req.perm.assert_permission('FILE_VIEW')
 
@@ -174,23 +165,21 @@ class BrowserModule(Component):
             'author': changeset.author or 'anonymous',
             'message': wiki_to_html(changeset.message or '--', self.env, req,
                                     escape_newlines=True)
-        }
+        } 
+        mime_type = node.content_type
+        if not mime_type or mime_type == 'application/octet-stream':
+            mime_type = get_mimetype(node.name) or mime_type or 'text/plain'
 
-        mimeview = Mimeview(self.env)
-        
-        def get_mime_type(content=None):
-            mime_type = node.content_type
-            if not mime_type or mime_type == 'application/octet-stream':
-                mime_type = get_mimetype(node.name, content) or \
-                            mime_type or 'text/plain'
-            return mime_type
+        # We don't have to guess if the charset is specified in the
+        # svn:mime-type property
+        ctpos = mime_type.find('charset=')
+        if ctpos >= 0:
+            charset = mime_type[ctpos + 8:]
+        else:
+            charset = None
 
         format = req.args.get('format')
         if format in ['raw', 'txt']:
-            content = node.get_content()
-            chunk = content.read(CHUNK_SIZE)
-            mime_type = get_mime_type(chunk)
-
             req.send_response(200)
             req.send_header('Content-Type',
                             format == 'txt' and 'text/plain' or mime_type)
@@ -198,35 +187,32 @@ class BrowserModule(Component):
             req.send_header('Last-Modified', util.http_date(node.last_modified))
             req.end_headers()
 
+            content = node.get_content()
             while 1:
+                chunk = content.read(CHUNK_SIZE)
                 if not chunk:
                     raise RequestDone
                 req.write(chunk)
-                chunk = content.read(CHUNK_SIZE)
         else:
             # Generate HTML preview
+            mimeview = Mimeview(self.env)
             content = node.get_content().read(mimeview.max_preview_size())
-            mime_type = get_mime_type(content)
-            use_rev = rev and node.rev
-            
             if not is_binary(content):
                 if mime_type != 'text/plain':
-                    plain_href = self.env.href.browser(node.path, rev=use_rev,
+                    plain_href = self.env.href.browser(node.path,
+                                                       rev=rev and node.rev,
                                                        format='txt')
                     add_link(req, 'alternate', plain_href, 'Plain Text',
                              'text/plain')
-                    
-            self.log.debug("Rendering preview of file %s with mime-type %s"
-                           % (node.name, mime_type))
-
-            req.hdf['file'] = mimeview.preview_to_hdf(req, content, mime_type,
+            req.hdf['file'] = mimeview.preview_to_hdf(req, mime_type, charset,
+                                                      content,
                                                       node.name, node.rev,
                                                       annotations=['lineno'])
 
-            raw_href = self.env.href.browser(node.path, rev=use_rev,
+            raw_href = self.env.href.browser(node.path, rev=rev and node.rev,
                                              format='raw')
-            add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
             req.hdf['file.raw_href'] = raw_href
+            add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
 
             add_stylesheet(req, 'common/css/code.css')
 

@@ -2,70 +2,27 @@
 <?cs include "macros.cs"?>
 
 <div id="ctxtnav" class="nav">
- <h2>Navigation</h2><?cs
+ <h2>Changeset Navigation</h2><?cs
  with:links = chrome.links ?>
   <ul><?cs
-   if:changeset.chgset ?><?cs
-    if:changeset.restricted ?><?cs
-     set:change = "Change" ?><?cs
-    else ?><?cs 
-     set:change = "Changeset" ?><?cs
-    /if ?>
-    <li class="first"><?cs
-     if:len(links.prev) ?> &larr; 
-      <a class="prev" href="<?cs var:links.prev.0.href ?>" title="<?cs
-       var:links.prev.0.title ?>">Previous <?cs var:change ?></a> <?cs 
-     else ?>
-      <span class="missing">&larr; Previous <?cs var:change ?></span><?cs 
-     /if ?>
-    </li>
-    <li class="last"><?cs
-     if:len(links.next) ?>
-      <a class="next" href="<?cs var:links.next.0.href ?>" title="<?cs
-       var:links.next.0.title ?>">Next <?cs var:change ?></a> &rarr; <?cs 
-     else ?>
-      <span class="missing">Next <?cs var:change ?> &rarr;</span><?cs
-     /if ?>
+   if:len(links.prev) ?>
+    <li class="first<?cs if:!len(links.next) ?> last<?cs /if ?>">
+     &larr; <a class="prev" href="<?cs var:links.prev.0.href ?>" title="<?cs
+       var:links.prev.0.title ?>">Previous Changeset</a>
     </li><?cs
-   else ?>
-    <li class="first"><a href="<?cs var:changeset.reverse_href ?>">Reverse Diff</a></li><?cs
+   /if ?><?cs
+   if:len(links.next) ?>
+    <li class="<?cs if:len(links.prev) ?>first <?cs /if ?>last">
+     <a class="next" href="<?cs var:links.next.0.href ?>" title="<?cs
+       var:links.next.0.title ?>">Next Changeset</a> &rarr;
+    </li><?cs
    /if ?>
   </ul><?cs
  /with ?>
 </div>
 
 <div id="content" class="changeset">
- <div id="title"><?cs
-  if:changeset.chgset ?><?cs
-   if:changeset.restricted ?>
-    <h1>Changeset <a title="Show full changeset" href="<?cs var:changeset.href.new_rev ?>">
-      <?cs var:changeset.new_rev ?></a> 
-     for <a title="Show entry in browser" href="<?cs var:changeset.href.new_path ?>">
-      <?cs var:changeset.new_path ?></a> 
-    </h1><?cs
-   else ?>
-    <h1>Changeset <?cs var:changeset.new_rev ?></h1><?cs
-   /if ?><?cs
-  else ?><?cs
-    if:changeset.restricted ?>
-    <h1>Changes in <a title="Show entry in browser" href="<?cs var:changeset.href.new_path ?>">
-      <?cs var:changeset.new_path ?></a>
-      <a title="Show revision log" href="<?cs var:changeset.href.log ?>">
-      [<?cs var:changeset.old_rev ?>:<?cs var:changeset.new_rev ?>]</a>
-    </h1><?cs
-   else ?>
-    <h1>Changes from <a title="Show entry in browser" href="<?cs var:changeset.href.old_path ?>">
-      <?cs var:changeset.old_path ?></a> 
-     at <a title="Show full changeset" href="<?cs var:changeset.href.old_rev ?>">
-      r<?cs var:changeset.old_rev ?></a>
-     to <a title="Show entry in browser" href="<?cs var:changeset.href.new_path ?>">
-     <?cs var:changeset.new_path ?></a> 
-     at <a title="Show full changeset" href="<?cs var:changeset.href.new_rev ?>">
-     r<?cs var:changeset.new_rev ?></a>
-    </h1><?cs
-   /if ?><?cs
-  /if ?>
- </div>
+<h1>Changeset <?cs var:changeset.revision ?></h1>
 
 <?cs each:change = changeset.changes ?><?cs
  if:len(change.diff) ?><?cs
@@ -74,13 +31,7 @@
 /each ?><?cs if:has_diffs || diff.options.ignoreblanklines 
   || diff.options.ignorecase || diff.options.ignorewhitespace ?>
 <form method="post" id="prefs" action="">
- <div><?cs 
-  if:!changeset.chgset ?>
-   <input type="hidden" name="old_path" value="<?cs var:changeset.old_path ?>" />
-   <input type="hidden" name="path" value="<?cs var:changeset.new_path ?>" />
-   <input type="hidden" name="old" value="<?cs var:changeset.old_rev ?>" />
-   <input type="hidden" name="new" value="<?cs var:changeset.new_rev ?>" /><?cs
-  /if ?>
+ <div>
   <label for="style">View differences</label>
   <select id="style" name="style">
    <option value="inline"<?cs
@@ -149,24 +100,15 @@
   /if ?>
 <?cs /def ?>
 
-<dl id="overview"><?cs
- if:changeset.chgset ?>
+<dl id="overview">
  <dt class="time">Timestamp:</dt>
- <dd class="time"><?cs var:changeset.time ?> 
-  (<?cs alt:changeset.age ?>less than one hour<?cs /alt ?> ago)</dd>
+ <dd class="time"><?cs var:changeset.time ?></dd>
  <dt class="author">Author:</dt>
  <dd class="author"><?cs var:changeset.author ?></dd>
  <dt class="message">Message:</dt>
  <dd class="message" id="searchable"><?cs
-  alt:changeset.message ?>&nbsp;<?cs /alt ?></dd><?cs
- /if ?>
- <dt class="files"><?cs 
-  if:len(changeset.changes) > #0 ?>
-   Files:<?cs
-  else ?>
-   (No files)<?cs
-  /if ?>
- </dt>
+  alt:changeset.message ?>&nbsp;<?cs /alt ?></dd>
+ <dt class="files">Files:</dt>
  <dd class="files">
   <ul><?cs each:item = changeset.changes ?>
    <li><?cs

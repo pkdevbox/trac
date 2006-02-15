@@ -14,6 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import imp
 import inspect
 import os
@@ -206,7 +207,7 @@ class ImageMacro(Component):
        within that wiki page or a ticket.
     
     Also, the file specification may refer to repository files, using the
-    `source:file` syntax (`source:file@rev` works also).
+    `source:file` syntax.
     
     The remaining arguments are optional and allow configuring the attributes
     and style of the rendered `<img>` element:
@@ -310,11 +311,8 @@ class ImageMacro(Component):
                 browser_links = []
             if parts[0] in browser_links:   # source:path
                 module, file = parts
-                rev = None
-                if '@' in file:
-                    file, rev = file.split('@')
-                url = self.env.href.browser(file, rev=rev)
-                raw_url = self.env.href.browser(file, rev=rev, format='raw')
+                url = self.env.href.browser(file)
+                raw_url = self.env.href.browser(file, format='raw')
                 desc = filespec
             else: # #ticket:attachment or WikiPage:attachment
                 # FIXME: do something generic about shorthand forms...

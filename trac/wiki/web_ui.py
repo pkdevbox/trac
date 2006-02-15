@@ -16,6 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 import StringIO
 
@@ -24,8 +25,8 @@ from trac.core import *
 from trac.perm import IPermissionRequestor
 from trac.Search import ISearchSource, query_to_sql, shorten_result
 from trac.Timeline import ITimelineEventProvider
-from trac.util import format_datetime, get_reporter_id, pretty_timedelta, \
-                      shorten_line, Markup
+from trac.util import enum, format_datetime, get_reporter_id, \
+                      pretty_timedelta, shorten_line, Markup
 from trac.versioncontrol.diff import get_diff_options, hdf_diff
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.web import IRequestHandler
@@ -72,9 +73,6 @@ class WikiModule(Component):
         action = req.args.get('action', 'view')
         pagename = req.args.get('page', 'WikiStart')
         version = req.args.get('version')
-
-        if pagename.endswith('/'):
-            req.redirect(self.env.href.wiki(pagename.strip('/')))
 
         db = self.env.get_db_cnx()
         page = WikiPage(self.env, pagename, version, db)

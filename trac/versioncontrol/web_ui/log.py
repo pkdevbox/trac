@@ -16,6 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christian Boos <cboos@neuf.fr>
 
+from __future__ import generators
 import re
 import urllib
 
@@ -63,19 +64,11 @@ class LogModule(Component):
         mode = req.args.get('mode', 'stop_on_copy')
         path = req.args.get('path', '/')
         rev = req.args.get('rev')
-        stop_rev = req.args.get('stop_rev')
         format = req.args.get('format')
+        stop_rev = req.args.get('stop_rev')
         verbose = req.args.get('verbose')
         limit = LOG_LIMIT
 
-        repos = self.env.get_repository(req.authname)
-        normpath = repos.normalize_path(path)
-        rev = str(repos.normalize_rev(rev))
-        if stop_rev:
-            stop_rev = str(repos.normalize_rev(stop_rev))
-            if repos.rev_older_than(rev, stop_rev):
-                rev, stop_rev = stop_rev, rev
-            
         req.hdf['title'] = path + ' (log)'
         req.hdf['log'] = {
             'mode': mode,
@@ -84,7 +77,6 @@ class LogModule(Component):
             'verbose': verbose,
             'stop_rev': stop_rev,
             'browser_href': self.env.href.browser(path),
-            'changeset_href': self.env.href.changeset(),
             'log_href': self.env.href.log(path, rev=rev)
         }
 
@@ -93,9 +85,12 @@ class LogModule(Component):
         if path_links:
             add_link(req, 'up', path_links[-1]['href'], 'Parent directory')
 
-        # The `history()` method depends on the mode:
-        #  * for ''stop on copy'' and ''follow copies'', it's `Node.history()` 
-        #  * for ''show only add, delete'' it's`Repository.get_path_history()` 
+        repos = self.env.get_repository(req.authname)
+        normpath = repos.normalize_path(path)
+        rev = str(repos.normalize_rev(rev))
+
+        # ''Node history'' uses `Node.history()`,
+        # ''Path history'' uses `Repository.get_path_history()`
         if mode == 'path_history':
             def history(limit):
                 for h in repos.get_path_history(path, rev, limit):
@@ -116,8 +111,6 @@ class LogModule(Component):
                 'log_href': self.env.href.log(old_path, rev=old_rev),
                 'browser_href': self.env.href.browser(old_path, rev=old_rev),
                 'changeset_href': self.env.href.changeset(old_rev),
-                'restricted_href': self.env.href.changeset(old_rev,
-                                                           new_path=old_path),
                 'change': old_chg
             }
             if not (mode == 'path_history' and old_chg == Changeset.EDIT):

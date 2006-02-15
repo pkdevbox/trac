@@ -26,15 +26,10 @@ try:
 except ImportError:
     from StringIO import StringIO
 
-try:
-    from svn import core, repos
-    has_svn = True
-except:
-    has_svn = False
+from svn import core, repos
 
 from trac.log import logger_factory
 from trac.test import TestSetup
-from trac.util import TracError
 from trac.versioncontrol import Changeset, Node
 from trac.versioncontrol.svn_fs import SubversionRepository
 
@@ -105,9 +100,9 @@ class SubversionRepositoryTestCase(unittest.TestCase):
         self.assertEqual(11, self.repos.normalize_rev(11))
 
     def test_rev_navigation(self):
-        self.assertEqual(1, self.repos.oldest_rev)
+        self.assertEqual(0, self.repos.oldest_rev)
         self.assertEqual(None, self.repos.previous_rev(0))
-        self.assertEqual(None, self.repos.previous_rev(1))
+        self.assertEqual(0, self.repos.previous_rev(1))
         self.assertEqual(16, self.repos.youngest_rev)
         self.assertEqual(6, self.repos.next_rev(5))
         self.assertEqual(7, self.repos.next_rev(6))
@@ -225,72 +220,6 @@ class SubversionRepositoryTestCase(unittest.TestCase):
         self.assertEqual(('branches/v1x', 8, 'copy'), history.next())
         self.assertEqual(('tags/v1', 7, 'unknown'), history.next())
         self.assertRaises(StopIteration, history.next)
-
-    # Diffs
-
-    def _cmp_diff(self, expected, got):
-        if expected[0]:
-            old = self.repos.get_node(*expected[0])
-            self.assertEqual((old.path, old.rev), (got[0].path, got[0].rev))
-        if expected[1]:
-            new = self.repos.get_node(*expected[1])
-            self.assertEqual((new.path, new.rev), (got[1].path, got[1].rev))
-        self.assertEqual(expected[2], (got[2], got[3]))
-        
-    def test_diff_file_different_revs(self):
-        diffs = self.repos.get_changes('trunk/README.txt', 2, 'trunk/README.txt', 3)
-        self._cmp_diff((('trunk/README.txt', 2),
-                        ('trunk/README.txt', 3),
-                        (Node.FILE, Changeset.EDIT)), diffs.next())
-        self.assertRaises(StopIteration, diffs.next)
-
-    def test_diff_file_different_files(self):
-        diffs = self.repos.get_changes('branches/v1x/README.txt', 12,
-                                      'branches/v1x/README2.txt', 12)
-        self._cmp_diff((('branches/v1x/README.txt', 12),
-                        ('branches/v1x/README2.txt', 12),
-                        (Node.FILE, Changeset.EDIT)), diffs.next())
-        self.assertRaises(StopIteration, diffs.next)
-
-    def test_diff_file_no_change(self):
-        diffs = self.repos.get_changes('trunk/README.txt', 7,
-                                      'tags/v1/README.txt', 7)
-        self.assertRaises(StopIteration, diffs.next)
- 
-    def test_diff_dir_different_revs(self):
-        diffs = self.repos.get_changes('trunk', 4, 'trunk', 8)
-        self._cmp_diff((None, ('trunk/dir1/dir2', 8),
-                        (Node.DIRECTORY, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('trunk/dir1/dir3', 8),
-                        (Node.DIRECTORY, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('trunk/README2.txt', 6),
-                        (Node.FILE, Changeset.ADD)), diffs.next())
-        self._cmp_diff((('trunk/dir2', 4), None,
-                        (Node.DIRECTORY, Changeset.DELETE)), diffs.next())
-        self._cmp_diff((('trunk/dir3', 4), None,
-                        (Node.DIRECTORY, Changeset.DELETE)), diffs.next())
-        self.assertRaises(StopIteration, diffs.next)
-
-    def test_diff_dir_different_dirs(self):
-        diffs = self.repos.get_changes('trunk', 1, 'branches/v1x', 12)
-        self._cmp_diff((None, ('branches/v1x/dir1', 12),
-                        (Node.DIRECTORY, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('branches/v1x/dir1/dir2', 12),
-                        (Node.DIRECTORY, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('branches/v1x/dir1/dir3', 12),
-                        (Node.DIRECTORY, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('branches/v1x/README.txt', 12),
-                        (Node.FILE, Changeset.ADD)), diffs.next())
-        self._cmp_diff((None, ('branches/v1x/README2.txt', 12),
-                        (Node.FILE, Changeset.ADD)), diffs.next())
-        self.assertRaises(StopIteration, diffs.next)
-
-    def test_diff_dir_no_change(self):
-        diffs = self.repos.get_changes('trunk', 7,
-                                      'tags/v1', 7)
-        self.assertRaises(StopIteration, diffs.next)
-        
-    # Changesets
 
     def test_changeset_repos_creation(self):
         chgset = self.repos.get_changeset(0)
@@ -611,55 +540,12 @@ class ScopedSubversionRepositoryTestCase(unittest.TestCase):
                          changes.next())
         self.assertRaises(StopIteration, changes.next)
 
-
-class RecentPathScopedRepositoryTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.repos = SubversionRepository(REPOS_PATH + '/trunk/dir1', None,
-                                          logger_factory('test'))
-
-    def tearDown(self):
-        self.repos = None
-
-    def test_rev_navigation(self):
-        self.assertEqual(False, self.repos.has_node('/', 1))
-        self.assertEqual(False, self.repos.has_node('/', 2))
-        self.assertEqual(False, self.repos.has_node('/', 3))
-        self.assertEqual(True, self.repos.has_node('/', 4))
-        self.assertEqual(4, self.repos.oldest_rev)
-        self.assertEqual(None, self.repos.previous_rev(4))
-
-
-class NonSelfContainedScopedTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.repos = SubversionRepository(REPOS_PATH + '/tags/v1', None,
-                                          logger_factory('test'))
-
-    def tearDown(self):
-        self.repos = None
-
-    def test_mixed_changeset(self):
-        chgset = self.repos.get_changeset(7)
-        self.assertEqual(7, chgset.rev)
-        changes = chgset.get_changes()
-        self.assertEqual(('', Node.DIRECTORY, Changeset.COPY, None, 6),
-                         changes.next())
-        self.assertRaises(TracError, lambda: self.repos.get_node(None, 6))
-
-
 def suite():
-    global has_svn
     suite = unittest.TestSuite()
-    if has_svn:
-        suite.addTest(unittest.makeSuite(SubversionRepositoryTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
-        suite.addTest(unittest.makeSuite(ScopedSubversionRepositoryTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
-        suite.addTest(unittest.makeSuite(RecentPathScopedRepositoryTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
-        suite.addTest(unittest.makeSuite(NonSelfContainedScopedTestCase,
-            'test', suiteClass=SubversionRepositoryTestSetup))
+    suite.addTest(unittest.makeSuite(SubversionRepositoryTestCase, 'test',
+                                     suiteClass=SubversionRepositoryTestSetup))
+    suite.addTest(unittest.makeSuite(ScopedSubversionRepositoryTestCase, 'test',
+                                     suiteClass=SubversionRepositoryTestSetup))
     return suite
 
 if __name__ == '__main__':

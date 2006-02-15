@@ -17,10 +17,10 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import unittest
-
 from trac.core import ComponentManager
-from trac.db.sqlite_backend import SQLiteConnection
+from trac.db import SQLiteConnection
+
+import unittest
 
 
 def Mock(bases=(), *initargs, **kw):
@@ -105,12 +105,12 @@ class InMemoryDatabase(SQLiteConnection):
     """
     def __init__(self):
         SQLiteConnection.__init__(self, ':memory:')
+
         cursor = self.cnx.cursor()
 
         from trac.db_default import schema
-        from trac.db.sqlite_backend import _to_sql
         for table in schema:
-            for stmt in _to_sql(table):
+            for stmt in SQLiteConnection.to_sql(table):
                 cursor.execute(stmt)
 
         self.cnx.commit()
@@ -159,17 +159,9 @@ class EnvironmentStub(ComponentManager):
     def get_db_cnx(self):
         return self.db
 
-    def get_templates_dir(self):
-        return None
-
-    def get_known_users(self, db):
-        return []
-
 
 def suite():
     import trac.tests
-    import trac.db.tests
-    import trac.mimeview.tests
     import trac.scripts.tests
     import trac.ticket.tests
     import trac.versioncontrol.tests
@@ -178,8 +170,6 @@ def suite():
 
     suite = unittest.TestSuite()
     suite.addTest(trac.tests.suite())
-    suite.addTest(trac.db.tests.suite())
-    suite.addTest(trac.mimeview.tests.suite())
     suite.addTest(trac.scripts.tests.suite())
     suite.addTest(trac.ticket.tests.suite())
     suite.addTest(trac.versioncontrol.tests.suite())

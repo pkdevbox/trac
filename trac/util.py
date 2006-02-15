@@ -29,7 +29,20 @@ import sys
 import time
 import tempfile
 
+TRUE =  ['yes', '1', 1, 'true',  'on',  'aye']
+FALSE = ['no',  '0', 0, 'false', 'off', 'nay']
+
 CRLF = '\r\n'
+
+def enum(iterable):
+    """
+    Python 2.2 doesn't have the enumerate() function, so we provide a simple
+    implementation here.
+    """
+    idx = 0
+    for item in iter(iterable):
+        yield idx, item
+        idx += 1
 
 try:
     reversed = reversed
@@ -275,11 +288,25 @@ def to_utf8(text, charset='iso-8859-15'):
         return u.encode('utf-8')
 
 def shorten_line(text, maxlen = 75):
-    if len(text or '') < maxlen:
-        return text
-    shortline = text[:maxlen]
-    cut = shortline.rfind(' ') + 1 or shortline.rfind('\n') + 1 or maxlen
-    shortline = text[:cut]+' ...'
+    if not text:
+        return ''
+    elif len(text) < maxlen:
+        shortline = text
+    else:
+        last_cut = i = j = -1
+        cut = 0
+        while cut < maxlen and cut > last_cut:
+            last_cut = cut
+            i = text.find('[[BR]]', i+1)
+            j = text.find('\n', j+1)
+            cut = max(i,j)
+        if last_cut > 0:
+            shortline = text[:last_cut]+' ...'
+        else:
+            i = text[:maxlen].rfind(' ')
+            if i == -1:
+                i = maxlen
+            shortline = text[:i]+' ...'
     return shortline
 
 DIGITS = re.compile(r'(\d+)')
@@ -311,7 +338,7 @@ def pretty_size(size):
 
     return '%.1f %s' % (size, units[i - 1])
 
-def pretty_timedelta(time1, time2=None, resolution=None):
+def pretty_timedelta(time1, time2=None):
     """Calculate time delta (inaccurately, only for decorative purposes ;-) for
     prettyprinting. If time1 is None, the current time is used."""
     if not time1: time1 = time.time()
@@ -325,8 +352,6 @@ def pretty_timedelta(time1, time2=None, resolution=None):
              (3600,            'hour',   'hours'),
              (60,              'minute', 'minutes'))
     age_s = int(time2 - time1)
-    if resolution and age_s < resolution:
-        return ''
     if age_s < 60:
         return '%i second%s' % (age_s, age_s != 1 and 's' or '')
     for u, unit, unit_plural in units:
