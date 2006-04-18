@@ -1,4 +1,4 @@
-from trac.db import Table, Column, Index, DatabaseManager
+from trac.db import Table, Column, Index
 
 def do_upgrade(env, ver, cursor):
     cursor.execute("CREATE TEMP TABLE session_old AS SELECT * FROM session")
@@ -10,8 +10,7 @@ def do_upgrade(env, ver, cursor):
         Column('authenticated', type='int'),
         Column('var_name'),
         Column('var_value')]
-    db_backend, _ = DatabaseManager(env)._get_connector()
-    for stmt in db_backend.to_sql(session_table):
+    for stmt in db.to_sql(session_table):
         cursor.execute(stmt)
 
     cursor.execute("INSERT INTO session (sid,authenticated,var_name,var_value) "

@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2004-2006 Edgewall Software
+# Copyright (C) 2004 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
 # All rights reserved.
 #
@@ -15,12 +15,16 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 
 """Syntax highlighting module, based on the SilverCity module.
-
 Get it at: http://silvercity.sourceforge.net/
 """
 
+from __future__ import generators
+
 import re
-from StringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer
@@ -70,7 +74,6 @@ class SilverCityRenderer(Component):
     def render(self, req, mimetype, content, filename=None, rev=None):
         import SilverCity
         try:
-            mimetype = mimetype.split(';', 1)[0]
             typelang = types[mimetype]
             lang = typelang[0]
             module = getattr(SilverCity, lang)

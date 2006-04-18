@@ -154,9 +154,6 @@
     var:wiki.page_name ?></a></h1>
   <?cs if:len(wiki.history) ?><form method="get" action="">
    <input type="hidden" name="action" value="diff" />
-   <div class="buttons">
-    <input type="submit" value="View changes" />
-   </div>
    <table id="wikihist" class="listing" summary="Change history">
     <thead><tr>
      <th class="diff"></th>
@@ -183,12 +180,10 @@
       <td class="comment"><?cs var:item.comment ?></td>
      </tr>
     <?cs /each ?></tbody>
-   </table><?cs
-   if:len(wiki.history) > #10 ?>
-    <div class="buttons">
-     <input type="submit" value="View changes" />
-    </div><?cs
-   /if ?>
+   </table>
+   <div class="buttons">
+    <input type="submit" value="View changes" />
+   </div>
   </form><?cs /if ?>
  
  <?cs else ?>

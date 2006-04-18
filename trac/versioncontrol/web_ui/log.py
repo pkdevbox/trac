@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
@@ -13,22 +13,21 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christian Boos <cboos@neuf.fr>
 
+from __future__ import generators
 import re
 import urllib
 
+from trac import util
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util import http_date
-from trac.util.markup import html
-from trac.versioncontrol import Changeset
-from trac.versioncontrol.web_ui.changeset import ChangesetModule
-from trac.versioncontrol.web_ui.util import *
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki import IWikiSyntaxProvider
+from trac.versioncontrol import Changeset
+from trac.versioncontrol.web_ui.util import *
 
 LOG_LIMIT = 100
 
@@ -57,7 +56,7 @@ class LogModule(Component):
         match = re.match(r'/log(?:(/.*)|$)', req.path_info)
         if match:
             req.args['path'] = match.group(1) or '/'
-            return True
+            return 1
 
     def process_request(self, req):
         req.perm.assert_permission('LOG_VIEW')
@@ -65,19 +64,11 @@ class LogModule(Component):
         mode = req.args.get('mode', 'stop_on_copy')
         path = req.args.get('path', '/')
         rev = req.args.get('rev')
-        stop_rev = req.args.get('stop_rev')
         format = req.args.get('format')
+        stop_rev = req.args.get('stop_rev')
         verbose = req.args.get('verbose')
         limit = LOG_LIMIT
 
-        repos = self.env.get_repository(req.authname)
-        normpath = repos.normalize_path(path)
-        rev = unicode(repos.normalize_rev(rev))
-        if stop_rev:
-            stop_rev = unicode(repos.normalize_rev(stop_rev))
-            if repos.rev_older_than(rev, stop_rev):
-                rev, stop_rev = stop_rev, rev
-            
         req.hdf['title'] = path + ' (log)'
         req.hdf['log'] = {
             'mode': mode,
@@ -85,19 +76,21 @@ class LogModule(Component):
             'rev': rev,
             'verbose': verbose,
             'stop_rev': stop_rev,
-            'browser_href': req.href.browser(path),
-            'changeset_href': req.href.changeset(),
-            'log_href': req.href.log(path, rev=rev)
+            'browser_href': self.env.href.browser(path),
+            'log_href': self.env.href.log(path, rev=rev)
         }
 
-        path_links = get_path_links(req.href, path, rev)
+        path_links = get_path_links(self.env.href, path, rev)
         req.hdf['log.path'] = path_links
         if path_links:
             add_link(req, 'up', path_links[-1]['href'], 'Parent directory')
 
-        # The `history()` method depends on the mode:
-        #  * for ''stop on copy'' and ''follow copies'', it's `Node.history()` 
-        #  * for ''show only add, delete'' it's`Repository.get_path_history()` 
+        repos = self.env.get_repository(req.authname)
+        normpath = repos.normalize_path(path)
+        rev = str(repos.normalize_rev(rev))
+
+        # ''Node history'' uses `Node.history()`,
+        # ''Path history'' uses `Repository.get_path_history()`
         if mode == 'path_history':
             def history(limit):
                 for h in repos.get_path_history(path, rev, limit):
@@ -114,11 +107,10 @@ class LogModule(Component):
             old_path = repos.normalize_path(old_path)
             item = {
                 'rev': str(old_rev),
-                'path': old_path,
-                'log_href': req.href.log(old_path, rev=old_rev),
-                'browser_href': req.href.browser(old_path, rev=old_rev),
-                'changeset_href': req.href.changeset(old_rev),
-                'restricted_href': req.href.changeset(old_rev, new_path=old_path),
+                'path': str(old_path),
+                'log_href': self.env.href.log(old_path, rev=old_rev),
+                'browser_href': self.env.href.browser(old_path, rev=old_rev),
+                'changeset_href': self.env.href.changeset(old_rev),
                 'change': old_chg
             }
             if not (mode == 'path_history' and old_chg == Changeset.EDIT):
@@ -145,7 +137,7 @@ class LogModule(Component):
             params.update(args)
             if verbose:
                 params['verbose'] = verbose
-            return req.href.log(path, **params)
+            return self.env.href.log(path, **params)
 
         if len(info) == limit+1: # limit+1 reached, there _might_ be some more
             next_rev = info[-1]['rev']
@@ -158,8 +150,8 @@ class LogModule(Component):
         
         req.hdf['log.items'] = info
 
-        revs = [i['rev'] for i in info]
-        changes = get_changes(self.env, repos, revs, verbose, req, format)
+        changes = get_changes(self.env, repos, [i['rev'] for i in info],
+                              verbose, req, format)
         if format == 'rss':
             # Get the email addresses of all known users
             email_map = {}
@@ -175,20 +167,11 @@ class LogModule(Component):
                 elif email_map.has_key(author):
                     author_email = email_map[author]
                 cs['author'] = author_email
-                cs['date'] = http_date(cs['date_seconds'])
+                cs['date'] = util.http_date(cs['date_seconds'])
         elif format == 'changelog':
-            for rev in revs:
-                changeset = repos.get_changeset(rev)
-                cs = changes[rev]
+            for cs in changes.values():
                 cs['message'] = '\n'.join(['\t' + m for m in
-                                           changeset.message.split('\n')])
-                files = []
-                actions = []
-                for path, kind, chg, bpath, brev in changeset.get_changes():
-                    files.append(chg == Changeset.DELETE and bpath or path)
-                    actions.append(chg)
-                cs['files'] = files
-                cs['actions'] = actions
+                                           cs['message'].split('\n')])
         req.hdf['log.changes'] = changes
 
         if req.args.get('format') == 'changelog':
@@ -211,8 +194,7 @@ class LogModule(Component):
     # IWikiSyntaxProvider methods
     
     def get_wiki_syntax(self):
-        yield (r"!?\[%s:%s\]|(?:\b|!)r%s:%s\b"
-               % ((ChangesetModule.CHANGESET_ID,) * 4),
+        yield (r"!?\[\d+:\d+\]|(?:\b|!)r\d+:\d+\b",
                lambda x, y, z: self._format_link(x, 'log',
                                                  '#'+(y[0] == 'r' and y[1:]
                                                       or y[1:-1]), y))
@@ -223,9 +205,8 @@ class LogModule(Component):
     def _format_link(self, formatter, ns, path, label):
         path, rev, line = get_path_rev_line(path)
         stop_rev = None
-        for sep in ":-":
-            if not stop_rev and rev and sep in rev:
-                stop_rev, rev = rev.split(sep, 1)
+        if rev and ':' in rev:
+            stop_rev, rev = rev.split(':', 1)
         label = urllib.unquote(label)
-        return html.A(href=formatter.href.log(path, rev=rev, stop_rev=stop_rev),
-                      class_='source')[label]
+        return '<a class="source" href="%s">%s</a>' \
+               % (formatter.href.log(path, rev=rev, stop_rev=stop_rev), label)

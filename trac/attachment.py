@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,22 +13,21 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import os
 import re
 import shutil
 import time
-import unicodedata
+import urllib
 
 from trac import perm, util
-from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
 from trac.mimeview import *
-from trac.util.markup import html
-from trac.web import HTTPBadRequest, IRequestHandler
+from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki import IWikiSyntaxProvider
 
@@ -38,7 +37,7 @@ class Attachment(object):
     def __init__(self, env, parent_type, parent_id, filename=None, db=None):
         self.env = env
         self.parent_type = parent_type
-        self.parent_id = unicode(parent_id)
+        self.parent_id = str(parent_id)
         if filename:
             self._fetch(filename, db)
         else:
@@ -56,7 +55,7 @@ class Attachment(object):
         cursor.execute("SELECT filename,description,size,time,author,ipnr "
                        "FROM attachment WHERE type=%s AND id=%s "
                        "AND filename=%s ORDER BY time",
-                       (self.parent_type, unicode(self.parent_id), filename))
+                       (self.parent_type, str(self.parent_id), filename))
         row = cursor.fetchone()
         cursor.close()
         if not row:
@@ -72,13 +71,13 @@ class Attachment(object):
 
     def _get_path(self):
         path = os.path.join(self.env.path, 'attachments', self.parent_type,
-                            util.unicode_quote(self.parent_id))
+                            urllib.quote(self.parent_id))
         if self.filename:
-            path = os.path.join(path, util.unicode_quote(self.filename))
+            path = os.path.join(path, urllib.quote(self.filename))
         return os.path.normpath(path)
     path = property(_get_path)
 
-    def href(self, *args, **dict):
+    def href(self,*args,**dict):
         return self.env.href.attachment(self.parent_type, self.parent_id,
                                         self.filename, *args, **dict)
 
@@ -124,6 +123,11 @@ class Attachment(object):
         else:
             handle_ta = False
 
+        # Maximum attachment size (in bytes)
+        max_size = int(self.env.config.get('attachment', 'max_size'))
+        if max_size >= 0 and size > max_size:
+            raise TracError('Maximum attachment size: %d bytes' % max_size,
+                            'Upload failed')
         self.size = size
         self.time = t or time.time()
 
@@ -136,14 +140,11 @@ class Attachment(object):
 
         if not os.access(self.path, os.F_OK):
             os.makedirs(self.path)
-        filename = util.unicode_quote(filename)
+        filename = urllib.quote(filename)
         path, targetfile = util.create_unique_file(os.path.join(self.path,
                                                                 filename))
         try:
-            # Note: `path` is an unicode string because `self.path` was one.
-            # As it contains only quoted chars and numbers, we can use `ascii`
-            basename = os.path.basename(path).encode('ascii')
-            filename = util.unicode_unquote(basename)
+            filename = urllib.unquote(os.path.basename(path))
 
             cursor = db.cursor()
             cursor.execute("INSERT INTO attachment "
@@ -167,7 +168,7 @@ class Attachment(object):
         cursor = db.cursor()
         cursor.execute("SELECT filename,description,size,time,author,ipnr "
                        "FROM attachment WHERE type=%s AND id=%s ORDER BY time",
-                       (parent_type, unicode(parent_id)))
+                       (parent_type, str(parent_id)))
         for filename,description,size,time,author,ipnr in cursor:
             attachment = Attachment(env, parent_type, parent_id)
             attachment.filename = filename
@@ -212,21 +213,6 @@ class AttachmentModule(Component):
 
     CHUNK_SIZE = 4096
 
-    max_size = IntOption('attachment', 'max_size', 262144,
-        """Maximum allowed file size for ticket and wiki attachments.""")
-
-    render_unsafe_content = BoolOption('attachment', 'render_unsafe_content',
-                                       'false',
-        """Whether non-binary attachments should be rendered in the browser, or
-        only made downloadable.
-
-        Pretty much any text file may be interpreted as HTML by the browser,
-        which allows a malicious user to attach a file containing cross-site
-        scripting attacks.
-
-        For public sites where anonymous users can create attachments, it is
-        recommended to leave this option disabled (which is the default).""")
-
     # IEnvironmentSetupParticipant methods
 
     def environment_created(self):
@@ -251,19 +237,19 @@ class AttachmentModule(Component):
     # IReqestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'^/attachment/(ticket|wiki)(?:[/:](.*))?$', req.path_info)
+        match = re.match(r'^/attachment/(ticket|wiki)(?:/(.*))?$', req.path_info)
         if match:
             req.args['type'] = match.group(1)
-            req.args['path'] = match.group(2).replace(':', '/')
+            req.args['path'] = match.group(2)
             return 1
 
     def process_request(self, req):
         parent_type = req.args.get('type')
         path = req.args.get('path')
         if not parent_type or not path:
-            raise HTTPBadRequest('Bad request')
+            raise TracError('Bad request')
         if not parent_type in ['ticket', 'wiki']:
-            raise HTTPBadRequest('Unknown attachment type')
+            raise TracError('Unknown attachment type')
 
         action = req.args.get('action', 'view')
         if action == 'new':
@@ -273,7 +259,7 @@ class AttachmentModule(Component):
             parent_id = '/'.join(segments[:-1])
             filename = segments[-1]
             if len(segments) == 1 or not filename:
-                raise HTTPBadRequest('Bad request')
+                raise TracError('Bad request')            
             attachment = Attachment(self.env, parent_type, parent_id, filename)
 
         if req.method == 'POST':
@@ -309,29 +295,27 @@ class AttachmentModule(Component):
             req.redirect(attachment.parent_href)
 
         upload = req.args['attachment']
-        if not hasattr(upload, 'filename') or not upload.filename:
-            raise TracError('No file uploaded')
+        if not upload.filename:
+            raise TracError, 'No file uploaded'
         if hasattr(upload.file, 'fileno'):
             size = os.fstat(upload.file.fileno())[6]
         else:
             size = upload.file.len
         if size == 0:
-            raise TracError('No file uploaded')
+            raise TracError, 'No file uploaded'
 
-        # Maximum attachment size (in bytes)
-        max_size = self.max_size
-        if max_size >= 0 and size > max_size:
-            raise TracError('Maximum attachment size: %d bytes' % max_size,
-                            'Upload failed')
-
-        # We try to normalize the filename to unicode NFC if we can.
-        # Files uploaded from OS X might be in NFD.
-        filename = unicodedata.normalize('NFC', unicode(upload.filename,
-                                                        'utf-8'))
-        filename = filename.replace('\\', '/').replace(':', '/')
+        filename = upload.filename.replace('\\', '/').replace(':', '/')
         filename = os.path.basename(filename)
-        if not filename:
-            raise TracError('No file uploaded')
+        assert filename, 'No file uploaded'
+
+        # We try to normalize the filename to utf-8 NFC if we can.
+        # Files uploaded from OS X might be in NFD.
+        import sys, unicodedata
+        if sys.version_info[0] > 2 or \
+           (sys.version_info[0] == 2 and sys.version_info[1] >= 3):
+           filename = unicodedata.normalize('NFC',
+                                            unicode(filename,
+                                                    'utf-8')).encode('utf-8')
 
         attachment.description = req.args.get('description', '')
         attachment.author = req.args.get('author', '')
@@ -408,8 +392,7 @@ class AttachmentModule(Component):
         add_link(req, 'up', link, text)
 
         req.hdf['title'] = attachment.title
-        req.hdf['attachment'] = attachment_to_hdf(self.env, None, req,
-                                                  attachment)
+        req.hdf['attachment'] = attachment_to_hdf(self.env, None, req, attachment)
         req.hdf['attachment.parent'] = {
             'type': attachment.parent_type, 'id': attachment.parent_id,
             'name': text, 'href': link,
@@ -422,47 +405,43 @@ class AttachmentModule(Component):
         fd = attachment.open()
         try:
             mimeview = Mimeview(self.env)
+            max_preview_size = mimeview.max_preview_size()
+            data = fd.read(max_preview_size)
 
-            # MIME type detection
-            str_data = fd.read(1000)
-            fd.seek(0)
-            
-            binary = is_binary(str_data)
-            mime_type = mimeview.get_mimetype(attachment.filename, str_data)
+            mime_type = get_mimetype(attachment.filename) or \
+                        'application/octet-stream'
+            self.log.debug("Rendering preview of file %s with mime-type %s"
+                           % (attachment.filename, mime_type))
 
-            # Eventually send the file directly
+            raw_href = attachment.href(format='raw')
+            add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
+            req.hdf['attachment.raw_href'] = raw_href
+
             format = req.args.get('format')
-            if format in ('raw', 'txt'):
-                if not self.render_unsafe_content and not binary:
+            render_unsafe = self.config.getbool('attachment',
+                                                'render_unsafe_content')
+            binary = not detect_unicode(data) and is_binary(data)
+
+            if format in ('raw', 'txt'): # Send raw file
+                if not render_unsafe and not binary:
                     # Force browser to download HTML/SVG/etc pages that may
                     # contain malicious code enabling XSS attacks
                     req.send_header('Content-Disposition', 'attachment;' +
                                     'filename=' + attachment.filename)
-                if self.render_unsafe_content and not binary \
-                        and format == 'txt':
+                charset = mimeview.get_charset(data, mime_type)
+                if render_unsafe and not binary and format == 'txt':
                     mime_type = 'text/plain'
-                if 'charset=' not in mime_type:
-                    charset = mimeview.get_charset(str_data, mime_type)
-                    mime_type = mime_type + '; charset=' + charset
-                req.send_file(attachment.path, mime_type)
+                req.send_file(attachment.path,
+                              mime_type + ';charset=' + charset)
 
-            # add ''Plain Text'' alternate link if needed
-            if self.render_unsafe_content and not binary and \
-               not mime_type.startswith('text/plain'):
-                plaintext_href = attachment.href(format='txt')
-                add_link(req, 'alternate', plaintext_href, 'Plain Text',
-                         mime_type)
+            if render_unsafe and not binary:
+                add_link(req, 'alternate', attachment.href(format='txt'),
+                         'Plain Text', mime_type)
 
-            # add ''Original Format'' alternate link (always)
-            raw_href = attachment.href(format='raw')
-            add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
-
-            self.log.debug("Rendering preview of file %s with mime-type %s"
-                           % (attachment.filename, mime_type))
-
-            req.hdf['attachment'] = mimeview.preview_to_hdf(
-                req, fd, os.fstat(fd.fileno()).st_size, mime_type,
-                attachment.filename, raw_href, annotations=['lineno'])
+            hdf = mimeview.preview_to_hdf(req, mime_type, None, data,
+                                          attachment.filename, None,
+                                          annotations=['lineno'])
+            req.hdf['attachment'] = hdf
         finally:
             fd.close()
 
@@ -487,8 +466,10 @@ class AttachmentModule(Component):
             filename, params = filename[:idx], filename[idx:]
         try:
             attachment = Attachment(self.env, parent_type, parent_id, filename)
-            return html.A(class_='attachment', href=attachment.href() + params,
-                          title='Attachment %s' % attachment.title)[label]
+            return '<a class="attachment" title="Attachment %s" href="%s">%s</a>' \
+                   % (util.escape(attachment.title),
+                      util.escape(attachment.href() + params),
+                      util.escape(label))
         except TracError:
-            return html.A(class_='missing attachment', rel='nofollow',
-                          href=formatter.href())[label]
+            return '<a class="missing attachment" href="%s" rel="nofollow">%s</a>' \
+                   % (self.env.href.wiki(), label)

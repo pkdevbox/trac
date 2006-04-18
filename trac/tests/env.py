@@ -11,7 +11,7 @@ class EnvironmentTestCase(unittest.TestCase):
 
     def setUp(self):
         env_path = os.path.join(tempfile.gettempdir(), 'trac-tempenv')
-        self.env = Environment(env_path, create=True)
+        self.env = Environment(env_path, create=True, db_str='sqlite:db/trac.db')
         self.db = self.env.get_db_cnx()
 
     def tearDown(self):
@@ -47,4 +47,4 @@ def suite():
     return unittest.makeSuite(EnvironmentTestCase,'test')
 
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

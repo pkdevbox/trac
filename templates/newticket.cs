@@ -100,14 +100,6 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
  <script type="text/javascript" src="<?cs
    var:htdocs_location ?>js/wikitoolbar.js"></script>
 
- <?cs if newticket.can_attach ?><p>
-  <label><input type="checkbox" name="attachment"<?cs
-    if:newticket.attachment ?> checked="checked"<?cs /if ?> />
-    I have files to attach to this ticket
-  </label>
- </p><?cs
- /if ?>
-
  <div class="buttons">
   <input type="submit" name="preview" value="Preview" accesskey="r" />&nbsp;
   <input type="submit" value="Submit ticket" />

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
@@ -14,9 +14,10 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
+
 from trac.util import TracError
-from trac.versioncontrol import Changeset, Node, Repository, Authorizer, \
-                                NoSuchChangeset
+from trac.versioncontrol import Changeset, Node, Repository, Authorizer
 
 
 _kindmap = {'D': Node.DIRECTORY, 'F': Node.FILE}
@@ -89,8 +90,8 @@ class CachedRepository(Repository):
                                       base_path, base_rev)))
                     kind = kindmap[kind]
                     action = actionmap[action]
-                    cursor.execute("INSERT INTO node_change (rev,path,"
-                                   "node_type,change_type,base_path,base_rev) "
+                    cursor.execute("INSERT INTO node_change (rev,path,kind,"
+                                   "change,base_path,base_rev) "
                                    "VALUES (%s,%s,%s,%s,%s,%s)",
                                    (str(current_rev), path, kind, action,
                                    base_path, base_rev))
@@ -113,8 +114,8 @@ class CachedRepository(Repository):
     def previous_rev(self, rev):
         return self.repos.previous_rev(rev)
 
-    def next_rev(self, rev, path=''):
-        return self.repos.next_rev(rev, path)
+    def next_rev(self, rev):
+        return self.repos.next_rev(rev)
 
     def rev_older_than(self, rev1, rev2):
         return self.repos.rev_older_than(rev1, rev2)
@@ -127,9 +128,6 @@ class CachedRepository(Repository):
 
     def normalize_rev(self, rev):
         return self.repos.normalize_rev(rev)
-
-    def get_changes(self, old_path, old_rev, new_path, new_rev, ignore_ancestry=1):
-        return self.repos.get_changes(old_path, old_rev, new_path, new_rev, ignore_ancestry)
 
 
 class CachedChangeset(Changeset):
@@ -145,11 +143,11 @@ class CachedChangeset(Changeset):
             date, author, message = row
             Changeset.__init__(self, rev, message, author, int(date))
         else:
-            raise NoSuchChangeset(rev)
+            raise TracError, "No changeset %s in the repository" % rev
 
     def get_changes(self):
         cursor = self.db.cursor()
-        cursor.execute("SELECT path,node_type,change_type,base_path,base_rev "
+        cursor.execute("SELECT path,kind,change,base_path,base_rev "
                        "FROM node_change WHERE rev=%s "
                        "ORDER BY path", (self.rev,))
         for path, kind, change, base_path, base_rev in cursor:
@@ -159,6 +157,3 @@ class CachedChangeset(Changeset):
             kind = _kindmap[kind]
             change = _actionmap[change]
             yield path, kind, change, base_path, base_rev
-
-    def get_properties(self):
-        return []

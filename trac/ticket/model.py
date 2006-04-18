@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2006 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2006 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -14,7 +14,7 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
 import time
@@ -41,15 +41,6 @@ class Ticket(object):
             self.id = self.time_created = self.time_changed = None
         self._old = {}
 
-    def _get_db(self, db):
-        return db or self.env.get_db_cnx()
-
-    def _get_db_for_write(self, db):
-        if db:
-            return (db, False)
-        else:
-            return (self.env.get_db_cnx(), True)
-
     exists = property(fget=lambda self: self.id is not None)
 
     def _init_defaults(self, db=None):
@@ -75,7 +66,8 @@ class Ticket(object):
                 self.values.setdefault(field['name'], default)
 
     def _fetch_ticket(self, tkt_id, db=None):
-        db = self._get_db(db)
+        if not db:
+            db = self.env.get_db_cnx()
 
         # Fetch the standard ticket fields
         std_fields = [f['name'] for f in self.fields if not f.get('custom')]
@@ -133,7 +125,11 @@ class Ticket(object):
     def insert(self, when=0, db=None):
         """Add ticket to database"""
         assert not self.exists, 'Cannot insert an existing ticket'
-        db, handle_ta = self._get_db_for_write(db)
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
 
         # Add a timestamp
         if not when:
@@ -170,9 +166,6 @@ class Ticket(object):
                                "VALUES (%s,%s,%s)", [(tkt_id, name, self[name])
                                                      for name in custom_fields])
 
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_created(self)
-
         if handle_ta:
             db.commit()
         self.id = tkt_id
@@ -189,7 +182,11 @@ class Ticket(object):
         if not self._old and not comment:
             return # Not modified
 
-        db, handle_ta = self._get_db_for_write(db)
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
         cursor = db.cursor()
         when = int(when or time.time())
 
@@ -240,10 +237,6 @@ class Ticket(object):
 
         cursor.execute("UPDATE ticket SET changetime=%s WHERE id=%s",
                        (when, self.id))
-
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_changed(self, comment, self._old)
-
         if handle_ta:
             db.commit()
         self._old = {}
@@ -253,7 +246,8 @@ class Ticket(object):
         """Return the changelog as a list of tuples of the form
         (time, author, field, oldvalue, newvalue).
         """
-        db = self._get_db(db)
+        if not db:
+            db = self.env.get_db_cnx()
         cursor = db.cursor()
         if when:
             cursor.execute("SELECT time,author,field,oldvalue,newvalue "
@@ -280,21 +274,6 @@ class Ticket(object):
         for t, author, field, oldvalue, newvalue in cursor:
             log.append((int(t), author, field, oldvalue or '', newvalue or ''))
         return log
-
-    def delete(self, db=None):
-        db, handle_ta = self._get_db_for_write(db)
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM ticket WHERE id=%s", (self.id,))
-        cursor.execute("DELETE FROM ticket_change WHERE ticket=%s", (self.id,))
-        cursor.execute("DELETE FROM attachment "
-                       " WHERE type='ticket' and id=%s", (self.id,))
-        cursor.execute("DELETE FROM ticket_custom WHERE ticket=%s", (self.id,))
-
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_deleted(self)
-
-        if handle_ta:
-            db.commit()
 
 
 class AbstractEnum(object):

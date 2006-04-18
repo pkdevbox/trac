@@ -42,7 +42,7 @@ import sys
 import os
 import signal
 import struct
-import StringIO
+import cStringIO as StringIO
 import select
 import socket
 import errno

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christian Boos <cboos@bct-technology.com>
@@ -16,8 +16,9 @@
 # Author: Christian Boos <cboos@bct-technology.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
+
 from trac.core import *
-from trac.config import Option
 from trac.mimeview.api import IHTMLPreviewRenderer
 from trac.util import Deuglifier, NaivePopen
 
@@ -47,11 +48,6 @@ class PHPRenderer(Component):
 
     implements(IHTMLPreviewRenderer)
 
-    path = Option('mimeviewer', 'php_path', 'php',
-        """Path to the PHP executable (''since 0.9'').""")
-
-    # IHTMLPreviewRenderer methods
-
     def get_quality_ratio(self, mimetype):
         if mimetype in php_types:
             return 4
@@ -63,7 +59,7 @@ class PHPRenderer(Component):
         cmdline += ' -sn'
         self.env.log.debug("PHP command line: %s" % cmdline)
 
-        np = NaivePopen(cmdline, content.encode('utf-8'), capturestderr=1)
+        np = NaivePopen(cmdline, content, capturestderr=1)
         if np.errorlevel or np.err:
             err = 'Running (%s) failed: %s, %s.' % (cmdline, np.errorlevel,
                                                     np.err)
@@ -74,7 +70,7 @@ class PHPRenderer(Component):
                              'Trac requires the CLI version for syntax ' \
                              'highlighting.'
 
-        html = PhpDeuglifier().format(odata.decode('utf-8'))
+        html = PhpDeuglifier().format(odata)
         for line in html.split('<br />'):
             # PHP generates _way_ too many non-breaking spaces...
             # We don't need them anyway, so replace them by normal spaces

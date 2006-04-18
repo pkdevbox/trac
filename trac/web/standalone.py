@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
-# Copyright (C) 2005-2006 Matthew Good <trac@matt-good.net>
-# Copyright (C) 2005-2006 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2003-2005 Edgewall Software
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
+# Copyright (C) 2005 Matthew Good <trac@matt-good.net>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -14,199 +13,356 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Matthew Good <trac@matt-good.net>
-#         Christopher Lenz <cmlenz@gmx.de>
+#
+# Todo:
+# - External auth using mod_proxy / squid.
+
+from trac import util, __version__
+from trac.env import open_environment
+from trac.web.api import Request
+from trac.web.cgi_frontend import TracFieldStorage
+from trac.web.main import dispatch_request, get_environment, \
+                          send_pretty_error, send_project_index
+from trac.util import md5crypt
 
 import os
+import re
 import sys
+import md5
+import time
+import socket, errno
+import urllib
+import urllib2
 from SocketServer import ThreadingMixIn
+from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
-from trac import __version__ as VERSION
-from trac.util import autoreload, daemon
-from trac.web.auth import BasicAuthentication, DigestAuthentication
-from trac.web.main import dispatch_request
-from trac.web.wsgi import WSGIServer, WSGIRequestHandler
+try:
+    from base64 import b64decode
+except ImportError:
+    from base64 import decodestring as b64decode
 
 
-class AuthenticationMiddleware(object):
+class BasicAuth:
+    def __init__(self, htpasswd, realm):
+        self.hash = {}
+        self.realm = realm
+        try:
+            import crypt
+            self.crypt = crypt.crypt
+        except ImportError:
+            self.crypt = None
+        self.load(htpasswd)
 
-    def __init__(self, application, auths):
-        self.application = application
+    def load(self, filename):
+        fd = open(filename, 'r')
+        for line in fd:
+            u, h = line.strip().split(':')
+            if '$' in h or self.crypt:
+                self.hash[u] = h
+            else:
+                print >>sys.stderr, 'Warning: cannot parse password for ' \
+                                    'user "%s" without the "crypt" module' % u
+
+        if self.hash == {}:
+            print >> sys.stderr, "Warning: found no users in file:", filename
+
+    def test(self, user, password):
+        the_hash = self.hash.get(user)
+        if the_hash is None:
+            return False
+
+        if not '$' in the_hash:
+            return self.crypt(password, the_hash[:2]) == the_hash
+
+        magic, salt = the_hash[1:].split('$')[:2]
+        magic = '$' + magic + '$'
+        return md5crypt(password, salt, magic) == the_hash
+
+    def send_auth_request(self, req):
+        req.send_response(401)
+        req.send_header('WWW-Authenticate', 'Basic realm="%s"' % self.realm)
+        req.end_headers()
+
+    def do_auth(self, req):
+        if not 'Authorization' in req.headers or \
+               not req.headers['Authorization'].startswith('Basic'):
+            self.send_auth_request(req)
+            return None
+
+        auth = req.headers['Authorization'][len('Basic')+1:]
+        auth = b64decode(auth).split(':')
+        if len(auth) != 2:
+            self.send_auth_request(req)
+            return None
+
+        user, password = auth
+        if not self.test(user, password):
+            self.send_auth_request(req)
+            return None
+
+        return user
+
+
+class DigestAuth:
+    """A simple HTTP DigestAuth implementation (rfc2617)"""
+
+    MAX_NONCES = 100
+
+    def __init__(self, htdigest, realm):
+        self.active_nonces = []
+        self.hash = {}
+        self.realm = realm
+        self.load_htdigest(htdigest, realm)
+
+    def load_htdigest(self, filename, realm):
+        """
+        Load account information from apache style htdigest files,
+        only users from the specified realm are used
+        """
+        fd = open(filename, 'r')
+        for line in fd.readlines():
+            u, r, a1 = line.strip().split(':')
+            if r == realm:
+                self.hash[u] = a1
+        if self.hash == {}:
+            print >> sys.stderr, "Warning: found no users in realm:", realm
+        
+    def parse_auth_header(self, authorization):
+        values = {}
+        for value in urllib2.parse_http_list(authorization):
+            n, v = value.split('=', 1)
+            if v[0] == '"' and v[-1] == '"':
+                values[n] = v[1:-1]
+            else:
+                values[n] = v
+        return values
+
+    def send_auth_request(self, req, stale='false'):
+        """
+        Send a digest challange to the browser. Record used nonces
+        to avoid replay attacks.
+        """
+        nonce = util.hex_entropy()
+        self.active_nonces.append(nonce)
+        if len(self.active_nonces) > DigestAuth.MAX_NONCES:
+            self.active_nonces = self.active_nonces[-DigestAuth.MAX_NONCES:]
+        req.send_response(401)
+        req.send_header('WWW-Authenticate',
+                        'Digest realm="%s", nonce="%s", qop="auth", stale="%s"'
+                        % (self.realm, nonce, stale))
+        req.end_headers()
+
+    def do_auth(self, req):
+        if not 'Authorization' in req.headers or \
+               not req.headers['Authorization'].startswith('Digest'):
+            self.send_auth_request(req)
+            return None
+        auth = self.parse_auth_header(req.headers['Authorization'][7:])
+        required_keys = ['username', 'realm', 'nonce', 'uri', 'response',
+                           'nc', 'cnonce']
+        # Invalid response?
+        for key in required_keys:
+            if not auth.has_key(key):
+                self.send_auth_request(req)
+                return None
+        # Unknown user?
+        if not self.hash.has_key(auth['username']):
+            self.send_auth_request(req)
+            return None
+
+        kd = lambda x: md5.md5(':'.join(x)).hexdigest()
+        a1 = self.hash[auth['username']]
+        a2 = kd([req.command, auth['uri']])
+        # Is the response correct?
+        correct = kd([a1, auth['nonce'], auth['nc'],
+                      auth['cnonce'], auth['qop'], a2])
+        if auth['response'] != correct:
+            self.send_auth_request(req)
+            return None
+        # Is the nonce active, if not ask the client to use a new one
+        if not auth['nonce'] in self.active_nonces:
+            self.send_auth_request(req, stale='true')
+            return None
+        self.active_nonces.remove(auth['nonce'])
+        return auth['username']
+
+
+class TracHTTPServer(ThreadingMixIn, HTTPServer):
+
+    projects = None
+
+    def __init__(self, server_address, env_parent_dir, env_paths, auths):
+        HTTPServer.__init__(self, server_address, TracHTTPRequestHandler)
+
+        if self.server_port == 80:
+            self.http_host = self.server_name
+        else:
+            self.http_host = '%s:%d' % (self.server_name, self.server_port)
+
+        self.env_parent_dir = env_parent_dir and {'TRAC_ENV_PARENT_DIR':
+                                                  env_parent_dir}
         self.auths = auths
 
-    def __call__(self, environ, start_response):
-        path_info = environ.get('PATH_INFO', '')
-        path_parts = filter(None, path_info.split('/'))
-        if len(path_parts) > 1 and path_parts[1] == 'login':
-            env_name = path_parts[0]
-            if env_name:
-                auth = self.auths.get(env_name, self.auths.get('*'))
-                if auth:
-                    remote_user = auth.do_auth(environ, start_response)
-                    if not remote_user:
-                        return []
-                    environ['REMOTE_USER'] = remote_user
-        return self.application(environ, start_response)
+        self.projects = {}
+        for env_path in env_paths:
+            # Remove trailing slashes
+            while env_path and not os.path.split(env_path)[1]:
+                env_path = os.path.split(env_path)[0]
+            project = os.path.split(env_path)[1]
+            if self.projects.has_key(project):
+                print >>sys.stderr, 'Warning: Ignoring project "%s" since ' \
+                                    'it conflicts with project "%s"' \
+                                    % (env_path, self.projects[project])
+            else:
+                self.projects[project] = env_path
 
-
-class BasePathMiddleware(object):
-
-    def __init__(self, application, base_path):
-        self.base_path = '/' + base_path.strip('/')
-        self.application = application
-
-    def __call__(self, environ, start_response):
-        path = environ['SCRIPT_NAME'] + environ.get('PATH_INFO', '')
-        environ['PATH_INFO'] = path[len(self.base_path):]
-        environ['SCRIPT_NAME'] = self.base_path
-        return self.application(environ, start_response)
-
-
-class TracEnvironMiddleware(object):
-
-    def __init__(self, application, env_parent_dir, env_paths):
-        self.application = application
-        self.environ = {}
-        self.environ['trac.env_path'] = None
-        if env_parent_dir:
-            self.environ['trac.env_parent_dir'] = env_parent_dir
+    def get_env_opts(self, project=None):
+        if self.env_parent_dir:
+            opts = self.env_parent_dir.items()
         else:
-            self.environ['trac.env_paths'] = env_paths
+            opts = [('TRAC_ENV', self.projects[project])]
+        return dict(opts + os.environ.items())
 
-    def __call__(self, environ, start_response):
-        for k,v in self.environ.iteritems():
-            environ.setdefault(k, v)
-        return self.application(environ, start_response)
-
-
-class TracHTTPServer(ThreadingMixIn, WSGIServer):
-
-    def __init__(self, server_address, application, env_parent_dir, env_paths):
-        WSGIServer.__init__(self, server_address, application,
-                            request_handler=TracHTTPRequestHandler)
-        self.environ['trac.env_path'] = None
-        if env_parent_dir:
-            self.environ['trac.env_parent_dir'] = env_parent_dir
+    def send_project_index(self, req):
+        if self.env_parent_dir:
+            return send_project_index(req, self.get_env_opts())
         else:
-            self.environ['trac.env_paths'] = env_paths
+            return send_project_index(req, os.environ, self.projects.values())
 
 
-class TracHTTPRequestHandler(WSGIRequestHandler):
+class TracHTTPRequestHandler(BaseHTTPRequestHandler):
 
-    server_version = 'tracd/' + VERSION
+    server_version = 'tracd/' + __version__
+    url_re = re.compile('/(?P<project>[^/\?]+)'
+                        '(?P<path_info>/?[^\?]*)?'
+                        '(?:\?(?P<query_string>.*))?')
+
+    env = None
+    log = None
+    project_name = None
+
+    def finish(self):
+        """We need to help the garbage collector a little."""
+        BaseHTTPRequestHandler.finish(self)
+        self.wfile = None
+        self.rfile = None
+
+    def do_POST(self):
+        self._do_trac_req()
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_GET(self):
+        self._do_trac_req()
+
+    def _do_trac_req(self):
+        if self.path == '/':
+            path_info = '/'
+            req = TracHTTPRequest(self, '', '')
+            self.server.send_project_index(req)
+            return
+
+        m = self.url_re.findall(self.path)
+        if not m:
+            self.send_error(400, 'Bad Request')
+            return
+
+        project_name, path_info, query_string = m[0]
+        project_name = urllib.unquote(project_name)
+        path_info = urllib.unquote(path_info)
+        req = TracHTTPRequest(self, project_name, query_string)
+
+        try:
+            opts = self.server.get_env_opts(project_name)
+        except KeyError:
+            # unrecognized project
+            self.server.send_project_index(req)
+            return
+
+        env = get_environment(req, opts)
+        if not env:
+            self.server.send_project_index(req)
+            return
+
+        req.remote_user = None
+        if path_info == '/login':
+            auth = self.server.auths.get(project_name) or \
+                   self.server.auths.get('*')
+            if not auth:
+                raise util.TracError('Authentication not enabled. '
+                                     'Please use the tracd --auth option.\n')
+            req.remote_user = auth.do_auth(self)
+            if not req.remote_user:
+                return
+
+        try:
+            start = time.time()
+            dispatch_request(path_info, req, env)
+            env.log.debug('Total request time: %f s', time.time() - start)
+        except socket.error, (code, msg):
+            if code == errno.EPIPE or code == 10053: # Windows
+                env.log.info('Lost connection to client: %s'
+                             % self.address_string())
+            else:
+                raise
+        except Exception, e:
+            try:
+                send_pretty_error(e, env, req)
+            except socket.error, (code, msg):
+                if code == errno.EPIPE or code == 10053: # Windows
+                    env.log.info('Lost connection to client: %s'
+                                 % self.address_string())
+                else:
+                    raise
 
 
-def main():
-    from optparse import OptionParser, OptionValueError
-    parser = OptionParser(usage='usage: %prog [options] [projenv] ...',
-                          version='%%prog %s' % VERSION)
+class TracHTTPRequest(Request):
 
-    auths = {}
-    def _auth_callback(option, opt_str, value, parser, cls):
-        info = value.split(',', 3)
-        if len(info) != 3:
-            raise OptionValueError("Incorrect number of parameters for %s"
-                                   % option)
+    def __init__(self, handler, project_name, query_string):
+        Request.__init__(self)
+        self.__handler = handler
+        self.__status_sent = False
 
-        env_name, filename, realm = info
-        if env_name in auths:
-            print >>sys.stderr, 'Ignoring duplicate authentication option for ' \
-                                'project: %s' % env_name
+        self.scheme = 'http'
+        self.method = self.__handler.command
+        self.remote_addr = str(self.__handler.client_address[0])
+        self.server_name = self.__handler.server.server_name
+        self.server_port = self.__handler.server.server_port
+        if self.__handler.headers.has_key('Cookie'):
+            self.incookie.load(self.__handler.headers['Cookie'])
+
+        self.cgi_location = '/' + project_name
+        self.idx_location = '/'
+
+        environ = {'REQUEST_METHOD': self.method,
+                   'QUERY_STRING': query_string}
+        headers = self.__handler.headers
+        if self.method in ('GET', 'HEAD'):
+            headers = None
+        self.args = TracFieldStorage(self.__handler.rfile, environ=environ,
+                                     headers=headers, keep_blank_values=1)
+
+    def read(self, size=None):
+        return self.__handler.rfile.read(size)
+
+    def write(self, data):
+        self.__handler.wfile.write(data)
+
+    def get_header(self, name):
+        return self.__handler.headers.get(name)
+
+    def send_response(self, code):
+        self.__handler.send_response(code)
+        self.__status_sent = True
+
+    def send_header(self, name, value):
+        if not self.__status_sent:
+            self._headers.append((name, value))
         else:
-            auths[env_name] = cls(filename, realm)
+            self.__handler.send_header(name, value)
 
-    def _validate_callback(option, opt_str, value, parser, valid_values):
-        if value not in valid_values:
-            raise OptionValueError('%s must be one of: %s, not %s'
-                                   % (opt_str, '|'.join(valid_values), value))
-        setattr(parser.values, option.dest, value)
-
-    parser.add_option('-a', '--auth', action='callback', type='string',
-                      metavar='DIGESTAUTH', callback=_auth_callback,
-                      callback_args=(DigestAuthentication,),
-                      help='[project],[htdigest_file],[realm]')
-    parser.add_option('--basic-auth', action='callback', type='string',
-                      metavar='BASICAUTH', callback=_auth_callback,
-                      callback_args=(BasicAuthentication,),
-                      help='[project],[htpasswd_file],[realm]')
-
-    parser.add_option('-p', '--port', action='store', type='int', dest='port',
-                      help='the port number to bind to')
-    parser.add_option('-b', '--hostname', action='store', dest='hostname',
-                      help='the host name or IP address to bind to')
-    parser.add_option('--protocol', action='callback', type="string",
-                      dest='protocol', callback=_validate_callback,
-                      callback_args=(('http', 'scgi', 'ajp'),),
-                      help='http|scgi|ajp')
-    parser.add_option('-e', '--env-parent-dir', action='store',
-                      dest='env_parent_dir', metavar='PARENTDIR',
-                      help='parent directory of the project environments')
-    parser.add_option('--base-path', action='store', type='string', # XXX call this url_base_path?
-                      dest='base_path',
-                      help='base path')
-
-    parser.add_option('-r', '--auto-reload', action='store_true',
-                      dest='autoreload',
-                      help='restart automatically when sources are modified')
-
-    if os.name == 'posix':
-        parser.add_option('-d', '--daemonize', action='store_true',
-                          dest='daemonize',
-                          help='run in the background as a daemon')
-
-    parser.set_defaults(port=None, hostname='', base_path='', daemonize=False,
-                        protocol='http')
-    options, args = parser.parse_args()
-
-    if not args and not options.env_parent_dir:
-        parser.error('either the --env_parent_dir option or at least one '
-                     'environment must be specified')
-
-    if options.port is None:
-        options.port = {
-            'http': 80,
-            'scgi': 4000,
-            'ajp': 8009,
-        }[options.protocol]
-    server_address = (options.hostname, options.port)
-
-    wsgi_app = dispatch_request
-    if auths:
-        wsgi_app = AuthenticationMiddleware(wsgi_app, auths)
-    base_path = options.base_path.strip('/')
-    if base_path:
-        wsgi_app = BasePathMiddleware(wsgi_app, base_path)
-
-    if options.protocol == 'http':
-        def serve():
-            httpd = TracHTTPServer(server_address, wsgi_app,
-                                   options.env_parent_dir, args)
-            httpd.serve_forever()
-    elif options.protocol in ('scgi', 'ajp'):
-        def serve():
-            server_cls = __import__('flup.server.%s' % options.protocol,
-                                    None, None, ['']).WSGIServer
-            app = TracEnvironMiddleware(wsgi_app, options.env_parent_dir, args)
-            ret = server_cls(app, bindAddress=server_address).run()
-            sys.exit(ret and 42 or 0) # if SIGHUP exit with status 42
-
-    try:
-        if os.name == 'posix' and options.daemonize:
-            daemon.daemonize()
-
-        if options.autoreload:
-            def modification_callback(file):
-                print>>sys.stderr, 'Detected modification of %s, restarting.' \
-                                   % file
-            autoreload.main(serve, modification_callback)
-        else:
-            serve()
-
-    except OSError:
-        sys.exit(1)
-    except KeyboardInterrupt:
-        pass
-
-if __name__ == '__main__':
-    main()
+    def end_headers(self):
+        self.__handler.end_headers()

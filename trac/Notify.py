@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2005 Daniel Lundin <daniel@edgewall.com>
-# Copyright (C) 2005-2006 Emmanuel Blot <emmanuel.blot@free.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -14,27 +13,138 @@
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
-#
-
-import md5
 
 from trac import __version__
-from trac.core import *
-from trac.config import *
+from trac.core import TracError
 from trac.util import CRLF, wrap
-from trac.notification import NotifyEmail
+from trac.web.clearsilver import HDFWrapper
+from trac.web.main import populate_hdf
+
+import md5
+import time
+import smtplib
 
 
-class TicketNotificationSystem(Component):
+class Notify:
+    """Generic notification class for Trac. Subclass this to implement
+    different methods."""
 
-    always_notify_owner = BoolOption('notification', 'always_notify_owner',
-                                     'false',
-        """Always send notifications to the ticket owner (''since 0.9'').""")
+    db = None
+    hdf = None
 
-    always_notify_reporter = BoolOption('notification', 'always_notify_reporter',
-                                        'false',
-        """Always send notifications to any address in the ''reporter''
-        field.""")
+    def __init__(self, env):
+        self.env = env
+        self.config = env.config
+        self.db = env.get_db_cnx()
+        self.hdf = HDFWrapper(loadpaths=[env.get_templates_dir(),
+                                         self.config.get('trac', 'templates_dir')])
+        populate_hdf(self.hdf, env)
+
+    def notify(self, resid):
+        rcpts = self.get_recipients(resid)
+        self.begin_send()
+        for to in rcpts:
+            self.send(to)
+        self.finish_send()
+
+    def get_recipients(self, resid):
+        """Return a list of subscribers to the resource 'resid'."""
+        raise NotImplementedError
+
+    def begin_send(self):
+        """Prepare to send messages. Called before sending begins."""
+        pass
+
+    def send(self, rcpt):
+        """Send message to a recipient 'rcpt'. Called once for each recipient."""
+        raise NotImplementedError
+
+    def finish_send(self):
+        """Clean up after sending all messages. Called after sending all messages."""
+        pass
+
+
+class NotifyEmail(Notify):
+    """Baseclass for notification by email."""
+
+    smtp_server = 'localhost'
+    smtp_port = 25
+    from_email = 'trac+tickets@localhost'
+    subject = ''
+    server = None
+    email_map = None
+    template_name = None
+
+    def __init__(self, env):
+        Notify.__init__(self, env)
+
+        # Get the email addresses of all known users
+        self.email_map = {}
+        for username, name, email in self.env.get_known_users(self.db):
+            if email:
+                self.email_map[username] = email
+
+    def notify(self, resid, subject):
+        self.subject = subject
+
+        if not self.config.getbool('notification', 'smtp_enabled'):
+            return
+        self.smtp_server = self.config.get('notification', 'smtp_server')
+        self.smtp_port = int(self.config.get('notification', 'smtp_port'))
+        self.from_email = self.config.get('notification', 'smtp_from')
+        self.replyto_email = self.config.get('notification', 'smtp_replyto')
+        self.from_email = self.from_email or self.replyto_email
+        if not self.from_email and not self.replyto_email:
+            raise TracError('Unable to send email due to identity crisis. <br />'
+                            'Both <b>notification.from</b> and'
+                            ' <b>notification.reply_to</b> are unspecified'
+                            ' in configuration.',
+                            'SMTP Notification Error')
+
+        # Authentication info (optional)
+        self.user_name = self.config.get('notification', 'smtp_user')
+        self.password = self.config.get('notification', 'smtp_password')
+
+        Notify.notify(self, resid)
+
+    def get_email_addresses(self, txt):
+        import email.Utils
+        emails = [x[1] for x in  email.Utils.getaddresses([str(txt)])]
+        return filter(lambda x: x.find('@') > -1, emails)
+
+    def begin_send(self):
+        self.server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+        if self.user_name:
+            self.server.login(self.user_name, self.password)
+
+    def send(self, rcpt, mime_headers={}):
+        from email.MIMEMultipart import MIMEMultipart
+        from email.MIMEText import MIMEText
+        from email.Header import Header
+        from email.Utils import formatdate
+        body = self.hdf.render(self.template_name)
+        msg = MIMEMultipart()
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        msg.epilogue = ''
+        msg['X-Mailer'] = 'Trac %s, by Edgewall Software' % __version__
+        msg['X-Trac-Version'] =  __version__
+        projname = self.config.get('project','name')
+        msg['X-Trac-Project'] =  projname
+        msg['X-URL'] =  self.config.get('project','url')
+        msg['Subject'] = Header(self.subject, 'utf-8')
+        msg['From'] = '%s <%s>' % (projname, self.from_email)
+        msg['Sender'] = self.from_email
+        msg['Reply-To'] = self.replyto_email
+        msg['To'] = rcpt
+        msg['Date'] = formatdate()
+        for hdr in mime_headers.keys():
+            msg[hdr] = mime_headers[hdr]
+        self.env.log.debug("Sending SMTP notification to %s on port %d"
+                           % (self.smtp_server, self.smtp_port))
+        self.server.sendmail(self.from_email, [rcpt], msg.as_string())
+
+    def finish_send(self):
+        self.server.quit()
 
 
 class TicketNotifyEmail(NotifyEmail):
@@ -129,7 +239,7 @@ class TicketNotifyEmail(NotifyEmail):
             if not tkt.values.has_key(fname):
                 continue
             fval = tkt[fname]
-            if f['type'] == 'textarea' or '\n' in unicode(fval):
+            if f['type'] == 'textarea' or '\n' in str(fval):
                 big.append((fname.capitalize(), CRLF.join(fval.splitlines())))
             else:
                 txt += format[i % 2] % (fname.capitalize(), fval)
@@ -161,8 +271,7 @@ class TicketNotifyEmail(NotifyEmail):
         notify_owner = self.config.getbool('notification',
                                            'always_notify_owner')
 
-        ccrecipients = self.prev_cc
-        torecipients = []
+        recipients = self.prev_cc
         cursor = self.db.cursor()
 
         # Harvest email addresses from the cc, reporter, and owner fields
@@ -170,25 +279,38 @@ class TicketNotifyEmail(NotifyEmail):
                        (tktid,))
         row = cursor.fetchone()
         if row:
-            ccrecipients += row[0] and row[0].replace(',', ' ').split() or []
+            recipients += row[0] and row[0].replace(',', ' ').split() or []
             if notify_reporter:
-                torecipients.append(row[1])
+                recipients.append(row[1])
             if notify_owner:
-                torecipients.append(row[2])
+                recipients.append(row[2])
 
         # Harvest email addresses from the author field of ticket_change(s)
         if notify_reporter:
             cursor.execute("SELECT DISTINCT author,ticket FROM ticket_change "
                            "WHERE ticket=%s", (tktid,))
             for author,ticket in cursor:
-                torecipients.append(author)
+                recipients.append(author)
 
         # Add smtp_always_cc address
         acc = self.config.get('notification', 'smtp_always_cc')
         if acc:
-            ccrecipients += acc.replace(',', ' ').split()
+            recipients += acc.replace(',', ' ').split()
 
-        return (torecipients, ccrecipients)
+        # now convert recipients into email addresses where necessary
+        emails = []
+        for recipient in recipients:
+            if recipient.find('@') >= 0:
+                emails.append(recipient)
+            elif self.email_map.has_key(recipient):
+                emails.append(self.email_map[recipient])
+
+        # Remove duplicates
+        result = []
+        for e in emails:
+            if e not in result:
+                result.append(e)
+        return result
 
     def get_message_id(self, rcpt, modtime=0):
         """Generate a predictable, but sufficiently unique message ID."""
@@ -199,17 +321,12 @@ class TicketNotifyEmail(NotifyEmail):
         msgid = '<%03d.%s@%s>' % (len(s), dig, host)
         return msgid
 
-    def send(self, torcpts, ccrcpts):
+    def send(self, rcpt):
         hdrs = {}
-        dest = torcpts or ccrcpts
-        if not dest:
-            self.env.log.info('no recipient for a ticket notification')
-            return 
-        hdrs['Message-ID'] = self.get_message_id(dest[0], self.modtime)
+        hdrs['Message-ID'] = self.get_message_id(rcpt, self.modtime)
         hdrs['X-Trac-Ticket-ID'] = str(self.ticket.id)
         hdrs['X-Trac-Ticket-URL'] = self.ticket['link']
         if not self.newticket:
-            hdrs['In-Reply-To'] = self.get_message_id(dest[0])
-            hdrs['References'] = self.get_message_id(dest[0])
-        NotifyEmail.send(self, torcpts, ccrcpts, hdrs)
-
+            hdrs['In-Reply-To'] = self.get_message_id(rcpt)
+            hdrs['References'] = self.get_message_id(rcpt)
+        NotifyEmail.send(self, rcpt, hdrs)

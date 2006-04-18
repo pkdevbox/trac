@@ -1,30 +1,32 @@
-from Cookie import SimpleCookie as Cookie
-import time
-import unittest
-
 from trac.log import logger_factory
 from trac.test import EnvironmentStub, Mock
 from trac.util import TracError
 from trac.web.href import Href
 from trac.web.session import Session, PURGE_AGE, UPDATE_INTERVAL
 
+from Cookie import SimpleCookie as Cookie
+import time
+import unittest
+
 
 class SessionTestCase(unittest.TestCase):
-    """Unit tests for the persistent session support."""
+    """
+    Unit tests for the persistent session support.
+    """
 
     def setUp(self):
         self.env = EnvironmentStub()
         self.db = self.env.get_db_cnx()
 
-    def test_new_session(self):
+    def test_newsession(self):
         """
         Verify that a session cookie gets sent back to the client for a new
         session.
         """
         cookie = Cookie()
         req = Mock(incookie=Cookie(), outcookie=cookie, authname='anonymous',
-                   base_path='/')
-        session = Session(self.env, req)
+                   cgi_location='/')
+        session = Session(self.env, req, newsession=True)
         self.assertEqual(session.sid, cookie['trac_session'].value)
         cursor = self.db.cursor()
         cursor.execute("SELECT COUNT(*) FROM session")
@@ -37,7 +39,7 @@ class SessionTestCase(unittest.TestCase):
         incookie = Cookie()
         incookie['trac_session'] = '123456'
         outcookie = Cookie()
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=outcookie)
         session = Session(self.env, req)
         self.assertEquals('123456', session.sid)
@@ -51,7 +53,7 @@ class SessionTestCase(unittest.TestCase):
         incookie = Cookie()
         incookie['trac_session'] = '123456'
         outcookie = Cookie()
-        req = Mock(authname='john', base_path='/', incookie=incookie,
+        req = Mock(authname='john', cgi_location='/', incookie=incookie,
                    outcookie=outcookie)
         session = Session(self.env, req)
         self.assertEqual('john', session.sid)
@@ -70,14 +72,15 @@ class SessionTestCase(unittest.TestCase):
         incookie = Cookie()
         incookie['trac_session'] = '123456'
         outcookie = Cookie()
-        req = Mock(authname='john', base_path='/', incookie=incookie,
+        req = Mock(authname='john', cgi_location='/', incookie=incookie,
                    outcookie=outcookie)
         session = Session(self.env, req)
         self.assertEqual('john', session.sid)
         session.save()
 
         cursor.execute("SELECT sid,authenticated FROM session")
-        self.assertEqual(('john', 1), cursor.fetchone())
+        row = cursor.fetchone()
+        self.assertEqual(('john', 1), row)
         self.assertEqual(None, cursor.fetchone())
 
     def test_add_anonymous_session_var(self):
@@ -87,7 +90,7 @@ class SessionTestCase(unittest.TestCase):
         """
         incookie = Cookie()
         incookie['trac_session'] = '123456'
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=Cookie())
         session = Session(self.env, req)
         session['foo'] = 'bar'
@@ -107,7 +110,7 @@ class SessionTestCase(unittest.TestCase):
 
         incookie = Cookie()
         incookie['trac_session'] = '123456'
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=Cookie())
         session = Session(self.env, req)
         self.assertEqual('bar', session['foo'])
@@ -127,7 +130,7 @@ class SessionTestCase(unittest.TestCase):
 
         incookie = Cookie()
         incookie['trac_session'] = '123456'
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=Cookie())
         session = Session(self.env, req)
         self.assertEqual('bar', session['foo'])
@@ -149,7 +152,7 @@ class SessionTestCase(unittest.TestCase):
         # We need to modify a different session to trigger the purging
         incookie = Cookie()
         incookie['trac_session'] = '123456'
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=Cookie())
         session = Session(self.env, req)
         session['foo'] = 'bar'
@@ -174,7 +177,7 @@ class SessionTestCase(unittest.TestCase):
 
         incookie = Cookie()
         incookie['trac_session'] = '123456'
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=Cookie())
         session = Session(self.env, req)
         session.save()
@@ -188,7 +191,7 @@ class SessionTestCase(unittest.TestCase):
         Verify that new variables are inserted into the 'session' table in the
         database for an authenticted session.
         """
-        req = Mock(authname='john', base_path='/', incookie=Cookie())
+        req = Mock(authname='john', cgi_location='/', incookie=Cookie())
         session = Session(self.env, req)
         session['foo'] = 'bar'
         session.save()
@@ -205,7 +208,7 @@ class SessionTestCase(unittest.TestCase):
         cursor = self.db.cursor()
         cursor.execute("INSERT INTO session VALUES ('john', 1, 'foo', 'bar')")
 
-        req = Mock(authname='john', base_path='/', incookie=Cookie())
+        req = Mock(authname='john', cgi_location='/', incookie=Cookie())
         session = Session(self.env, req)
         self.assertEqual('bar', session['foo'])
         session['foo'] = 'baz'
@@ -222,7 +225,7 @@ class SessionTestCase(unittest.TestCase):
         cursor = self.db.cursor()
         cursor.execute("INSERT INTO session VALUES ('john', 1, 'foo', 'bar')")
 
-        req = Mock(authname='john', base_path='/', incookie=Cookie())
+        req = Mock(authname='john', cgi_location='/', incookie=Cookie())
         session = Session(self.env, req)
         self.assertEqual('bar', session['foo'])
         del session['foo']
@@ -247,7 +250,7 @@ class SessionTestCase(unittest.TestCase):
         incookie = Cookie()
         incookie['trac_session'] = '123456'
         outcookie = Cookie()
-        req = Mock(authname='anonymous', base_path='/', incookie=incookie,
+        req = Mock(authname='anonymous', cgi_location='/', incookie=incookie,
                    outcookie=outcookie)
         session = Session(self.env, req)
         session.save() # updating should not require modifications

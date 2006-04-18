@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,9 +13,10 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import time
 
 from trac.core import *
@@ -111,7 +112,7 @@ class WikiPage(object):
 
         if self.text != self.old_text:
             cursor = db.cursor()
-            cursor.execute("INSERT INTO wiki (name,version,time,author,ipnr,"
+            cursor.execute("INSERT INTO WIKI (name,version,time,author,ipnr,"
                            "text,comment,readonly) VALUES (%s,%s,%s,%s,%s,%s,"
                            "%s,%s)", (self.name, self.version + 1, t, author,
                            remote_addr, self.text, comment, self.readonly))

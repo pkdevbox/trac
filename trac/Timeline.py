@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -14,23 +14,23 @@
 # individuals. For exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 import time
 
-from trac.config import IntOption
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util import format_date, format_time, http_date, to_unicode
-from trac.util.markup import html, Markup
+from trac.util import enum, format_date, format_time, http_date, Markup, rss_title
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 
 
 class ITimelineEventProvider(Interface):
-    """Extension point interface for adding sources for timed events to the
+    """
+    Extension point interface for adding sources for timed events to the
     timeline.
     """
 
@@ -63,10 +63,6 @@ class TimelineModule(Component):
 
     event_providers = ExtensionPoint(ITimelineEventProvider)
 
-    default_daysback = IntOption('timeline', 'default_daysback', 30,
-        """Default number of days displayed in the Timeline, in days.
-        (''since 0.9.'')""")
-
     # INavigationContributor methods
 
     def get_active_navigation_item(self, req):
@@ -76,7 +72,8 @@ class TimelineModule(Component):
         if not req.perm.has_permission('TIMELINE_VIEW'):
             return
         yield ('mainnav', 'timeline',
-               html.A(href=req.href.timeline(), accesskey=2)['Timeline'])
+               Markup('<a href="%s" accesskey="2">Timeline</a>',
+                      self.env.href.timeline()))
 
     # IPermissionRequestor methods
 
@@ -107,7 +104,7 @@ class TimelineModule(Component):
         try:
             daysback = max(0, int(req.args.get('daysback', '')))
         except ValueError:
-            daysback = self.default_daysback
+            daysback = int(self.config.get('timeline', 'default_daysback'))
         req.hdf['timeline.from'] = format_date(fromdate)
         req.hdf['timeline.daysback'] = daysback
 
@@ -139,13 +136,8 @@ class TimelineModule(Component):
 
         events = []
         for event_provider in self.event_providers:
-            try:
-                events += event_provider.get_timeline_events(req, start, stop,
-                                                             filters)
-            except Exception, e: # cope with a failure of that provider
-                self._provider_failure(e, req, event_provider, filters,
-                                       [f[0] for f in available_filters])
-
+            events += event_provider.get_timeline_events(req, start, stop,
+                                                         filters)
         events.sort(lambda x,y: cmp(y[3], x[3]))
         if maxrows and len(events) > maxrows:
             del events[maxrows:]
@@ -168,10 +160,8 @@ class TimelineModule(Component):
 
             if format == 'rss':
                 # Strip/escape HTML markup
-                if isinstance(title, Markup):
-                    title = title.plaintext(keeplinebreaks=False)
-                event['title'] = title
-                event['message'] = to_unicode(message)
+                event['title'] = rss_title(title)
+                event['message'] = str(message)
 
                 if author:
                     # For RSS, author must be an email address
@@ -188,34 +178,12 @@ class TimelineModule(Component):
             return 'timeline_rss.cs', 'application/rss+xml'
 
         add_stylesheet(req, 'common/css/timeline.css')
-        rss_href = req.href.timeline([(f, 'on') for f in filters],
-                                     daysback=90, max=50, format='rss')
+        rss_href = self.env.href.timeline([(f, 'on') for f in filters],
+                                          daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, 'RSS Feed', 'application/rss+xml',
                  'rss')
-        for idx,fltr in enumerate(available_filters):
+        for idx,fltr in enum(available_filters):
             req.hdf['timeline.filters.%d' % idx] = {'name': fltr[0],
                 'label': fltr[1], 'enabled': int(fltr[0] in filters)}
 
         return 'timeline.cs', None
-
-    def _provider_failure(self, exc, req, ep, current_filters, all_filters):
-        """Raise a TracError exception explaining the failure of a provider.
-
-        At the same time, the message will contain a link to the timeline
-        without the filters corresponding to the guilty event provider `ep`.
-        """
-        ep_name, exc_name = [i.__class__.__name__ for i in (ep, exc)]
-        guilty_filters = [f[0] for f in ep.get_timeline_filters(req)]
-        guilty_kinds = [f[1] for f in ep.get_timeline_filters(req)]
-        other_filters = [f for f in current_filters if not f in guilty_filters]
-        if not other_filters:
-            other_filters = [f for f in all_filters if not f in guilty_filters]
-        args = [(a, req.args.get(a)) for a in ('from', 'format', 'max',
-                                               'daysback')]
-        href = req.href.timeline(args+[(f, 'on') for f in other_filters])
-        raise TracError(Markup(
-            '%s  event provider (<tt>%s</tt>) failed:<br /><br />'
-            '%s: %s'
-            '<p>You may want to see the other kind of events from the '
-            '<a href="%s">Timeline</a></p>', 
-            ", ".join(guilty_kinds), ep_name, exc_name, to_unicode(exc), href))

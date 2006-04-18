@@ -259,9 +259,8 @@ label.disabled { color: #d7d7d7 }
 .wikipage { padding-left: 18px }
 .wikipage h1, .wikipage h2, .wikipage h3 { margin-left: -18px }
 
-a.missing:link, a.missing:visited, span.missing { color: #998 }
-a.missing:link, a.missing:visited { background: #fafaf0 }
-a.missing:hover { color: #000 }
+a.missing:link, a.missing:visited { background: #fafaf0; color: #998 }
+a.missing:hover { color: #000; }
 a.closed:link, a.closed:visited { text-decoration: line-through }
 
 dl.wiki dt { font-weight: bold }
@@ -384,6 +383,6 @@ div.system-message p.system-message-title { font-weight: bold; }
 }
 
 @media print {
- #header, #altlinks, #footer, #help { display: none }
+ #header, #altlinks, #footer { display: none }
  .nav, form, .buttons form { display: none }
 }

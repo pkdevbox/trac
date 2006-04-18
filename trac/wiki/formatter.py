@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -14,22 +14,24 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 import os
 import urllib
 
-from StringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
-from trac.core import *
+from trac import util
 from trac.mimeview import *
-from trac.wiki.api import WikiSystem, IWikiChangeListener, IWikiMacroProvider
-from trac.util import shorten_line, to_unicode
-from trac.util.markup import escape, Markup, Element, html
+from trac.wiki.api import WikiSystem
 
-__all__ = ['wiki_to_html', 'wiki_to_oneliner', 'wiki_to_outline', 'Formatter' ]
+__all__ = ['wiki_to_html', 'wiki_to_oneliner', 'wiki_to_outline']
 
 
 def system_message(msg, text):
@@ -37,12 +39,10 @@ def system_message(msg, text):
  <strong>%s</strong>
  <pre>%s</pre>
 </div>
-""" % (escape(msg), escape(text))
+""" % (util.escape(msg), util.escape(text))
 
 
 class WikiProcessor(object):
-
-    _code_block_re = re.compile('^<div(?:\s+class="([^"]+)")?>(.*)</div>$')
 
     def __init__(self, env, name):
         self.env = env
@@ -55,7 +55,9 @@ class WikiProcessor(object):
         self.processor = builtin_processors.get(name)
         if not self.processor:
             # Find a matching wiki macro
-            for macro_provider in WikiSystem(self.env).macro_providers:
+            from trac.wiki import WikiSystem
+            wiki = WikiSystem(self.env)
+            for macro_provider in wiki.macro_providers:
                 if self.name in list(macro_provider.get_macros()):
                     self.processor = self._macro_processor
                     break
@@ -75,19 +77,21 @@ class WikiProcessor(object):
         return ''
 
     def _default_processor(self, req, text):
-        return '<pre class="wiki">' + escape(text) + '</pre>\n'
+        return '<pre class="wiki">' + util.escape(text) + '</pre>\n'
 
     def _html_processor(self, req, text):
         from HTMLParser import HTMLParseError
         try:
-            return Markup(text).sanitize()
+            return util.Markup(text).sanitize()
         except HTMLParseError, e:
             self.env.log.warn(e)
-            return system_message('HTML parsing error: %s' % escape(e.msg),
+            return system_message('HTML parsing error: %s' % util.escape(e.msg),
                                   text.splitlines()[e.lineno - 1].strip())
 
     def _macro_processor(self, req, text):
-        for macro_provider in WikiSystem(self.env).macro_providers:
+        from trac.wiki import WikiSystem
+        wiki = WikiSystem(self.env)
+        for macro_provider in wiki.macro_providers:
             if self.name in list(macro_provider.get_macros()):
                 self.env.log.debug('Executing Wiki macro %s by provider %s'
                                    % (self.name, macro_provider))
@@ -96,39 +100,21 @@ class WikiProcessor(object):
     def _mimeview_processor(self, req, text):
         return Mimeview(self.env).render(req, self.name, text)
 
-    def process(self, req, text, in_paragraph=False):
+    def process(self, req, text, inline=False):
         if self.error:
-            return system_message(Markup('Error: Failed to load processor '
-                                         '<code>%s</code>', self.name),
+            return system_message(util.Markup('Error: Failed to load processor '
+                                              '<code>%s</code>', self.name),
                                   self.error)
         text = self.processor(req, text)
-        if in_paragraph:
-            content_for_span = None
-            interrupt_paragraph = False
-            if isinstance(text, Element):
-                tagname = text.tagname.lower()
-                if tagname == 'div':
-                    class_ = text.attr.get('class_', '')
-                    if class_ and 'code' in class_:
-                        content_for_span = text.children
-                    else:
-                        interrupt_paragraph = True
-                elif tagname == 'table':
-                    interrupt_paragraph = True
-            else:
-                match = re.match(self._code_block_re, text)
-                if match:
-                    if match.group(1) and 'code' in match.group(1):
-                        content_for_span = match.group(2)
-                    else:
-                        interrupt_paragraph = True
-                elif text.startswith('<table'):
-                    interrupt_paragraph = True
-            if content_for_span:
-                text = html.SPAN(class_='code-block')[content_for_span]
-            elif interrupt_paragraph:
-                text = "</p>%s<p>" % text
-        return to_unicode(text)
+        if inline:
+            code_block_start = re.compile('^<div class="code-block">')
+            code_block_end = re.compile('</div>$')
+            text, nr = code_block_start.subn('<span class="code-block">', text, 1 )
+            if nr:
+                text, nr = code_block_end.subn('</span>', text, 1 )
+            return text
+        else:
+            return text
 
 
 class Formatter(object):
@@ -144,13 +130,8 @@ class Formatter(object):
     SUBSCRIPT_TOKEN = ",,"
     SUPERSCRIPT_TOKEN = r"\^"
     INLINE_TOKEN = "`"
-    STARTBLOCK_TOKEN = r"\{\{\{"
-    STARTBLOCK = "{{{"
-    ENDBLOCK_TOKEN = r"\}\}\}"
-    ENDBLOCK = "}}}"
-    
+
     LINK_SCHEME = r"[\w.+-]+" # as per RFC 2396
-    INTERTRAC_SCHEME = r"[a-zA-Z.+-]*?" # no digits (support for shorthand links)
 
     QUOTED_STRING = r"'[^']+'|\"[^\"]+\""
 
@@ -173,8 +154,7 @@ class Formatter(object):
         r"(?P<strike>!?%s)" % STRIKE_TOKEN,
         r"(?P<subscript>!?%s)" % SUBSCRIPT_TOKEN,
         r"(?P<superscript>!?%s)" % SUPERSCRIPT_TOKEN,
-        r"(?P<inlinecode>!?%s(?P<inline>.*?)%s)" \
-        % (STARTBLOCK_TOKEN, ENDBLOCK_TOKEN),
+        r"(?P<inlinecode>!?\{\{\{(?P<inline>.*?)\}\}\})",
         r"(?P<inlinecode2>!?%s(?P<inline2>.*?)%s)" \
         % (INLINE_TOKEN, INLINE_TOKEN)]
 
@@ -193,10 +173,8 @@ class Formatter(object):
          r"(\]\]|\((?P<macroargs>.*?)\)\]\]))"),
         # heading, list, definition, indent, table...
         r"(?P<heading>^\s*(?P<hdepth>=+)\s.*\s(?P=hdepth)\s*$)",
-        r"(?P<list>^(?P<ldepth>\s+)(?:\*|\d+\.|[a-zA-Z]+\.) )",
-        r"(?P<definition>^\s+((?:%s.*?%s|%s.*?%s|[^%s%s])+?::)(?:\s+|$))"
-        % (INLINE_TOKEN, INLINE_TOKEN, STARTBLOCK_TOKEN, ENDBLOCK_TOKEN,
-           INLINE_TOKEN, STARTBLOCK[0]),
+        r"(?P<list>^(?P<ldepth>\s+)(?:\*|\d+\.) )",
+        r"(?P<definition>^\s+(.+)::)\s*",
         r"(?P<indent>^(?P<idepth>\s+)(?=\S))",
         r"(?P<last_table_cell>\|\|\s*$)",
         r"(?P<table_cell>\|\|)"]
@@ -215,7 +193,6 @@ class Formatter(object):
         self._open_tags = []
         self.href = absurls and env.abs_href or env.href
         self._local = env.config.get('project', 'url') or env.abs_href.base
-        self.wiki = WikiSystem(self.env)
 
     def _get_db(self):
         if not self._db:
@@ -223,8 +200,26 @@ class Formatter(object):
         return self._db
     db = property(fget=_get_db)
 
-    # -- Rules preceeding IWikiSyntaxProvider rules: Font styles
-    
+    def _get_rules(self):
+        return WikiSystem(self.env).rules
+    rules = property(_get_rules)
+
+    def _get_link_resolvers(self):
+        return WikiSystem(self.env).link_resolvers
+    link_resolvers = property(_get_link_resolvers)
+
+    def replace(self, fullmatch):
+        wiki = WikiSystem(self.env)        
+        for itype, match in fullmatch.groupdict().items():
+            if match and not itype in wiki.helper_patterns:
+                # Check for preceding escape character '!'
+                if match[0] == '!':
+                    return match[1:]
+                if itype in wiki.external_handlers:
+                    return wiki.external_handlers[itype](self, match, fullmatch)
+                else:
+                    return getattr(self, '_' + itype + '_formatter')(match, fullmatch)
+
     def tag_open_p(self, tag):
         """Do we currently have any open tag with @tag as end-tag"""
         return tag in self._open_tags
@@ -264,6 +259,66 @@ class Formatter(object):
             self.open_tag(*italic)
         return tmp
 
+    def _unquote(self, text):
+        if text and text[0] in "'\"" and text[0] == text[-1]:
+            return text[1:-1]
+        else:
+            return text
+
+    def _shref_formatter(self, match, fullmatch):
+        ns = fullmatch.group('sns')
+        target = self._unquote(fullmatch.group('stgt'))
+        return self._make_link(ns, target, match, match)
+
+    def _lhref_formatter(self, match, fullmatch):
+        ns = fullmatch.group('lns')
+        target = self._unquote(fullmatch.group('ltgt'))
+        label = fullmatch.group('label')
+        if not label: # e.g. `[http://target]` or `[wiki:target]`
+            if target:
+                if target.startswith('//'): # for `[http://target]`
+                    label = ns+':'+target   # use `http://target`
+                else:                       # for `wiki:target`
+                    label = target          # use only `target`
+            else: # e.g. `[search:]` 
+                label = ns
+        label = self._unquote(label)
+        rel = fullmatch.group('rel')
+        if rel:
+            return self._make_relative_link(rel, label or rel)
+        else:
+            return self._make_link(ns, target, match, label)
+
+    def _make_link(self, ns, target, match, label):
+        if ns in self.link_resolvers:
+            return self.link_resolvers[ns](self, ns, target,
+                                           util.escape(label, False))
+        elif target.startswith('//') or ns == "mailto":
+            return self._make_ext_link(ns+':'+target, label)
+        else:
+            return util.escape(match)
+
+    def _make_ext_link(self, url, text, title=''):
+        url = util.escape(url)
+        text, title = util.escape(text), util.escape(title)
+        title_attr = title and ' title="%s"' % title or ''
+        if Formatter.img_re.search(url) and self.flavor != 'oneliner':
+            return '<img src="%s" alt="%s" />' % (url, title or text)
+        if not url.startswith(self._local):
+            return '<a class="ext-link" href="%s"%s><span class="icon">' \
+                   '</span>%s</a>' % (url, title_attr, text)
+        else:
+            return '<a href="%s"%s>%s</a>' % (url, title_attr, text)
+
+    def _make_relative_link(self, url, text):
+        url, text = util.escape(url), util.escape(text)
+        if Formatter.img_re.search(url) and self.flavor != 'oneliner':
+            return '<img src="%s" alt="%s" />' % (url, text)
+        if url.startswith('//'): # only the protocol will be kept
+            return '<a class="ext-link" href="%s">%s</a>' % (url, text)
+        else:
+            return '<a href="%s">%s</a>' % (url, text)
+
     def _bold_formatter(self, match, fullmatch):
         return self.simple_tag_handler('<strong>', '</strong>')
 
@@ -296,120 +351,14 @@ class Formatter(object):
             return self.simple_tag_handler('<sup>', '</sup>')
 
     def _inlinecode_formatter(self, match, fullmatch):
-        return '<tt>%s</tt>' % escape(fullmatch.group('inline'))
+        return '<tt>%s</tt>' % util.escape(fullmatch.group('inline'))
 
     def _inlinecode2_formatter(self, match, fullmatch):
-        return '<tt>%s</tt>' % escape(fullmatch.group('inline2'))
-
-    # -- Rules following IWikiSyntaxProvider rules
-
-    # HTML escape of &, < and >
+        return '<tt>%s</tt>' % util.escape(fullmatch.group('inline2'))
 
     def _htmlescape_formatter(self, match, fullmatch):
         return match == "&" and "&amp;" or match == "<" and "&lt;" or "&gt;"
 
-    # Short form (shref) and long form (lhref) of TracLinks
-
-    def _unquote(self, text):
-        if text and text[0] in "'\"" and text[0] == text[-1]:
-            return text[1:-1]
-        else:
-            return text
-
-    def _shref_formatter(self, match, fullmatch):
-        ns = fullmatch.group('sns')
-        target = self._unquote(fullmatch.group('stgt'))
-        return self._make_link(ns, target, match, match)
-
-    def _lhref_formatter(self, match, fullmatch):
-        ns = fullmatch.group('lns')
-        target = self._unquote(fullmatch.group('ltgt'))
-        label = fullmatch.group('label')
-        if not label: # e.g. `[http://target]` or `[wiki:target]`
-            if target:
-                if target.startswith('//'): # for `[http://target]`
-                    label = ns+':'+target   # use `http://target`
-                else:                       # for `wiki:target`
-                    label = target          # use only `target`
-            else: # e.g. `[search:]` 
-                label = ns
-        label = self._unquote(label)
-        rel = fullmatch.group('rel')
-        if rel:
-            return self._make_relative_link(rel, label or rel)
-        else:
-            return self._make_link(ns, target, match, label)
-
-    def _make_link(self, ns, target, match, label):
-        # check first for an alias defined in trac.ini
-        ns = self.env.config.get('intertrac', ns.upper()) or ns
-        if ns in self.wiki.link_resolvers:
-            return to_unicode(self.wiki.link_resolvers[ns](
-                self, ns, target, escape(label, False)))
-        elif target.startswith('//') or ns == "mailto":
-            return self._make_ext_link(ns+':'+target, label)
-        else:
-            return self._make_intertrac_link(ns, target, label) or \
-                   self._make_interwiki_link(ns, target, label) or \
-                   match
-
-    def _make_intertrac_link(self, ns, target, label):
-        url = self.env.config.get('intertrac', ns.upper() + '.url')
-        if url:
-            name = self.env.config.get('intertrac', ns.upper() + '.title',
-                                       'Trac project %s' % ns)
-            sep = target.find(':')
-            if sep != -1:
-                url = '%s/%s/%s' % (url, target[:sep], target[sep + 1:])
-            else: 
-                url = '%s/search?q=%s' % (url, urllib.quote_plus(target))
-            return self._make_ext_link(url, label, '%s in %s' % (target, name))
-        else:
-            return None
-
-    def shorthand_intertrac_helper(self, ns, target, label, fullmatch):
-        if fullmatch: # short form
-            it_group = fullmatch.group('it_%s' % ns)
-            if it_group:
-                alias = it_group.strip()
-                intertrac = self.env.config.get('intertrac', alias.upper()) or \
-                            alias
-                target = '%s:%s' % (ns, target[len(it_group):])
-                return self._make_intertrac_link(intertrac, target, label) or \
-                       label
-        return None
-
-    def _make_interwiki_link(self, ns, target, label):
-        interwiki = InterWikiMap(self.env)
-        if interwiki.has_key(ns):
-            url, title = interwiki.url(ns, target)
-            return self._make_ext_link(url, label, title)
-        else:
-            return None
-
-    def _make_ext_link(self, url, text, title=''):
-        url = escape(url)
-        text, title = escape(text), escape(title)
-        title_attr = title and ' title="%s"' % title or ''
-        if Formatter.img_re.search(url) and self.flavor != 'oneliner':
-            return '<img src="%s" alt="%s" />' % (url, title or text)
-        if not url.startswith(self._local):
-            return '<a class="ext-link" href="%s"%s><span class="icon">' \
-                   '</span>%s</a>' % (url, title_attr, text)
-        else:
-            return '<a href="%s"%s>%s</a>' % (url, title_attr, text)
-
-    def _make_relative_link(self, url, text):
-        url, text = escape(url), escape(text)
-        if Formatter.img_re.search(url) and self.flavor != 'oneliner':
-            return '<img src="%s" alt="%s" />' % (url, text)
-        if url.startswith('//'): # only the protocol will be kept
-            return '<a class="ext-link" href="%s">%s</a>' % (url, text)
-        else:
-            return '<a href="%s">%s</a>' % (url, text)
-
-    # WikiMacros
-    
     def _macro_formatter(self, match, fullmatch):
         name = fullmatch.group('macroname')
         if name in ['br', 'BR']:
@@ -417,14 +366,11 @@ class Formatter(object):
         args = fullmatch.group('macroargs')
         try:
             macro = WikiProcessor(self.env, name)
-            return macro.process(self.req, args, True)
+            return macro.process(self.req, args, 1)
         except Exception, e:
             self.env.log.error('Macro %s(%s) failed' % (name, args),
                                exc_info=True)
-            return system_message('Error: Macro %s(%s) failed' \
-                                  % (name, args), e)
-
-    # Headings
+            return system_message('Error: Macro %s(%s) failed' % (name, args), e)
 
     def _heading_formatter(self, match, fullmatch):
         match = match.strip()
@@ -440,95 +386,38 @@ class Formatter(object):
         text = wiki_to_oneliner(heading, self.env, self.db, self._absurls)
         sans_markup = re.sub(r'</?\w+(?: .*?)?>', '', text)
 
-        anchor = self._anchor_re.sub('', sans_markup)
+        anchor = self._anchor_re.sub('', sans_markup.decode('utf-8'))
         if not anchor or not anchor[0].isalpha():
             # an ID must start with a letter in HTML
             anchor = 'a' + anchor
         i = 1
-        anchor = anchor_base = anchor
+        anchor = anchor_base = anchor.encode('utf-8')
         while anchor in self._anchors:
             anchor = anchor_base + str(i)
             i += 1
         self._anchors.append(anchor)
         self.out.write('<h%d id="%s">%s</h%d>' % (depth, anchor, text, depth))
 
-    # Lists
-    
-    def _list_formatter(self, match, fullmatch):
-        ldepth = len(fullmatch.group('ldepth'))
-        depth = int((len(fullmatch.group('ldepth')) + 1) / 2)
-        listid = match[ldepth]
-        self.in_list_item = depth > 0
-        class_ = start = None
-        if listid == '*':
-            type_ = 'ul'
+    def _indent_formatter(self, match, fullmatch):
+        depth = int((len(fullmatch.group('idepth')) + 1) / 2)
+        list_depth = len(self._list_stack)
+        if list_depth > 0 and depth == list_depth + 1:
+            self.in_list_item = 1
         else:
-            type_ = 'ol'
-            idx = '01iI'.find(listid)
-            if idx >= 0:
-                class_ = ('arabiczero', None, 'lowerroman', 'upperroman')[idx]
-            elif listid.isdigit():
-                start = match[ldepth:match.find('.')]
-            elif listid.islower():
-                class_ = 'loweralpha'
-            elif listid.isupper():
-                class_ = 'upperalpha'
-        self._set_list_depth(depth, type_, class_, start)
+            self.open_indentation(depth)
         return ''
 
-    def _set_list_depth(self, depth, type_, class_, start):
-        current_depth = len(self._list_stack)
-        diff = depth - current_depth
-        self.close_table()
-        self.close_paragraph()
-        self.close_indentation()
-        begin_list = type_
-        if class_:
-            begin_list += ' class="%s"' % class_
-        if start:
-            begin_list += start and ' start="%s"' % start
-        if diff > 0:
-            for i in range(diff):
-                self._list_stack.append(type_)
-                self.out.write('<%s><li>' % begin_list)
-        elif diff < 0:
-            for i in range(-diff):
-                tmp = self._list_stack.pop()
-                self.out.write('</li></%s>' % tmp)
-            if self._list_stack != [] and type_ != self._list_stack[-1]:
-                tmp = self._list_stack.pop()
-                self._list_stack.append(type_)
-                self.out.write('</li></%s><%s><li>' % (tmp, begin_list))
-            if depth > 0:
-                self.out.write('</li><li>')
-        # diff == 0
-        elif self._list_stack != [] and type_ != self._list_stack[-1]:
-            tmp = self._list_stack.pop()
-            self._list_stack.append(type_)
-            self.out.write('</li></%s><%s><li>' % (tmp, begin_list))
-        elif depth > 0:
-            self.out.write('</li><li>')
+    def _last_table_cell_formatter(self, match, fullmatch):
+        return ''
 
-    def close_list(self):
-        if self._list_stack != []:
-            self._set_list_depth(0, None, None, None)
-
-    # Definition Lists
-
-    def _definition_formatter(self, match, fullmatch):
-        tmp = self.in_def_list and '</dd>' or '<dl>'
-        definition = match[:match.find('::')]
-        tmp += '<dt>%s</dt><dd>' % wiki_to_oneliner(definition, self.env,
-                                                    self.db)
-        self.in_def_list = True
-        return tmp
-
-    def close_def_list(self):
-        if self.in_def_list:
-            self.out.write('</dd></dl>\n')
-        self.in_def_list = False
-
-    # Blockquote
+    def _table_cell_formatter(self, match, fullmatch):
+        self.open_table()
+        self.open_table_row()
+        if self.in_table_cell:
+            return '</td><td>'
+        else:
+            self.in_table_cell = 1
+            return '<td>'
 
     def close_indentation(self):
         self.out.write(('</blockquote>' + os.linesep) * self.indent_level)
@@ -545,28 +434,69 @@ class Formatter(object):
             self.indent_level = depth
             self.out.write(('<blockquote>' + os.linesep) * depth)
 
-    def _indent_formatter(self, match, fullmatch):
-        depth = int((len(fullmatch.group('idepth')) + 1) / 2)
-        list_depth = len(self._list_stack)
-        if list_depth > 0 and depth == list_depth + 1:
-            self.in_list_item = 1
-        else:
-            self.open_indentation(depth)
+    def _list_formatter(self, match, fullmatch):
+        ldepth = len(fullmatch.group('ldepth'))
+        depth = int((len(fullmatch.group('ldepth')) + 1) / 2)
+        self.in_list_item = depth > 0
+        type_ = ['ol', 'ul'][match[ldepth] == '*']
+        self._set_list_depth(depth, type_)
         return ''
 
-    # Table
-    
-    def _last_table_cell_formatter(self, match, fullmatch):
-        return ''
+    def _definition_formatter(self, match, fullmatch):
+        tmp = self.in_def_list and '</dd>' or '<dl>'
+        tmp += '<dt>%s</dt><dd>' % wiki_to_oneliner(match[:-2], self.env,
+                                                    self.db)
+        self.in_def_list = True
+        return tmp
 
-    def _table_cell_formatter(self, match, fullmatch):
-        self.open_table()
-        self.open_table_row()
-        if self.in_table_cell:
-            return '</td><td>'
-        else:
-            self.in_table_cell = 1
-            return '<td>'
+    def close_def_list(self):
+        if self.in_def_list:
+            self.out.write('</dd></dl>\n')
+        self.in_def_list = False
+
+    def _set_list_depth(self, depth, type_):
+        current_depth = len(self._list_stack)
+        diff = depth - current_depth
+        self.close_table()
+        self.close_paragraph()
+        self.close_indentation()
+        if diff > 0:
+            for i in range(diff):
+                self._list_stack.append(type_)
+                self.out.write('<%s><li>' % type_)
+        elif diff < 0:
+            for i in range(-diff):
+                tmp = self._list_stack.pop()
+                self.out.write('</li></%s>' % tmp)
+            if self._list_stack != [] and type_ != self._list_stack[-1]:
+                tmp = self._list_stack.pop()
+                self._list_stack.append(type_)
+                self.out.write('</li></%s><%s><li>' % (tmp, type_))
+            if depth > 0:
+                self.out.write('</li><li>')
+        # diff == 0
+        elif self._list_stack != [] and type_ != self._list_stack[-1]:
+            tmp = self._list_stack.pop()
+            self._list_stack.append(type_)
+            self.out.write('</li></%s><%s><li>' % (tmp, type_))
+        elif depth > 0:
+            self.out.write('</li><li>')
+
+    def close_list(self):
+        if self._list_stack != []:
+            self._set_list_depth(0, None)
+
+    def open_paragraph(self):
+        if not self.paragraph_open:
+            self.out.write('<p>' + os.linesep)
+            self.paragraph_open = 1
+
+    def close_paragraph(self):
+        if self.paragraph_open:
+            while self._open_tags != []:
+                self.out.write(self._open_tags.pop()[1])
+            self.out.write('</p>' + os.linesep)
+            self.paragraph_open = 0
 
     def open_table(self):
         if not self.in_table:
@@ -598,34 +528,8 @@ class Formatter(object):
             self.out.write('</table>' + os.linesep)
             self.in_table = 0
 
-    # -- Wiki engine
-
-    def open_paragraph(self):
-        if not self.paragraph_open:
-            self.out.write('<p>' + os.linesep)
-            self.paragraph_open = 1
-
-    def close_paragraph(self):
-        if self.paragraph_open:
-            while self._open_tags != []:
-                self.out.write(self._open_tags.pop()[1])
-            self.out.write('</p>' + os.linesep)
-            self.paragraph_open = 0
-
-    def replace(self, fullmatch):
-        for itype, match in fullmatch.groupdict().items():
-            if match and not itype in self.wiki.helper_patterns:
-                # Check for preceding escape character '!'
-                if match[0] == '!':
-                    return match[1:]
-                if itype in self.wiki.external_handlers:
-                    return to_unicode(self.wiki.external_handlers[itype](
-                        self, match, fullmatch))
-                else:
-                    return getattr(self, '_' + itype + '_formatter')(match,
-                                                                     fullmatch)
     def handle_code_block(self, line):
-        if line.strip() == Formatter.STARTBLOCK:
+        if line.strip() == '{{{':
             self.in_code_block += 1
             if self.in_code_block == 1:
                 self.code_processor = None
@@ -634,7 +538,7 @@ class Formatter(object):
                 self.code_text += line + os.linesep
                 if not self.code_processor:
                     self.code_processor = WikiProcessor(self.env, 'default')
-        elif line.strip() == Formatter.ENDBLOCK:
+        elif line.strip() == '}}}':
             self.in_code_block -= 1
             if self.in_code_block == 0 and self.code_processor:
                 self.close_paragraph()
@@ -668,7 +572,7 @@ class Formatter(object):
 
         for line in text.splitlines():
             # Handle code block
-            if self.in_code_block or line.strip() == Formatter.STARTBLOCK:
+            if self.in_code_block or line.strip() == '{{{':
                 self.handle_code_block(line)
                 continue
             # Handle Horizontal ruler
@@ -692,7 +596,7 @@ class Formatter(object):
                 line += ' [[BR]]'
             self.in_list_item = False
             # Throw a bunch of regexps on the problem
-            result = re.sub(self.wiki.rules, self.replace, line)
+            result = re.sub(self.rules, self.replace, line)
 
             if not self.in_list_item:
                 self.close_list()
@@ -731,9 +635,9 @@ class OneLinerFormatter(Formatter):
     def _list_formatter(self, match, fullmatch): return match
     def _indent_formatter(self, match, fullmatch): return match
     def _heading_formatter(self, match, fullmatch):
-        return escape(match, False)
+        return util.escape(match, False)
     def _definition_formatter(self, match, fullmatch):
-        return escape(match, False)
+        return util.escape(match, False)
     def _table_cell_formatter(self, match, fullmatch): return match
     def _last_table_cell_formatter(self, match, fullmatch): return match
 
@@ -758,9 +662,9 @@ class OneLinerFormatter(Formatter):
         processor = None
         buf = StringIO()
         for line in text.strip().splitlines():
-            if line.strip() == Formatter.STARTBLOCK:
+            if line.strip() == '{{{':
                 in_code_block += 1
-            elif line.strip() == Formatter.ENDBLOCK:
+            elif line.strip() == '}}}':
                 if in_code_block:
                     in_code_block -= 1
                     if in_code_block == 0:
@@ -776,9 +680,9 @@ class OneLinerFormatter(Formatter):
         result = buf.getvalue()[:-1]
 
         if shorten:
-            result = shorten_line(result)
+            result = util.shorten_line(result)
 
-        result = re.sub(self.wiki.rules, self.replace, result)
+        result = re.sub(self.rules, self.replace, result)
         result = result.replace('[...]', '[&hellip;]')
         if result.endswith('...'):
             result = result[:-3] + '&hellip;'
@@ -799,12 +703,6 @@ class OutlineFormatter(Formatter):
     # Override a few formatters to disable some wiki syntax in "outline"-mode
     def _macro_formatter(self, match, fullmatch):
         return match
-
-    def handle_code_block(self, line):
-        if line.strip() == Formatter.STARTBLOCK:
-            self.in_code_block += 1
-        elif line.strip() == Formatter.ENDBLOCK:
-            self.in_code_block -= 1
 
     def format(self, text, out, max_depth=6, min_depth=1):
         self.outline = []
@@ -847,14 +745,14 @@ def wiki_to_html(wikitext, env, req, db=None,
         return ''
     out = StringIO()
     Formatter(env, req, absurls, db).format(wikitext, out, escape_newlines)
-    return Markup(out.getvalue())
+    return util.Markup(out.getvalue())
 
 def wiki_to_oneliner(wikitext, env, db=None, shorten=False, absurls=False):
     if not wikitext:
         return ''
     out = StringIO()
     OneLinerFormatter(env, absurls, db).format(wikitext, out, shorten)
-    return Markup(out.getvalue())
+    return util.Markup(out.getvalue())
 
 def wiki_to_outline(wikitext, env, db=None,
                     absurls=False, max_depth=None, min_depth=None):
@@ -863,108 +761,4 @@ def wiki_to_outline(wikitext, env, db=None,
     out = StringIO()
     OutlineFormatter(env, absurls, db).format(wikitext, out, max_depth,
                                               min_depth)
-    return Markup(out.getvalue())
-
-
-class InterWikiMap(Component):
-    """Implements support for InterWiki maps."""
-
-    implements(IWikiChangeListener, IWikiMacroProvider)
-
-    _page_name = 'InterMapTxt'
-    _interwiki_re = re.compile(r"(%s)[ \t]+([^ \t]+)(?:[ \t]+#(.*))?" %
-                               Formatter.LINK_SCHEME, re.UNICODE)
-    _argspec_re = re.compile(r"\$\d")
-
-    def __init__(self):
-        self._interwiki_map = None
-        # This dictionary maps upper-cased namespaces
-        # to (namespace, prefix, title) values
-
-    def _expand(self, txt, args):
-        def setarg(match):
-            num = int(match.group()[1:])
-            return 0 < num <= len(args) and args[num-1] or ''
-        return re.sub(InterWikiMap._argspec_re, setarg, txt)
-
-    def _expand_or_append(self, txt, args):
-        if not args:
-            return txt
-        expanded = self._expand(txt, args)
-        return expanded == txt and txt + args[0] or expanded
-
-    def has_key(self, ns):
-        if not self._interwiki_map:
-            self._update()
-        return self._interwiki_map.has_key(ns.upper())
-
-    def url(self, ns, target):
-        ns, url, title = self._interwiki_map[ns.upper()]
-        args = target.split(':')
-        expanded_url = self._expand_or_append(url, args)
-        expanded_title = self._expand(title, args)
-        if expanded_title == title:
-            expanded_title = target+' in '+title
-        return expanded_url, expanded_title
-
-    # IWikiChangeListener methods
-
-    def wiki_page_added(self, page):
-        if page.name == InterWikiMap._page_name:
-            self._update()
-
-    def wiki_page_changed(self, page, version, t, comment, author, ipnr):
-        if page.name == InterWikiMap._page_name:
-            self._update()
-
-    def wiki_page_deleted(self, page):
-        if page.name == InterWikiMap._page_name:
-            self._interwiki_map.clear()
-
-    def _update(self):
-        from trac.wiki.model import WikiPage
-        self._interwiki_map = {}
-        content = WikiPage(self.env, InterWikiMap._page_name).text
-        in_map = False
-        for line in content.split('\n'):
-            if in_map:
-                if line.startswith('----'):
-                    in_map = False
-                else:
-                    m = re.match(InterWikiMap._interwiki_re, line)
-                    if m:
-                        prefix, url, title = m.groups()
-                        url = url.strip()
-                        title = title and title.strip() or prefix
-                        self._interwiki_map[prefix.upper()] = (prefix, url,
-                                                               title)
-            elif line.startswith('----'):
-                in_map = True
-
-    # IWikiMacroProvider methods
-
-    def get_macros(self):
-        yield 'InterWiki'
-
-    def get_macro_description(self, name): 
-        return "Provide a description list for the known InterWiki prefixes."
-
-    def render_macro(self, req, name, content):
-        from trac.util import sorted
-        from trac.util.markup import html as _
-        if not self._interwiki_map:
-            self._update()
-            
-        interwikis = []
-        for k in sorted(self._interwiki_map.keys()):
-            prefix, url, title = self._interwiki_map[k]
-            interwikis.append({
-                'prefix': prefix, 'url': url, 'title': title,
-                'rc_url': self._expand_or_append(url, ['RecentChanges']),
-                'description': title == prefix and url or title})
-
-        return _.TABLE(_.TR(_.TH(_.EM("Prefix")), _.TH(_.EM("Site"))),
-                       [ _.TR(_.TD(_.A(w['prefix'], href=w['rc_url'])),
-                              _.TD(_.A(w['description'], href=w['url'])))
-                         for w in interwikis ],
-                       class_="wiki interwiki")
+    return util.Markup(out.getvalue())

@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Edgewall Software
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -12,44 +12,25 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import generators
 import os
 import re
 import time
 
+from trac import util
 from trac.attachment import attachment_to_hdf, Attachment
-from trac.config import BoolOption, Option
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
-from trac.ticket import Milestone, Ticket, TicketSystem, ITicketManipulator
-from trac.ticket.notification import TicketNotifyEmail
+from trac.Notify import TicketNotifyEmail
+from trac.ticket import Milestone, Ticket, TicketSystem
 from trac.Timeline import ITimelineEventProvider
-from trac.util import format_datetime, get_reporter_id, pretty_timedelta
-from trac.util.markup import html, Markup
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki import wiki_to_html, wiki_to_oneliner
 
-
-class TicketModuleBase(Component):
-    # FIXME: temporary place-holder for unified ticket validation until
-    #        ticket controller unification is merged
-    abstract = True
-
-    ticket_manipulators = ExtensionPoint(ITicketManipulator)
-
-    def _validate_ticket(self, req, ticket):
-        for manipulator in self.ticket_manipulators:
-            for field, message in manipulator.validate_ticket(req, ticket):
-                if field:
-                    raise TracError("The ticket %s field is invalid: %s" %
-                                    (field, message))
-                else:
-                    raise TracError("Invalid ticket: %s" % message)
-
-
-class NewticketModule(TicketModuleBase):
+class NewticketModule(Component):
 
     implements(IEnvironmentSetupParticipant, INavigationContributor,
                IRequestHandler)
@@ -85,7 +66,8 @@ class NewticketModule(TicketModuleBase):
         if not req.perm.has_permission('TICKET_CREATE'):
             return
         yield ('mainnav', 'newticket', 
-               html.A(href=req.href.newticket(), accesskey=7)['New Ticket'])
+               util.Markup('<a href="%s" accesskey="7">New Ticket</a>',
+                           self.env.href.newticket()))
 
     # IRequestHandler methods
 
@@ -102,7 +84,7 @@ class NewticketModule(TicketModuleBase):
 
         ticket = Ticket(self.env, db=db)
         ticket.populate(req.args)
-        ticket.values.setdefault('reporter', get_reporter_id(req))
+        ticket.values.setdefault('reporter', util.get_reporter_id(req))
 
         if ticket.values.has_key('description'):
             description = wiki_to_html(ticket['description'], self.env, req, db)
@@ -141,10 +123,6 @@ class NewticketModule(TicketModuleBase):
                 field['options'] = options
             req.hdf['newticket.fields.' + name] = field
 
-        if req.perm.has_permission('TICKET_APPEND'):
-            req.hdf['newticket.can_attach'] = True
-            req.hdf['newticket.attachment'] = req.args.get('attachment')
-
         add_stylesheet(req, 'common/css/ticket.css')
         return 'newticket.cs', None
 
@@ -155,10 +133,8 @@ class NewticketModule(TicketModuleBase):
             raise TracError('Tickets must contain a summary.')
 
         ticket = Ticket(self.env, db=db)
-        ticket.values.setdefault('reporter', get_reporter_id(req))
+        ticket.values.setdefault('reporter', util.get_reporter_id(req))
         ticket.populate(req.args)
-        self._validate_ticket(req, ticket)
-
         ticket.insert(db=db)
         db.commit()
 
@@ -171,39 +147,12 @@ class NewticketModule(TicketModuleBase):
                                "ticket #%s: %s" % (ticket.id, e))
 
         # Redirect the user to the newly created ticket
-        if req.args.get('attachment'):
-            req.redirect(req.href.attachment('ticket', ticket.id, action='new'))
-        else:
-            req.redirect(req.href.ticket(ticket.id))
+        req.redirect(self.env.href.ticket(ticket.id))
 
 
-class TicketModule(TicketModuleBase):
+class TicketModule(Component):
 
     implements(INavigationContributor, IRequestHandler, ITimelineEventProvider)
-
-    default_version = Option('ticket', 'default_version', '',
-        """Default version for newly created tickets.""")
-
-    default_type = Option('ticket', 'default_type', 'defect',
-        """Default type for newly created tickets (''since 0.9'').""")
-
-    default_priority = Option('ticket', 'default_priority', 'major',
-        """Default priority for newly created tickets.""")
-
-    default_milestone = Option('ticket', 'default_milestone', '',
-        """Default milestone for newly created tickets.""")
-
-    default_component = Option('ticket', 'default_component', '',
-        """Default component for newly created tickets""")
-
-    restrict_owner = BoolOption('ticket', 'restrict_owner', 'false',
-        """Make the owner field of tickets use a drop-down menu. See
-        [wiki:TracTickets#AssigntoasDropDownList AssignToAsDropDownList]
-        (''since 0.9'').""")
-
-    timeline_details = BoolOption('timeline', 'ticket_show_details', 'false',
-        """Enable the display of all ticket changes in the timeline
-        (''since 0.9'').""")
 
     # INavigationContributor methods
 
@@ -226,11 +175,14 @@ class TicketModule(TicketModuleBase):
 
         action = req.args.get('action', 'view')
 
+        if not req.args.has_key('id'):
+            req.redirect(self.env.href.wiki())
+
         db = self.env.get_db_cnx()
         id = int(req.args.get('id'))
 
         ticket = Ticket(self.env, id, db=db)
-        reporter_id = get_reporter_id(req)
+        reporter_id = util.get_reporter_id(req)
 
         if req.method == 'POST':
             if not req.args.has_key('preview'):
@@ -238,8 +190,6 @@ class TicketModule(TicketModuleBase):
             else:
                 # Use user supplied values
                 ticket.populate(req.args)
-                self._validate_ticket(req, ticket)
-
                 req.hdf['ticket.action'] = action
                 req.hdf['ticket.ts'] = req.args.get('ts')
                 req.hdf['ticket.reassign_owner'] = req.args.get('reassign_owner') \
@@ -267,14 +217,14 @@ class TicketModule(TicketModuleBase):
             if str(id) in tickets:
                 idx = tickets.index(str(ticket.id))
                 if idx > 0:
-                    add_link(req, 'first', req.href.ticket(tickets[0]),
+                    add_link(req, 'first', self.env.href.ticket(tickets[0]),
                              'Ticket #%s' % tickets[0])
-                    add_link(req, 'prev', req.href.ticket(tickets[idx - 1]),
+                    add_link(req, 'prev', self.env.href.ticket(tickets[idx - 1]),
                              'Ticket #%s' % tickets[idx - 1])
                 if idx < len(tickets) - 1:
-                    add_link(req, 'next', req.href.ticket(tickets[idx + 1]),
+                    add_link(req, 'next', self.env.href.ticket(tickets[idx + 1]),
                              'Ticket #%s' % tickets[idx + 1])
-                    add_link(req, 'last', req.href.ticket(tickets[-1]),
+                    add_link(req, 'last', self.env.href.ticket(tickets[-1]),
                              'Ticket #%s' % tickets[-1])
                 add_link(req, 'up', req.session['query_href'])
 
@@ -286,93 +236,70 @@ class TicketModule(TicketModuleBase):
     def get_timeline_filters(self, req):
         if req.perm.has_permission('TICKET_VIEW'):
             yield ('ticket', 'Ticket changes')
-            if self.timeline_details:
-                yield ('ticket_details', 'Ticket details', False)
 
     def get_timeline_events(self, req, start, stop, filters):
-        format = req.args.get('format')
+        if 'ticket' in filters:
+            format = req.args.get('format')
+            sql = []
 
-        status_map = {'new': ('newticket', 'created'),
-                      'reopened': ('newticket', 'reopened'),
-                      'closed': ('closedticket', 'closed'),
-                      'edit': ('editedticket', 'updated')}
+            # New tickets
+            sql.append("SELECT time,id,'','new',type,summary,reporter,summary"
+                       " FROM ticket WHERE time>=%s AND time<=%s")
 
-        def produce((id, t, author, type, summary), status, fields, comment):
-            if status == 'edit':
-                if 'ticket_details' in filters:
-                    info = ''
-                    if len(fields) > 0:
-                        info = ', '.join(['<i>%s</i>' % f for f in \
-                                          fields.keys()]) + ' changed<br />'
-                else:
-                    return None
-            elif 'ticket' in filters:
-                if status == 'closed' and fields.has_key('resolution'):
-                    info = fields['resolution']
-                    if info and comment:
-                        info = '%s: ' % info
-                else:
-                    info = ''
-            else:
-                return None
-            kind, verb = status_map[status]
-            title = Markup('Ticket <em title="%s">#%s</em> (%s) %s by %s',
-                           summary, id, type, verb, author)
-            href = format == 'rss' and req.abs_href.ticket(id) or \
-                                       req.href.ticket(id)
+            # Reopened tickets
+            sql.append("SELECT t1.time,t1.ticket,'','reopened',t.type,"
+                       "       t2.newvalue,t1.author,t.summary "
+                       " FROM ticket_change t1"
+                       "   LEFT OUTER JOIN ticket_change t2 ON (t1.time=t2.time"
+                       "     AND t1.ticket=t2.ticket AND t2.field='comment')"
+                       "   LEFT JOIN ticket t on t.id = t1.ticket "
+                       " WHERE t1.field='status' AND t1.newvalue='reopened'"
+                       "   AND t1.time>=%s AND t1.time<=%s")
 
-            if status == 'new':
-                message = summary
-            else:
-                message = Markup(info)
-                if comment:
-                    if format == 'rss':
-                        message += wiki_to_html(comment, self.env, req, db,
-                                                absurls=True)
-                    else:
-                        message += wiki_to_oneliner(comment, self.env, db,
-                                                    shorten=True)
-            return kind, href, title, t, author, message
+            # Closed tickets
+            sql.append("SELECT t1.time,t1.ticket,t2.newvalue,'closed',t.type,"
+                       "       t3.newvalue,t1.author,t.summary"
+                       " FROM ticket_change t1"
+                       "   INNER JOIN ticket_change t2 ON t1.ticket=t2.ticket"
+                       "     AND t1.time=t2.time"
+                       "   LEFT OUTER JOIN ticket_change t3 ON t1.time=t3.time"
+                       "     AND t1.ticket=t3.ticket AND t3.field='comment'"
+                       "   LEFT JOIN ticket t on t.id = t1.ticket "
+                       " WHERE t1.field='status' AND t1.newvalue='closed'"
+                       "   AND t2.field='resolution'"
+                       "   AND t1.time>=%s AND t1.time<=%s")
 
-        # Ticket changes
-        if 'ticket' in filters or 'ticket_details' in filters:
             db = self.env.get_db_cnx()
             cursor = db.cursor()
-
-            cursor.execute("SELECT t.id,tc.time,tc.author,t.type,t.summary, "
-                           "       tc.field,tc.oldvalue,tc.newvalue "
-                           "  FROM ticket_change tc "
-                           "    INNER JOIN ticket t ON t.id = tc.ticket "
-                           "      AND tc.time>=%s AND tc.time<=%s "
-                           "ORDER BY tc.time"
-                           % (start, stop))
-            previous_update = None
-            for id,t,author,type,summary,field,oldvalue,newvalue in cursor:
-                if not previous_update or (id,t,author) != previous_update[:3]:
-                    if previous_update:
-                        ev = produce(previous_update, status, fields, comment)
-                        if ev:
-                            yield ev
-                    status, fields, comment = 'edit', {}, ''
-                    previous_update = (id,t,author, type, summary)
-                if field == 'comment':
-                    comment = newvalue
-                elif field == 'status' and newvalue in ('reopened', 'closed'):
-                    status = newvalue
+            cursor.execute(" UNION ALL ".join(sql), (start, stop, start, stop,
+                           start, stop))
+            kinds = {'new': 'newticket', 'reopened': 'newticket',
+                     'closed': 'closedticket'}
+            verbs = {'new': 'created', 'reopened': 'reopened',
+                     'closed': 'closed'}
+            for t, id, resolution, status, type, message, author, summary \
+                    in cursor:
+                title = util.Markup('Ticket <em title="%s">#%s</em> (%s) %s by '
+                                    '%s', summary, id, type, verbs[status],
+                                    author)
+                if format == 'rss':
+                    href = self.env.abs_href.ticket(id)
+                    if status != 'new':
+                        message = wiki_to_html(message or '--', self.env, req,
+                                               db)
+                    else:
+                        message = util.escape(message)
                 else:
-                    fields[field] = newvalue
-            if previous_update:
-                ev = produce(previous_update, status, fields, comment)
-                if ev:
-                    yield ev
-            
-            # New tickets
-            if 'ticket' in filters:
-                cursor.execute("SELECT id,time,reporter,type,summary"
-                               "  FROM ticket WHERE time>=%s AND time<=%s",
-                               (start, stop))
-                for row in cursor:
-                    yield produce(row, 'new', {}, None)
+                    href = self.env.href.ticket(id)
+                    if status != 'new':
+                        message = util.Markup(': ').join(filter(None, [
+                            resolution,
+                            wiki_to_oneliner(message, self.env, db,
+                                             shorten=True)
+                        ]))
+                    else:
+                        message = util.escape(util.shorten_line(message))
+                yield kinds[status], href, title, t, author, message
 
     # Internal methods
 
@@ -394,8 +321,6 @@ class TicketModule(TicketModuleBase):
             raise TracError("Sorry, can not save your changes. "
                             "This ticket has been modified by someone else "
                             "since you started", 'Mid Air Collision')
-
-        self._validate_ticket(req, ticket)
 
         # Do any action on the ticket?
         action = req.args.get('action')
@@ -429,13 +354,13 @@ class TicketModule(TicketModuleBase):
             self.log.exception("Failure sending notification on change to "
                                "ticket #%s: %s" % (ticket.id, e))
 
-        req.redirect(req.href.ticket(ticket.id))
+        req.redirect(self.env.href.ticket(ticket.id))
 
     def _insert_ticket_data(self, req, db, ticket, reporter_id):
         """Insert ticket data into the hdf"""
         req.hdf['ticket'] = ticket.values
         req.hdf['ticket.id'] = ticket.id
-        req.hdf['ticket.href'] = req.href.ticket(ticket.id)
+        req.hdf['ticket.href'] = self.env.href.ticket(ticket.id)
 
         for field in TicketSystem(self.env).get_ticket_fields():
             if field['type'] in ('radio', 'select'):
@@ -458,11 +383,11 @@ class TicketModule(TicketModuleBase):
         req.hdf['ticket.description.formatted'] = wiki_to_html(ticket['description'],
                                                                self.env, req, db)
 
-        req.hdf['ticket.opened'] = format_datetime(ticket.time_created)
-        req.hdf['ticket.opened_delta'] = pretty_timedelta(ticket.time_created)
+        req.hdf['ticket.opened'] = util.format_datetime(ticket.time_created)
+        req.hdf['ticket.opened_delta'] = util.pretty_timedelta(ticket.time_created)
         if ticket.time_changed != ticket.time_created:
-            req.hdf['ticket.lastmod'] = format_datetime(ticket.time_changed)
-            req.hdf['ticket.lastmod_delta'] = pretty_timedelta(ticket.time_changed)
+            req.hdf['ticket.lastmod'] = util.format_datetime(ticket.time_changed)
+            req.hdf['ticket.lastmod_delta'] = util.pretty_timedelta(ticket.time_changed)
 
         changelog = ticket.get_changelog(db=db)
         curr_author = None
@@ -471,7 +396,7 @@ class TicketModule(TicketModuleBase):
         for date, author, field, old, new in changelog:
             if date != curr_date or author != curr_author:
                 changes.append({
-                    'date': format_datetime(date),
+                    'date': util.format_datetime(date),
                     'author': author,
                     'fields': {}
                 })
@@ -487,15 +412,75 @@ class TicketModule(TicketModuleBase):
         req.hdf['ticket.changes'] = changes
 
         # List attached files
-        for idx, attachment in enumerate(Attachment.select(self.env, 'ticket',
+        for idx, attachment in util.enum(Attachment.select(self.env, 'ticket',
                                                            ticket.id)):
             hdf = attachment_to_hdf(self.env, db, req, attachment)
             req.hdf['ticket.attachments.%s' % idx] = hdf
         if req.perm.has_permission('TICKET_APPEND'):
-            req.hdf['ticket.attach_href'] = req.href.attachment('ticket',
-                                                                ticket.id)
+            req.hdf['ticket.attach_href'] = self.env.href.attachment('ticket',
+                                                                     ticket.id)
 
         # Add the possible actions to hdf
         actions = TicketSystem(self.env).get_available_actions(ticket, req.perm)
         for action in actions:
             req.hdf['ticket.actions.' + action] = '1'
+
+
+class UpdateDetailsForTimeline(Component):
+    """Provide all details about ticket changes in the Timeline"""
+
+    implements(ITimelineEventProvider)
+
+    # ITimelineEventProvider methods
+
+    def get_timeline_filters(self, req):
+        if not self.config.getbool('timeline', 'ticket_show_details'):
+            return
+        if req.perm.has_permission('TICKET_VIEW'):
+            yield ('ticket_details', 'Ticket details', False)
+
+    def get_timeline_events(self, req, start, stop, filters):
+        if 'ticket_details' in filters:
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
+            cursor.execute("SELECT tc.time,tc.ticket,t.type,tc.field, "
+                           "       tc.oldvalue,tc.newvalue,tc.author,t.summary "
+                           "FROM ticket_change tc"
+                           "   INNER JOIN ticket t ON t.id = tc.ticket "
+                           "AND tc.time>=%s AND tc.time<=%s ORDER BY tc.time"
+                           % (start, stop))
+            previous_update = None
+            updates = []
+            ticket_change = False
+            for time,id,type,field,oldvalue,newvalue,author,summary in cursor:
+                if not previous_update or (time,id,author) != previous_update[:3]:
+                    if previous_update and not ticket_change:
+                        updates.append((previous_update,field_changes,comment))
+                    ticket_change = False
+                    field_changes = []
+                    comment = ''
+                    previous_update = (time,id,author,type,summary)
+                if field == 'comment':
+                    comment = newvalue
+                elif field == 'status' and newvalue in ['reopened', 'closed']:
+                    ticket_change = True
+                else:
+                    field_changes.append(field)
+            if previous_update and not ticket_change:
+                updates.append((previous_update,field_changes,comment))
+
+            absurls = req.args.get('format') == 'rss' # Kludge
+            for (t,id,author,type,summary),field_changes,comment in updates:
+                if absurls:
+                    href = self.env.abs_href.ticket(id)
+                else:
+                    href = self.env.href.ticket(id) 
+                title = util.Markup('Ticket <em title="%s">#%s</em> (%s) '
+                                    'updated by %s', summary, id, type, author)
+                message = util.Markup()
+                if len(field_changes) > 0:
+                    message = util.Markup(', '.join(field_changes) + \
+                                          ' changed.<br />')
+                message += wiki_to_oneliner(comment, self.env, db,
+                                            shorten=True, absurls=absurls)
+                yield 'editedticket', href, title, t, author, message

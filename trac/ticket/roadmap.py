@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
@@ -15,15 +15,15 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
 from time import localtime, strftime, time
 
 from trac import __version__
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util import format_date, format_datetime, parse_date, \
-                      pretty_timedelta, shorten_line, CRLF
-from trac.util.markup import html, unescape, Markup
+from trac.util import enum, escape, format_date, format_datetime, parse_date, \
+                      pretty_timedelta, shorten_line, unescape, CRLF, Markup
 from trac.ticket import Milestone, Ticket, TicketSystem
 from trac.Timeline import ITimelineEventProvider
 from trac.web import IRequestHandler
@@ -131,7 +131,8 @@ class RoadmapModule(Component):
         if not req.perm.has_permission('ROADMAP_VIEW'):
             return
         yield ('mainnav', 'roadmap',
-               html.a(href=req.href.roadmap(), accesskey=3)['Roadmap'])
+               Markup('<a href="%s" accesskey="3">Roadmap</a>',
+                      self.env.href.roadmap()))
 
     # IPermissionRequestor methods
 
@@ -155,7 +156,7 @@ class RoadmapModule(Component):
                       for m in Milestone.select(self.env, showall, db)]
         req.hdf['roadmap.milestones'] = milestones        
 
-        for idx, milestone in enumerate(milestones):
+        for idx,milestone in enum(milestones):
             milestone_name = unescape(milestone['name']) # Kludge
             prefix = 'roadmap.milestones.%d.' % idx
             tickets = get_tickets_for_milestone(self.env, db, milestone_name,
@@ -236,8 +237,8 @@ class RoadmapModule(Component):
         write_prop('X-WR-CALNAME',
                    self.config.get('project', 'name') + ' - Roadmap')
         for milestone in milestones:
-            uid = '<%s/milestone/%s@%s>' % (req.base_path, milestone['name'],
-                                            host)
+            uid = '<%s/milestone/%s@%s>' % (req.cgi_location,
+                                            milestone['name'], host)
             if milestone.has_key('due'):
                 write_prop('BEGIN', 'VEVENT')
                 write_prop('UID', uid)
@@ -262,7 +263,7 @@ class RoadmapModule(Component):
                 write_prop('DESCRIPTION', ticket['description'])
                 priority = get_priority(ticket)
                 if priority:
-                    write_prop('PRIORITY', unicode(priority))
+                    write_prop('PRIORITY', str(priority))
                 write_prop('STATUS', get_status(ticket))
                 if ticket['status'] == 'closed':
                     cursor = db.cursor()
@@ -422,7 +423,7 @@ class MilestoneModule(Component):
         req.hdf['milestone'] = milestone_to_hdf(self.env, db, req, milestone)
         req.hdf['milestone.mode'] = 'delete'
 
-        for idx,other in enumerate(Milestone.select(self.env, False, db)):
+        for idx,other in enum(Milestone.select(self.env, False, db)):
             if other.name == milestone.name:
                 continue
             req.hdf['milestones.%d' % idx] = other.name
@@ -504,5 +505,5 @@ class MilestoneModule(Component):
         yield ('milestone', self._format_link)
 
     def _format_link(self, formatter, ns, name, label):
-        return html.A(href=formatter.href.milestone(name),
-                      class_='milestone')[label]
+        return '<a class="milestone" href="%s">%s</a>' \
+               % (formatter.href.milestone(name), label)

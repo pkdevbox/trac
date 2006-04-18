@@ -5,21 +5,10 @@
 # <?cs var:trac.time ?>
 #
 <?cs each:item = $log.items ?>
-<?cs with:changeset = log.changes[item.rev] ?>
-<?cs var:changeset.date ?> <?cs
-     var:changeset.author ?> [<?cs var:item.rev ?>]<?cs
-  set:idx = 0 ?><?cs
-  each:file = changeset.files ?>
-	* <?cs var:file ?> (<?cs
-    set:action = changeset.actions[idx] ?><?cs
-    if:action == 'add' ?>added<?cs
-    elif:action == 'delete' ?>deleted<?cs
-    elif:action == 'copy' ?>copied<?cs
-    elif:action == 'move' ?>moved<?cs
-    elif:action == 'edit' ?>modified<?cs
-    /if ?>)<?cs
-    set:idx = idx + 1 ?><?cs
-  /each ?>
-<?cs var:changeset.message ?><?cs 
-  /with ?><?cs 
+<?cs var:log.changes[item.rev].date ?> <?cs
+     var:log.changes[item.rev].author ?> [<?cs var:item.rev ?>]
+<?cs each:file = $log.changes[item.rev].files ?>
+	* <?cs var:file ?>:<?cs 
 /each ?>
+<?cs var:log.changes[item.rev].message ?>
+<?cs /each ?>

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2005 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
@@ -15,7 +15,8 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
-from trac.config import Option
+from __future__ import generators
+
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer
 from trac.util import escape, NaivePopen, Deuglifier
@@ -97,23 +98,17 @@ class EnscriptRenderer(Component):
 
     expand_tabs = True
 
-    path = Option('mimeviewer', 'enscript_path', 'enscript',
-        """Path to the Enscript executable.""")
-
-    # IHTMLPreviewRenderer methods
-
     def get_quality_ratio(self, mimetype):
         if mimetype in types:
             return 2
         return 0
 
     def render(self, req, mimetype, content, filename=None, rev=None):
-        cmdline = self.path
-        mimetype = mimetype.split(';', 1)[0] # strip off charset
+        cmdline = self.config.get('mimeviewer', 'enscript_path')
         cmdline += ' --color -h -q --language=html -p - -E' + types[mimetype]
         self.env.log.debug("Enscript command line: %s" % cmdline)
 
-        np = NaivePopen(cmdline, content.encode('utf-8'), capturestderr=1)
+        np = NaivePopen(cmdline, content, capturestderr=1)
         if np.errorlevel or np.err:
             err = 'Running (%s) failed: %s, %s.' % (cmdline, np.errorlevel,
                                                     np.err)
@@ -126,5 +121,5 @@ class EnscriptRenderer(Component):
         i = odata.rfind('</PRE>')
         end = i > 0 and i or len(odata)
 
-        odata = EnscriptDeuglifier().format(odata[beg:end].decode('utf-8'))
+        odata = EnscriptDeuglifier().format(odata[beg:end])
         return odata.splitlines()

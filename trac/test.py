@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -14,14 +14,13 @@
 # individuals. For exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import unittest
+from trac.core import ComponentManager
+from trac.db import SQLiteConnection
 
-from trac.core import Component, ComponentManager, ExtensionPoint
-from trac.env import Environment
-from trac.db.sqlite_backend import SQLiteConnection
+import unittest
 
 
 def Mock(bases=(), *initargs, **kw):
@@ -106,23 +105,22 @@ class InMemoryDatabase(SQLiteConnection):
     """
     def __init__(self):
         SQLiteConnection.__init__(self, ':memory:')
+
         cursor = self.cnx.cursor()
 
         from trac.db_default import schema
-        from trac.db.sqlite_backend import _to_sql
         for table in schema:
-            for stmt in _to_sql(table):
+            for stmt in SQLiteConnection.to_sql(table):
                 cursor.execute(stmt)
 
         self.cnx.commit()
 
 
-class EnvironmentStub(Environment):
+class EnvironmentStub(ComponentManager):
     """A stub of the trac.env.Environment object for testing."""
 
     def __init__(self, default_data=False, enable=None):
         ComponentManager.__init__(self)
-        Component.__init__(self)
         self.enabled_components = enable
         self.db = InMemoryDatabase()
 
@@ -137,6 +135,8 @@ class EnvironmentStub(Environment):
         self.abs_href = Href('http://example.org/trac.cgi')
 
         from trac import db_default
+        for section, name, value in db_default.default_config:
+            self.config.set(section, name, value)
         if default_data:
             cursor = self.db.cursor()
             for table, cols, vals in db_default.data:
@@ -145,8 +145,11 @@ class EnvironmentStub(Environment):
                                       ','.join(['%s' for c in cols])),
                                    vals)
             self.db.commit()
-            
-        self.known_users = []
+
+    def component_activated(self, component):
+        component.env = self
+        component.config = self.config
+        component.log = self.log
 
     def is_component_enabled(self, cls):
         if self.enabled_components is None:
@@ -156,34 +159,20 @@ class EnvironmentStub(Environment):
     def get_db_cnx(self):
         return self.db
 
-    def get_templates_dir(self):
-        return None
-
-    def get_known_users(self, db):
-        return self.known_users
-
 
 def suite():
     import trac.tests
-    import trac.db.tests
-    import trac.mimeview.tests
     import trac.scripts.tests
     import trac.ticket.tests
-    import trac.util.tests
     import trac.versioncontrol.tests
-    import trac.versioncontrol.web_ui.tests
     import trac.web.tests
     import trac.wiki.tests
 
     suite = unittest.TestSuite()
     suite.addTest(trac.tests.suite())
-    suite.addTest(trac.db.tests.suite())
-    suite.addTest(trac.mimeview.tests.suite())
     suite.addTest(trac.scripts.tests.suite())
     suite.addTest(trac.ticket.tests.suite())
-    suite.addTest(trac.util.tests.suite())
     suite.addTest(trac.versioncontrol.tests.suite())
-    suite.addTest(trac.versioncontrol.web_ui.tests.suite())
     suite.addTest(trac.web.tests.suite())
     suite.addTest(trac.wiki.tests.suite())
 

@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2004-2006 Edgewall Software
+# Copyright (C) 2004-2005 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
-# Copyright (C) 2005-2006 Christopher Lenz <cmlenz@gmx.de>
-# Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
+# Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -18,17 +17,18 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 #
 
+from __future__ import generators
 import re
-from StringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
-from trac.config import IntOption, Option
 from trac.core import *
-from trac.util import to_utf8, to_unicode
-from trac.util.markup import escape, Markup, Fragment, html
+from trac.util import enum, escape, to_utf8, Markup
 
-
-__all__ = ['get_mimetype', 'is_binary', 'detect_unicode', 'Mimeview',
-           'content_to_unicode']
+__all__ = ['get_charset', 'get_mimetype', 'is_binary', 'detect_unicode',
+           'Mimeview']
 
 MIME_MAP = {
     'css':'text/css',
@@ -62,21 +62,18 @@ MIME_MAP = {
     'lua':'text/x-lua',
     'm':'text/x-objc', 'mm':'text/x-objc',
     'm4':'text/x-m4',
-    'make':'text/x-makefile', 'mk':'text/x-makefile',
-    'Makefile':'text/x-makefile',
+    'make':'text/x-makefile', 'mk':'text/x-makefile', 'Makefile':'text/x-makefile',
     'makefile':'text/x-makefile', 'GNUMakefile':'text/x-makefile',
     'mail':'text/x-mail',
     'pas':'text/x-pascal',
     'pdf':'application/pdf',
-    'pl':'text/x-perl', 'pm':'text/x-perl', 'PL':'text/x-perl',
-    'perl':'text/x-perl',
+    'pl':'text/x-perl', 'pm':'text/x-perl', 'PL':'text/x-perl', 'perl':'text/x-perl',
     'php':'text/x-php', 'php4':'text/x-php', 'php3':'text/x-php',
     'ps':'application/postscript',
     'psp':'text/x-psp',
     'py':'text/x-python', 'python':'text/x-python',
     'pyx':'text/x-pyrex',
-    'nroff':'application/x-troff', 'roff':'application/x-troff',
-    'troff':'application/x-troff',
+    'nroff':'application/x-troff', 'roff':'application/x-troff', 'troff':'application/x-troff',
     'rb':'text/x-ruby', 'ruby':'text/x-ruby',
     'rfc':'text/x-rfc',
     'rst': 'text/x-rst',
@@ -99,49 +96,36 @@ MIME_MAP = {
     'zsh':'text/x-zsh'
 }
 
-
-MODE_RE = re.compile(
-    r"#!(?:[/\w.-_]+/)?(\w+)|"               # look for shebang
-    r"-\*-\s*(?:mode:\s*)?([\w+-]+)\s*-\*-"  # look for Emacs' -*- mode -*-
-    )
-
-def get_mimetype(filename, content=None):
-    """Guess the most probable MIME type of a file with the given name.
-
-    `content` is either a `str` or an `unicode` string.
+def get_charset(mimetype):
+    """Return the character encoding included in the given content type string,
+    or `None` if `mimetype` is `None` or empty or if no charset information is
+    available.
     """
-    suffix = filename.split('.')[-1]
-    if MIME_MAP.has_key(suffix):
-        return MIME_MAP[suffix]
-    elif content:
-        match = re.search(MODE_RE, content[:1000])
-        if match:
-            mode = match.group(1) or match.group(2).lower()
-            if MIME_MAP.has_key(mode):
-                return MIME_MAP[mode]
+    if mimetype:
+        ctpos = mimetype.find('charset=')
+        if ctpos >= 0:
+            return mimetype[ctpos + 8:]
+
+def get_mimetype(filename):
+    """Guess the most probable MIME type of a file with the given name."""
     try:
+        suffix = filename.split('.')[-1]
+        return MIME_MAP[suffix]
+    except KeyError:
         import mimetypes
         return mimetypes.guess_type(filename)[0]
     except:
-        if content and is_binary(content):
-            return 'application/octet-stream'
-        else:
-            return None
+        return None
 
-def is_binary(data):
-    """Detect binary content by checking the first thousand bytes for zeroes.
-
-    Operate on either `str` or `unicode` strings.
-    """
-    if isinstance(data, str) and detect_unicode(data):
+def is_binary(str):
+    """Detect binary content by checking the first thousand bytes for zeroes."""
+    if detect_unicode(str):
         return False
-    return '\0' in data[:1000]
+    return '\0' in str[:1000]
 
 def detect_unicode(data):
-    """Detect different unicode charsets by looking for BOMs (Byte Order Marks).
-
-    Operate obviously only on `str` objects.
-    """
+    """Detect different unicode charsets by looking for BOMs (Byte Order
+    Marks)."""
     if data.startswith('\xff\xfe'):
         return 'utf-16-le'
     elif data.startswith('\xfe\xff'):
@@ -150,15 +134,6 @@ def detect_unicode(data):
         return 'utf-8'
     else:
         return None
-
-def content_to_unicode(env, content, mimetype):
-    """Utility for transforming an `IHTMLPreviewRenderer.render`'s `content`
-    argument to an unicode string.
-    """
-    mimeview = Mimeview(env)
-    if hasattr(content, 'read'):
-        content = content.read(mimeview.get_max_preview_size())
-    return mimeview.to_unicode(content, mimetype)
 
 
 class IHTMLPreviewRenderer(Interface):
@@ -171,29 +146,22 @@ class IHTMLPreviewRenderer(Interface):
     expand_tabs = False
 
     def get_quality_ratio(mimetype):
-        """Return the level of support this renderer provides for the `content`
-        of the specified MIME type. The return value must be a number between
-        0 and 9, where 0 means no support and 9 means "perfect" support.
+        """Return the level of support this renderer provides for the content of
+        the specified MIME type. The return value must be a number between 0
+        and 9, where 0 means no support and 9 means "perfect" support.
         """
 
-    def render(req, mimetype, content, filename=None, url=None):
-        """Render an XHTML preview of the raw `content`.
-
-        The `content` might be:
-         * a `str` object
-         * an `unicode` string
-         * any object with a `read` method, returning one of the above
-
-        It is assumed that the content will correspond to the given `mimetype`.
-
-        Besides the `content` value, the same content may eventually
-        be available through the `filename` or `url` parameters.
-        This is useful for renderers that embed objects, using <object> or
-        <img> instead of including the content inline.
+    def render(req, mimetype, content, filename=None, rev=None):
+        """Render an XHTML preview of the given content of the specified MIME
+        type.
         
-        Can return the generated XHTML text as a single string or as an
-        iterable that yields strings. In the latter case, the list will
-        be considered to correspond to lines of text in the original content.
+        Can return the generated XHTML text as a single string or as an iterable
+        that yields strings. In the latter case, the list will be considered to
+        correspond to lines of text in the original content.
+
+        The `filename` and `rev` parameters are provided for renderers that
+        embed objects (using <object> or <img>) instead of included the content
+        inline.
         """
 
 class IHTMLPreviewAnnotator(Interface):
@@ -219,15 +187,6 @@ class Mimeview(Component):
     renderers = ExtensionPoint(IHTMLPreviewRenderer)
     annotators = ExtensionPoint(IHTMLPreviewAnnotator)
 
-    default_charset = Option('trac', 'default_charset', 'iso-8859-15',
-        """Charset to be used when in doubt.""")
-
-    tab_width = IntOption('mimeviewer', 'tab_width', 8,
-        """Displayed tab width in file preview (''since 0.9'').""")
-
-    max_preview_size = IntOption('mimeviewer', 'max_preview_size', 262144,
-        """Maximum file size for HTML preview. (''since 0.9'').""")
-
     # Public API
 
     def get_annotation_types(self):
@@ -235,62 +194,48 @@ class Mimeview(Component):
         for annotator in self.annotators:
             yield annotator.get_annotation_type()
 
-    def render(self, req, mimetype, content, filename=None, url=None,
+    def render(self, req, mimetype, content, filename=None, rev=None,
                annotations=None):
-        """Render an XHTML preview of the given `content`.
-
-        `content` is the same as an `IHTMLPreviewRenderer.render`'s
-        `content` argument.
-
-        The specified `mimetype` will be used to select the most appropriate
-        `IHTMLPreviewRenderer` implementation available for this MIME type.
-        If not given, the MIME type will be infered from the filename or the
-        content.
+        """Render an XHTML preview of the given content of the specified MIME
+        type, selecting the most appropriate `IHTMLPreviewRenderer`
+        implementation available for the given MIME type.
 
         Return a string containing the XHTML text.
         """
         if not content:
             return ''
 
-        # Ensure we have a MIME type for this content
-        full_mimetype = mimetype
-        if not full_mimetype:
-            if hasattr(content, 'read'):
-                content = content.read(mimeview.get_max_preview_size())
-            full_mimetype = self.get_mimetype(filename, content)
-        mimetype = full_mimetype.split(';')[0].strip() # split off charset
+        if filename and not mimetype:
+            mimetype = get_mimetype(filename)
+        mimetype = mimetype.split(';')[0].strip() # split off charset
 
-        # Determine candidate `IHTMLPreviewRenderer`s
+        expanded_content = None
+
         candidates = []
         for renderer in self.renderers:
             qr = renderer.get_quality_ratio(mimetype)
             if qr > 0:
-                candidates.append((qr, renderer))
+                expand_tabs = getattr(renderer, 'expand_tabs', False)
+                if expand_tabs and expanded_content is None:
+                    tab_width = int(self.config.get('mimeviewer', 'tab_width'))
+                    expanded_content = content.expandtabs(tab_width)
+
+                if expand_tabs:
+                    candidates.append((qr, renderer, expanded_content))
+                else:
+                    candidates.append((qr, renderer, content))
         candidates.sort(lambda x,y: cmp(y[0], x[0]))
 
-        # First candidate which renders successfully wins.
-        # Also, we don't want to expand tabs more than once.
-        expanded_content = None
-        for qr, renderer in candidates:
+        for qr, renderer, content in candidates:
             try:
                 self.log.debug('Trying to render HTML preview using %s'
                                % renderer.__class__.__name__)
-                # check if we need to perform a tab expansion
-                rendered_content = content
-                if getattr(renderer, 'expand_tabs', False):
-                    if expanded_content is None:
-                        content = content_to_unicode(self.env, content,
-                                                     full_mimetype)
-                        expanded_content = content.expandtabs(self.tab_width)
-                    rendered_content = expanded_content
-                result = renderer.render(req, full_mimetype, rendered_content,
-                                         filename, url)
+                result = renderer.render(req, mimetype, content, filename, rev)
+
                 if not result:
                     continue
-                elif isinstance(result, Fragment):
-                    return result
-                elif isinstance(result, basestring):
-                    return Markup(to_unicode(result))
+                elif isinstance(result, (str, unicode)):
+                    return Markup(result)
                 elif annotations:
                     return Markup(self._annotate(result, annotations))
                 else:
@@ -326,7 +271,7 @@ class Mimeview(Component):
             return (match.group('tag') or '') + '&nbsp;'
 
         num = -1
-        for num, line in enumerate(_html_splitlines(lines)):
+        for num, line in enum(_html_splitlines(lines)):
             cells = []
             for annotator in annotators:
                 cells.append(annotator.annotate_line(num + 1, line))
@@ -338,79 +283,43 @@ class Mimeview(Component):
         buf.write('</tbody></table>')
         return buf.getvalue()
 
-    def get_max_preview_size(self):
-        return self.max_preview_size
+    def max_preview_size(self):
+        return int(self.config.get('mimeviewer', 'max_preview_size'))
 
     def get_charset(self, content='', mimetype=None):
         """Infer the character encoding from the `content` or the `mimetype`.
 
-        `content` is either a `str` or an `unicode` object.
+        The charset information in the `mimetype`, if given,
+        takes precedence over auto-detection.
+        Return the configured `default_charset` if no other information
+        is available.
         
-        The charset will be determined using this order:
-         * from the charset information present in the `mimetype` argument
-         * auto-detection of the charset from the `content`
-         * the configured `default_charset` 
+        (since Trac 0.9.3)
         """
         if mimetype:
             ctpos = mimetype.find('charset=')
             if ctpos >= 0:
                 return mimetype[ctpos + 8:].strip()
-        if isinstance(content, str):
-            utf = detect_unicode(content)
-            if utf is not None:
-                return utf
-        return self.default_charset
+        return detect_unicode(content) or \
+               self.config.get('trac', 'default_charset')
 
-    def get_mimetype(self, filename, content):
-        """Infer the MIME type from the `filename` or the `content`.
-
-        `content` is either a `str` or an `unicode` object.
-        """
-        mimetype = get_mimetype(filename, content)
-        charset = None
-        if mimetype:
-            charset = self.get_charset(content, mimetype)
-        if mimetype and charset and not 'charset' in mimetype:
-            mimetype += '; charset=' + charset
-        return mimetype
-
-    def to_utf8(self, content, mimetype=None):
-        """Convert an encoded `content` to utf-8.
-
-        ''Deprecated in 0.10. You should use `unicode` strings only.''
-        """
-        return to_utf8(content, self.get_charset(content, mimetype))
-
-    def to_unicode(self, content, mimetype=None, charset=None):
-        """Convert `content` (an encoded `str` object) to an `unicode` object.
-
-        This calls `trac.util.to_unicode` with the `charset` provided,
-        or the one obtained by `Mimeview.get_charset()`.
-        """
-        if not charset:
-            charset = self.get_charset(content, mimetype)
-        return to_unicode(content, charset)
-
-    def preview_to_hdf(self, req, content, length, mimetype, filename,
-                       url=None, annotations=None):
-        """Prepares a rendered preview of the given `content`.
-
-        Note: `content` will usually be an object with a `read` method.
-        """        
-        max_preview_size = self.get_max_preview_size()
-        if length >= max_preview_size:
+    def preview_to_hdf(self, req, mimetype, charset, content, filename,
+                       detail=None, annotations=None):
+        max_preview_size = self.max_preview_size()
+        if len(content) >= max_preview_size:
             return {'max_file_size_reached': True,
-                    'max_file_size': max_preview_size,
-                    'raw_href': url}
-        else:
-            return {'preview': self.render(req, mimetype, content, filename,
-                                           url, annotations)}
+                    'max_file_size': max_preview_size}
+
+        if not is_binary(content):
+            content = to_utf8(content, charset or self.get_charset(content))
+        return {'preview': self.render(req, mimetype, content,
+                                       filename, detail, annotations)}
 
 
 def _html_splitlines(lines):
     """Tracks open and close tags in lines of HTML text and yields lines that
     have no tags spanning more than one line."""
-    open_tag_re = re.compile(r'<(\w+)(\s.*?)?[^/]?>')
+    open_tag_re = re.compile(r'<(\w+)\s.*?[^/]?>')
     close_tag_re = re.compile(r'</(\w+)>')
     open_tags = []
     for line in lines:
@@ -422,8 +331,6 @@ def _html_splitlines(lines):
         # Find all tags opened on this line
         for tag in open_tag_re.finditer(line):
             open_tags.append(tag)
-
-        open_tags.reverse()
 
         # Find all tags closed on this line
         for ctag in close_tag_re.finditer(line):
@@ -440,8 +347,6 @@ def _html_splitlines(lines):
         yield line
 
 
-# -- Default annotators
-
 class LineNumberAnnotator(Component):
     """Text annotator that adds a column with line numbers."""
     implements(IHTMLPreviewAnnotator)
@@ -455,8 +360,6 @@ class LineNumberAnnotator(Component):
         return '<th id="L%s"><a href="#L%s">%s</a></th>' % (number, number,
                                                             number)
 
-
-# -- Default renderers
 
 class PlainTextRenderer(Component):
     """HTML preview renderer for plain text, and fallback for any kind of text
@@ -477,19 +380,18 @@ class PlainTextRenderer(Component):
             return 0
         return 1
 
-    def render(self, req, mimetype, content, filename=None, url=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         if is_binary(content):
             self.env.log.debug("Binary data; no preview available")
             return
 
         self.env.log.debug("Using default plain text mimeviewer")
-        content = content_to_unicode(self.env, content, mimetype)
         for line in content.splitlines():
             yield escape(line)
 
 
 class ImageRenderer(Component):
-    """Inline image display. Here we don't need the `content` at all."""
+    """Inline image display."""
     implements(IHTMLPreviewRenderer)
 
     def get_quality_ratio(self, mimetype):
@@ -497,10 +399,12 @@ class ImageRenderer(Component):
             return 8
         return 0
 
-    def render(self, req, mimetype, content, filename=None, url=None):
-        if url:
-            return html.DIV(html.IMG(src=url,alt=filename),
-                            class_="image-file")
+    def render(self, req, mimetype, content, filename=None, rev=None):
+        src = '?'
+        if rev:
+            src += 'rev=%d&' % rev
+        src += 'format=raw'
+        return '<div class="image-file"><img src="%s" alt="" /></div>' % src
 
 
 class WikiTextRenderer(Component):
@@ -512,7 +416,6 @@ class WikiTextRenderer(Component):
             return 8
         return 0
 
-    def render(self, req, mimetype, content, filename=None, url=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         from trac.wiki import wiki_to_html
-        return wiki_to_html(content_to_unicode(self.env, content, mimetype),
-                            self.env, req)
+        return wiki_to_html(content, self.env, req)

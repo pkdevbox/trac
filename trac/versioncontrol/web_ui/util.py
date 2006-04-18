@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
@@ -13,41 +13,39 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christian Boos <cboos@neuf.fr>
 
 import re
 import urllib
 
 from trac.util import escape, format_datetime, pretty_timedelta, shorten_line, \
-                      TracError, Markup
-from trac.versioncontrol.api import NoSuchNode, NoSuchChangeset
+                      TracError, Markup, rss_title
 from trac.wiki import wiki_to_html, wiki_to_oneliner
 
 __all__ = ['get_changes', 'get_path_links', 'get_path_rev_line',
-           'get_existing_node', 'render_node_property']
+           'get_existing_node']
 
 def get_changes(env, repos, revs, full=None, req=None, format=None):
     db = env.get_db_cnx()
     changes = {}
     for rev in revs:
-        try:
-            changeset = repos.get_changeset(rev)
-        except NoSuchChangeset:
-            changes[rev] = {}
-            continue
+        changeset = repos.get_changeset(rev)
         message = changeset.message or '--'
         shortlog = wiki_to_oneliner(message, env, db, shorten=True)
-        if full:
-            message = wiki_to_html(message, env, req, db,
-                                   absurls=(format == 'rss'),
-                                   escape_newlines=True)
+        if format == 'changelog':
+            files = [change[0] for change in changeset.get_changes()]
         else:
-            message = shortlog
-        if format == 'rss':
-            if isinstance(shortlog, Markup):
-                shortlog = shortlog.plaintext(keeplinebreaks=False)
-            message = unicode(message)
+            files = None
+            if full:
+                message = wiki_to_html(message, env, req, db,
+                                       absurls=(format == 'rss'),
+                                       escape_newlines=True)
+            else:
+                message = shortlog
+            if format == 'rss':
+                shortlog = rss_title(shortlog)
+                message = str(message)
         changes[rev] = {
             'date_seconds': changeset.date,
             'date': format_datetime(changeset.date),
@@ -55,6 +53,7 @@ def get_changes(env, repos, revs, full=None, req=None, format=None):
             'author': changeset.author or 'anonymous',
             'message': message,
             'shortlog': shortlog,
+            'files': files
         }
     return changes
 
@@ -72,7 +71,7 @@ def get_path_links(href, path, rev):
         })
     return links
 
-rev_re = re.compile(r"([^@#:]*)[@#:]([^#]+)(?:#L(\d+))?")
+rev_re = re.compile(r"([^@#]*)[@#]([^#]+)(?:#L(\d+))?")
 
 def get_path_rev_line(path):
     rev = None
@@ -89,20 +88,9 @@ def get_path_rev_line(path):
 def get_existing_node(env, repos, path, rev):
     try: 
         return repos.get_node(path, rev) 
-    except NoSuchNode, e:
+    except TracError, e: 
         raise TracError(Markup('%s<br><p>You can <a href="%s">search</a> ' 
                                'in the repository history to see if that path '
                                'existed but was later removed.</p>', e.message,
                                env.href.log(path, rev=rev,
                                             mode='path_history')))
-
-def render_node_property(env, name, value):
-    """Renders a node property value to HTML.
-
-    Currently only handle multi-line properties. See also #1601.
-    """
-    if value and '\n' in value:
-        value = Markup(''.join(['<br />%s' % escape(v)
-                                for v in value.split('\n')]))
-    return value
-

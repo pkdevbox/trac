@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2004 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,46 +13,31 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
+
+from trac.util import TracError
 
 __all__ = ['Component', 'ExtensionPoint', 'implements', 'Interface',
            'TracError']
 
 
-class TracError(Exception):
-    """Exception base class for errors in Trac."""
-
-    def __init__(self, message, title=None, show_traceback=False):
-        Exception.__init__(self, message)
-        self.message = message
-        self.title = title
-        self.show_traceback = show_traceback
-
-
 class Interface(object):
-    """Marker base class for extension point interfaces."""
+    """Dummy base class for interfaces.
+    
+    (Might use PyProtocols in the future.)
+    """
 
-
-class ExtensionPoint(property):
+class ExtensionPoint(object):
     """Marker class for extension points in components."""
 
     def __init__(self, interface):
         """Create the extension point.
         
-        @param interface: the `Interface` subclass that defines the protocol
-            for the extension point
+        @param interface: the `Interface` class that defines the protocol for
+                          the extension point
         """
-        property.__init__(self, self.extensions)
         self.interface = interface
-        self.__doc__ = 'List of components that implement `%s`' % \
-                       self.interface.__name__
-
-    def extensions(self, component):
-        """Return a list of components that declare to implement the extension
-        point interface."""
-        extensions = ComponentMeta._registry.get(self.interface, [])
-        return filter(None, [component.compmgr[cls] for cls in extensions])
 
     def __repr__(self):
         """Return a textual representation of the extension point."""
@@ -69,8 +54,18 @@ class ComponentMeta(type):
 
     def __new__(cls, name, bases, d):
         """Create the component class."""
+        xtnpts = {}
+        for base in [base for base in bases
+                     if hasattr(base, '_extension_points')]:
+            xtnpts.update(base._extension_points)
+        for key, value in d.items():
+            if isinstance(value, ExtensionPoint):
+                xtnpts[key] = value
+                del d[key]
 
         new_class = type.__new__(cls, name, bases, d)
+        new_class._extension_points = xtnpts
+
         if name == 'Component':
             # Don't put the Component base class in the registry
             return new_class
@@ -155,6 +150,19 @@ class Component(object):
             compmgr.component_activated(self)
             return self
         return compmgr[cls]
+
+    def __getattr__(self, name):
+        """If requesting an extension point member, return a list of components
+        that declare to implement the extension point interface."""
+        xtnpt = self._extension_points.get(name)
+        if xtnpt:
+            extensions = ComponentMeta._registry.get(xtnpt.interface, [])
+            return [self.compmgr[cls] for cls in extensions
+                    if self.compmgr[cls]]
+        cls = self.__class__.__name__
+        if hasattr(self, '__module__'):
+            cls = '.'.join((self.__module__, cls))
+        raise AttributeError, "'%s' object has no attribute '%s'" % (cls, name)
 
 
 class ComponentManager(object):

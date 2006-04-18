@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
@@ -14,70 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from heapq import heappop, heappush
-
-from trac.config import Option
-from trac.core import *
+from __future__ import generators
 from trac.perm import PermissionError
-
-
-class IRepositoryConnector(Interface):
-    """Extension point interface for components that provide support for a
-    specific version control system."""
-
-    def get_supported_types():
-        """Return the types of version control systems that are supported by
-        this connector, and their relative priorities.
-        
-        Highest number is highest priority.
-        """
-
-    def get_repository(repos_type, repos_dir, authname):
-        """Return the Repository object for the given repository type and
-        directory.
-        """
-
-
-class RepositoryManager(Component):
-    """Component that keeps track of the supported version control systems, and
-    provides easy access to the configured implementation."""
-
-    connectors = ExtensionPoint(IRepositoryConnector)
-
-    repository_type = Option('trac', 'repository_type', 'svn',
-        """Repository connector type. (''since 0.10'')""")
-    repository_dir = Option('trac', 'repository_dir', '',
-        """Path to local repository""")
-
-    def __init__(self):
-        self._connector = None
-
-    # Public API methods
-
-    def get_repository(self, authname):
-        if not self._connector:
-            candidates = []
-            for connector in self.connectors:
-                for repos_type_, prio in connector.get_supported_types():
-                    if self.repository_type != repos_type_:
-                        continue
-                    heappush(candidates, (-prio, connector))
-            if not candidates:
-                raise TracError, 'Unsupported version control system "%s"' \
-                                 % self.repository_type
-            self._connector = heappop(candidates)[1]
-        return self._connector.get_repository(self.repository_type,
-                                              self.repository_dir, authname)
-
-
-class NoSuchChangeset(TracError):
-    def __init__(self, rev):
-        TracError.__init__(self, "No changeset %s in the repository" % rev)
-
-class NoSuchNode(TracError):
-    def __init__(self, path, rev, msg=None):
-        TracError.__init__(self, "%sNo node %s at revision %s" \
-                           % (msg and '%s: ' % msg or '', path, rev))
 
 class Repository(object):
     """
@@ -102,28 +40,12 @@ class Repository(object):
         """
         raise NotImplementedError
 
-    def get_changesets(self, start, stop):
-        """
-        Generate Changeset belonging to the given time period (start, stop).
-        """
-        rev = self.youngest_rev
-        while rev:
-            if self.authz.has_permission_for_changeset(rev):
-                chgset = self.get_changeset(rev)
-                if chgset.date < start:
-                    return
-                if chgset.date < stop:
-                    yield chgset
-            rev = self.previous_rev(rev)
-
-    def has_node(self, path, rev=None):
+    def has_node(self, path, rev):
         """
         Tell if there's a node at the specified (path,rev) combination.
-
-        When `rev` is `None`, the latest revision is implied.
         """
         try:
-            self.get_node(path, rev)
+            self.get_node()
             return True
         except TracError:
             return False        
@@ -157,7 +79,7 @@ class Repository(object):
         """
         raise NotImplementedError
 
-    def next_rev(self, rev, path=''):
+    def next_rev(self, rev):
         """
         Return the revision immediately following the specified revision.
         """
@@ -200,24 +122,7 @@ class Repository(object):
         'None' is a valid revision value and represents the youngest revision.
         """
         return NotImplementedError
-
-    def short_rev(self, rev):
-        """
-        Return a compact representation of a revision in the repos.
-        """
-        return self.normalize_rev(rev)
         
-    def get_changes(self, old_path, old_rev, new_path, new_rev,
-                    ignore_ancestry=1):
-        """
-        Generator that yields change tuples (old_node, new_node, kind, change)
-        for each node change between the two arbitrary (path,rev) pairs.
-
-        The old_node is assumed to be None when the change is an ADD,
-        the new_node is assumed to be None when the change is a DELETE.
-        """
-        raise NotImplementedError
-
 
 class Node(object):
     """
@@ -229,7 +134,7 @@ class Node(object):
 
     def __init__(self, path, rev, kind):
         assert kind in (Node.DIRECTORY, Node.FILE), "Unknown node kind %s" % kind
-        self.path = unicode(path)
+        self.path = str(path)
         self.rev = rev
         self.kind = kind
 
@@ -258,18 +163,6 @@ class Node(object):
         Starts with an entry for the current revision.
         """
         raise NotImplementedError
-
-    def get_previous(self):
-        """
-        Return the (path, rev, chg) tuple corresponding to the previous
-        revision for that node.
-        """
-        skip = True
-        for p in self.get_history(2):
-            if skip:
-                skip = False
-            else:
-                return p
 
     def get_properties(self):
         """
@@ -315,18 +208,6 @@ class Changeset(object):
         self.author = author
         self.date = date
 
-    def get_properties(self):
-        """Generator that provide additional metadata for this changeset.
-
-        Each additional property is a 4 element tuple:
-         * `name` is the name of the property,
-         * `text` its value
-         * `wikiflag` indicates whether the `text` should be interpreted as
-            wiki text or not
-         * `htmlclass` enables to attach special formatting to the displayed
-            property, e.g. `'author'`, `'time'`, `'message'` or `'changeset'`.
-        """
-        
     def get_changes(self):
         """
         Generator that produces a (path, kind, change, base_rev, base_path)
@@ -363,7 +244,8 @@ class Authorizer(object):
                   'Insufficient permissions to access changeset %s' % rev
 
     def has_permission(self, path):
-        return True
-
+        return 1
+    
     def has_permission_for_changeset(self, rev):
-        return True
+        return 1
+

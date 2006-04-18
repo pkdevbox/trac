@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2004 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,11 +13,10 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
 from urllib import quote, urlencode
-from trac.util import unicode_quote, unicode_urlencode
 
 
 class Href(object):
@@ -39,11 +38,11 @@ class Href(object):
 
     If a positional parameter evaluates to None, it will be skipped:
 
-    >>> href('ticket', 540, 'attachment', None)
+    >>> href('ticket', 540, 'attachment')
     '/trac/ticket/540/attachment'
 
     The first path segment can also be specified by calling an attribute
-    of the instance, as follows:
+    of the function, as follows:
 
     >>> href.ticket(540)
     '/trac/ticket/540'
@@ -100,8 +99,8 @@ class Href(object):
     >>> href('ticket', 540)
     'https://projects.edgewall.com/trac/ticket/540'
 
-    In common usage, it may improve readability to use the function-calling
-    ability for the first component of the URL as mentioned earlier:
+    Finally, the first path segment of the URL to generate can be specified in
+    the following way, mainly to improve readability:
 
     >>> href = Href('/trac')
     >>> href.ticket(540)
@@ -139,7 +138,7 @@ class Href(object):
                 args = args[:-1]
 
         # build the path
-        path = '/'.join([unicode_quote(unicode(arg).strip('/')) for arg in args
+        path = '/'.join([quote(str(arg).strip('/')) for arg in args
                          if arg != None])
         if path:
             href += '/' + path
@@ -149,7 +148,7 @@ class Href(object):
             add_param(k, v)
 
         if params:
-            href += '?' + unicode_urlencode(params)
+            href += '?' + urlencode(params)
 
         return href
 

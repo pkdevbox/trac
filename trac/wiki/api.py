@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,9 +13,10 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 try:
     import threading
 except ImportError:
@@ -24,9 +25,8 @@ import time
 import urllib
 import re
 
-from trac.config import BoolOption
 from trac.core import *
-from trac.util.markup import html
+from trac.util import to_utf8
 
 
 class IWikiChangeListener(Interface):
@@ -42,26 +42,6 @@ class IWikiChangeListener(Interface):
 
     def wiki_page_deleted(page):
         """Called when a page has been deleted."""
-
-
-class IWikiPageManipulator(Interface):
-    """Extension point interface for components that need to to specific
-    pre and post processing of wiki page changes.
-    
-    Unlike change listeners, a manipulator can reject changes being committed
-    to the database.
-    """
-
-    def prepare_wiki_page(req, page, fields):
-        """Not currently called, but should be provided for future
-        compatibility."""
-
-    def validate_wiki_page(req, page):
-        """Validate a wiki page after it's been populated from user input.
-        
-        Must return a list of `(field, message)` tuples, one for each problem
-        detected. `field` can be `None` to indicate an overall problem with the
-        page. Therefore, a return value of `[]` means everything is OK."""
 
 
 class IWikiMacroProvider(Interface):
@@ -81,22 +61,10 @@ class IWikiMacroProvider(Interface):
 class IWikiSyntaxProvider(Interface):
  
     def get_wiki_syntax():
-        """Return an iterable that provides additional wiki syntax.
-
-        Additional wiki syntax correspond to a pair of (regexp, cb),
-        the `regexp` for the additional syntax and the callback `cb`
-        which will be called if there's a match.
-        That function is of the form cb(formatter, ns, match).
-        """
+        """Return an iterable that provides additional wiki syntax."""
  
     def get_link_resolvers():
-        """Return an iterable over (namespace, formatter) tuples.
-
-        Each formatter should be a function of the form
-        fmt(formatter, ns, target, label), and should
-        return some HTML fragment.
-        The `label` is already HTML escaped, whereas the `target` is not.
-        """
+        """Return an iterable over (namespace, formatter) tuples."""
  
 
 class WikiSystem(Component):
@@ -109,10 +77,6 @@ class WikiSystem(Component):
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
 
     INDEX_UPDATE_INTERVAL = 5 # seconds
-
-    ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
-        """Enable/disable highlighting CamelCase links to missing pages
-        (''since 0.9'').""")
 
     def __init__(self):
         self._index = None
@@ -171,7 +135,7 @@ class WikiSystem(Component):
         self._prepare_rules()
         return self._external_handlers
     external_handlers = property(_get_external_handlers)
-
+    
     def _prepare_rules(self):
         from trac.wiki.formatter import Formatter
         if not self._compiled_rules:
@@ -181,7 +145,7 @@ class WikiSystem(Component):
             i = 0
             for resolver in self.syntax_providers:
                 for regexp, handler in resolver.get_wiki_syntax():
-                    handlers['i' + str(i)] = handler
+                    handlers['i'+str(i)] = handler
                     syntax.append('(?P<i%d>%s)' % (i, regexp))
                     i += 1
             syntax += Formatter._post_rules[:]
@@ -221,10 +185,11 @@ class WikiSystem(Component):
     # IWikiSyntaxProvider methods
     
     def get_wiki_syntax(self):
+        ignore_missing = self.config.getbool('wiki', 'ignore_missing_pages')
         yield (r"!?(?<!/)\b[A-Z][a-z]+(?:[A-Z][a-z]*[a-z/])+"
-                "(?:#[A-Za-z0-9]+)?(?=:?\Z|:?\s|[.,;!?\)}\]])",
+                "(?:#[A-Za-z0-9]+)?(?=\Z|\s|[.,;:!?\)}\]])",
                lambda x, y, z: self._format_link(x, 'wiki', y, y,
-                                                 self.ignore_missing_pages))
+                                                 ignore_missing))
 
     def get_link_resolvers(self):
         yield ('wiki', self._format_fancy_link)
@@ -237,11 +202,14 @@ class WikiSystem(Component):
         if page.find('#') != -1:
             anchor = page[page.find('#'):]
             page = page[:page.find('#')]
+        page = urllib.unquote(page)
+        label = urllib.unquote(label)
+
         if not self.has_page(page):
             if ignore_missing:
                 return label
-            return html.A(class_='missing wiki', rel='nofollow',
-                          href=formatter.href.wiki(page) + anchor)[label + '?']
+            return '<a class="missing wiki" href="%s" rel="nofollow">%s?</a>' \
+                   % (formatter.href.wiki(page) + anchor, label)
         else:
-            return html.A(href=formatter.href.wiki(page) + anchor,
-                          class_='wiki')[label]
+            return '<a class="wiki" href="%s">%s</a>' \
+                   % (formatter.href.wiki(page) + anchor, label)
