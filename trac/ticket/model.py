@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
-# Copyright (C) 2003-2006 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2006 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -14,12 +14,11 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
 import time
 import sys
-import re
 
 from trac.core import TracError
 from trac.ticket import TicketSystem
@@ -41,15 +40,6 @@ class Ticket(object):
             self._init_defaults(db)
             self.id = self.time_created = self.time_changed = None
         self._old = {}
-
-    def _get_db(self, db):
-        return db or self.env.get_db_cnx()
-
-    def _get_db_for_write(self, db):
-        if db:
-            return (db, False)
-        else:
-            return (self.env.get_db_cnx(), True)
 
     exists = property(fget=lambda self: self.id is not None)
 
@@ -76,7 +66,8 @@ class Ticket(object):
                 self.values.setdefault(field['name'], default)
 
     def _fetch_ticket(self, tkt_id, db=None):
-        db = self._get_db(db)
+        if not db:
+            db = self.env.get_db_cnx()
 
         # Fetch the standard ticket fields
         std_fields = [f['name'] for f in self.fields if not f.get('custom')]
@@ -134,7 +125,11 @@ class Ticket(object):
     def insert(self, when=0, db=None):
         """Add ticket to database"""
         assert not self.exists, 'Cannot insert an existing ticket'
-        db, handle_ta = self._get_db_for_write(db)
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
 
         # Add a timestamp
         if not when:
@@ -173,16 +168,11 @@ class Ticket(object):
 
         if handle_ta:
             db.commit()
-
         self.id = tkt_id
         self._old = {}
-
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_created(self)
-
         return self.id
 
-    def save_changes(self, author, comment, when=0, db=None, cnum=''):
+    def save_changes(self, author, comment, when=0, db=None):
         """
         Store ticket changes in the database. The ticket must already exist in
         the database.
@@ -192,7 +182,11 @@ class Ticket(object):
         if not self._old and not comment:
             return # Not modified
 
-        db, handle_ta = self._get_db_for_write(db)
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
         cursor = db.cursor()
         when = int(when or time.time())
 
@@ -213,14 +207,6 @@ class Ticket(object):
                     # If the old component has been removed from the database we
                     # just leave the owner as is.
                     pass
-
-        # Fix up cc list separators and remove duplicates
-        if self.values.has_key('cc'):
-            cclist = []
-            for cc in re.split(r'[;,\s]+', self.values['cc']):
-                if cc not in cclist:
-                    cclist.append(cc)
-            self.values['cc'] = ', '.join(cclist)
 
         custom_fields = [f['name'] for f in self.fields if f.get('custom')]
         for name in self._old.keys():
@@ -243,74 +229,51 @@ class Ticket(object):
                            "VALUES (%s, %s, %s, %s, %s, %s)",
                            (self.id, when, author, name, self._old[name],
                             self[name]))
-        # always save comment, even if empty (numbering support for timeline)
-        cursor.execute("INSERT INTO ticket_change "
-                       "(ticket,time,author,field,oldvalue,newvalue) "
-                       "VALUES (%s,%s,%s,'comment',%s,%s)",
-                       (self.id, when, author, cnum, comment))
+        if comment:
+            cursor.execute("INSERT INTO ticket_change "
+                           "(ticket,time,author,field,oldvalue,newvalue) "
+                           "VALUES (%s,%s,%s,'comment','',%s)",
+                           (self.id, when, author, comment))
 
         cursor.execute("UPDATE ticket SET changetime=%s WHERE id=%s",
                        (when, self.id))
-
         if handle_ta:
             db.commit()
         self._old = {}
         self.time_changed = when
 
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_changed(self, comment, self._old)
-
     def get_changelog(self, when=0, db=None):
         """Return the changelog as a list of tuples of the form
-        (time, author, field, oldvalue, newvalue, permanent).
-
-        While the other tuple elements are quite self-explanatory,
-        the `permanent` flag is used to distinguish collateral changes
-        that are not yet immutable (like attachments, currently).
+        (time, author, field, oldvalue, newvalue).
         """
-        db = self._get_db(db)
+        if not db:
+            db = self.env.get_db_cnx()
         cursor = db.cursor()
         if when:
-            cursor.execute("SELECT time,author,field,oldvalue,newvalue,1 "
+            cursor.execute("SELECT time,author,field,oldvalue,newvalue "
                            "FROM ticket_change WHERE ticket=%s AND time=%s "
                            "UNION "
-                           "SELECT time,author,'attachment',null,filename,0 "
+                           "SELECT time,author,'attachment',null,filename "
                            "FROM attachment WHERE id=%s AND time=%s "
                            "UNION "
-                           "SELECT time,author,'comment',null,description,0 "
+                           "SELECT time,author,'comment',null,description "
                            "FROM attachment WHERE id=%s AND time=%s "
                            "ORDER BY time",
                            (self.id, when, str(self.id), when, self.id, when))
         else:
-            cursor.execute("SELECT time,author,field,oldvalue,newvalue,1 "
+            cursor.execute("SELECT time,author,field,oldvalue,newvalue "
                            "FROM ticket_change WHERE ticket=%s "
                            "UNION "
-                           "SELECT time,author,'attachment',null,filename,0 "
+                           "SELECT time,author,'attachment',null,filename "
                            "FROM attachment WHERE id=%s "
                            "UNION "
-                           "SELECT time,author,'comment',null,description,0 "
+                           "SELECT time,author,'comment',null,description "
                            "FROM attachment WHERE id=%s "
                            "ORDER BY time", (self.id,  str(self.id), self.id))
         log = []
-        for t, author, field, oldvalue, newvalue, permanent in cursor:
-            log.append((int(t), author, field, oldvalue or '', newvalue or '',
-                        permanent))
+        for t, author, field, oldvalue, newvalue in cursor:
+            log.append((int(t), author, field, oldvalue or '', newvalue or ''))
         return log
-
-    def delete(self, db=None):
-        db, handle_ta = self._get_db_for_write(db)
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM ticket WHERE id=%s", (self.id,))
-        cursor.execute("DELETE FROM ticket_change WHERE ticket=%s", (self.id,))
-        cursor.execute("DELETE FROM attachment "
-                       " WHERE type='ticket' and id=%s", (self.id,))
-        cursor.execute("DELETE FROM ticket_custom WHERE ticket=%s", (self.id,))
-
-        if handle_ta:
-            db.commit()
-
-        for listener in TicketSystem(self.env).change_listeners:
-            listener.ticket_deleted(self)
 
 
 class AbstractEnum(object):

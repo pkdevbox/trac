@@ -11,13 +11,11 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
 <?cs include:"site_newticket.cs" ?>
 <form id="newticket" method="post" action="<?cs
   var:trac.href.newticket ?>#preview">
- <?cs if:trac.authname == "anonymous" ?>
-  <div class="field">
-   <label for="reporter">Your email or username:</label><br />
-   <input type="text" id="reporter" name="reporter" size="40" value="<?cs
-     var:newticket.reporter ?>" /><br />
-  </div>
- <?cs /if ?>
+ <div class="field">
+  <label for="reporter">Your email or username:</label><br />
+  <input type="text" id="reporter" name="reporter" size="40" value="<?cs
+    var:newticket.reporter ?>" /><br />
+ </div>
  <div class="field">
   <label for="summary">Short summary:</label><br />
   <input id="summary" type="text" name="summary" size="80" value="<?cs
@@ -32,8 +30,8 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
  <div class="field">
   <label for="description">Full description (you may use <a tabindex="42" href="<?cs
     var:$trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
-  <textarea id="description" name="description" class="wikitext" rows="10" cols="78">
-<?cs var:newticket.description ?></textarea><?cs
+  <textarea id="description" name="description" class="wikitext" rows="10" cols="78"><?cs
+    var:newticket.description ?></textarea><?cs
   if:newticket.description_preview ?>
    <fieldset id="preview">
     <legend>Description Preview</legend>
@@ -101,14 +99,6 @@ addEvent(window, 'load', function() { document.getElementById('summary').focus()
 
  <script type="text/javascript" src="<?cs
    var:htdocs_location ?>js/wikitoolbar.js"></script>
-
- <?cs if newticket.can_attach ?><p>
-  <label><input type="checkbox" name="attachment"<?cs
-    if:newticket.attachment ?> checked="checked"<?cs /if ?> />
-    I have files to attach to this ticket
-  </label>
- </p><?cs
- /if ?>
 
  <div class="buttons">
   <input type="submit" name="preview" value="Preview" accesskey="r" />&nbsp;

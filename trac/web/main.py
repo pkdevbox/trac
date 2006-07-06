@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
@@ -16,21 +16,14 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
-import locale
 import os
-import sys
-import dircache
-import urllib
 
-from trac.config import ExtensionOption, OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
-from trac.perm import PermissionCache, NoPermissionCache, PermissionError
-from trac.util import reversed, get_last_traceback
-from trac.util.datefmt import format_datetime, http_date
-from trac.util.text import to_unicode
-from trac.util.markup import Markup
-from trac.web.api import *
+from trac.perm import PermissionCache, PermissionError
+from trac.util import escape, enum, format_datetime, http_date, to_utf8, Markup
+from trac.web.api import absolute_url, Request, RequestDone, IAuthenticator, \
+                         IRequestHandler
 from trac.web.chrome import Chrome
 from trac.web.clearsilver import HDFWrapper
 from trac.web.href import Href
@@ -40,13 +33,14 @@ from trac.web.session import Session
 try:
     import threading
 except ImportError:
-    import dummy_threading as threading
+    has_threads = False
+else:
+    has_threads = True
+    env_cache = {}
+    env_cache_lock = threading.Lock()
 
-env_cache = {}
-env_cache_lock = threading.Lock()
-
-def _open_environment(env_path, run_once=False):
-    if run_once:
+def _open_environment(env_path, threaded=True):
+    if not has_threads or not threaded:
         return open_environment(env_path)
 
     global env_cache, env_cache_lock
@@ -58,66 +52,7 @@ def _open_environment(env_path, run_once=False):
         env = env_cache[env_path]
     finally:
         env_cache_lock.release()
-
-    # Re-parse the configuration file if it changed since the last the time it
-    # was parsed
-    env.config.parse_if_needed()
-
     return env
-
-def populate_hdf(hdf, env, req=None):
-    """Populate the HDF data set with various information, such as common URLs,
-    project information and request-related information.
-    FIXME: do we really have req==None at times?
-    """
-    from trac import __version__
-    hdf['trac'] = {
-        'version': __version__,
-        'time': format_datetime(),
-        'time.gmt': http_date()
-    }
-    hdf['project'] = {
-        'name': env.project_name,
-        'name_encoded': env.project_name,
-        'descr': env.project_description,
-        'footer': Markup(env.project_footer),
-        'url': env.project_url
-    }
-
-    if req:
-        hdf['trac.href'] = {
-            'wiki': req.href.wiki(),
-            'browser': req.href.browser('/'),
-            'timeline': req.href.timeline(),
-            'roadmap': req.href.roadmap(),
-            'milestone': req.href.milestone(None),
-            'report': req.href.report(),
-            'query': req.href.query(),
-            'newticket': req.href.newticket(),
-            'search': req.href.search(),
-            'about': req.href.about(),
-            'about_config': req.href.about('config'),
-            'login': req.href.login(),
-            'logout': req.href.logout(),
-            'settings': req.href.settings(),
-            'homepage': 'http://trac.edgewall.com/'
-        }
-
-        hdf['base_url'] = req.base_url
-        hdf['base_host'] = req.base_url[:req.base_url.rfind(req.base_path)]
-        hdf['cgi_location'] = req.base_path
-        hdf['trac.authname'] = req.authname
-
-        if req.perm:
-            for action in req.perm.permissions():
-                req.hdf['trac.acl.' + action] = True
-
-        for arg in [k for k in req.args.keys() if k]:
-            if isinstance(req.args[arg], (list, tuple)):
-                hdf['args.%s' % arg] = [v for v in req.args[arg]]
-            elif isinstance(req.args[arg], basestring):
-                hdf['args.%s' % arg] = req.args[arg]
-            # others are file uploads
 
 
 class RequestDispatcher(Component):
@@ -125,19 +60,6 @@ class RequestDispatcher(Component):
 
     authenticators = ExtensionPoint(IAuthenticator)
     handlers = ExtensionPoint(IRequestHandler)
-
-    filters = OrderedExtensionsOption('trac', 'request_filters', IRequestFilter,
-        doc="""Ordered list of filters to apply to all requests
-            (''since 0.10'').""")
-
-    default_handler = ExtensionOption('trac', 'default_handler',
-                                      IRequestHandler, 'WikiModule',
-        """Name of the component that handles requests to the base URL.
-        
-        Options include `TimeLineModule`, `RoadmapModule`, `BrowserModule`,
-        `QueryModule`, `ReportModule` and `NewticketModule` (''since 0.9'').""")
-
-    # Public API
 
     def authenticate(self, req):
         for authenticator in self.authenticators:
@@ -154,270 +76,260 @@ class RequestDispatcher(Component):
         In addition, this method initializes the HDF data set and adds the web
         site chrome.
         """
-        # FIXME: For backwards compatibility, should be removed in 0.11
-        self.env.href = req.href
-        self.env.abs_href = req.abs_href
+        req.authname = self.authenticate(req)
+        req.perm = PermissionCache(self.env, req.authname)
+
+        chrome = Chrome(self.env)
+        req.hdf = HDFWrapper(loadpaths=chrome.get_all_templates_dirs())
+        populate_hdf(req.hdf, self.env, req)
+
+        newsession = req.args.has_key('newsession')
+        req.session = Session(self.env, req, newsession)
 
         # Select the component that should handle the request
         chosen_handler = None
+        default_handler = None
         if not req.path_info or req.path_info == '/':
-            chosen_handler = self.default_handler
-        else:
-            for handler in self.handlers:
-                if handler.match_request(req):
-                    chosen_handler = handler
-                    break
+            default_handler = self.config.get('trac', 'default_handler')
+        for handler in self.handlers:
+            if handler.match_request(req) or \
+               handler.__class__.__name__ == default_handler:
+                chosen_handler = handler
+                break
 
-        for filter_ in self.filters:
-            chosen_handler = filter_.pre_process_request(req, chosen_handler)
+        chrome.populate_hdf(req, chosen_handler)
 
         if not chosen_handler:
-            raise HTTPNotFound('No handler matched request to %s',
-                               req.path_info)
+            # FIXME: Should return '404 Not Found' to the client
+            raise TracError, 'No handler matched request to %s' % req.path_info
 
-        # Attach user information to the request
-        anonymous_request = getattr(chosen_handler, 'anonymous_request', False)
-        if anonymous_request:
-            req.authname = 'anonymous'
-            req.perm = NoPermissionCache()
-        else:
-            req.authname = self.authenticate(req)
-            req.perm = PermissionCache(self.env, req.authname)
-            req.session = Session(self.env, req)
-
-        # Prepare HDF for the clearsilver template
-        use_template = getattr(chosen_handler, 'use_template', True)
-        if use_template:
-            chrome = Chrome(self.env)
-            req.hdf = HDFWrapper(loadpaths=chrome.get_all_templates_dirs())
-            populate_hdf(req.hdf, self.env, req)
-            chrome.populate_hdf(req, chosen_handler)
-
-        # Process the request and render the template
         try:
-            try:
-                resp = chosen_handler.process_request(req)
-                if resp:
-                    for filter_ in reversed(self.filters):
-                        resp = filter_.post_process_request(req, *resp)
-                    template, content_type = resp
-                    req.display(template, content_type or 'text/html')
-                else:
-                    for filter_ in reversed(self.filters):
-                        filter_.post_process_request(req, None, None)
-            except PermissionError, e:
-                raise HTTPForbidden(to_unicode(e))
-            except TracError, e:
-                raise HTTPInternalError(e.message)
+            resp = chosen_handler.process_request(req)
+            if resp:
+                template, content_type = resp
+                if not content_type:
+                    content_type = 'text/html'
+
+                req.display(template, content_type or 'text/html')
         finally:
             # Give the session a chance to persist changes
-            if req.session:
-                req.session.save()
+            req.session.save()
 
 
-def dispatch_request(environ, start_response):
-    """Main entry point for the Trac web interface.
-    
-    @param environ: the WSGI environment dict
-    @param start_response: the WSGI callback for starting the response
+def dispatch_request(path_info, req, env):
+    """Main entry point for the Trac web interface."""
+
+    # Re-parse the configuration file if it changed since the last the time it
+    # was parsed
+    env.config.parse_if_needed()
+
+    base_url = env.config.get('trac', 'base_url')
+    if not base_url:
+        base_url = absolute_url(req)
+    req.base_url = base_url
+    req.path_info = to_utf8(path_info)
+
+    env.href = Href(req.cgi_location)
+    env.abs_href = Href(req.base_url)
+
+    db = env.get_db_cnx()
+    try:
+        try:
+            dispatcher = RequestDispatcher(env)
+            dispatcher.dispatch(req)
+        except RequestDone:
+            pass
+    finally:
+        db.close()
+
+def populate_hdf(hdf, env, req=None):
+    """Populate the HDF data set with various information, such as common URLs,
+    project information and request-related information.
     """
-    if 'mod_python.options' in environ:
-        options = environ['mod_python.options']
-        environ.setdefault('trac.env_path', options.get('TracEnv'))
-        environ.setdefault('trac.env_parent_dir',
-                           options.get('TracEnvParentDir'))
-        environ.setdefault('trac.env_index_template',
-                           options.get('TracEnvIndexTemplate'))
-        environ.setdefault('trac.template_vars',
-                           options.get('TracTemplateVars'))
-        environ.setdefault('trac.locale', options.get('TracLocale'))
+    from trac import __version__
+    hdf['trac'] = {
+        'version': __version__,
+        'time': format_datetime(),
+        'time.gmt': http_date()
+    }
+    hdf['trac.href'] = {
+        'wiki': env.href.wiki(),
+        'browser': env.href.browser('/'),
+        'timeline': env.href.timeline(),
+        'roadmap': env.href.roadmap(),
+        'milestone': env.href.milestone(None),
+        'report': env.href.report(),
+        'query': env.href.query(),
+        'newticket': env.href.newticket(),
+        'search': env.href.search(),
+        'about': env.href.about(),
+        'about_config': env.href.about('config'),
+        'login': env.href.login(),
+        'logout': env.href.logout(),
+        'settings': env.href.settings(),
+        'homepage': 'http://trac.edgewall.com/'
+    }
 
-        if 'TracUriRoot' in options:
-            # Special handling of SCRIPT_NAME/PATH_INFO for mod_python, which
-            # tends to get confused for whatever reason
-            root_uri = options['TracUriRoot'].rstrip('/')
-            request_uri = environ['REQUEST_URI'].split('?', 1)[0]
-            if not request_uri.startswith(root_uri):
-                raise ValueError('TracUriRoot set to %s but request URL '
-                                 'is %s' % (root_uri, request_uri))
-            environ['SCRIPT_NAME'] = root_uri
-            environ['PATH_INFO'] = urllib.unquote(request_uri[len(root_uri):])
+    hdf['project'] = {
+        'name': Markup(env.config.get('project', 'name')),
+        'name_encoded': env.config.get('project', 'name'),
+        'descr': env.config.get('project', 'descr'),
+        'footer': Markup(env.config.get('project', 'footer')),
+        'url': env.config.get('project', 'url')
+    }
 
-    else:
-        environ.setdefault('trac.env_path', os.getenv('TRAC_ENV'))
-        environ.setdefault('trac.env_parent_dir',
-                           os.getenv('TRAC_ENV_PARENT_DIR'))
-        environ.setdefault('trac.env_index_template',
-                           os.getenv('TRAC_ENV_INDEX_TEMPLATE'))
-        environ.setdefault('trac.template_vars',
-                           os.getenv('TRAC_TEMPLATE_VARS'))
-        environ.setdefault('trac.locale', '')
+    if req:
+        hdf['base_url'] = req.base_url
+        hdf['base_host'] = req.base_url[:req.base_url.rfind(req.cgi_location)]
+        hdf['cgi_location'] = req.cgi_location
+        hdf['trac.authname'] = req.authname
 
-    locale.setlocale(locale.LC_ALL, environ['trac.locale'])
+        for action in req.perm.permissions():
+            req.hdf['trac.acl.' + action] = True
 
-    # Allow specifying the python eggs cache directory using SetEnv
-    if 'mod_python.subprocess_env' in environ:
-        egg_cache = environ['mod_python.subprocess_env'].get('PYTHON_EGG_CACHE')
-        if egg_cache:
-            os.environ['PYTHON_EGG_CACHE'] = egg_cache
-
-    # Determine the environment
-    env_path = environ.get('trac.env_path')
-    if not env_path:
-        env_parent_dir = environ.get('trac.env_parent_dir')
-        env_paths = environ.get('trac.env_paths')
-        if env_parent_dir or env_paths:
-            # The first component of the path is the base name of the
-            # environment
-            path_info = environ.get('PATH_INFO', '').lstrip('/').split('/')
-            env_name = path_info.pop(0)
-
-            if not env_name:
-                # No specific environment requested, so render an environment
-                # index page
-                send_project_index(environ, start_response, env_parent_dir,
-                                   env_paths)
-                return []
-
-            # To make the matching patterns of request handlers work, we append
-            # the environment name to the `SCRIPT_NAME` variable, and keep only
-            # the remaining path in the `PATH_INFO` variable.
-            environ['SCRIPT_NAME'] = Href(environ['SCRIPT_NAME'])(env_name)
-            environ['PATH_INFO'] = '/'.join([''] + path_info)
-
-            if env_parent_dir:
-                env_path = os.path.join(env_parent_dir, env_name)
+        for arg in [k for k in req.args.keys() if k]:
+            if isinstance(req.args[arg], (list, tuple)):
+                hdf['args.%s' % arg] = [v.value for v in req.args[arg]]
             else:
-                env_path = get_environments(environ).get(env_name)
+                hdf['args.%s' % arg] = req.args[arg].value
 
-            if not env_path or not os.path.isdir(env_path):
-                start_response('404 Not Found', [])
-                return ['Environment not found']
-
-    if not env_path:
-        raise EnvironmentError('The environment options "TRAC_ENV" or '
-                               '"TRAC_ENV_PARENT_DIR" or the mod_python '
-                               'options "TracEnv" or "TracEnvParentDir" are '
-                               'missing. Trac requires one of these options '
-                               'to locate the Trac environment(s).')
-    env = _open_environment(env_path, run_once=environ['wsgi.run_once'])
-
-    if env.base_url:
-        environ['trac.base_url'] = env.base_url
-
-    req = Request(environ, start_response)
+def send_pretty_error(e, env, req=None):
+    """Send a "pretty" HTML error page to the client."""
+    import traceback
+    import StringIO
+    tb = StringIO.StringIO()
+    traceback.print_exc(file=tb)
+    if not req:
+        from trac.web.cgi_frontend import CGIRequest
+        from trac.web.clearsilver import HDFWrapper
+        req = CGIRequest()
+        req.authname = ''
+        req.hdf = HDFWrapper()
     try:
-        db = env.get_db_cnx()
+        if not env:
+            from trac.env import open_environment
+            env = open_environment()
+            env.href = Href(req.cgi_location)
+        if env and env.log:
+            env.log.exception(e)
+        populate_hdf(req.hdf, env, req)
+
+        if isinstance(e, TracError):
+            req.hdf['title'] = e.title or 'Error'
+            req.hdf['error.title'] = e.title or 'Error'
+            req.hdf['error.type'] = 'TracError'
+            req.hdf['error.message'] = e.message
+            if e.show_traceback:
+                req.hdf['error.traceback'] = tb.getvalue()
+            req.display('error.cs', response=500)
+
+        elif isinstance(e, PermissionError):
+            req.hdf['title'] = 'Permission Denied'
+            req.hdf['error.type'] = 'permission'
+            req.hdf['error.action'] = e.action
+            req.hdf['error.message'] = e
+            req.display('error.cs', response=403)
+
+        else:
+            req.hdf['title'] = 'Oops'
+            req.hdf['error.type'] = 'internal'
+            req.hdf['error.message'] = str(e)
+            req.hdf['error.traceback'] = tb.getvalue()
+            req.display('error.cs', response=500)
+
+    except RequestDone:
+        pass
+    except Exception, e2:
+        if env and env.log:
+            env.log.error('Failed to render pretty error page: %s', e2,
+                          exc_info=True)
         try:
-            try:
-                dispatcher = RequestDispatcher(env)
-                dispatcher.dispatch(req)
-            except RequestDone:
-                pass
-            return req._response or []
-        finally:
-            db.close()
+            req.send_response(500)
+            req.send_header('Content-Type', 'text/plain')
+            req.end_headers()
+            req.write('Oops...\n\nTrac detected an internal error:\n\n')
+            req.write(str(e))
+            req.write('\n')
+            req.write(tb.getvalue())
+        except IOError:
+            # Cannot send response, but the error has hopefully been logged
+            pass
 
-    except HTTPException, e:
-        env.log.warn(e)
-        if req.hdf:
-            req.hdf['title'] = e.reason or 'Error'
-            req.hdf['error'] = {
-                'title': e.reason or 'Error',
-                'type': 'TracError',
-                'message': e.message
-            }
-        try:
-            req.send_error(sys.exc_info(), status=e.code)
-        except RequestDone:
-            return []
+def send_project_index(req, options, env_paths=None):
+    from trac.web.clearsilver import HDFWrapper
 
-    except Exception, e:
-        env.log.exception(e)
+    if 'TRAC_ENV_INDEX_TEMPLATE' in options:
+        tmpl_path, template = os.path.split(options['TRAC_ENV_INDEX_TEMPLATE'])
 
-        if req.hdf:
-            req.hdf['title'] = to_unicode(e) or 'Error'
-            req.hdf['error'] = {
-                'title': to_unicode(e) or 'Error',
-                'type': 'internal',
-                'traceback': get_last_traceback()
-            }
-        try:
-            req.send_error(sys.exc_info(), status=500)
-        except RequestDone:
-            return []
+        from trac.config import default_dir
+        req.hdf = HDFWrapper(loadpaths=[tmpl_path, default_dir('templates')])
 
-def send_project_index(environ, start_response, parent_dir=None,
-                       env_paths=None):
-    from trac.config import default_dir
-
-    req = Request(environ, start_response)
-
-    loadpaths = [default_dir('templates')]
-    if req.environ.get('trac.env_index_template'):
-        tmpl_path, template = os.path.split(req.environ['trac.env_index_template'])
-        loadpaths.insert(0, tmpl_path)
+        tmpl_vars = {}
+        if 'TRAC_TEMPLATE_VARS' in options:
+            for pair in options['TRAC_TEMPLATE_VARS'].split(','):
+                key, val = pair.split('=')
+                req.hdf[key] = val
     else:
-        template = 'index.cs'
-    req.hdf = HDFWrapper(loadpaths)
+        req.hdf = HDFWrapper()
+        template = req.hdf.parse('''<html>
+<head><title>Available Projects</title></head>
+<body><h1>Available Projects</h1><ul><?cs
+ each:project = projects ?><li><?cs
+  if:project.href ?>
+   <a href="<?cs var:project.href ?>" title="<?cs var:project.description ?>">
+    <?cs var:project.name ?></a><?cs
+  else ?>
+   <small><?cs var:project.name ?>: <em>Error</em> <br />
+   (<?cs var:project.description ?>)</small><?cs
+  /if ?>
+  </li><?cs
+ /each ?></ul></body>
+</html>''')
 
-    tmpl_vars = {}
-    if req.environ.get('trac.template_vars'):
-        for pair in req.environ['trac.template_vars'].split(','):
-            key, val = pair.split('=')
-            req.hdf[key] = val
+    if not env_paths and 'TRAC_ENV_PARENT_DIR' in options:
+        dir = options['TRAC_ENV_PARENT_DIR']
+        env_paths = [os.path.join(dir, f) for f in os.listdir(dir)]
 
-    if parent_dir and not env_paths:
-        env_paths = dict([(filename, os.path.join(parent_dir, filename))
-                          for filename in os.listdir(parent_dir)])
-
+    href = Href(req.idx_location)
     try:
-        href = Href(req.base_path)
         projects = []
-        for env_name, env_path in get_environments(environ).items():
+        for env_path in env_paths:
+            if not os.path.isdir(env_path):
+                continue
+            env_dir, project = os.path.split(env_path)
             try:
-                env = _open_environment(env_path,
-                                        run_once=environ['wsgi.run_once'])
+                env = _open_environment(env_path)
                 proj = {
-                    'name': env.project_name,
-                    'description': env.project_description,
-                    'href': href(env_name)
+                    'name': env.config.get('project', 'name'),
+                    'description': env.config.get('project', 'descr'),
+                    'href': href(project)
                 }
             except Exception, e:
-                proj = {'name': env_name, 'description': to_unicode(e)}
+                proj = {'name': project, 'description': str(e)}
             projects.append(proj)
         projects.sort(lambda x, y: cmp(x['name'].lower(), y['name'].lower()))
-
         req.hdf['projects'] = projects
-        req.display(template)
+
+        # TODO maybe this should be 404 if index wasn't specifically requested
+        req.display(template, response=200)
     except RequestDone:
         pass
 
-def get_environments(environ, warn=False):
-    """Retrieve canonical environment name to path mapping.
 
-    The environments may not be all valid environments, but they are good
-    candidates.
-    """
-    env_paths = environ.get('trac.env_paths', [])
-    env_parent_dir = environ.get('trac.env_parent_dir')
-    if env_parent_dir:
-        env_parent_dir = os.path.normpath(env_parent_dir)
-        paths = dircache.listdir(env_parent_dir)[:]
-        dircache.annotate(env_parent_dir, paths)
-        env_paths += [os.path.join(env_parent_dir, project) \
-                      for project in paths if project[-1] == '/']
-    envs = {}
-    for env_path in env_paths:
-        env_path = os.path.normpath(env_path)
-        if not os.path.isdir(env_path):
-            continue
-        env_name = os.path.split(env_path)[1]
-        if env_name in envs:
-            if warn:
-                print >> sys.stderr, ('Warning: Ignoring project "%s" since '
-                                      'it conflicts with project "%s"'
-                                      % (env_path, envs[env_name]))
-        else:
-            envs[env_name] = env_path
-    return envs
+def get_environment(req, options, threaded=True):
+    if 'TRAC_ENV' in options:
+        env_path = options['TRAC_ENV']
+    elif 'TRAC_ENV_PARENT_DIR' in options:
+        env_parent_dir = options['TRAC_ENV_PARENT_DIR']
+        env_name = req.cgi_location.split('/')[-1]
+        env_path = os.path.join(env_parent_dir, env_name)
+        if not len(env_name) or not os.path.exists(env_path):
+            return None
+    else:
+        raise TracError, \
+              'The environment options "TRAC_ENV" or "TRAC_ENV_PARENT_DIR" ' \
+              'or the mod_python options "TracEnv" or "TracEnvParentDir" ' \
+              'are missing.  Trac requires one of these options to locate ' \
+              'the Trac environment(s).'
+
+    return _open_environment(env_path, threaded)

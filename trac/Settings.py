@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2005 Edgewall Software
 # Copyright (C) 2004-2005 Daniel Lundin <daniel@edgewall.com>
@@ -14,8 +14,10 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
+from __future__ import generators
+
 from trac.core import *
-from trac.util.markup import html
+from trac.util import Markup
 from trac.web import IRequestHandler
 from trac.web.chrome import INavigationContributor
 
@@ -33,7 +35,7 @@ class SettingsModule(Component):
 
     def get_navigation_items(self, req):
         yield ('metanav', 'settings',
-               html.A('Settings', href=req.href.settings()))
+               Markup('<a href="%s">Settings</a>', self.env.href.settings()))
 
     # IRequestHandler methods
 
@@ -66,10 +68,10 @@ class SettingsModule(Component):
                     req.session.change_sid(val)
                 else:
                     req.session[field] = val
-        req.redirect(req.href.settings())
+        req.redirect(self.env.href.settings())
 
     def _do_load(self, req):
         if req.authname == 'anonymous':
             oldsid = req.args.get('loadsid')
             req.session.get_session(oldsid)
-        req.redirect(req.href.settings())
+        req.redirect(self.env.href.settings())

@@ -2,6 +2,7 @@ from trac import perm
 from trac.config import Configuration
 from trac.core import *
 from trac.test import EnvironmentStub
+from trac.util import enum
 
 import unittest
 
@@ -82,6 +83,8 @@ class PermissionSystemTestCase(unittest.TestCase):
         self.env = EnvironmentStub(enable=[perm.PermissionSystem,
                                            perm.DefaultPermissionStore,
                                            TestPermissionRequestor])
+        self.env.config.setdefault('trac', 'permission_store',
+                                   'DefaultPermissionStore')
         self.perm = perm.PermissionSystem(self.env)
 
     def test_all_permissions(self):
@@ -132,6 +135,8 @@ class PermTestCase(unittest.TestCase):
                            ('developer', 'employee'),
                            ('bob', 'developer')])
         db.commit()
+        self.env.config.setdefault('trac', 'permission_store',
+                                   'DefaultPermissionStore')
         self.perm = perm.PermissionCache(self.env, 'bob')
 
     def test_has_permission(self):

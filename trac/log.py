@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2005 Daniel Lundin <daniel@edgewall.com>
-# Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -15,48 +14,57 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
-import logging
-import logging.handlers
 import sys
 
 def logger_factory(logtype='syslog', logfile=None, level='WARNING',
                    logid='Trac'):
-    logger = logging.getLogger(logid)
-    logtype = logtype.lower()
-    if logtype == 'file':
-        hdlr = logging.FileHandler(logfile)
-    elif logtype in ['winlog', 'eventlog', 'nteventlog']:
-        # Requires win32 extensions
-        hdlr = logging.handlers.NTEventLogHandler(logid,
-                                                  logtype='Application')
-    elif logtype in ['syslog', 'unix']:
-        hdlr = logging.handlers.SysLogHandler('/dev/log')
-    elif logtype in ['stderr']:
-        hdlr = logging.StreamHandler(sys.stderr)
-    else:
-        hdlr = logging.handlers.BufferingHandler(0)
-        # Note: this _really_ throws away log events, as a `MemoryHandler`
-        # would keep _all_ records in case there's no target handler (a bug?)
+    try:
+        import logging, logging.handlers
+        logger = logging.getLogger(logid)
+        logtype = logtype.lower()
+        if logtype == 'file':
+            hdlr = logging.FileHandler(logfile)
+        elif logtype in ['winlog', 'eventlog', 'nteventlog']:
+            # Requires win32 extensions
+            hdlr = logging.handlers.NTEventLogHandler(logid,
+                                                      logtype='Application')
+        elif logtype in ['syslog', 'unix']:
+            hdlr = logging.handlers.SysLogHandler('/dev/log')
+        elif logtype in ['stderr']:
+            hdlr = logging.StreamHandler(sys.stderr)
+        else:
+            raise ValueError
 
-    format = 'Trac[%(module)s] %(levelname)s: %(message)s'
-    if logtype in ['file', 'stderr']:
-        format = '%(asctime)s ' + format 
-    datefmt = ''
-    if logtype == 'stderr':
-        datefmt = '%X'        
-    level = level.upper()
-    if level in ['DEBUG', 'ALL']:
-        logger.setLevel(logging.DEBUG)
-    elif level == 'INFO':
-        logger.setLevel(logging.INFO)
-    elif level == 'ERROR':
-        logger.setLevel(logging.ERROR)
-    elif level == 'CRITICAL':
-        logger.setLevel(logging.CRITICAL)
-    else:
-        logger.setLevel(logging.WARNING)
-    formatter = logging.Formatter(format,datefmt)
-    hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr) 
+        format = 'Trac[%(module)s] %(levelname)s: %(message)s'
+        if logtype == 'file':
+            format = '%(asctime)s ' + format 
+        datefmt = ''
+        level = level.upper()
+        if level in ['DEBUG', 'ALL']:
+            logger.setLevel(logging.DEBUG)
+            datefmt = '%X'
+        elif level == 'INFO':
+            logger.setLevel(logging.INFO)
+        elif level == 'ERROR':
+            logger.setLevel(logging.ERROR)
+        elif level == 'CRITICAL':
+            logger.setLevel(logging.CRITICAL)
+        else:
+            logger.setLevel(logging.WARNING)
+        formatter = logging.Formatter(format,datefmt)
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr) 
 
+    # Logging only supported in Python >= 2.3
+    # Disable logging by using a generic 'black hole' class
+    except (ImportError, ValueError):
+        class DummyLogger:
+            """The world's most fake logger."""
+            def __noop(self, *args, **kwargs):
+                pass
+            debug = info = warning = error = critical = log = exception = __noop
+            warn = fatal = __noop
+            getEffectiveLevel = lambda self: 0
+            isEnabledFor = lambda self, level: 0
+        logger = DummyLogger()
     return logger

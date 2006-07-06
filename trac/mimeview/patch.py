@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2005 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
@@ -16,8 +16,8 @@
 #         Ludvig Strigeus
 
 from trac.core import *
-from trac.mimeview.api import content_to_unicode, IHTMLPreviewRenderer, Mimeview
-from trac.util.markup import escape, Markup
+from trac.mimeview.api import IHTMLPreviewRenderer
+from trac.util import escape, Markup
 from trac.web.chrome import add_stylesheet
 
 __all__ = ['PatchRenderer']
@@ -65,9 +65,9 @@ class PatchRenderer(Component):
     def render(self, req, mimetype, content, filename=None, rev=None):
         from trac.web.clearsilver import HDFWrapper
 
-        content = content_to_unicode(self.env, content, mimetype)
-        d = self._diff_to_hdf(content.splitlines(),
-                              Mimeview(self.env).tab_width)
+        tabwidth = int(self.config.get('diff', 'tab_width',
+                       self.config.get('mimeviewer', 'tab_width')))
+        d = self._diff_to_hdf(content.splitlines(), tabwidth)
         if not d:
             raise TracError, 'Invalid unified diff content'
         hdf = HDFWrapper(loadpaths=[self.env.get_templates_dir(),
@@ -109,24 +109,15 @@ class PatchRenderer(Component):
 
         output = []
         filename, groups = None, None
-        lines = iter(difflines)
-        try:
-            line = lines.next()
-            while True:
-                if not line.startswith('--- '):
-                    line = lines.next()
-                    continue
-
+        for line in difflines:
+            if line.startswith('--- '):
                 # Base filename/version
                 words = line.split(None, 2)
                 filename, fromrev = words[1], 'old'
                 groups, blocks = None, None
-
+                continue
+            if line.startswith('+++ '):
                 # Changed filename/version
-                line = lines.next()
-                if not line.startswith('+++ '):
-                    return None
-
                 words = line.split(None, 2)
                 if len(words[1]) < len(filename):
                     # Always use the shortest filename for display
@@ -134,49 +125,49 @@ class PatchRenderer(Component):
                 groups = []
                 output.append({'filename' : filename, 'oldrev' : fromrev,
                                'newrev' : 'new', 'diff' : groups})
+                continue
+            # Lines to ignore
+            if line.startswith('Index: ') or line.startswith('======') or line == '':
+                continue
+            if groups == None:
+                return None
+            # @@ -333,10 +329,8 @@
+            if line.startswith('@@ '):
+                r = re.match(r'@@ -(\d+),\d+ \+(\d+),\d+ @@', line)
+                if not r:
+                    return None
+                blocks = []
+                groups.append(blocks)
+                fromline,toline = map(int, r.groups())
+                last_type = None
+                continue
+            if blocks == None:
+                return None
 
-                for line in lines:
-                    # @@ -333,10 +329,8 @@
-                    r = re.match(r'@@ -(\d+),(\d+) \+(\d+),(\d+) @@', line)
-                    if not r:
-                        break
-                    blocks = []
-                    groups.append(blocks)
-                    fromline,fromend,toline,toend = map(int, r.groups())
-                    last_type = None
+            # First character is the command
+            command, line = line[0], line[1:]
 
-                    fromend += fromline
-                    toend += toline
-
-                    while fromline < fromend or toline < toend:
-                        line = lines.next()
-
-                        # First character is the command
-                        command, line = line[0], line[1:]
-                        # Make a new block?
-                        if (command == ' ') != last_type:
-                            last_type = command == ' '
-                            blocks.append({'type': last_type and 'unmod' or 'mod',
-                                           'base.offset': fromline - 1,
-                                           'base.lines': [],
-                                           'changed.offset': toline - 1,
-                                           'changed.lines': []})
-                        if command == ' ':
-                            blocks[-1]['changed.lines'].append(line)
-                            blocks[-1]['base.lines'].append(line)
-                            fromline += 1
-                            toline += 1
-                        elif command == '+':
-                            blocks[-1]['changed.lines'].append(line)
-                            toline += 1
-                        elif command == '-':
-                            blocks[-1]['base.lines'].append(line)
-                            fromline += 1
-                        else:
-                            return None
-                line = lines.next()
-        except StopIteration:
-            pass
+            # Make a new block?
+            if (command == ' ') != last_type:
+                last_type = command == ' '
+                blocks.append({'type': last_type and 'unmod' or 'mod',
+                               'base.offset': fromline - 1,
+                               'base.lines': [],
+                               'changed.offset': toline - 1,
+                               'changed.lines': []})
+            if command == ' ':
+                blocks[-1]['changed.lines'].append(line)
+                blocks[-1]['base.lines'].append(line)
+                fromline += 1
+                toline += 1
+            elif command == '+':
+                blocks[-1]['changed.lines'].append(line)
+                toline += 1
+            elif command == '-':
+                blocks[-1]['base.lines'].append(line)
+                fromline += 1
+            else:
+                return None
 
         # Go through all groups/blocks and mark up intraline changes, and
         # convert to html

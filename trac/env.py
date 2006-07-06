@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -12,16 +12,16 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
+
+from __future__ import generators
 
 import os
 
-from trac import db_default, util
-from trac.config import *
+from trac import db, db_default, util
+from trac.config import Configuration
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
-from trac.db import DatabaseManager
-from trac.versioncontrol import RepositoryManager
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
 
@@ -62,68 +62,28 @@ class Environment(Component, ComponentManager):
     """   
     setup_participants = ExtensionPoint(IEnvironmentSetupParticipant)
 
-    base_url = Option('trac', 'base_url', '',
-        """Base URL of the Trac deployment.
-        
-        In most configurations, Trac will automatically reconstruct the URL
-        that is used to access it automatically. However, in more complex
-        setups, usually involving running Trac behind a HTTP proxy, you may
-        need to use this option to force Trac to use the correct URL.""")
-
-    project_name = Option('project', 'name', 'My Project',
-        """Name of the project.""")
-
-    project_description = Option('project', 'descr', 'My example project',
-        """Short description of the project.""")
-
-    project_url = Option('project', 'url', 'http://example.org/',
-        """URL of the main project web site.""")
-
-    project_footer = Option('project', 'footer',
-                            'Visit the Trac open source project at<br />'
-                            '<a href="http://trac.edgewall.com/">'
-                            'http://trac.edgewall.com/</a>',
-        """Page footer text (right-aligned).""")
-
-    project_icon = Option('project', 'icon', 'common/trac.ico',
-        """URL of the icon of the project.""")
-
-    log_type = Option('logging', 'log_type', 'none',
-        """Logging facility to use.
-        
-        Should be one of (`none`, `file`, `stderr`, `syslog`, `winlog`).""")
-
-    log_file = Option('logging', 'log_file', 'trac.log',
-        """If `log_type` is `file`, this should be a path to the log-file.""")
-
-    log_level = Option('logging', 'log_level', 'DEBUG',
-        """Level of verbosity in log.
-        
-        Should be one of (`CRITICAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`).""")
-
-    def __init__(self, path, create=False, options=[]):
+    def __init__(self, path, create=False, db_str=None):
         """Initialize the Trac environment.
         
         @param path:   the absolute path to the Trac environment
         @param create: if `True`, the environment is created and populated with
                        default data; otherwise, the environment is expected to
                        already exist.
-        @param options: A list of `(section, name, value)` tuples that define
-                        configuration options
+        @param db_str: the database connection string
         """
         ComponentManager.__init__(self)
 
         self.path = path
-        self.setup_config(load_defaults=create)
+        self.__cnx_pool = None
+        if create:
+            self.create(db_str)
+        else:
+            self.verify()
+            self.load_config()
         self.setup_log()
 
         from trac.loader import load_components
         load_components(self)
-
-        if create:
-            self.create(options)
-        else:
-            self.verify()
 
         if create:
             for setup_participant in self.setup_participants:
@@ -146,7 +106,7 @@ class Environment(Component, ComponentManager):
         This is called by the `ComponentManager` base class when a component is
         about to be activated. If this method returns false, the component does
         not get activated."""
-        if not isinstance(cls, basestring):
+        if not isinstance(cls, (str, unicode)):
             component_name = (cls.__module__ + '.' + cls.__name__).lower()
         else:
             component_name = cls.lower()
@@ -160,11 +120,6 @@ class Environment(Component, ComponentManager):
                     and component_name.startswith(pattern[:-1]):
                 return enabled
 
-        # versioncontrol components are enabled if the repository is configured
-        # FIXME: this shouldn't be hardcoded like this
-        if component_name.startswith('trac.versioncontrol.'):
-            return self.config.get('trac', 'repository_dir') != ''
-
         # By default, all components in the trac package are enabled
         return component_name.startswith('trac.')
 
@@ -172,28 +127,42 @@ class Environment(Component, ComponentManager):
         """Verify that the provided path points to a valid Trac environment
         directory."""
         fd = open(os.path.join(self.path, 'VERSION'), 'r')
-        try:
-            assert fd.read(26) == 'Trac Environment Version 1'
-        finally:
-            fd.close()
+        assert fd.read(26) == 'Trac Environment Version 1'
+        fd.close()
 
     def get_db_cnx(self):
         """Return a database connection from the connection pool."""
-        return DatabaseManager(self).get_connection()
+        if not self.__cnx_pool:
+            self.__cnx_pool = db.get_cnx_pool(self)
+        return self.__cnx_pool.get_cnx()
 
     def shutdown(self):
         """Close the environment."""
-        DatabaseManager(self).shutdown()
+        if self.__cnx_pool:
+            self.__cnx_pool.shutdown()
+            self.__cnx_pool = None
 
     def get_repository(self, authname=None):
         """Return the version control repository configured for this
         environment.
         
+        The repository is wrapped in a `CachedRepository`.
+        
         @param authname: user name for authorization
         """
-        return RepositoryManager(self).get_repository(authname)
+        from trac.versioncontrol.cache import CachedRepository
+        from trac.versioncontrol.svn_authz import SubversionAuthorizer
+        from trac.versioncontrol.svn_fs import SubversionRepository
+        repos_dir = self.config.get('trac', 'repository_dir')
+        if not repos_dir:
+            raise EnvironmentError, 'Path to repository not configured'
+        authz = None
+        if authname:
+            authz = SubversionAuthorizer(self, authname)
+        repos = SubversionRepository(repos_dir, authz, self.log)
+        return CachedRepository(self.get_db_cnx(), repos, authz, self.log)
 
-    def create(self, options=[]):
+    def create(self, db_str=None):
         """Create the basic directory structure of the environment, initialize
         the database and populate the configuration file with default values."""
         def _create_file(fname, data=None):
@@ -202,8 +171,7 @@ class Environment(Component, ComponentManager):
             fd.close()
 
         # Create the directory structure
-        if not os.path.exists(self.path):
-            os.mkdir(self.path)
+        os.mkdir(self.path)
         os.mkdir(self.get_log_dir())
         os.mkdir(self.get_htdocs_dir())
         os.mkdir(os.path.join(self.path, 'plugins'))
@@ -219,13 +187,14 @@ class Environment(Component, ComponentManager):
         # Setup the default configuration
         os.mkdir(os.path.join(self.path, 'conf'))
         _create_file(os.path.join(self.path, 'conf', 'trac.ini'))
-        self.setup_config(load_defaults=True)
-        for section, name, value in options:
+        self.load_config()
+        for section, name, value in db_default.default_config:
             self.config.set(section, name, value)
+        self.config.set('trac', 'database', db_str)
         self.config.save()
 
         # Create the database
-        DatabaseManager(self).init_db()
+        db.init_db(self.path, db_str)
 
     def get_version(self, db=None):
         """Return the current version of the database."""
@@ -236,13 +205,11 @@ class Environment(Component, ComponentManager):
         row = cursor.fetchone()
         return row and int(row[0])
 
-    def setup_config(self, load_defaults=False):
+    def load_config(self):
         """Load the configuration file."""
         self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'))
-        if load_defaults:
-            for section, default_options in self.config.defaults().iteritems():
-                for name, value in default_options.iteritems():
-                    self.config.set(section, name, value)
+        for section, name, value in db_default.default_config:
+            self.config.setdefault(section, name, value)
 
     def get_templates_dir(self):
         """Return absolute path to the templates directory."""
@@ -259,11 +226,13 @@ class Environment(Component, ComponentManager):
     def setup_log(self):
         """Initialize the logging sub-system."""
         from trac.log import logger_factory
-        logtype = self.log_type
-        logfile = self.log_file
-        if logtype == 'file' and not os.path.isabs(logfile):
+        logtype = self.config.get('logging', 'log_type')
+        loglevel = self.config.get('logging', 'log_level')
+        logfile = self.config.get('logging', 'log_file')
+        if not os.path.isabs(logfile):
             logfile = os.path.join(self.get_log_dir(), logfile)
-        self.log = logger_factory(logtype, logfile, self.log_level, self.path)
+        logid = self.path # Env-path provides process-unique ID
+        self.log = logger_factory(logtype, logfile, loglevel, logid)
 
     def get_known_users(self, cnx=None):
         """Generator that yields information about all known users, i.e. users
@@ -279,12 +248,12 @@ class Environment(Component, ComponentManager):
         if not cnx:
             cnx = self.get_db_cnx()
         cursor = cnx.cursor()
-        cursor.execute("SELECT DISTINCT s.sid, n.value, e.value "
+        cursor.execute("SELECT DISTINCT s.sid, n.var_value, e.var_value "
                        "FROM session AS s "
-                       " LEFT JOIN session_attribute AS n ON (n.sid=s.sid "
-                       "  and n.authenticated=1 AND n.name = 'name') "
-                       " LEFT JOIN session_attribute AS e ON (e.sid=s.sid "
-                       "  AND e.authenticated=1 AND e.name = 'email') "
+                       " LEFT JOIN session AS n ON (n.sid=s.sid "
+                       "  AND n.authenticated=1 AND n.var_name = 'name') "
+                       " LEFT JOIN session AS e ON (e.sid=s.sid "
+                       "  AND e.authenticated=1 AND e.var_name = 'email') "
                        "WHERE s.authenticated=1 ORDER BY s.sid")
         for username,name,email in cursor:
             yield username, name, email
@@ -360,7 +329,6 @@ class EnvironmentSetup(Component):
                                ','.join(cols), ','.join(['%s' for c in cols])),
                                vals)
         db.commit()
-        self._update_sample_config()
 
     def environment_needs_upgrade(self, db):
         dbver = self.env.get_version(db)
@@ -386,31 +354,6 @@ class EnvironmentSetup(Component):
                        "name='database_version'", (db_default.db_version,))
         self.log.info('Upgraded database version from %d to %d',
                       dbver, db_default.db_version)
-        self._update_sample_config()
-
-    # Internal methods
-
-    def _update_sample_config(self):
-        from ConfigParser import ConfigParser
-        config = ConfigParser()
-        for section, options in self.config.defaults().items():
-            config.add_section(section)
-            for name, value in options.items():
-                config.set(section, name, value)
-        filename = os.path.join(self.env.path, 'conf', 'trac.ini.sample')
-        try:
-            fileobj = file(filename, 'w')
-            try:
-                config.write(fileobj)
-                fileobj.close()
-            finally:
-                fileobj.close()
-            self.log.info('Wrote sample configuration file with the new '
-                          'settings and their default values: %s',
-                          filename)
-        except IOError, e:
-            self.log.warn('Couldn\'t write sample configuration file (%s)', e,
-                          exc_info=True)
 
 
 def open_environment(env_path=None):

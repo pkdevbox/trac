@@ -1,17 +1,16 @@
-# -*- coding: utf-8 -*-
-
+# -*- coding: iso-8859-1 -*-
 """
 Trac
 Edgewall Software
 
 U{http://trac.edgewall.com/}
 
-@author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+@author: Jonas Borgström <jonas@edgewall.com>
 @author: Daniel Lundin <daniel@edgewall.com>
 """
 __docformat__ = 'epytext en'
 
-__version__ = '0.10dev'
+__version__ = '0.9.6'
 __url__ = 'http://trac.edgewall.com/'
 __copyright__ = '(C) 2003-2006 Edgewall Software'
 __license__ = 'BSD'
@@ -44,4 +43,3 @@ __license_long__ = """
  IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
-

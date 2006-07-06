@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
@@ -15,23 +15,20 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import re
-from StringIO import StringIO
 import time
 
 from trac.core import *
-from trac.db import get_column_names
 from trac.perm import IPermissionRequestor
 from trac.ticket import Ticket, TicketSystem
-from trac.util.datefmt import format_datetime, http_date
-from trac.util.text import shorten_line, CRLF
-from trac.util.markup import escape, html, unescape
+from trac.util import escape, unescape, format_datetime, http_date, \
+                      shorten_line, CRLF, Markup
 from trac.web import IRequestHandler
-from trac.web.chrome import add_link, add_script, add_stylesheet, \
-                            INavigationContributor
-from trac.wiki import wiki_to_html, wiki_to_oneliner, IWikiSyntaxProvider
-from trac.wiki.macros import WikiMacroBase
-from trac.mimeview.api import Mimeview, IContentConverter
+from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
+from trac.wiki import wiki_to_html, wiki_to_oneliner, IWikiMacroProvider, \
+                      IWikiSyntaxProvider
+
 
 class QuerySyntaxError(Exception):
     """Exception raised when a ticket query cannot be parsed from a string."""
@@ -61,8 +58,6 @@ class Query(object):
 
     def from_string(cls, env, string, **kw):
         filters = string.split('&')
-        kw_strs = ['order', 'group']
-        kw_bools = ['desc', 'groupdesc', 'verbose']
         constraints = {}
         for filter in filters:
             filter = filter.split('=')
@@ -81,16 +76,7 @@ class Query(object):
                 neg = '!'
                 field = field[:-1]
             values = map(lambda x: neg + mode + x, values)
-            try:
-                field = str(field)
-                if field in kw_strs:
-                    kw[field] = values[0]
-                elif field in kw_bools:
-                    kw[field] = True
-                else:
-                    constraints[field] = values
-            except UnicodeError:
-                pass # field must be a str, see `get_href()`
+            constraints[field] = values
         return cls(env, constraints, **kw)
     from_string = classmethod(from_string)
 
@@ -145,7 +131,7 @@ class Query(object):
 
         return self.cols
 
-    def execute(self, req, db=None):
+    def execute(self, db=None):
         if not self.cols:
             self.get_columns()
 
@@ -156,13 +142,13 @@ class Query(object):
             db = self.env.get_db_cnx()
         cursor = db.cursor()
         cursor.execute(sql, args)
-        columns = get_column_names(cursor)
+        columns = cursor.description
         results = []
         for row in cursor:
             id = int(row[0])
-            result = {'id': id, 'href': req.href.ticket(id)}
+            result = {'id': id, 'href': self.env.href.ticket(id)}
             for i in range(1, len(columns)):
-                name, val = columns[i], row[i]
+                name, val = columns[i][0], row[i]
                 if name == self.group:
                     val = val or 'None'
                 elif name == 'reporter':
@@ -176,17 +162,16 @@ class Query(object):
         cursor.close()
         return results
 
-    def get_href(self, req, order=None, desc=None, format=None):
-        # FIXME: only use .href from that 'req' for now
+    def get_href(self, order=None, desc=None, format=None):
         if desc is None:
             desc = self.desc
         if order is None:
             order = self.order
-        return req.href.query(order=order, desc=desc and 1 or None,
-                              group=self.group or None,
-                              groupdesc=self.groupdesc and 1 or None,
-                              verbose=self.verbose and 1 or None,
-                              format=format, **self.constraints)
+        return self.env.href.query(order=order, desc=desc and 1 or None,
+                                   group=self.group or None,
+                                   groupdesc=self.groupdesc and 1 or None,
+                                   verbose=self.verbose and 1 or None,
+                                   format=format, **self.constraints)
 
     def get_sql(self):
         """Return a (sql, params) tuple for the query."""
@@ -347,25 +332,7 @@ class Query(object):
 
 class QueryModule(Component):
 
-    implements(IRequestHandler, INavigationContributor, IWikiSyntaxProvider,
-               IContentConverter)
-
-    # IContentConverter methods
-    def get_supported_conversions(self):
-        yield ('rss', 'RSS Feed', 'xml',
-               'trac.ticket.Query', 'application/rss+xml', 8)
-        yield ('csv', 'Comma-delimited Text', 'csv',
-               'trac.ticket.Query', 'text/csv', 8)
-        yield ('tab', 'Tab-delimited Text', 'tsv',
-               'trac.ticket.Query', 'text/tab-separated-values', 8)
-
-    def convert_content(self, req, mimetype, query, key):
-        if key == 'rss':
-            return self.export_rss(req, query)
-        elif key == 'csv':
-            return self.export_csv(req, query, mimetype='text/csv')
-        elif key == 'tab':
-            return self.export_csv(req, query, '\t', 'text/tab-separated-values')
+    implements(IRequestHandler, INavigationContributor, IWikiSyntaxProvider)
 
     # INavigationContributor methods
 
@@ -375,9 +342,9 @@ class QueryModule(Component):
     def get_navigation_items(self, req):
         from trac.ticket.report import ReportModule
         if req.perm.has_permission('TICKET_VIEW') and \
-                not self.env.is_component_enabled(ReportModule):
-            yield ('mainnav', 'tickets',
-                   html.A('View Tickets', href=req.href.query()))
+           not self.env.is_component_enabled(ReportModule):
+            yield 'mainnav', 'tickets', Markup('<a href="%s">View Tickets</a>',
+                                               self.env.href.query())
 
     # IRequestHandler methods
 
@@ -411,14 +378,14 @@ class QueryModule(Component):
             for var in ('query_constraints', 'query_time', 'query_tickets'):
                 if req.session.has_key(var):
                     del req.session[var]
-            req.redirect(query.get_href(req))
+            req.redirect(query.get_href())
 
-        # Add registered converters
-        for conversion in Mimeview(self.env).get_supported_conversions(
-                                             'trac.ticket.Query'):
-            add_link(req, 'alternate',
-                     query.get_href(req, format=conversion[0]),
-                     conversion[1], conversion[3])
+        add_link(req, 'alternate', query.get_href(format='rss'), 'RSS Feed',
+                 'application/rss+xml', 'rss')
+        add_link(req, 'alternate', query.get_href(format='csv'),
+                 'Comma-delimited Text', 'text/plain')
+        add_link(req, 'alternate', query.get_href(format='tab'),
+                 'Tab-delimited Text', 'text/plain')
 
         constraints = {}
         for k, v in query.constraints.items():
@@ -436,12 +403,16 @@ class QueryModule(Component):
         req.hdf['query.constraints'] = constraints
 
         format = req.args.get('format')
-        if format:
-            Mimeview(self.env).send_converted(req, 'trac.ticket.Query', query,
-                                              format, 'query')
-
-        self.display_html(req, query)
-        return 'query.cs', None
+        if format == 'rss':
+            self.display_rss(req, query)
+            return 'query_rss.cs', 'application/rss+xml'
+        elif format == 'csv':
+            self.display_csv(req, query)
+        elif format == 'tab':
+            self.display_csv(req, query, '\t')
+        else:
+            self.display_html(req, query)
+            return 'query.cs', None
 
     # Internal methods
 
@@ -466,6 +437,7 @@ class QueryModule(Component):
             vals = req.args[field]
             if not isinstance(vals, (list, tuple)):
                 vals = [vals]
+            vals = map(lambda x: x.value, vals)
             if vals:
                 mode = req.args.get(field + '_mode')
                 if mode:
@@ -501,7 +473,6 @@ class QueryModule(Component):
     def display_html(self, req, query):
         req.hdf['title'] = 'Custom Query'
         add_stylesheet(req, 'common/css/report.css')
-        add_script(req, 'common/js/query.js')
 
         db = self.env.get_db_cnx()
 
@@ -529,15 +500,14 @@ class QueryModule(Component):
         for idx, col in enumerate(cols):
             req.hdf['query.headers.%d' % idx] = {
                 'name': col, 'label': labels.get(col, 'Ticket'),
-                'href': query.get_href(req, order=col,
-                                       desc=(col == query.order and
-                                             not query.desc))
+                'href': query.get_href(order=col, desc=(col == query.order and
+                                                        not query.desc))
             }
 
-        href = req.href.query(group=query.group,
-                              groupdesc=query.groupdesc and 1 or None,
-                              verbose=query.verbose and 1 or None,
-                              **query.constraints)
+        href = self.env.href.query(group=query.group,
+                                   groupdesc=query.groupdesc and 1 or None,
+                                   verbose=query.verbose and 1 or None,
+                                   **query.constraints)
         req.hdf['query.order'] = query.order
         req.hdf['query.href'] = href
         if query.desc:
@@ -549,24 +519,22 @@ class QueryModule(Component):
         if query.verbose:
             req.hdf['query.verbose'] = True
 
-        tickets = query.execute(req, db)
+        tickets = query.execute(db)
         req.hdf['query.num_matches'] = len(tickets)
 
         # The most recent query is stored in the user session
         orig_list = rest_list = None
         orig_time = int(time.time())
-        query_constraints = unicode(query.constraints)
-        if query_constraints != req.session.get('query_constraints') \
-                or int(req.session.get('query_time', 0)) < orig_time - 3600:
-            # New or outdated query, (re-)initialize session vars
-            req.session['query_constraints'] = query_constraints
+        if str(query.constraints) != req.session.get('query_constraints'):
+            # New query, initialize session vars
+            req.session['query_constraints'] = str(query.constraints)
+            req.session['query_time'] = int(time.time())
             req.session['query_tickets'] = ' '.join([str(t['id']) for t in tickets])
         else:
             orig_list = [int(id) for id in req.session.get('query_tickets', '').split()]
             rest_list = orig_list[:]
             orig_time = int(req.session.get('query_time', 0))
-        req.session['query_href'] = query.get_href(req)
-        req.session['query_time'] = orig_time
+        req.session['query_href'] = query.get_href()
 
         # Find out which tickets originally in the query results no longer
         # match the constraints
@@ -574,18 +542,13 @@ class QueryModule(Component):
             for tid in [t['id'] for t in tickets if t['id'] in rest_list]:
                 rest_list.remove(tid)
             for rest_id in rest_list:
-                try:
-                    ticket = Ticket(self.env, int(rest_id), db=db)
-                    data = {'id': ticket.id, 'time': ticket.time_created,
-                            'changetime': ticket.time_changed, 'removed': True,
-                            'href': req.href.ticket(ticket.id)}
-                    data.update(ticket.values)
-                except TracError, e:
-                    data = {'id': rest_id, 'time': 0, 'changetime': 0,
-                            'summary': html.EM(e)}
+                ticket = Ticket(self.env, int(rest_id), db=db)
+                data = {'id': ticket.id, 'time': ticket.time_created,
+                        'changetime': ticket.time_changed, 'removed': True,
+                        'href': self.env.href.ticket(ticket.id)}
+                data.update(ticket.values)
                 tickets.insert(orig_list.index(rest_id), data)
 
-        num_matches_group = {}
         for ticket in tickets:
             if orig_list:
                 # Mark tickets added or changed since the query was first
@@ -595,8 +558,6 @@ class QueryModule(Component):
                 elif int(ticket['changetime']) > orig_time:
                     ticket['changed'] = True
             for field, value in ticket.items():
-                if field == query.group:
-                    num_matches_group[value] = num_matches_group.get(value, 0)+1
                 if field == 'time':
                     ticket[field] = format_datetime(value)
                 elif field == 'description':
@@ -605,7 +566,6 @@ class QueryModule(Component):
                     ticket[field] = value
 
         req.hdf['query.results'] = tickets
-        req.hdf['query.num_matches_group'] = num_matches_group
         req.session['query_tickets'] = ' '.join([str(t['id']) for t in tickets])
 
         # Kludge: only show link to available reports if the report module is
@@ -613,42 +573,43 @@ class QueryModule(Component):
         from trac.ticket.report import ReportModule
         if req.perm.has_permission('REPORT_VIEW') and \
            self.env.is_component_enabled(ReportModule):
-            req.hdf['query.report_href'] = req.href.report()
+            req.hdf['query.report_href'] = self.env.href.report()
 
-    def export_csv(self, req, query, sep=',', mimetype='text/plain'):
-        content = StringIO()
+    def display_csv(self, req, query, sep=','):
+        req.send_response(200)
+        req.send_header('Content-Type', 'text/plain;charset=utf-8')
+        req.end_headers()
+
         cols = query.get_columns()
-        content.write(sep.join([col for col in cols]) + CRLF)
+        req.write(sep.join([col for col in cols]) + CRLF)
 
-        results = query.execute(req, self.env.get_db_cnx())
+        results = query.execute(self.env.get_db_cnx())
         for result in results:
-            content.write(sep.join([unicode(result[col]).replace(sep, '_')
-                                                        .replace('\n', ' ')
-                                                        .replace('\r', ' ')
-                                    for col in cols]) + CRLF)
-        return (content.getvalue(), '%s;charset=utf-8' % mimetype)
+            req.write(sep.join([str(result[col]).replace(sep, '_')
+                                                .replace('\n', ' ')
+                                                .replace('\r', ' ')
+                                for col in cols]) + CRLF)
 
-    def export_rss(self, req, query):
+    def display_rss(self, req, query):
         query.verbose = True
         db = self.env.get_db_cnx()
-        results = query.execute(req, db)
+        results = query.execute(db)
         for result in results:
-            result['href'] = req.abs_href.ticket(result['id'])
+            result['href'] = self.env.abs_href.ticket(result['id'])
             if result['reporter'].find('@') == -1:
                 result['reporter'] = ''
             if result['description']:
-                # unicode() cancels out the Markup() returned by wiki_to_html
+                # str() cancels out the Markup() returned by wiki_to_html
                 descr = wiki_to_html(result['description'], self.env, req, db,
                                      absurls=True)
-                result['description'] = unicode(descr)
+                result['description'] = str(descr)
             if result['time']:
                 result['time'] = http_date(result['time'])
         req.hdf['query.results'] = results
-        req.hdf['query.href'] = req.abs_href.query(group=query.group,
+        req.hdf['query.href'] = self.env.abs_href.query(group=query.group,
                 groupdesc=query.groupdesc and 1 or None,
                 verbose=query.verbose and 1 or None,
                 **query.constraints)
-        return (req.hdf.render('query_rss.cs'), 'application/rss+xml')
 
     # IWikiSyntaxProvider methods
     
@@ -660,23 +621,24 @@ class QueryModule(Component):
 
     def _format_link(self, formatter, ns, query, label):
         if query[0] == '?':
-            return html.A(label, class_='query',
-                          href=formatter.href.query() + query.replace(' ', '+'))
+            return '<a class="query" href="%s">%s</a>' \
+                   % (escape(formatter.href.query() + query.replace(' ', '+')),
+                      label)
         else:
             from trac.ticket.query import Query, QuerySyntaxError
             try:
                 query = Query.from_string(formatter.env, query)
-                return html.A(label, href=query.get_href(formatter), # Hack
-                              class_='query')
+                return '<a class="query" href="%s">%s</a>' \
+                       % (escape(query.get_href()), label)
             except QuerySyntaxError, e:
-                return html.EM('[Error: %s]' % e, class_='error')
+                return '<em class="error">[Error: %s]</em>' % escape(e)
 
 
-class TicketQueryMacro(WikiMacroBase):
+class QueryWikiMacro(Component):
     """Macro that lists tickets that match certain criteria.
     
     This macro accepts two parameters, the second of which is optional.
-    
+
     The first parameter is the query itself, and uses the same syntax as for
     {{{query:}}} wiki links. The second parameter determines how the list of
     tickets is presented: the default presentation is to list the ticket ID next
@@ -684,6 +646,14 @@ class TicketQueryMacro(WikiMacroBase):
     is given and set to '''compact''' then the tickets are presented as a
     comma-separated list of ticket IDs.
     """
+    implements(IWikiMacroProvider)
+
+    def get_macros(self):
+        yield 'TicketQuery'
+
+    def get_macro_description(self, name):
+        import inspect
+        return inspect.getdoc(QueryWikiMacro)
 
     def render_macro(self, req, name, content):
         query_string = ''
@@ -694,17 +664,21 @@ class TicketQueryMacro(WikiMacroBase):
             if len(argv) > 1:
                 if argv[1].strip().lower() == 'compact':
                     compact = 1
-
+        
+        try:
+            from cStringIO import StringIO
+        except NameError:
+            from StringIO import StringIO
         buf = StringIO()
 
         query = Query.from_string(self.env, query_string)
         query.order = 'id'
-        tickets = query.execute(req)
+        tickets = query.execute()
         if tickets:
             if compact:
                 links = []
                 for ticket in tickets:
-                    href = req.href.ticket(int(ticket['id']))
+                    href = self.env.href.ticket(int(ticket['id']))
                     summary = escape(shorten_line(ticket['summary']))
                     a = '<a class="%s ticket" href="%s" title="%s">#%s</a>' % \
                         (ticket['status'], href, summary, ticket['id'])
@@ -713,7 +687,7 @@ class TicketQueryMacro(WikiMacroBase):
             else:
                 buf.write('<dl class="wiki compact">')
                 for ticket in tickets:
-                    href = req.href.ticket(int(ticket['id']))
+                    href = self.env.href.ticket(int(ticket['id']))
                     dt = '<dt><a class="%s ticket" href="%s">#%s</a></dt>' % \
                          (ticket['status'], href, ticket['id'])
                     buf.write(dt)

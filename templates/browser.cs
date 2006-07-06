@@ -3,45 +3,29 @@
 
 <div id="ctxtnav" class="nav">
  <ul>
-  <li class="first"><a href="<?cs var:browser.restr_changeset_href ?>">
-   Last Change</a></li>
-  <li class="last"><a href="<?cs var:browser.log_href ?>">
-   Revision Log</a></li>
+  <li class="last"><a href="<?cs var:browser.log_href ?>">Revision Log</a></li>
  </ul>
 </div>
 
-
-<div id="searchable">
 <div id="content" class="browser">
  <h1><?cs call:browser_path_links(browser.path, browser) ?></h1>
 
  <div id="jumprev">
-  <form action="" method="get">
-   <div>
-    <label for="rev">View revision:</label>
-    <input type="text" id="rev" name="rev" value="<?cs
-       var:browser.revision ?>" size="4" />
-   </div>
-  </form>
+  <form action="" method="get"><div>
+   <label for="rev">View revision:</label>
+   <input type="text" id="rev" name="rev" value="<?cs
+     var:browser.revision ?>" size="4" />
+  </div></form>
  </div>
-
- <?cs def:sortable_th(order, desc, class, title, href) ?>
- <th class="<?cs var:class ?><?cs if:order == class ?> <?cs
-   if:desc ?>desc<?cs else ?>asc<?cs /if ?><?cs /if ?>">
-  <a title="Sort by <?cs var:class ?><?cs
-    if:order == class && !desc ?> (descending)<?cs /if ?>" 
-     href="<?cs var:href[class] ?>"><?cs var:title ?></a>
- </th>
- <?cs /def ?>
 
  <?cs if:browser.is_dir ?>
   <table class="listing" id="dirlist">
    <thead>
     <tr><?cs 
-     call:sortable_th(browser.order, browser.desc, 'name', 'Name', browser.order_href) ?><?cs 
-     call:sortable_th(browser.order, browser.desc, 'size', 'Size', browser.order_href) ?>
+     call:sortable_th(browser.order, browser.desc, 'name', 'Name', browser.href) ?><?cs 
+     call:sortable_th(browser.order, browser.desc, 'size', 'Size', browser.href) ?>
      <th class="rev">Rev</th><?cs 
-     call:sortable_th(browser.order, browser.desc, 'date', 'Age', browser.order_href) ?>
+     call:sortable_th(browser.order, browser.desc, 'date', 'Age', browser.href) ?>
      <th class="change">Last Change</th>
     </tr>
    </thead>
@@ -94,20 +78,20 @@
  if:len(browser.props) || !browser.is_dir ?>
   <table id="info" summary="Revision info"><?cs
    if:!browser.is_dir ?><tr>
-    <th scope="col">
-     Revision <a href="<?cs var:file.changeset_href ?>"><?cs var:file.rev ?></a>, <?cs var:file.size ?>
+    <th scope="row">
+     Revision <a href="<?cs var:file.changeset_href ?>"><?cs var:file.rev ?></a>
      (checked in by <?cs var:file.author ?>, <?cs var:file.age ?> ago)
-    </th></tr><tr>
+    </th>
     <td class="message"><?cs var:file.message ?></td>
    </tr><?cs /if ?><?cs
    if:len(browser.props) ?><tr>
     <td colspan="2"><ul class="props"><?cs
      each:prop = browser.props ?>
-      <li>Property <strong><?cs var:prop.name ?></strong> set to <em><code><?cs
-      var:prop.value ?></code></em></li><?cs
+      <li>Property <strong><?cs var:name(prop) ?></strong> set to <em><code><?cs
+      var:prop ?></code></em></li><?cs
      /each ?>
-    </ul></td></tr><?cs
-   /if ?>
+    </ul></td><?cs
+   /if ?></tr>
   </table><?cs
  /if ?><?cs
  
@@ -130,18 +114,5 @@
   ?>/TracBrowser">TracBrowser</a> for help on using the browser.
  </div>
 
-  <div id="anydiff">
-   <form action="<?cs var:browser.anydiff_href ?>" method="get">
-    <div class="buttons">
-     <input type="hidden" name="new_path" value="<?cs var:browser.path ?>" />
-     <input type="hidden" name="old_path" value="<?cs var:browser.path ?>" />
-     <input type="hidden" name="new_rev" value="<?cs var:browser.revision ?>" />
-     <input type="hidden" name="old_rev" value="<?cs var:browser.revision ?>" />
-     <input type="submit" value="View changes..." title="Prepare an Arbitrary Diff" />
-    </div>
-   </form>
-  </div>
-
-</div>
 </div>
 <?cs include:"footer.cs"?>

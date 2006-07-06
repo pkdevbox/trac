@@ -1,21 +1,18 @@
-# -*- encoding: utf-8 -*-
-
-import doctest
 from HTMLParser import HTMLParseError
 import unittest
 
-from trac.util.markup import escape, html, unescape, Element, Markup
+from trac.util import Markup, unescape
 
 
 class MarkupTestCase(unittest.TestCase):
 
     def test_escape(self):
-        markup = escape('<b>"&"</b>')
+        markup = Markup.escape('<b>"&"</b>')
         assert isinstance(markup, Markup)
         self.assertEquals('&lt;b&gt;&#34;&amp;&#34;&lt;/b&gt;', markup)
 
     def test_escape_noquotes(self):
-        markup = escape('<b>"&"</b>', quotes=False)
+        markup = Markup.escape('<b>"&"</b>', quotes=False)
         assert isinstance(markup, Markup)
         self.assertEquals('&lt;b&gt;"&amp;"&lt;/b&gt;', markup)
 
@@ -37,18 +34,8 @@ class MarkupTestCase(unittest.TestCase):
 
     def test_add_reverse(self):
         markup = 'foo' + Markup('<b>bar</b>')
-        assert isinstance(markup, unicode)
+        assert isinstance(markup, str)
         self.assertEquals('foo<b>bar</b>', markup)
-
-    def test_mod(self):
-        markup = Markup('<b>%s</b>') % '&'
-        assert isinstance(markup, Markup)
-        self.assertEquals('<b>&amp;</b>', markup)
-
-    def test_mod_multi(self):
-        markup = Markup('<b>%s</b> %s') % ('&', 'boo')
-        assert isinstance(markup, Markup)
-        self.assertEquals('<b>&amp;</b> boo', markup)
 
     def test_mul(self):
         markup = Markup('<b>foo</b>') * 2
@@ -59,16 +46,6 @@ class MarkupTestCase(unittest.TestCase):
         markup = Markup('<br />').join(['foo', '<bar />', Markup('<baz />')])
         assert isinstance(markup, Markup)
         self.assertEquals('foo<br />&lt;bar /&gt;<br /><baz />', markup)
-
-    def test_stripentities_all(self):
-        markup = Markup('&amp; &#106;').stripentities()
-        assert isinstance(markup, Markup)
-        self.assertEquals('& j', markup)
-
-    def test_stripentities_keepxml(self):
-        markup = Markup('<a href="#">fo<br />o</a>').striptags()
-        assert isinstance(markup, Markup)
-        self.assertEquals('foo', markup)
 
     def test_striptags_empty(self):
         markup = Markup('<br />').striptags()
@@ -92,7 +69,7 @@ class MarkupTestCase(unittest.TestCase):
 
     def test_sanitize_entityref_text(self):
         markup = Markup('<a href="#">fo&ouml;</a>')
-        self.assertEquals(u'<a href="#">foö</a>', markup.sanitize())
+        self.assertEquals('<a href="#">fo\xc3\xb6</a>', markup.sanitize())
 
     def test_sanitize_escape_attr(self):
         markup = Markup('<div title="&lt;foo&gt;"></div>')
@@ -169,22 +146,10 @@ class MarkupTestCase(unittest.TestCase):
         self.assertEquals('<img />', markup.sanitize())
 
 
-class TagsTestCase(unittest.TestCase):
-
-    def test_link(self):
-        link = html.A('Bar', href='#', title='Foo', accesskey=None)
-        bits = link.serialize()
-        self.assertEqual(u'<a href="#" title="Foo">', bits.next())
-        self.assertEqual(u'Bar', bits.next())
-        self.assertEqual(u'</a>', bits.next())
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(MarkupTestCase, 'test'))
-    suite.addTest(doctest.DocTestSuite(Element.__module__))
-    suite.addTest(unittest.makeSuite(TagsTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

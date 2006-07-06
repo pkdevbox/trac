@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2004 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,46 +13,31 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
+
+from trac.util import TracError
 
 __all__ = ['Component', 'ExtensionPoint', 'implements', 'Interface',
            'TracError']
 
 
-class TracError(Exception):
-    """Exception base class for errors in Trac."""
-
-    def __init__(self, message, title=None, show_traceback=False):
-        Exception.__init__(self, message)
-        self.message = message
-        self.title = title
-        self.show_traceback = show_traceback
-
-
 class Interface(object):
-    """Marker base class for extension point interfaces."""
+    """Dummy base class for interfaces.
+    
+    (Might use PyProtocols in the future.)
+    """
 
-
-class ExtensionPoint(property):
+class ExtensionPoint(object):
     """Marker class for extension points in components."""
 
     def __init__(self, interface):
         """Create the extension point.
         
-        @param interface: the `Interface` subclass that defines the protocol
-            for the extension point
+        @param interface: the `Interface` class that defines the protocol for
+                          the extension point
         """
-        property.__init__(self, self.extensions)
         self.interface = interface
-        self.__doc__ = 'List of components that implement `%s`' % \
-                       self.interface.__name__
-
-    def extensions(self, component):
-        """Return a list of components that declare to implement the extension
-        point interface."""
-        extensions = ComponentMeta._registry.get(self.interface, [])
-        return filter(None, [component.compmgr[cls] for cls in extensions])
 
     def __repr__(self):
         """Return a textual representation of the extension point."""
@@ -69,8 +54,18 @@ class ComponentMeta(type):
 
     def __new__(cls, name, bases, d):
         """Create the component class."""
+        xtnpts = {}
+        for base in [base for base in bases
+                     if hasattr(base, '_extension_points')]:
+            xtnpts.update(base._extension_points)
+        for key, value in d.items():
+            if isinstance(value, ExtensionPoint):
+                xtnpts[key] = value
+                del d[key]
 
         new_class = type.__new__(cls, name, bases, d)
+        new_class._extension_points = xtnpts
+
         if name == 'Component':
             # Don't put the Component base class in the registry
             return new_class
@@ -86,15 +81,15 @@ class ComponentMeta(type):
                 # that any inherited initializers are also called.
                 for init in [b.__init__._original for b in new_class.mro()
                              if issubclass(b, Component)
-                             and '__init__' in b.__dict__]:
+                             and b.__dict__.has_key('__init__')]:
                     break
             def maybe_init(self, compmgr, init=init, cls=new_class):
-                if cls not in compmgr.components:
+                if not cls in compmgr.components:
                     compmgr.components[cls] = self
                     if init:
                         init(self)
             maybe_init._original = init
-            new_class.__init__ = maybe_init
+            setattr(new_class, '__init__', maybe_init)
 
         if d.get('abstract'):
             # Don't put abstract component classes in the registry
@@ -149,12 +144,25 @@ class Component(object):
 
         # The normal case where the component is not also the component manager
         compmgr = args[0]
-        self = compmgr.components.get(cls)
-        if self is None:
+        if not cls in compmgr.components:
             self = super(Component, cls).__new__(cls)
             self.compmgr = compmgr
             compmgr.component_activated(self)
-        return self
+            return self
+        return compmgr[cls]
+
+    def __getattr__(self, name):
+        """If requesting an extension point member, return a list of components
+        that declare to implement the extension point interface."""
+        xtnpt = self._extension_points.get(name)
+        if xtnpt:
+            extensions = ComponentMeta._registry.get(xtnpt.interface, [])
+            return [self.compmgr[cls] for cls in extensions
+                    if self.compmgr[cls]]
+        cls = self.__class__.__name__
+        if hasattr(self, '__module__'):
+            cls = '.'.join((self.__module__, cls))
+        raise AttributeError, "'%s' object has no attribute '%s'" % (cls, name)
 
 
 class ComponentManager(object):
@@ -163,7 +171,6 @@ class ComponentManager(object):
     def __init__(self):
         """Initialize the component manager."""
         self.components = {}
-        self.enabled = {}
         if isinstance(self, Component):
             self.components[self.__class__] = self
 
@@ -174,19 +181,17 @@ class ComponentManager(object):
     def __getitem__(self, cls):
         """Activate the component instance for the given class, or return the
         existing the instance if the component has already been activated."""
-        if cls not in self.enabled:
-            self.enabled[cls] = self.is_component_enabled(cls)
-        if not self.enabled[cls]:
-            return None
         component = self.components.get(cls)
         if not component:
+            if not self.is_component_enabled(cls):
+                return None
             if cls not in ComponentMeta._components:
                 raise TracError, 'Component "%s" not registered' % cls.__name__
             try:
                 component = cls(self)
             except TypeError, e:
-                raise TracError, 'Unable to instantiate component %r (%s)' \
-                                 % (cls, e)
+                raise TracError, 'Unable to instantiate component "%s" (%s)' \
+                                 % (cls.__name__, e)
         return component
 
     def component_activated(self, component):

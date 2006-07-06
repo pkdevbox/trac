@@ -50,28 +50,11 @@
         /alt ?>" title="Format: <?cs
         var:milestone.datetime_hint ?>" />
       <em>Format: <?cs var:milestone.datetime_hint ?></em>
-     </label><?cs
-     if:len(milestones) ?>
-     <br/>
-     <input type="checkbox" id="retarget" name="retarget" checked="checked"
-            onclick="enableControl('target', this.checked)"/>
-     <label>
-      Retarget associated open tickets to milestone
-      <select id="target" name="target">
-       <option value="">None</option><?cs
-       each:name = milestones ?>
-       <option><?cs var:name ?></option><?cs
-       /each ?>
-      </select>
-     </label><?cs
-     /if ?>
+     </label>
      <script type="text/javascript">
        var completed = document.getElementById("completed");
-       var retarget = document.getElementById("retarget");
        var enableCompletedDate = function() {
          enableControl("completeddate", completed.checked);
-         enableControl("retarget", completed.checked);
-         enableControl("target", completed.checked && retarget.checked);
        };
        addEvent(window, "load", enableCompletedDate);
        addEvent(completed, "click", enableCompletedDate);
@@ -82,8 +65,8 @@
     <fieldset class="iefix">
      <label for="description">Description (you may use <a tabindex="42" href="<?cs
        var:trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label>
-     <p><textarea id="description" name="description" class="wikitext" rows="10" cols="78">
-<?cs var:milestone.description_source ?></textarea></p>
+     <p><textarea id="description" name="description" class="wikitext" rows="10" cols="78"><?cs
+       var:milestone.description_source ?></textarea></p>
     </fieldset>
    </div>
    <div class="buttons">

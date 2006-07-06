@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2005 Edgewall Software
 # Copyright (C) 2004 Oliver Rutherfurd
@@ -28,7 +28,7 @@ from distutils.version import StrictVersion
 import re
 
 from trac.core import *
-from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
+from trac.mimeview.api import IHTMLPreviewRenderer
 from trac.web.href import Href
 from trac.wiki.formatter import WikiProcessor
 from trac.wiki import WikiSystem
@@ -82,9 +82,9 @@ class ReStructuredTextRenderer(Component):
             from docutils import __version__
         except ImportError:
             raise TracError, 'Docutils not found'
-        if StrictVersion(__version__) < StrictVersion('0.3.3'):
+        if StrictVersion(__version__) < StrictVersion('0.3.9'):
             raise TracError, 'Docutils version >= %s required, %s found' \
-                             % ('0.3.3', __version__)
+                             % ('0.3.9', __version__)
 
         def trac_get_reference(rawtext, link, text):
             for (pattern, function) in LINKS:
@@ -99,7 +99,7 @@ class ReStructuredTextRenderer(Component):
                         if not WikiSystem(self.env).has_page(pagename.group()):
                             missing = 1
                             text = text + "?"
-                    uri = function(req.href, g)
+                    uri = function(self.env.href, g)
                     reference = nodes.reference(rawtext, text)
                     reference['refuri']= uri
                     if missing:
@@ -179,14 +179,12 @@ class ReStructuredTextRenderer(Component):
         
         def code_role(name, rawtext, text, lineno, inliner, options={},
                       content=[]):
-            language = options.get('language')
-            if not language:
-                args  = text.split(':', 1)
-                language = args[0]
-                if len(args) == 2:
-                    text = args[1]
-                else:
-                    text = ''
+            args  = text.split(":",1)
+            language = args[0]
+            if len(args)==2:
+                text = args[1]
+            else:
+                text = ""
             reference = code_formatter(language, text)
             return [reference], []
         
@@ -212,7 +210,7 @@ class ReStructuredTextRenderer(Component):
             0) # True if final argument may contain whitespace.
     
         # A mapping from option name to conversion function.
-        code_role.options = code_block.options = {
+        code_block.options = {
             'language' :
             rst.directives.unchanged # Return the text argument, unchanged
         }
@@ -223,9 +221,9 @@ class ReStructuredTextRenderer(Component):
 
         _inliner = rst.states.Inliner()
         _parser = rst.Parser(inliner=_inliner)
-        content = content_to_unicode(self.env, content, mimetype)
-        content = content.encode('utf-8')
+
         html = publish_string(content, writer_name='html', parser=_parser,
-                              settings_overrides={'halt_level': 6})
-        html = html.decode('utf-8')
+                              settings_overrides={'halt_level': 6,
+                                                  'file_insertion_enabled': 0,
+                                                  'raw_enabled': 0})
         return html[html.find('<body>') + 6:html.find('</body>')].strip()

@@ -3,83 +3,50 @@
 
 <div id="ctxtnav" class="nav">
  <h2>Wiki Navigation</h2>
- <ul><?cs
-  if:wiki.action == "diff" ?>
-   <li class="first"><?cs
-     if:len(chrome.links.prev) ?> &larr; 
-      <a class="prev" href="<?cs var:chrome.links.prev.0.href ?>" title="<?cs
-       var:chrome.links.prev.0.title ?>">Previous Change</a><?cs
-     else ?>
-      <span class="missing">&larr; Previous Change</span><?cs
-     /if ?>
-   </li>
-   <li><a href="<?cs var:wiki.history_href ?>">Page History</a></li>
-   <li class="last"><?cs
-     if:len(chrome.links.next) ?>
-      <a class="next" href="<?cs var:chrome.links.next.0.href ?>" title="<?cs
-       var:chrome.links.next.0.title ?>">Next Change</a> &rarr; <?cs
-     else ?>
-      <span class="missing">Next Change &rarr;</span><?cs
-     /if ?>
-   </li><?cs
-  elif:wiki.action == "history" ?>
-   <li><a href="<?cs var:wiki.current_href ?>">View Latest Version</a></li><?cs
-  else ?>
-   <li><a href="<?cs var:trac.href.wiki ?>">Start Page</a></li>
-   <li><a href="<?cs var:trac.href.wiki ?>/TitleIndex">Index by Title</a></li>
-   <li><a href="<?cs var:trac.href.wiki ?>/RecentChanges">Index by Date</a></li>
-   <li class="last"><a href="<?cs var:wiki.last_change_href ?>">Last Change</a></li><?cs 
-  /if ?>
+ <ul>
+  <li><a href="<?cs var:trac.href.wiki ?>">Start Page</a></li>
+  <li><a href="<?cs var:trac.href.wiki ?>/TitleIndex">Title Index</a></li>
+  <li><a href="<?cs var:trac.href.wiki ?>/RecentChanges">Recent Changes</a></li>
+  <?cs if:wiki.history_href ?>
+   <li class="last"><a href="<?cs var:wiki.history_href ?>">Page History</a></li>
+  <?cs else ?>
+   <li class="last">Page History</li>
+  <?cs /if ?>
  </ul>
  <hr />
 </div>
 
 <div id="content" class="wiki">
 
- <?cs if wiki.action == "delete" ?><?cs 
-  if:wiki.version - wiki.old_version > 1 ?><?cs
-   set:first_version = wiki.old_version + 1 ?><?cs
-   set:version_range = "versions "+first_version+" to "+wiki.version+" of " ?><?cs
-   set:delete_what = "those versions" ?><?cs
-  elif:wiki.version ?><?cs
-   set:version_range = "version "+wiki.version+" of " ?><?cs
-   set:delete_what = "this version" ?><?cs
-  else ?><?cs
-   set:version_range = "" ?><?cs
-   set:delete_what = "page" ?><?cs
-  /if ?>
-  <h1>Delete <?cs var:version_range ?><a href="<?cs
+ <?cs if wiki.action == "delete" ?>
+  <h1>Delete <?cs
+   if:?wiki.version ?>version <?cs var:wiki.version ?> of <?cs /if ?><a href="<?cs
     var:wiki.current_href ?>"><?cs var:wiki.page_name ?></a></h1>
   <form action="<?cs var:wiki.current_href ?>" method="post">
    <input type="hidden" name="action" value="delete" />
    <p><strong>Are you sure you want to <?cs
-    if:!?wiki.version ?>completely <?cs 
-    /if ?>delete <?cs var:version_range ?>this page?</strong><br /><?cs
+    if:!?wiki.version ?>completely <?cs /if ?>delete <?cs
+    if:?wiki.version ?>version <?cs var:wiki.version ?> of <?cs
+    /if ?>this page?</strong><br /><?cs
    if:wiki.only_version ?>
     This is the only version the page, so the page will be removed
     completely!<?cs
    /if ?><?cs
    if:?wiki.version ?>
     <input type="hidden" name="version" value="<?cs var:wiki.version ?>" /><?cs
-   /if ?><?cs
-   if:wiki.old_version ?>
-    <input type="hidden" name="old_version" value="<?cs var:wiki.old_version ?>" /><?cs
    /if ?>
    This is an irreversible operation.</p>
    <div class="buttons">
     <input type="submit" name="cancel" value="Cancel" />
-    <input type="submit" value="Delete <?cs var:delete_what ?>" />
+    <input type="submit" value="Delete <?cs
+      if:?wiki.version ?>this version<?cs else ?>page<?cs /if ?>" />
    </div>
   </form>
  
  <?cs elif:wiki.action == "diff" ?>
-  <h1>Changes <?cs
-    if:wiki.old_version ?>between 
-     <a href="<?cs var:wiki.current_href ?>?version=<?cs var:wiki.old_version?>">Version <?cs var:wiki.old_version?></a> and <?cs
-    else ?>from <?cs
-    /if ?>
-    <a href="<?cs var:wiki.current_href ?>?version=<?cs var:wiki.version?>">Version <?cs var:wiki.version?></a> of 
-    <a href="<?cs var:wiki.current_href ?>"><?cs var:wiki.page_name ?></a></h1>
+  <h1>Changes between Version <?cs var:wiki.old_version?> and <?cs
+    var:wiki.version?> of <a href="<?cs var:wiki.current_href ?>"><?cs 
+    var:wiki.page_name ?></a></h1>
   <form method="post" id="prefs" action="<?cs var:wiki.current_href ?>">
    <div>
     <input type="hidden" name="action" value="diff" />
@@ -121,20 +88,20 @@
    </div>
   </form>
   <dl id="overview">
-   <dt class="property author">Author:</dt>
+   <dt class="author">Author:</dt>
    <dd class="author"><?cs
     if:wiki.num_changes > 1 ?><em class="multi">(multiple changes)</em><?cs
     else ?><?cs var:wiki.author ?> <span class="ipnr">(IP: <?cs
      var:wiki.ipnr ?>)</span><?cs
     /if ?></dd>
-   <dt class="property time">Timestamp:</dt>
+   <dt class="time">Timestamp:</dt>
    <dd class="time"><?cs
     if:wiki.num_changes > 1 ?><em class="multi">(multiple changes)</em><?cs
     elif:wiki.time ?><?cs var:wiki.time ?> (<?cs var:wiki.time_delta ?> ago)<?cs
     else ?>--<?cs
     /if ?></dd>
-   <dt class="property message">Comment:</dt>
-   <dd class="message"><?cs
+   <dt class="comment">Comment:</dt>
+   <dd class="comment"><?cs
     if:wiki.num_changes > 1 ?><em class="multi">(multiple changes)</em><?cs
     else ?><?cs var:wiki.comment ?><?cs /if ?></dd>
   </dl>
@@ -179,29 +146,14 @@
       </table><?cs
      /if ?>
     </li>
-   </ul><?cs
-   if:trac.acl.WIKI_DELETE && 
-    (len(wiki.diff) == 0 || wiki.version == wiki.latest_version) ?>
-    <form method="get" action="<?cs var:wiki.current_href ?>">
-     <input type="hidden" name="action" value="delete" />
-     <input type="hidden" name="version" value="<?cs var:wiki.version ?>" />
-     <input type="hidden" name="old_version" value="<?cs var:wiki.old_version ?>" />
-     <input type="submit" name="delete_version" value="Delete <?cs
-     if:wiki.version - wiki.old_version > 1 ?> version <?cs 
-      var:wiki.old_version+1 ?> to <?cs 
-     /if ?>version <?cs var:wiki.version ?>" />
-    </form><?cs
-   /if ?>
+   </ul>
   </div>
 
  <?cs elif wiki.action == "history" ?>
   <h1>Change History of <a href="<?cs var:wiki.current_href ?>"><?cs
     var:wiki.page_name ?></a></h1>
-  <?cs if:len(wiki.history) ?><form class="printableform" method="get" action="">
+  <?cs if:len(wiki.history) ?><form method="get" action="">
    <input type="hidden" name="action" value="diff" />
-   <div class="buttons">
-    <input type="submit" value="View changes" />
-   </div>
    <table id="wikihist" class="listing" summary="Change history">
     <thead><tr>
      <th class="diff"></th>
@@ -228,28 +180,19 @@
       <td class="comment"><?cs var:item.comment ?></td>
      </tr>
     <?cs /each ?></tbody>
-   </table><?cs
-   if:len(wiki.history) > #10 ?>
-    <div class="buttons">
-     <input type="submit" value="View changes" />
-    </div><?cs
-   /if ?>
+   </table>
+   <div class="buttons">
+    <input type="submit" value="View changes" />
+   </div>
   </form><?cs /if ?>
  
  <?cs else ?>
   <?cs if wiki.action == "edit" || wiki.action == "preview" || wiki.action == "collision" ?>
    <h1>Editing "<?cs var:wiki.page_name ?>"</h1><?cs
     if wiki.action == "preview" ?>
-     <table id="info" summary="Revision info"><tbody><tr>
-       <th scope="col">
-        Preview of future version <?cs var:$wiki.version+1 ?> (modified by <?cs var:wiki.author ?>)
-       </th></tr><tr>
-       <td class="message"><?cs var:wiki.comment_html ?></td>
-      </tr>
-     </tbody></table>
      <fieldset id="preview">
       <legend>Preview (<a href="#edit">skip</a>)</legend>
-        <div class="wikipage"><?cs var:wiki.page_html ?></div>
+      <div class="wikipage"><?cs var:wiki.page_html ?></div>
      </fieldset><?cs
      elif wiki.action =="collision"?>
      <div class="system-message">
@@ -275,8 +218,7 @@
       </select>
      </div>
      <p><textarea id="text" class="wikitext" name="text" cols="80" rows="<?cs
-       var:wiki.edit_rows ?>">
-<?cs var:wiki.page_source ?></textarea></p>
+       var:wiki.edit_rows ?>"><?cs var:wiki.page_source ?></textarea></p>
      <script type="text/javascript">
        var scrollBarPos = document.getElementById("scroll_bar_pos");
        var text = document.getElementById("text");
@@ -293,13 +235,11 @@
     </div>
     <fieldset id="changeinfo">
      <legend>Change information</legend>
-     <?cs if:trac.authname == "anonymous" ?>
-      <div class="field">
-       <label>Your email or username:<br />
-       <input id="author" type="text" name="author" size="30" value="<?cs
-         var:wiki.author ?>" /></label>
-      </div>
-     <?cs /if ?>
+     <div class="field">
+      <label>Your email or username:<br />
+      <input id="author" type="text" name="author" size="30" value="<?cs
+        var:wiki.author ?>" /></label>
+     </div>
      <div class="field">
       <label>Comment about this change (optional):<br />
       <input id="comment" type="text" name="comment" size="60" value="<?cs
@@ -328,15 +268,6 @@
    </form>
   <?cs /if ?>
   <?cs if wiki.action == "view" ?>
-   <?cs if:wiki.comment_html ?>
-    <table id="info" summary="Revision info"><tbody><tr>
-      <th scope="col">
-       Version <?cs var:wiki.version ?> (modified by <?cs var:wiki.author ?>, <?cs var:wiki.age ?> ago)
-      </th></tr><tr>
-      <td class="message"><?cs var:wiki.comment_html ?></td>
-     </tr>
-    </tbody></table>
-   <?cs /if ?>
    <div class="wikipage">
     <div id="searchable"><?cs var:wiki.page_html ?></div>
    </div>
@@ -371,10 +302,8 @@
     if:wiki.exists && trac.acl.WIKI_DELETE ?>
      <form method="get" action="<?cs var:wiki.current_href ?>"><div id="delete">
       <input type="hidden" name="action" value="delete" />
-      <input type="hidden" name="version" value="<?cs var:wiki.version ?>" /><?cs
-      if:wiki.version == wiki.latest_version ?>
-       <input type="submit" name="delete_version" value="Delete this version" /><?cs
-      /if ?>
+      <input type="hidden" name="version" value="<?cs var:wiki.version ?>" />
+      <input type="submit" name="delete_version" value="Delete this version" />
       <input type="submit" value="Delete page" />
      </div></form>
     <?cs /if ?>

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2006 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2005 Daniel Lundin <daniel@edgewall.com>
 # All rights reserved.
 #
@@ -14,10 +14,11 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
+from trac.config import default_dir
 from trac.db import Table, Column, Index
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 19
+db_version = 16
 
 def __mkreports(reports):
     """Utility function used to create report data in same syntax as the
@@ -46,17 +47,11 @@ schema = [
         Column('name'),
         Column('ipnr'),
         Column('time', type='int')],
-    Table('session', key=('sid', 'authenticated'))[
+    Table('session', key=('sid', 'authenticated', 'var_name'))[
         Column('sid'),
         Column('authenticated', type='int'),
-        Column('last_visit', type='int'),
-        Index(['last_visit']),
-        Index(['authenticated'])],
-    Table('session_attribute', key=('sid', 'authenticated', 'name'))[
-        Column('sid'),
-        Column('authenticated', type='int'),
-        Column('name'),
-        Column('value')],
+        Column('var_name'),
+        Column('var_value')],
 
     # Attachments
     Table('attachment', key=('type', 'id', 'filename'))[
@@ -88,11 +83,11 @@ schema = [
         Column('author'),
         Column('message'),
         Index(['time'])],
-    Table('node_change', key=('rev', 'path', 'change_type'))[
+    Table('node_change', key=('rev', 'path', 'change'))[
         Column('rev'),
         Column('path'),
-        Column('node_type', size=1),
-        Column('change_type', size=1),
+        Column('kind', size=1),
+        Column('change', size=1),
         Column('base_path'),
         Column('base_rev'),
         Index(['rev'])],
@@ -125,8 +120,7 @@ schema = [
         Column('field'),
         Column('oldvalue'),
         Column('newvalue'),
-        Index(['ticket']),
-        Index(['time'])],
+        Index(['ticket', 'time'])],
     Table('ticket_custom', key=('ticket', 'name'))[
         Column('ticket', type='int'),
         Column('name'),
@@ -154,7 +148,7 @@ schema = [
         Column('id', auto_increment=True),
         Column('author'),
         Column('title'),
-        Column('query'),
+        Column('sql'),
         Column('description')],
 ]
 
@@ -385,22 +379,72 @@ data = (('component',
              ('name', 'value'),
                (('database_version', str(db_version)),)),
            ('report',
-             ('author', 'title', 'query', 'description'),
+             ('author', 'title', 'sql', 'description'),
                __mkreports(reports)))
 
+default_config = \
+ (('trac', 'repository_dir', ''),
+  ('trac', 'templates_dir', default_dir('templates')),
+  ('trac', 'database', 'sqlite:db/trac.db'),
+  ('trac', 'default_charset', 'iso-8859-15'),
+  ('trac', 'default_handler', 'WikiModule'),
+  ('trac', 'check_auth_ip', 'true'),
+  ('trac', 'ignore_auth_case', 'false'),
+  ('trac', 'metanav', 'login,logout,settings,help,about'),
+  ('trac', 'mainnav', 'wiki,timeline,roadmap,browser,tickets,newticket,search'),
+  ('trac', 'permission_store', 'DefaultPermissionStore'),
+  ('logging', 'log_type', 'none'),
+  ('logging', 'log_file', 'trac.log'),
+  ('logging', 'log_level', 'DEBUG'),
+  ('project', 'name', 'My Project'),
+  ('project', 'descr', 'My example project'),
+  ('project', 'url', 'http://example.com/'),
+  ('project', 'icon', 'common/trac.ico'),
+  ('project', 'footer',
+   ' Visit the Trac open source project at<br />'
+   '<a href="http://trac.edgewall.com/">http://trac.edgewall.com/</a>'),
+  ('ticket', 'default_version', ''),
+  ('ticket', 'default_type', 'defect'),
+  ('ticket', 'default_priority', 'major'),
+  ('ticket', 'default_milestone', ''),
+  ('ticket', 'default_component', 'component1'),
+  ('ticket', 'restrict_owner', 'false'),
+  ('header_logo', 'link', 'http://trac.edgewall.com/'),
+  ('header_logo', 'src', 'common/trac_banner.png'),
+  ('header_logo', 'alt', 'Trac'),
+  ('header_logo', 'width', '236'),
+  ('header_logo', 'height', '73'),
+  ('attachment', 'max_size', '262144'),
+  ('attachment', 'render_unsafe_content', 'false'),
+  ('mimeviewer', 'enscript_path', 'enscript'),
+  ('mimeviewer', 'php_path', 'php'),
+  ('mimeviewer', 'tab_width', '8'),
+  ('mimeviewer', 'max_preview_size', '262144'),
+  ('notification', 'smtp_enabled', 'false'),
+  ('notification', 'smtp_server', 'localhost'),
+  ('notification', 'smtp_port', '25'),
+  ('notification', 'smtp_user', ''),
+  ('notification', 'smtp_password', ''),
+  ('notification', 'smtp_always_cc', ''),
+  ('notification', 'always_notify_owner', 'false'),
+  ('notification', 'always_notify_reporter', 'false'),
+  ('notification', 'smtp_from', 'trac@localhost'),
+  ('notification', 'smtp_replyto', 'trac@localhost'),
+  ('timeline', 'default_daysback', '30'),
+  ('timeline', 'changeset_show_files', '0'),
+  ('timeline', 'ticket_show_details', 'false'),
+  ('browser', 'hide_properties', 'svk:merge'),
+  ('wiki', 'ignore_missing_pages', 'false'),
+)
 
-default_components = ('trac.About', 'trac.attachment',
-                      'trac.db.mysql_backend', 'trac.db.postgres_backend',
-                      'trac.db.sqlite_backend',
+default_components = ('trac.About', 'trac.attachment', 
                       'trac.mimeview.enscript', 'trac.mimeview.patch',
                       'trac.mimeview.php', 'trac.mimeview.rst',
                       'trac.mimeview.silvercity', 'trac.mimeview.txtl',
-                      'trac.scripts.admin',
                       'trac.Search', 'trac.Settings',
                       'trac.ticket.query', 'trac.ticket.report',
                       'trac.ticket.roadmap', 'trac.ticket.web_ui',
                       'trac.Timeline',
                       'trac.versioncontrol.web_ui',
-                      'trac.versioncontrol.svn_fs',
                       'trac.wiki.macros', 'trac.wiki.web_ui',
                       'trac.web.auth')

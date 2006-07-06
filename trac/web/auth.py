@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -12,24 +12,16 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 
-try:
-    from base64 import b64decode
-except ImportError:
-    from base64 import decodestring as b64decode
-import md5
+from __future__ import generators
 import re
-import sys
 import time
-import urllib2
 
-from trac.config import BoolOption
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
-from trac.util import hex_entropy, md5crypt
-from trac.util.markup import escape, html
+from trac.util import escape, hex_entropy, Markup
 
 
 class LoginModule(Component):
@@ -47,13 +39,6 @@ class LoginModule(Component):
 
     implements(IAuthenticator, INavigationContributor, IRequestHandler)
 
-    check_ip = BoolOption('trac', 'check_auth_ip', 'true',
-         """Whether the IP address of the user should be checked for
-         authentication (''since 0.9'').""")
-
-    ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
-        """Whether case should be ignored for login names (''since 0.9'').""")
-
     # IAuthenticator methods
 
     def authenticate(self, req):
@@ -66,7 +51,7 @@ class LoginModule(Component):
         if not authname:
             return None
 
-        if self.ignore_case:
+        if self.config.getbool('trac', 'ignore_auth_case'):
             authname = authname.lower()
 
         return authname
@@ -80,10 +65,12 @@ class LoginModule(Component):
         if req.authname and req.authname != 'anonymous':
             yield ('metanav', 'login', 'logged in as %s' % req.authname)
             yield ('metanav', 'logout',
-                   html.A('Logout', href=req.href.logout()))
+                   Markup('<a href="%s">Logout</a>' 
+                          % escape(self.env.href.logout())))
         else:
             yield ('metanav', 'login',
-                   html.A('Login', href=req.href.login()))
+                   Markup('<a href="%s">Login</a>' 
+                          % escape(self.env.href.login())))
 
     # IRequestHandler methods
 
@@ -116,7 +103,7 @@ class LoginModule(Component):
         assert req.remote_user, 'Authentication information not available.'
 
         remote_user = req.remote_user
-        if self.ignore_case:
+        if self.config.getbool('trac', 'ignore_auth_case'):
             remote_user = remote_user.lower()
 
         assert req.authname in ('anonymous', remote_user), \
@@ -132,7 +119,7 @@ class LoginModule(Component):
 
         req.authname = remote_user
         req.outcookie['trac_auth'] = cookie
-        req.outcookie['trac_auth']['path'] = req.href()
+        req.outcookie['trac_auth']['path'] = self.env.href()
 
     def _do_logout(self, req):
         """Log the user out.
@@ -157,13 +144,13 @@ class LoginModule(Component):
         "expires" property to a date in the past.
         """
         req.outcookie['trac_auth'] = ''
-        req.outcookie['trac_auth']['path'] = req.href()
+        req.outcookie['trac_auth']['path'] = self.env.href()
         req.outcookie['trac_auth']['expires'] = -10000
 
     def _get_name_for_cookie(self, req, cookie):
         db = self.env.get_db_cnx()
         cursor = db.cursor()
-        if self.check_ip:
+        if self.config.getbool('trac', 'check_auth_ip'):
             cursor.execute("SELECT name FROM auth_cookie "
                            "WHERE cookie=%s AND ipnr=%s",
                            (cookie.value, req.remote_addr))
@@ -183,145 +170,7 @@ class LoginModule(Component):
         """Redirect the user back to the URL she came from."""
         referer = req.get_header('Referer')
         if referer and not referer.startswith(req.base_url):
-            # only redirect to referer if it is from the same site
+            # only redirect to referer if the latter is from the same
+            # instance
             referer = None
-        req.redirect(referer or req.abs_href())
-
-
-class HTTPAuthentication(object):
-
-    def do_auth(self, environ, start_response):
-        raise NotImplementedError
-
-
-class BasicAuthentication(HTTPAuthentication):
-
-    def __init__(self, htpasswd, realm):
-        self.hash = {}
-        self.realm = realm
-        try:
-            import crypt
-            self.crypt = crypt.crypt
-        except ImportError:
-            self.crypt = None
-        self.load(htpasswd)
-
-    def load(self, filename):
-        fd = open(filename, 'r')
-        for line in fd:
-            u, h = line.strip().split(':')
-            if '$' in h or self.crypt:
-                self.hash[u] = h
-            else:
-                print >>sys.stderr, 'Warning: cannot parse password for ' \
-                                    'user "%s" without the "crypt" module' % u
-
-        if self.hash == {}:
-            print >> sys.stderr, "Warning: found no users in file:", filename
-
-    def test(self, user, password):
-        the_hash = self.hash.get(user)
-        if the_hash is None:
-            return False
-
-        if not '$' in the_hash:
-            return self.crypt(password, the_hash[:2]) == the_hash
-
-        magic, salt = the_hash[1:].split('$')[:2]
-        magic = '$' + magic + '$'
-        return md5crypt(password, salt, magic) == the_hash
-
-    def do_auth(self, environ, start_response):
-        header = environ.get('HTTP_AUTHORIZATION')
-        if header and header.startswith('Basic'):
-            auth = b64decode(header[6:]).split(':')
-            if len(auth) == 2:
-                user, password = auth
-                if self.test(user, password):
-                    return user
-
-        start_response('401 Unauthorized',
-                       [('WWW-Authenticate', 'Basic realm="%s"'
-                         % self.realm)])('')
-
-
-class DigestAuthentication(HTTPAuthentication):
-    """A simple HTTP digest authentication implementation (RFC 2617)."""
-
-    MAX_NONCES = 100
-
-    def __init__(self, htdigest, realm):
-        self.active_nonces = []
-        self.hash = {}
-        self.realm = realm
-        self.load_htdigest(htdigest, realm)
-
-    def load_htdigest(self, filename, realm):
-        """Load account information from apache style htdigest files, only
-        users from the specified realm are used
-        """
-        fd = open(filename, 'r')
-        for line in fd.readlines():
-            u, r, a1 = line.strip().split(':')
-            if r == realm:
-                self.hash[u] = a1
-        if self.hash == {}:
-            print >> sys.stderr, "Warning: found no users in realm:", realm
-        
-    def parse_auth_header(self, authorization):
-        values = {}
-        for value in urllib2.parse_http_list(authorization):
-            n, v = value.split('=', 1)
-            if v[0] == '"' and v[-1] == '"':
-                values[n] = v[1:-1]
-            else:
-                values[n] = v
-        return values
-
-    def send_auth_request(self, environ, start_response, stale='false'):
-        """Send a digest challange to the browser. Record used nonces
-        to avoid replay attacks.
-        """
-        nonce = hex_entropy()
-        self.active_nonces.append(nonce)
-        if len(self.active_nonces) > self.MAX_NONCES:
-            self.active_nonces = self.active_nonces[-self.MAX_NONCES:]
-        start_response('401 Unauthorized',
-                       [('WWW-Authenticate',
-                        'Digest realm="%s", nonce="%s", qop="auth", stale="%s"'
-                        % (self.realm, nonce, stale))])('')
-
-    def do_auth(self, environ, start_response):
-        header = environ.get('HTTP_AUTHORIZATION')
-        if not header or not header.startswith('Digest'):
-            self.send_auth_request(environ, start_response)
-            return None
-
-        auth = self.parse_auth_header(header[7:])
-        required_keys = ['username', 'realm', 'nonce', 'uri', 'response',
-                         'nc', 'cnonce']
-        # Invalid response?
-        for key in required_keys:
-            if not auth.has_key(key):
-                self.send_auth_request(environ, start_response)
-                return None
-        # Unknown user?
-        if not self.hash.has_key(auth['username']):
-            self.send_auth_request(environ, start_response)
-            return None
-
-        kd = lambda x: md5.md5(':'.join(x)).hexdigest()
-        a1 = self.hash[auth['username']]
-        a2 = kd([environ['REQUEST_METHOD'], auth['uri']])
-        # Is the response correct?
-        correct = kd([a1, auth['nonce'], auth['nc'],
-                      auth['cnonce'], auth['qop'], a2])
-        if auth['response'] != correct:
-            self.send_auth_request(environ, start_response)
-            return None
-        # Is the nonce active, if not ask the client to use a new one
-        if not auth['nonce'] in self.active_nonces:
-            self.send_auth_request(environ, start_response, stale='true')
-            return None
-        self.active_nonces.remove(auth['nonce'])
-        return auth['username']
+        req.redirect(referer or self.env.abs_href())

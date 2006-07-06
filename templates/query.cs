@@ -9,24 +9,18 @@
  /if ?>
 </div>
 
-<?cs def:num_matches(v) ?><span class="numrows">(<?cs 
- alt:v ?>No<?cs /alt ?> match<?cs if:v != 1 ?>es<?cs /if ?>)</span><?cs
-/def ?>
-
 <div id="content" class="query">
- <h1><?cs var:title ?> <?cs call:num_matches(query.num_matches) ?></h1>
+ <h1><?cs var:title ?> <span class="numrows">(<?cs alt:query.num_matches ?>No<?cs /alt ?> match<?cs
+ if:query.num_matches != 1 ?>es<?cs /if ?>)</span></h1>
 
 <form id="query" method="post" action="<?cs var:trac.href.query ?>">
  <fieldset id="filters">
   <legend>Filters</legend>
   <?cs def:checkbox_checked(constraint, option) ?><?cs
-   set:checked = 0 ?><?cs
    each:value = constraint.values ?><?cs
-    if:(value == option) == (constraint.mode == '') ?><?cs
-      set:checked = 1 ?><?cs
+    if:value == option ?> checked="checked"<?cs
     /if ?><?cs
    /each ?><?cs
-   if:checked ?> checked="checked"<?cs /if ?><?cs
   /def ?>
   <table summary="Query filters">
    <tbody><tr style="height: 1px"><td colspan="4"></td></tr></tbody><?cs
@@ -160,6 +154,8 @@
  </div>
  <hr />
 </form>
+<script type="text/javascript" src="<?cs
+  var:htdocs_location ?>js/query.js"></script>
 <script type="text/javascript"><?cs set:idx = 0 ?>
  var properties={<?cs each:field = query.fields ?><?cs
   var:name(field) ?>:{type:"<?cs var:field.type ?>",label:"<?cs
@@ -202,7 +198,7 @@
      if:name(field) == query.group ?><?cs
       var:field.label ?><?cs
      /if ?><?cs
-    /each ?>: <?cs var:result[query.group] ?> <?cs call:num_matches(query.num_matches_group[result[query.group]]) ?></h2>
+    /each ?>: <?cs var:result[query.group] ?></h2>
    <table class="listing tickets">
    <?cs call:thead() ?><tbody><?cs
   /if ?>
@@ -235,7 +231,7 @@
 /if ?>
 
 <div id="help">
- <strong>Note:</strong> See <a href="<?cs var:trac.href.wiki ?>/TracQuery">TracQuery</a> 
+ <strong>Note:</strong> See <a href="<?cs var:$trac.href.wiki ?>/TracQuery">TracQuery</a> 
  for help on using queries.
 </div>
 

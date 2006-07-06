@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2003-2005 Edgewall Software
-# Copyright (C) 2003-2005 Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -13,9 +13,10 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://projects.edgewall.com/trac/.
 #
-# Author: Jonas BorgstrÃ¶m <jonas@edgewall.com>
+# Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import generators
 import time
 
 from trac.core import *
@@ -42,28 +43,23 @@ class WikiPage(object):
             db = self.env.get_db_cnx()
         cursor = db.cursor()
         if version:
-            cursor.execute("SELECT version,time,author,text,comment,readonly "
-                           "FROM wiki "
+            cursor.execute("SELECT version,text,readonly FROM wiki "
                            "WHERE name=%s AND version=%s",
                            (name, int(version)))
         else:
-            cursor.execute("SELECT version,time,author,text,comment,readonly "
-                           "FROM wiki "
+            cursor.execute("SELECT version,text,readonly FROM wiki "
                            "WHERE name=%s ORDER BY version DESC LIMIT 1",
                            (name,))
         row = cursor.fetchone()
         if row:
-            version,time,author,text,comment,readonly = row
+            version,text,readonly = row
             self.version = int(version)
-            self.author = author
-            self.time = time
             self.text = text
-            self.comment = comment
             self.readonly = readonly and int(readonly) or 0
         else:
             self.version = 0
-            self.text = self.comment = self.author = ''
-            self.time = self.readonly = 0
+            self.text = ''
+            self.readonly = 0
 
     exists = property(fget=lambda self: self.version > 0)
 
@@ -97,18 +93,12 @@ class WikiPage(object):
             for attachment in Attachment.select(self.env, 'wiki', self.name, db):
                 attachment.delete(db)
 
-        if handle_ta:
-            db.commit()
-
-        # Let change listeners know about the deletion
-        if not self.exists:
+            # Let change listeners know about the deletion
             for listener in WikiSystem(self.env).change_listeners:
                 listener.wiki_page_deleted(self)
-        else:
-            for listener in WikiSystem(self.env).change_listeners:
-                if hasattr(listener, 'wiki_page_version_deleted'):
-                    listener.wiki_page_version_deleted(self)
 
+        if handle_ta:
+            db.commit()
 
     def save(self, author, comment, remote_addr, t=None, db=None):
         if not db:
@@ -122,7 +112,7 @@ class WikiPage(object):
 
         if self.text != self.old_text:
             cursor = db.cursor()
-            cursor.execute("INSERT INTO wiki (name,version,time,author,ipnr,"
+            cursor.execute("INSERT INTO WIKI (name,version,time,author,ipnr,"
                            "text,comment,readonly) VALUES (%s,%s,%s,%s,%s,%s,"
                            "%s,%s)", (self.name, self.version + 1, t, author,
                            remote_addr, self.text, comment, self.readonly))

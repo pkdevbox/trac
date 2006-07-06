@@ -30,12 +30,8 @@
 
 <div id="content" class="ticket">
 
- <h1>Ticket #<?cs var:ticket.id ?> <span class="status">(<?cs 
-  var:ticket.status ?><?cs 
-  if:ticket.type ?> <?cs var:ticket.type ?><?cs 
-  /if ?><?cs 
-  if:ticket.resolution ?>: <?cs var:ticket.resolution ?><?cs 
-  /if ?>)</span></h1>
+ <h1>Ticket #<?cs var:ticket.id ?> <?cs
+ if:ticket.type ?>(<?cs var:ticket.type ?>)<?cs /if ?></h1>
 
 <div id="searchable">
 <div id="ticket">
@@ -46,6 +42,9 @@
   <?cs /if ?>
  </div>
  <h2 class="summary"><?cs var:ticket.summary ?></h2>
+ <h3 class="status">Status: <strong><?cs var:ticket.status ?><?cs
+  if:ticket.resolution ?> (<?cs var:ticket.resolution ?>)<?cs
+  /if ?></strong></h3>
  <table class="properties">
   <tr>
    <th id="h_reporter">Reported by:</th>
@@ -72,52 +71,37 @@
    /if ?><?cs
   /each ?></tr>
  </table>
- <?cs if:ticket.description ?><div id="comment:description" class="description">
+ <?cs if:ticket.description ?><div class="description">
   <?cs var:ticket.description.formatted ?>
-  <form method="get" action="<?cs var:ticket.href ?>#comment"><div class="inlinebuttons">
-   <input type="hidden" name="replyto" value="description" />
-   <input type="submit" value="Reply" title="Reply, quoting this description" /></div>
-  </form>
  </div><?cs /if ?>
 </div>
 
 <?cs if:ticket.attach_href || len(ticket.attachments) ?>
-<?cs call:list_of_attachments(ticket.attachments, ticket.attach_href) ?>
+<h2>Attachments</h2><?cs
+ if:len(ticket.attachments) ?><div id="attachments">
+  <dl class="attachments"><?cs each:attachment = ticket.attachments ?>
+   <dt><a href="<?cs var:attachment.href ?>" title="View attachment"><?cs
+   var:attachment.filename ?></a> (<?cs var:attachment.size ?>) - added by <em><?cs
+   var:attachment.author ?></em> on <?cs
+   var:attachment.time ?>.</dt><?cs
+   if:attachment.description ?>
+    <dd><?cs var:attachment.description ?></dd><?cs
+   /if ?><?cs
+  /each ?></dl><?cs
+ /if ?><?cs
+ if:ticket.attach_href ?>
+  <form method="get" action="<?cs var:ticket.attach_href ?>"><div>
+   <input type="hidden" name="action" value="new" />
+   <input type="submit" value="Attach File" />
+  </div></form><?cs
+ /if ?><?cs if:len(ticket.attachments) ?></div><?cs /if ?>
 <?cs /if ?>
-
-<?cs def:commentref(prefix, cnum) ?>
-<a href="#comment:<?cs var:cnum ?>"><small><?cs var:prefix ?><?cs var:cnum ?></small></a>
-<?cs /def ?>
 
 <?cs if:len(ticket.changes) ?><h2>Change History</h2>
 <div id="changelog"><?cs
  each:change = ticket.changes ?>
- <div class="change">
-  <h3 <?cs if:change.cnum ?>id="comment:<?cs var:change.cnum ?>"<?cs /if ?>><?cs
-   if:change.cnum ?>
-    <span class="threading"><?cs
-     set:nreplies = len(ticket.replies[change.cnum]) ?><?cs
-     if:nreplies || change.replyto ?>(<?cs
-      if:change.replyto ?>in reply to: <?cs 
-       call:commentref('&uarr;&nbsp;', change.replyto) ?><?cs if nreplies ?>; <?cs /if ?><?cs
-      /if ?><?cs
-      if nreplies ?><?cs
-       call:plural('follow-up', nreplies) ?>: <?cs 
-       each:reply = ticket.replies[change.cnum] ?><?cs 
-        call:commentref('&darr;&nbsp;', reply) ?><?cs 
-       /each ?><?cs 
-      /if ?>)<?cs
-    /if ?><form method="get" action="<?cs var:ticket.href ?>#comment"><span class="inlinebuttons">
-    <input type="hidden" name="replyto" value="<?cs var:change.cnum ?>" />
-    <input type="submit" value="Reply" title="Reply to comment <?cs var:change.cnum ?>" /></span>
-   </form>
-    </span><?cs
-   /if ?><?cs
-   var:change.date ?> changed by <?cs var:change.author ?><?cs
-   if:change.cnum ?>&nbsp;<a href="#comment:<?cs var:change.cnum ?>" class="anchor"
-      title="Permalink to comment:<?cs var:change.cnum ?>">&para;</a><?cs
-   /if ?>
-  </h3><?cs
+  <h3 id="change_<?cs var:name(change) ?>" class="change"><?cs
+   var:change.date ?>: Modified by <?cs var:change.author ?></h3><?cs
   if:len(change.fields) ?>
    <ul class="changes"><?cs
    each:field = change.fields ?>
@@ -133,10 +117,8 @@
    /each ?>
    </ul><?cs
   /if ?>
-  <div class="comment"><?cs var:change.comment ?></div>
- </div><?cs
- /each ?>
-</div><?cs
+  <div class="comment"><?cs var:change.comment ?></div><?cs
+ /each ?></div><?cs
 /if ?>
 
 <?cs if:trac.acl.TICKET_CHGPROP || trac.acl.TICKET_APPEND ?>
@@ -144,19 +126,17 @@
  <hr />
  <h3><a name="edit" onfocus="document.getElementById('comment').focus()">Add/Change #<?cs
    var:ticket.id ?> (<?cs var:ticket.summary ?>)</a></h3>
- <?cs if:trac.authname == "anonymous" ?>
-  <div class="field">
-   <label for="author">Your email or username:</label><br />
-   <input type="text" id="author" name="author" size="40"
-     value="<?cs var:ticket.reporter_id ?>" /><br />
-  </div>
- <?cs /if ?>
+ <div class="field">
+  <label for="author">Your email or username:</label><br />
+  <input type="text" id="author" name="author" size="40"
+    value="<?cs var:ticket.reporter_id ?>" /><br />
+ </div>
  <div class="field">
   <fieldset class="iefix">
    <label for="comment">Comment (you may use <a tabindex="42" href="<?cs
      var:trac.href.wiki ?>/WikiFormatting">WikiFormatting</a> here):</label><br />
-   <p><textarea id="comment" name="comment" class="wikitext" rows="10" cols="78">
-<?cs var:ticket.comment ?></textarea></p>
+   <p><textarea id="comment" name="comment" class="wikitext" rows="10" cols="78"><?cs
+     var:ticket.comment ?></textarea></p>
   </fieldset><?cs
   if ticket.comment_preview ?>
    <fieldset id="preview">
@@ -184,8 +164,8 @@
    if:trac.acl.TICKET_ADMIN ?><tr>
     <th><label for="description">Description:</label></th>
     <td class="fullrow" colspan="3">
-     <textarea id="description" name="description" class="wikitext" rows="10" cols="68">
-<?cs var:ticket.description ?></textarea>
+     <textarea id="description" name="description" class="wikitext" rows="10" cols="68"><?cs
+        var:ticket.description ?></textarea>
     </td>
    </tr><tr>
     <th><label for="reporter">Reporter:</label></th>
@@ -227,8 +207,8 @@
         var:name(field) ?>" name="<?cs
         var:name(field) ?>"<?cs
         if:field.height ?> rows="<?cs var:field.height ?>"<?cs /if ?><?cs
-        if:field.width ?> cols="<?cs var:field.width ?>"<?cs /if ?>>
-<?cs var:ticket[name(field)] ?></textarea><?cs
+        if:field.width ?> cols="<?cs var:field.width ?>"<?cs /if ?>><?cs
+        var:ticket[name(field)] ?></textarea><?cs
       elif:field.type == 'radio' ?><?cs set:optidx = 0 ?><?cs
        each:option = field.options ?><label><input type="radio" id="<?cs
          var:name(field) ?>" name="<?cs
@@ -314,8 +294,6 @@
 
  <div class="buttons">
   <input type="hidden" name="ts" value="<?cs var:ticket.ts ?>" />
-  <input type="hidden" name="replyto" value="<?cs var:ticket.replyto ?>" />
-  <input type="hidden" name="cnum" value="<?cs var:ticket.cnum ?>" />
   <input type="submit" name="preview" value="Preview" accesskey="r" />&nbsp;
   <input type="submit" value="Submit changes" />
  </div>

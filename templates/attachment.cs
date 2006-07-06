@@ -14,13 +14,11 @@
   </div>
   <fieldset>
    <legend>Attachment Info</legend>
-   <?cs if:trac.authname == "anonymous" ?>
-    <div class="field">
-     <label>Your email or username:<br />
-     <input type="text" name="author" size="30" value="<?cs
-       var:attachment.author?>" /></label>
-    </div>
-   <?cs /if ?>
+   <div class="field">
+    <label>Your email or username:<br />
+    <input type="text" name="author" size="30" value="<?cs
+      var:attachment.author?>" /></label>
+   </div>
    <div class="field">
     <label>Description of the file (optional):<br />
     <input type="text" name="description" size="60" /></label>
@@ -51,22 +49,9 @@
    <input type="submit" name="cancel" value="Cancel" />
    <input type="submit" value="Delete attachment" />
   </div></form>
- </div>
-<?cs elif:attachment.mode == 'list' ?>
- <h1><a href="<?cs var:attachment.parent.href ?>"><?cs
-   var:attachment.parent.name ?></a></h1><?cs
-  call:list_of_attachments(attachment.list, attachment.attach_href) ?>
-<?cs else ?>
+ </div><?cs else ?>
  <h1><a href="<?cs var:attachment.parent.href ?>"><?cs
    var:attachment.parent.name ?></a>: <?cs var:attachment.filename ?></h1>
- <table id="info" summary="Description"><tbody><tr>
-   <th scope="col">
-    File <?cs var:attachment.filename ?>, <?cs var:attachment.size ?> 
-    (added by <?cs var:attachment.author ?>,  <?cs var:attachment.age ?> ago)
-   </th></tr><tr>
-   <td class="message"><?cs var:attachment.description ?></td>
-  </tr>
- </tbody></table>
  <div id="preview"><?cs
   if:attachment.preview ?>
    <?cs var:attachment.preview ?><?cs

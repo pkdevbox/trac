@@ -39,7 +39,7 @@ class TicketSystemTestCase(unittest.TestCase):
         self.env.config.set('ticket-custom', 'test.rows', '4')
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'textarea', 'label': 'Test',
-                          'value': 'Foo bar', 'width': 60, 'height': 4,
+                          'value': 'Foo bar', 'width': '60', 'height': '4',
                           'order': 0},
                          fields[0])
 
@@ -89,14 +89,13 @@ class TicketSystemTestCase(unittest.TestCase):
                          ts.get_available_actions({'status': 'closed'}, perm))
 
     def test_available_actions_chgprop_only(self):
-        # CHGPROP is not enough for changing a ticket's state (#3289)
         ts = TicketSystem(self.env)
         perm = Mock(has_permission=lambda x: x == 'TICKET_CHGPROP')
-        self.assertEqual(['leave'],
+        self.assertEqual(['leave', 'reassign', 'accept'],
                          ts.get_available_actions({'status': 'new'}, perm))
-        self.assertEqual(['leave'],
+        self.assertEqual(['leave', 'reassign'],
                          ts.get_available_actions({'status': 'assigned'}, perm))
-        self.assertEqual(['leave'],
+        self.assertEqual(['leave', 'reassign'],
                          ts.get_available_actions({'status': 'reopened'}, perm))
         self.assertEqual(['leave'],
                          ts.get_available_actions({'status': 'closed'}, perm))

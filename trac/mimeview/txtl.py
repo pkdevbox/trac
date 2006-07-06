@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -*- coding: iso-8859-1 -*-
 #
 # Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin
@@ -33,4 +33,4 @@ class TextileRenderer(Component):
 
     def render(self, req, mimetype, content, filename=None, rev=None):
         import textile
-        return textile.textile(content.encode('utf-8'), encoding='utf-8')
+        return textile.textile(content, encoding='utf-8')

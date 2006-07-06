@@ -7,7 +7,7 @@
  margin-top: 1em;
  padding: .5em;
 }
-#overview dt.property {
+#overview dt {
  font-weight: bold;
  padding-right: .25em;
  position: absolute;
@@ -16,13 +16,6 @@
  width: 7.75em;
 }
 #overview dd { margin-left: 8em }
-
-#overview .message { padding: 1em 0 1px }
-#overview dd.message p, #overview dd.message ul, #overview dd.message ol,
-#overview dd.message pre {
- margin-bottom: 1em;
- margin-top: 0;
-}
 
 /* Colors for change types */
 #chglist .edit, #overview .mod, .diff #legend .mod { background: #fd8 }
@@ -66,7 +59,6 @@
  margin: 0 0 2em;
  padding: 2px;
  position: relative;
- width: 100%;
 }
 .diff h2 {
  color: #333;

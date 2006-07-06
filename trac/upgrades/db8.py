@@ -3,7 +3,7 @@ import time
 d = {'now':time.time()}
 sql = [
 #-- Separate between due and completed time for milestones.
-"""CREATE TEMPORARY TABLE milestone_old AS SELECT * FROM milestone;""",
+"""CREATE TEMP TABLE milestone_old AS SELECT * FROM milestone;""",
 """DROP TABLE milestone;""",
 """CREATE TABLE milestone (
          name            text PRIMARY KEY,
