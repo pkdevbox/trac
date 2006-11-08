@@ -1,9 +1,9 @@
 function addWikiFormattingToolbar(textarea) {
-  if ((document.selection == undefined)
-   && (textarea.setSelectionRange == undefined)) {
+  if ((typeof(document["selection"]) == "undefined")
+   && (typeof(textarea["setSelectionRange"]) == "undefined")) {
     return;
   }
-
+  
   var toolbar = document.createElement("div");
   toolbar.className = "wikitoolbar";
 
@@ -20,9 +20,9 @@ function addWikiFormattingToolbar(textarea) {
   function encloseSelection(prefix, suffix) {
     textarea.focus();
     var start, end, sel, scrollPos, subst;
-    if (document.selection != undefined) {
+    if (typeof(document["selection"]) != "undefined") {
       sel = document.selection.createRange().text;
-    } else if (textarea.setSelectionRange != undefined) {
+    } else if (typeof(textarea["setSelectionRange"]) != "undefined") {
       start = textarea.selectionStart;
       end = textarea.selectionEnd;
       scrollPos = textarea.scrollTop;
@@ -33,10 +33,10 @@ function addWikiFormattingToolbar(textarea) {
       suffix = suffix + " ";
     }
     subst = prefix + sel + suffix;
-    if (document.selection != undefined) {
+    if (typeof(document["selection"]) != "undefined") {
       var range = document.selection.createRange().text = subst;
       textarea.caretPos -= suffix.length;
-    } else if (textarea.setSelectionRange != undefined) {
+    } else if (typeof(textarea["setSelectionRange"]) != "undefined") {
       textarea.value = textarea.value.substring(0, start) + subst +
                        textarea.value.substring(end);
       if (sel) {
@@ -73,11 +73,16 @@ function addWikiFormattingToolbar(textarea) {
     encloseSelection("[[BR]]\n", "");
   });
 
-  $(textarea).before(toolbar);
+  textarea.parentNode.insertBefore(toolbar, textarea);
 }
 
 // Add the toolbar to all <textarea> elements on the page with the class
 // 'wikitext'.
-$(document).ready(function() {
-  $("textarea.wikitext").each(function() { addWikiFormattingToolbar(this) });
-});
+var re = /\bwikitext\b/;
+var textareas = document.getElementsByTagName("textarea");
+for (var i = 0; i < textareas.length; i++) {
+  var textarea = textareas[i];
+  if (textarea.className && re.test(textarea.className)) {
+    addWikiFormattingToolbar(textarea);
+  }
+}

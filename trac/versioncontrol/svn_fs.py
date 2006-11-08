@@ -43,7 +43,6 @@ import os.path
 import time
 import weakref
 import posixpath
-from datetime import datetime
 
 from trac.core import *
 from trac.versioncontrol import Changeset, Node, Repository, \
@@ -52,7 +51,6 @@ from trac.versioncontrol import Changeset, Node, Repository, \
 from trac.versioncontrol.cache import CachedRepository
 from trac.versioncontrol.svn_authz import SubversionAuthorizer
 from trac.util.text import to_unicode
-from trac.util.datefmt import utc
 
 try:
     from svn import fs, repos, core, delta
@@ -255,21 +253,14 @@ class SubversionConnector(Component):
     def get_repository(self, type, dir, authname):
         """Return a `SubversionRepository`.
 
-        The repository is wrapped in a `CachedRepository`.
+        The repository is generally wrapped in a `CachedRepository`,
+        unless `direct-svn-fs` is the specified type.
         """
-        self.env.systeminfo['Subversion'] = self._get_version()
         authz = None
         if authname:
             authz = SubversionAuthorizer(self.env, authname)
         repos = SubversionRepository(dir, authz, self.log)
         return CachedRepository(self.env.get_db_cnx(), repos, authz, self.log)
-
-    def _get_version(self):
-        version = (core.SVN_VER_MAJOR, core.SVN_VER_MINOR, core.SVN_VER_MICRO)
-        version_string = '%d.%d.%d' % version
-        if version[0] < 1:
-            raise TracError("Subversion >= 1.0 required: Found "+version_string)
-        return version_string
 
 
 class SubversionRepository(Repository):
@@ -280,6 +271,11 @@ class SubversionRepository(Repository):
     def __init__(self, path, authz, log):
         self.path = path # might be needed by __del__()/close()
         self.log = log
+        if core.SVN_VER_MAJOR < 1:
+            raise TracError("Subversion >= 1.0 required: Found %d.%d.%d" % \
+                            (core.SVN_VER_MAJOR,
+                             core.SVN_VER_MINOR,
+                             core.SVN_VER_MICRO))
         self.pool = Pool()
         
         # Remove any trailing slash or else subversion might abort
@@ -618,12 +614,11 @@ class SubversionNode(Node):
         return self._get_prop(core.SVN_PROP_MIME_TYPE)
 
     def get_last_modified(self):
-        _date = fs.revision_prop(self.fs_ptr, self.created_rev,
-                                 core.SVN_PROP_REVISION_DATE, self.pool())
-        if not _date:
-            return None
-        ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-        return datetime.fromtimestamp(ts, utc)
+        date = fs.revision_prop(self.fs_ptr, self.created_rev,
+                                core.SVN_PROP_REVISION_DATE, self.pool())
+        if not date:
+            return 0
+        return core.svn_time_from_cstring(date, self.pool()) / 1000000
 
     def _get_prop(self, name):
         return fs.node_prop(self.root, self._scoped_svn_path, name, self.pool())
@@ -639,21 +634,12 @@ class SubversionChangeset(Changeset):
         self.pool = Pool(pool)
         message = self._get_prop(core.SVN_PROP_REVISION_LOG)
         author = self._get_prop(core.SVN_PROP_REVISION_AUTHOR)
-        _date = self._get_prop(core.SVN_PROP_REVISION_DATE)
-        if _date:
-            ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-            date = datetime.fromtimestamp(ts, utc)
+        date = self._get_prop(core.SVN_PROP_REVISION_DATE)
+        if date:
+            date = core.svn_time_from_cstring(date, self.pool()) / 1000000
         else:
-            date = None
+            date = 0
         Changeset.__init__(self, rev, message, author, date)
-
-    def get_properties(self):
-        props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
-        for k,v in props.iteritems():
-            if k not in (core.SVN_PROP_REVISION_LOG,
-                         core.SVN_PROP_REVISION_AUTHOR,
-                         core.SVN_PROP_REVISION_DATE):
-                yield (k, to_unicode(v), False, '')
 
     def get_changes(self):
         pool = Pool(self.pool)

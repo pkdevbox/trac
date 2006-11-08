@@ -15,7 +15,6 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import re
-from datetime import datetime
 
 from trac.config import *
 from trac.core import *
@@ -23,7 +22,6 @@ from trac.perm import IPermissionRequestor, PermissionSystem
 from trac.Search import ISearchSource, search_to_sql, shorten_result
 from trac.util.html import html, Markup
 from trac.util.text import shorten_line
-from trac.util.datefmt import utc
 from trac.wiki import IWikiSyntaxProvider, Formatter
 
 
@@ -101,7 +99,7 @@ class TicketSystem(Component):
         field = {'name': 'owner', 'label': 'Owner'}
         if self.restrict_owner:
             field['type'] = 'select'
-            users = [''] # for clearing assignment
+            users = []
             perm = PermissionSystem(self.env)
             for username, name, email in self.env.get_known_users(db):
                 if perm.get_user_permissions(username).get('TICKET_MODIFY'):
@@ -230,9 +228,7 @@ class TicketSystem(Component):
         if ':' in target:
             elts = target.split(':')
             if len(elts) == 3:
-                cnum, type, id = elts
-                if cnum != 'description' and cnum and not cnum[0].isdigit():
-                    type, id, cnum = elts # support old comment: style
+                type, id, cnum = elts
                 href = formatter.href(type, id)
         else:
             # FIXME: the formatter should know which object the text being
@@ -252,7 +248,7 @@ class TicketSystem(Component):
     # ISearchSource methods
 
     def get_search_filters(self, req):
-        if 'TICKET_VIEW' in req.perm:
+        if req.perm.has_permission('TICKET_VIEW'):
             yield ('ticket', 'Tickets')
 
     def get_search_results(self, req, terms, filters):
@@ -261,19 +257,18 @@ class TicketSystem(Component):
         db = self.env.get_db_cnx()
         sql, args = search_to_sql(db, ['b.newvalue'], terms)
         sql2, args2 = search_to_sql(db, ['summary', 'keywords', 'description',
-                                         'reporter', 'cc', 'id'], terms)
+                                         'reporter', 'cc'], terms)
         cursor = db.cursor()
         cursor.execute("SELECT DISTINCT a.summary,a.description,a.reporter, "
                        "a.keywords,a.id,a.time,a.status FROM ticket a "
                        "LEFT JOIN ticket_change b ON a.id = b.ticket "
                        "WHERE (b.field='comment' AND %s ) OR %s" % (sql, sql2),
                        args + args2)
-        for summary, desc, author, keywords, tid, ts, status in cursor:
+        for summary, desc, author, keywords, tid, date, status in cursor:
             ticket = '#%d: ' % tid
             if status == 'closed':
                 ticket = Markup('<span style="text-decoration: line-through">'
                                 '#%s</span>: ', tid)
             yield (req.href.ticket(tid),
                    ticket + shorten_line(summary),
-                   datetime.fromtimestamp(ts, utc), author,
-                   shorten_result(desc, terms))
+                   date, author, shorten_result(desc, terms))

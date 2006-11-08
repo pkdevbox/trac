@@ -21,7 +21,6 @@ import urllib
 
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util import Ranges
 from trac.util.datefmt import http_date
 from trac.util.html import html
 from trac.util.text import wrap
@@ -68,82 +67,65 @@ class LogModule(Component):
         path = req.args.get('path', '/')
         rev = req.args.get('rev')
         stop_rev = req.args.get('stop_rev')
-        revs = req.args.get('revs', rev)
         format = req.args.get('format')
         verbose = req.args.get('verbose')
-        limit = int(req.args.get('limit', LOG_LIMIT))
+        limit = LOG_LIMIT
 
         repos = self.env.get_repository(req.authname)
         normpath = repos.normalize_path(path)
-        revranges = None
-        rev = revs
-        if revs:
-            try:
-                revranges = Ranges(revs)
-                rev = revranges.b
-            except ValueError:
-                pass
-        rev = unicode(repos.normalize_rev(rev))    
+        rev = unicode(repos.normalize_rev(rev))
+        if stop_rev:
+            stop_rev = unicode(repos.normalize_rev(stop_rev))
+            if repos.rev_older_than(rev, stop_rev):
+                rev, stop_rev = stop_rev, rev
+            
+        req.hdf['title'] = path + ' (log)'
+        req.hdf['log'] = {
+            'mode': mode,
+            'path': path,
+            'rev': rev,
+            'verbose': verbose,
+            'stop_rev': stop_rev,
+            'browser_href': req.href.browser(path),
+            'changeset_href': req.href.changeset(),
+            'log_href': req.href.log(path, rev=rev)
+        }
+
         path_links = get_path_links(req.href, path, rev)
+        req.hdf['log.path'] = path_links
         if path_links:
             add_link(req, 'up', path_links[-1]['href'], 'Parent directory')
 
         # The `history()` method depends on the mode:
-        #  * for ''stop on copy'' and ''follow copies'', it's `Node.history()`
-        #    unless explicit ranges have been specified
-        #  * for ''show only add, delete'' we're using
-        #   `Repository.get_path_history()` 
+        #  * for ''stop on copy'' and ''follow copies'', it's `Node.history()` 
+        #  * for ''show only add, delete'' it's`Repository.get_path_history()` 
         if mode == 'path_history':
-            rev = revranges.b
             def history(limit):
                 for h in repos.get_path_history(path, rev, limit):
                     yield h
         else:
-            if not revranges or revranges.a == revranges.b:
-                history = get_existing_node(req, repos, path, rev).get_history
-            else:
-                def history(limit):
-                    prevpath = path
-                    ranges = list(revranges.pairs)
-                    ranges.reverse()
-                    for (a,b) in ranges:
-                        while b >= a:
-                            rev = repos.normalize_rev(b)
-                            node = get_existing_node(req, repos, prevpath, rev)
-                            node_history = list(node.get_history(2))
-                            rev = node_history[0][1]
-                            if rev < a:
-                                break
-                            yield node_history[0]
-                            prevpath = node_history[-1][0] # follow copy
-                            b = rev-1
+            history = get_existing_node(req, repos, path, rev).get_history
 
         # -- retrieve history, asking for limit+1 results
         info = []
-        depth = 1
-        fix_deleted_rev = False
-        previous_path = normpath
+        previous_path = repos.normalize_path(path)
         for old_path, old_rev, old_chg in history(limit+1):
-            if fix_deleted_rev:
-                fix_deleted_rev['existing_rev'] = old_rev
-                fix_deleted_rev = False
             if stop_rev and repos.rev_older_than(old_rev, stop_rev):
                 break
             old_path = repos.normalize_path(old_path)
-
             item = {
-                'path': old_path, 'rev': old_rev, 'existing_rev': old_rev,
-                'change': old_chg, 'depth': depth,
+                'rev': str(old_rev),
+                'path': old_path,
+                'log_href': req.href.log(old_path, rev=old_rev),
+                'browser_href': req.href.browser(old_path, rev=old_rev),
+                'changeset_href': req.href.changeset(old_rev),
+                'restricted_href': req.href.changeset(old_rev, new_path=old_path),
+                'change': old_chg
             }
-            
-            if old_chg == Changeset.DELETE:
-                fix_deleted_rev = item
             if not (mode == 'path_history' and old_chg == Changeset.EDIT):
                 info.append(item)
             if old_path and old_path != previous_path \
                and not (mode == 'path_history' and old_path == normpath):
-                depth += 1
-                item['depth'] = depth
                 item['copyfrom_path'] = old_path
                 if mode == 'stop_on_copy':
                     break
@@ -175,6 +157,8 @@ class LogModule(Component):
             # now, only show 'limit' results
             del info[-1]
         
+        req.hdf['log.items'] = info
+
         revs = [i['rev'] for i in info]
         changes = get_changes(self.env, repos, revs, verbose, req, format)
         if format == 'rss':
@@ -192,6 +176,7 @@ class LogModule(Component):
                 elif email_map.has_key(author):
                     author_email = email_map[author]
                 cs['author'] = author_email
+                cs['date'] = http_date(cs['date_seconds'])
         elif format == 'changelog':
             for rev in revs:
                 changeset = repos.get_changeset(rev)
@@ -206,18 +191,12 @@ class LogModule(Component):
                     actions.append(chg)
                 cs['files'] = files
                 cs['actions'] = actions
-
-        data = {
-            'path': path, 'rev': rev, 'stop_rev': stop_rev,
-            'mode': mode, 'verbose': verbose,
-            'path_links': path_links,
-            'items': info, 'changes': changes
-            }
+        req.hdf['log.changes'] = changes
 
         if req.args.get('format') == 'changelog':
-            return 'revisionlog.txt', data, 'text/plain'
+            return 'log_changelog.cs', 'text/plain'
         elif req.args.get('format') == 'rss':
-            return 'revisionlog.rss', data, 'application/rss+xml'
+            return 'log_rss.cs', 'application/rss+xml'
 
         add_stylesheet(req, 'common/css/browser.css')
         add_stylesheet(req, 'common/css/diff.css')
@@ -229,19 +208,18 @@ class LogModule(Component):
                                        stop_rev=stop_rev)
         add_link(req, 'alternate', changelog_href, 'ChangeLog', 'text/plain')
 
-        return 'revisionlog.html', data, None
+        return 'log.cs', None
 
     # IWikiSyntaxProvider methods
 
-    REV_RANGE = (r"(?:\d+(?:[-:]\d+)?(?:,\d+(?:[-:]\d+)?)*" # int rev ranges
-                 r"|%s)" % ChangesetModule.CHANGESET_ID) # or any kind of rev
+    REV_RANGE = "%s[-:]%s" % ((ChangesetModule.CHANGESET_ID,)*2)
     
     def get_wiki_syntax(self):
         yield (
             # [...] form, starts with optional intertrac: [T... or [trac ...
             r"!?\[(?P<it_log>%s\s*)" % Formatter.INTERTRAC_SCHEME +
             # <from>:<to> + optional path restriction
-            r"(?P<log_revs>%s)(?P<log_path>/[^\]]*)?\]" % self.REV_RANGE,
+            r"(?P<log_rev>%s)(?P<log_path>/[^\]]*)?\]" % self.REV_RANGE,
             lambda x, y, z: self._format_link(x, 'log1', y[1:-1], y, z))
         yield (
             # r<from>:<to> form (no intertrac and no path restriction)
@@ -254,25 +232,19 @@ class LogModule(Component):
     def _format_link(self, formatter, ns, match, label, fullmatch=None):
         if ns == 'log1':
             it_log = fullmatch.group('it_log')
-            revs = fullmatch.group('log_revs')
+            rev = fullmatch.group('log_rev')
             path = fullmatch.group('log_path') or '/'
-            target = '%s%s@%s' % (it_log, path, revs)
+            target = '%s%s@%s' % (it_log, path, rev)
             # prepending it_log is needed, as the helper expects it there
             intertrac = formatter.shorthand_intertrac_helper(
                 'log', target, label, fullmatch)
             if intertrac:
                 return intertrac
-        else:
-            assert ns in ('log', 'log2')
-            path = match
-            revs = ''
-            if self.LOG_LINK_RE.match(match):
-                indexes = [sep in match and match.index(sep) for sep in ':@']
-                idx = min([i for i in indexes if i is not False])
-                path, revs = match[:idx], match[idx+1:]
-        revs = revs.replace(':', '-')
-        return html.A(label, class_='source',
-                      href=formatter.href.log(path or '/', revs=revs))
-
-    LOG_LINK_RE = re.compile(r"([^@:]*)[@:]%s?" % REV_RANGE)
-
+        else: # ns == 'log2'
+            path, rev, line = get_path_rev_line(match)
+        stop_rev = None
+        for sep in ':-':
+            if not stop_rev and rev and sep in rev:
+                stop_rev, rev = rev.split(sep, 1)
+        href = formatter.href.log(path or '/', rev=rev, stop_rev=stop_rev)
+        return html.A(label, href=href, class_='source')

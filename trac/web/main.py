@@ -22,19 +22,14 @@ import sys
 import dircache
 import urllib
 
-from genshi import Markup
-from genshi.output import DocType
-from genshi.template import TemplateLoader
-
-from trac.config import ExtensionOption, Option, OrderedExtensionsOption
+from trac.config import ExtensionOption, OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
-from trac.perm import PermissionCache, PermissionError, PermissionSystem
-from trac.util import get_lines_from_file, get_last_traceback
-from trac.util.compat import partial, reversed
-from trac.util.datefmt import format_datetime, http_date, localtz, timezone
+from trac.perm import PermissionCache, NoPermissionCache, PermissionError
+from trac.util import reversed, get_last_traceback, hex_entropy
+from trac.util.datefmt import format_datetime, http_date
 from trac.util.html import Markup
-from trac.util.text import shorten_line, to_unicode
+from trac.util.text import to_unicode
 from trac.web.api import *
 from trac.web.chrome import Chrome
 from trac.web.clearsilver import HDFWrapper
@@ -116,7 +111,7 @@ def populate_hdf(hdf, env, req=None):
 
         if req.perm:
             for action in req.perm.permissions():
-                hdf['trac.acl.' + action] = True
+                req.hdf['trac.acl.' + action] = True
 
         for arg in [k for k in req.args.keys() if k]:
             if isinstance(req.args[arg], (list, tuple)):
@@ -143,9 +138,6 @@ class RequestDispatcher(Component):
         Options include `TimeLineModule`, `RoadmapModule`, `BrowserModule`,
         `QueryModule`, `ReportModule` and `NewticketModule` (''since 0.9'').""")
 
-    default_timezone = Option('trac', 'default_timezone', '',
-        """The default timezone to use""")
-
     # Public API
 
     def authenticate(self, req):
@@ -163,65 +155,86 @@ class RequestDispatcher(Component):
         In addition, this method initializes the HDF data set and adds the web
         site chrome.
         """
-        self.log.debug('Dispatching %r', req)
-        chrome = Chrome(self.env)
-
-        # Setup request callbacks for lazily-evaluated properties
-        req.callbacks.update({
-            'authname': self.authenticate,
-            'chrome': chrome.prepare_request,
-            'hdf': self._get_hdf,
-            'perm': self._get_perm,
-            'session': self._get_session,
-            'tz': self._get_timezone,
-            'form_token': self._get_form_token
-        })
+        # FIXME: For backwards compatibility, should be removed in 0.11
+        self.env.href = req.href
+        # FIXME in 0.11: self.env.abs_href = Href(self.env.base_url)
+        self.env.abs_href = req.abs_href
 
         # Select the component that should handle the request
         chosen_handler = None
-        if not req.path_info or req.path_info == '/':
-            chosen_handler = self.default_handler
-        else:
-            for handler in self.handlers:
-                if handler.match_request(req):
-                    chosen_handler = handler
-                    break
-        chosen_handler = self._pre_process_request(req, chosen_handler)
-        if not chosen_handler:
-            raise HTTPNotFound('No handler matched request to %s',
-                               req.path_info)
+        early_error = None
+        try:
+            if not req.path_info or req.path_info == '/':
+                chosen_handler = self.default_handler
+            else:
+                for handler in self.handlers:
+                    if handler.match_request(req):
+                        chosen_handler = handler
+                        break
 
-        req.callbacks['chrome'] = partial(chrome.prepare_request,
-                                          handler=chosen_handler)
+            chosen_handler = self._pre_process_request(req, chosen_handler)
+        except:
+            early_error = sys.exc_info()
+            
+        if not chosen_handler and not early_error:
+            early_error = (HTTPNotFound('No handler matched request to %s',
+                                        req.path_info),
+                           None, None)
 
-        # Protect against CSRF attacks.
-        if (req.method == 'POST' and
-            req.args.get('__FORM_TOKEN') != req.form_token):
-            raise TracError('Missing or invalid form token. '
-                            'Do you have cookies enabled?')
+        # Attach user information to the request
+        anonymous_request = getattr(chosen_handler, 'anonymous_request',
+                                    False)
+        if not anonymous_request:
+            try:
+                req.authname = self.authenticate(req)
+                req.perm = PermissionCache(self.env, req.authname)
+                req.session = Session(self.env, req)
+                req.form_token = self._get_form_token(req)
+            except:
+                anonymous_request = True
+                early_error = sys.exc_info()
+        if anonymous_request:
+            req.authname = 'anonymous'
+            req.perm = NoPermissionCache()
+
+        # Prepare HDF for the clearsilver template
+        try:
+            use_template = getattr(chosen_handler, 'use_template', True)
+            req.hdf = None
+            if use_template:
+                chrome = Chrome(self.env)
+                req.hdf = HDFWrapper(loadpaths=chrome.get_all_templates_dirs())
+                populate_hdf(req.hdf, self.env, req)
+                chrome.populate_hdf(req, chosen_handler)
+        except:
+            req.hdf = None # revert to sending plaintext error
+            if not early_error:
+                raise
+
+        if early_error:
+            try:
+                self._post_process_request(req)
+            except Exception, e:
+                self.log.exception(e)
+            raise early_error[0], early_error[1], early_error[2]
 
         # Process the request and render the template
         try:
             try:
+                # Protect against CSRF attacks.
+                if (req.method == 'POST' and
+                    req.args.get('__FORM_TOKEN') != req.form_token):
+                    raise TracError('Missing or invalid form token. '
+                                    'Do you have cookies enabled?')
+
                 resp = chosen_handler.process_request(req)
                 if resp:
-                    if len(resp) == 2: # Clearsilver
-                        chrome.populate_hdf(req)
-                        template, content_type = \
-                                  self._post_process_request(req, *resp)
-                        # Give the session a chance to persist changes
-                        if req.session:
-                            req.session.save()
-                        req.display(template, content_type or 'text/html')
-                    else: # Genshi
-                        # FIXME: postprocess API need to be adapted...
-                        template, data, content_type = resp
-                        output = chrome.render_template(req, template, data,
-                                                        content_type)
-                        # Give the session a chance to persist changes
-                        if req.session:
-                            req.session.save()
-                        req.send(output, content_type or 'text/html')
+                    template, content_type = self._post_process_request(req,
+                                                                        *resp)
+                    # Give the session a chance to persist changes
+                    if req.session:
+                        req.session.save()
+                    req.display(template, content_type or 'text/html')
                 else:
                     self._post_process_request(req)
             except RequestDone:
@@ -238,53 +251,35 @@ class RequestDispatcher(Component):
         except TracError, e:
             raise HTTPInternalError(e.message)
 
-    # Internal methods
-
-    def _get_hdf(self, req):
-        hdf = HDFWrapper(loadpaths=Chrome(self.env).get_all_templates_dirs())
-        populate_hdf(hdf, self.env, req)
-        return hdf
-
-    def _get_perm(self, req):
-        perms = PermissionSystem(self.env).get_user_permissions(req.authname)
-        return PermissionCache(perms)
-
-    def _get_session(self, req):
-        return Session(self.env, req)
-
-    def _get_timezone(self, req):
-        try:
-            return timezone(req.session.get('tz', self.default_timezone
-                                            or 'missing'))
-        except:
-            return localtz
-
-    def _get_form_token(self, req):
-        """Used to protect against CSRF.
-
-        The 'trac_auth' cookie is a good and strong shared secret, only
-        known by the user it belongs to and Trac itself.
-
-        The session id is our second best option, not as reliable since
-        it will change on each request if the user has cookies disabled in
-        his/her browser.
-        """
-        if req.incookie.has_key('trac_auth'):
-            return req.incookie['trac_auth'].value
-        else:
-            return req.session.sid
-
     def _pre_process_request(self, req, chosen_handler):
-        for filter_ in self.filters:
-            chosen_handler = filter_.pre_process_request(req, chosen_handler)
+        for f in self.filters:
+            chosen_handler = f.pre_process_request(req, chosen_handler)
         return chosen_handler
-
+                
     def _post_process_request(self, req, template=None, content_type=None):
         for f in reversed(self.filters):
             template, content_type = f.post_process_request(req, template,
                                                             content_type)
         return template, content_type
 
+    def _get_form_token(self, req):
+        """Used to protect against CSRF.
+
+        The 'form_token' is strong shared secret stored in a user cookie.
+        By requiring that every POST form to contain this value we're
+        able to protect against CSRF attacks. Since this value is only known
+        by the user and not by an attacker.
+        If the the user does not have a `trac_form_token` cookie a new
+        one is generated.
+        """
+        if req.incookie.has_key('trac_form_token'):
+            return req.incookie['trac_form_token'].value
+        else:
+            req.outcookie['trac_form_token'] = hex_entropy(24)
+            req.outcookie['trac_form_token']['path'] = req.base_path
+            req.outcookie['trac_form_token']['expires'] = 3600*24*90 # 90 days
+            return req.outcookie['trac_form_token'].value
+        
 
 def dispatch_request(environ, start_response):
     """Main entry point for the Trac web interface.
@@ -386,58 +381,37 @@ def dispatch_request(environ, start_response):
                 pass
             return req._response or []
         finally:
-            if not environ.get('wsgi.run_once'):
+            if environ.get('wsgi.multithread', False):
                 env.shutdown(threading._get_ident())
 
     except HTTPException, e:
         env.log.warn(e)
-        title = e.reason or 'Error'
-        data = {'title': title, 'type': 'TracError', 'message': e.message}
+        if req.hdf:
+            req.hdf['title'] = e.reason or 'Error'
+            req.hdf['error'] = {
+                'title': e.reason or 'Error',
+                'type': 'TracError',
+                'message': e.message
+            }
         try:
-            req.send_error(sys.exc_info(), status=e.code, env=env, data=data)
+            req.send_error(sys.exc_info(), status=e.code)
         except RequestDone:
             return []
 
     except Exception, e:
         env.log.exception(e)
 
-        exc_info = sys.exc_info()
+        if req.hdf:
+            req.hdf['title'] = to_unicode(e) or 'Error'
+            req.hdf['error'] = {
+                'title': to_unicode(e) or 'Error',
+                'type': 'internal',
+                'traceback': get_last_traceback()
+            }
         try:
-            message = "%s: %s" % (e.__class__.__name__, to_unicode(e))
-            traceback = get_last_traceback()
-
-            frames = []
-            if 'TRAC_ADMIN' in req.perm:
-                tb = exc_info[2]
-                while tb:
-                    if not tb.tb_frame.f_locals.get('__traceback_hide__'):
-                        filename = tb.tb_frame.f_code.co_filename
-                        lineno = tb.tb_lineno - 1
-                        before, line, after = get_lines_from_file(filename,
-                                                                  lineno, 5)
-                        frames += [{'traceback': tb, 'filename': filename,
-                                    'lineno': lineno, 'line': line,
-                                    'lines_before': before, 'lines_after': after,
-                                    'function': tb.tb_frame.f_code.co_name,
-                                    'vars': tb.tb_frame.f_locals}]
-                    tb = tb.tb_next
-
-            data = {'type': 'internal', 'message': message,
-                    'traceback': traceback, 'frames': frames,
-                    'shorten_line': shorten_line}
-
-            try: # clear chrome data is already set
-                del req.chrome
-            except AttributeError:
-                pass
-
-            try:
-                req.send_error(exc_info, status=500, env=env, data=data)
-            except RequestDone:
-                return []
-
-        finally:
-            del exc_info
+            req.send_error(sys.exc_info(), status=500)
+        except RequestDone:
+            return []
 
 def send_project_index(environ, start_response, parent_dir=None,
                        env_paths=None):
@@ -450,15 +424,14 @@ def send_project_index(environ, start_response, parent_dir=None,
         tmpl_path, template = os.path.split(req.environ['trac.env_index_template'])
         loadpaths.insert(0, tmpl_path)
     else:
-        template = 'index.html'
-    req.hdf = HDFWrapper(loadpaths) # keep that for custom .cs templates
+        template = 'index.cs'
+    req.hdf = HDFWrapper(loadpaths)
 
-    data = {}
+    tmpl_vars = {}
     if req.environ.get('trac.template_vars'):
         for pair in req.environ['trac.template_vars'].split(','):
             key, val = pair.split('=')
             req.hdf[key] = val
-            data[key] = val
 
     if parent_dir and not env_paths:
         env_paths = dict([(filename, os.path.join(parent_dir, filename))
@@ -482,14 +455,7 @@ def send_project_index(environ, start_response, parent_dir=None,
         projects.sort(lambda x, y: cmp(x['name'].lower(), y['name'].lower()))
 
         req.hdf['projects'] = projects
-        data['projects'] = projects
-        if template.endswith('.cs'): # assume Clearsilver
-            req.display(template)
-        else:
-            markuptemplate = TemplateLoader(loadpaths).load(template)
-            stream = markuptemplate.generate(**data)
-            output = stream.render('xhtml', doctype=DocType.XHTML_STRICT)
-            req.send(output, 'text/html')
+        req.display(template)
     except RequestDone:
         pass
 

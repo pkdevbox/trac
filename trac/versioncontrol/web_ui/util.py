@@ -20,13 +20,13 @@ import re
 import urllib
 
 from trac.core import TracError
-from trac.util.datefmt import pretty_timedelta
+from trac.util.datefmt import format_datetime, pretty_timedelta
 from trac.util.html import escape, html, Markup
 from trac.util.text import shorten_line
 from trac.versioncontrol.api import NoSuchNode, NoSuchChangeset
 from trac.wiki import wiki_to_html, wiki_to_oneliner
 
-__all__ = ['get_changes', 'get_path_links', 
+__all__ = ['get_changes', 'get_path_links', 'get_path_rev_line',
            'get_existing_node', 'render_node_property']
 
 def get_changes(env, repos, revs, full=None, req=None, format=None):
@@ -59,11 +59,13 @@ def get_changes(env, repos, revs, full=None, req=None, format=None):
 
         if format == 'rss':
             if isinstance(shortlog, Markup):
-                shortlog = u' '.join(shortlog.striptags().splitlines())
+                shortlog = shortlog.plaintext(keeplinebreaks=False)
             message = unicode(message)
 
         changes[rev] = {
-            'date': changeset.date,
+            'date_seconds': changeset.date,
+            'date': format_datetime(changeset.date),
+            'age': pretty_timedelta(changeset.date),
             'author': changeset.author or 'anonymous',
             'message': message, 'shortlog': shortlog,
         }
@@ -76,6 +78,20 @@ def get_path_links(href, fullpath, rev):
         path += part + '/'
         links.append({'name': part, 'href': href.browser(path, rev=rev)})
     return links
+
+rev_re = re.compile(r"([^@#:]*)[@#:]([^#]+)?(?:#L(\d+))?")
+
+def get_path_rev_line(path):
+    rev = None
+    line = None
+    match = rev_re.search(path)
+    if match:
+        path = match.group(1)
+        rev = match.group(2)
+        if match.group(3):
+            line = int(match.group(3))
+    path = urllib.unquote(path)
+    return path, rev, line
 
 def get_existing_node(req, repos, path, rev):
     try: 

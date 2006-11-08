@@ -14,7 +14,6 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import imp
 import inspect
 import os
@@ -28,7 +27,7 @@ from StringIO import StringIO
 from trac.config import default_dir
 from trac.core import *
 from trac.util import sorted
-from trac.util.datefmt import format_date, utc
+from trac.util.datefmt import format_date
 from trac.util.html import escape, html, Markup
 from trac.wiki.api import IWikiMacroProvider, WikiSystem
 from trac.wiki.model import WikiPage
@@ -115,8 +114,7 @@ class RecentChangesMacro(WikiMacroBase):
 
         entries_per_date = []
         prevdate = None
-        for name, version, ts in cursor:
-            time = datetime.fromtimestamp(ts, utc)
+        for name, version, time in cursor:
             date = format_date(time)
             if date != prevdate:
                 prevdate = date
@@ -161,7 +159,6 @@ class PageOutlineMacro(WikiMacroBase):
 
     def render_macro(self, req, name, content):
         from trac.wiki.formatter import wiki_to_outline
-        from genshi.builder import tag
         min_depth, max_depth = 1, 6
         title = None
         inline = 0
@@ -183,13 +180,16 @@ class PageOutlineMacro(WikiMacroBase):
         pagename = req.args.get('page') or 'WikiStart'
         page = WikiPage(self.env, pagename)
 
-        outline = wiki_to_outline(page.text, self.env, db=db,
-                                  max_depth=max_depth, min_depth=min_depth)
-        if title:
-            outline = tag.h4(title) + outline
+        buf = StringIO()
         if not inline:
-            outline = tag.div(outline, class_="wiki-toc")
-        return outline
+            buf.write('<div class="wiki-toc">')
+        if title:
+            buf.write('<h4>%s</h4>' % escape(title))
+        buf.write(wiki_to_outline(page.text, self.env, db=db,
+                                  max_depth=max_depth, min_depth=min_depth))
+        if not inline:
+            buf.write('</div>')
+        return buf.getvalue()
 
 
 class ImageMacro(WikiMacroBase):
@@ -349,7 +349,7 @@ class ImageMacro(WikiMacroBase):
         if style:
             attr['style'] = '; '.join(['%s:%s' % (k, escape(v))
                                        for k, v in style.iteritems()])
-        result = html.IMG(src=raw_url, **attr)
+        result = Markup(html.IMG(src=raw_url, **attr)).sanitize()
         if not nolink:
             result = html.A(result, href=url, style='padding:0; border:none')
         return result

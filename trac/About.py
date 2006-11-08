@@ -19,13 +19,11 @@
 
 import re
 
-from genshi import Markup
-from genshi.builder import tag
-
 from trac.core import *
 from trac.perm import IPermissionRequestor
 from trac.web import IRequestHandler
-from trac.web.chrome import INavigationContributor
+from trac.util.html import html
+from trac.web.chrome import add_stylesheet, INavigationContributor
 
 
 class AboutModule(Component):
@@ -40,7 +38,7 @@ class AboutModule(Component):
 
     def get_navigation_items(self, req):
         yield ('metanav', 'about',
-               tag.a('About Trac', href=req.href.about()))
+               html.a('About Trac', href=req.href.about()))
 
     # IPermissionRequestor methods
 
@@ -58,21 +56,25 @@ class AboutModule(Component):
 
     def process_request(self, req):
         page = req.args.get('page', 'default')
+        req.hdf['title'] = 'About Trac'
+        if req.perm.has_permission('CONFIG_VIEW'):
+            req.hdf['about.config_href'] = req.href.about('config')
+            req.hdf['about.plugins_href'] = req.href.about('plugins')
         if page == 'config':
-            data = self._render_config(req)
+            self._render_config(req)
         elif page == 'plugins':
-            data = self._render_plugins(req)
-        else:
-            data = {}
+            self._render_plugins(req)
 
-        return 'about.html', {'about': data}, None
+        add_stylesheet(req, 'common/css/about.css')
+        return 'about.cs', None
 
     # Internal methods
 
     def _render_config(self, req):
         req.perm.assert_permission('CONFIG_VIEW')
-        data = {'page': 'config'}
+        req.hdf['about.page'] = 'config'
         
+        # Export the config table to hdf
         sections = []
         for section in self.config.sections():
             options = []
@@ -86,8 +88,65 @@ class AboutModule(Component):
             options.sort(lambda x,y: cmp(x['name'], y['name']))
             sections.append({'name': section, 'options': options})
         sections.sort(lambda x,y: cmp(x['name'], y['name']))
-        data['config'] = sections
-        return data
+        req.hdf['about.config'] = sections
         # TODO:
         # We should probably export more info here like:
         # permissions, components...
+
+    def _render_plugins(self, req):
+        try:
+            from trac.wiki.formatter import wiki_to_html
+            import inspect
+            def getdoc(obj):
+                return wiki_to_html(inspect.getdoc(obj), self.env, req)
+        except:
+            def getdoc(obj):
+                return obj.__doc__
+        req.perm.assert_permission('CONFIG_VIEW')
+        import sys
+        req.hdf['about.page'] = 'plugins'
+        from trac.core import ComponentMeta
+        plugins = []
+        for component in ComponentMeta._components:
+            if not self.env.is_component_enabled(component):
+                continue
+            plugin = {'name': component.__name__}
+            if component.__doc__:
+                plugin['description'] = getdoc(component)
+
+            module = sys.modules[component.__module__]
+            plugin['module'] = module.__name__
+            if hasattr(module, '__file__'):
+                plugin['path'] = module.__file__
+
+            xtnpts = []
+            for name, xtnpt in [(attr, getattr(component, attr)) for attr
+                                in dir(component)]:
+                if not isinstance(xtnpt, ExtensionPoint):
+                    continue
+                xtnpts.append({'name': name,
+                               'interface': xtnpt.interface.__name__,
+                               'module': xtnpt.interface.__module__})
+                if xtnpt.interface.__doc__:
+                    xtnpts[-1]['description'] = getdoc(xtnpt.interface)
+                extensions = []
+                for extension in ComponentMeta._registry.get(xtnpt.interface, []):
+                    if self.env.is_component_enabled(extension):
+                        extensions.append({'name': extension.__name__,
+                                           'module': extension.__module__})
+                xtnpts[-1]['extensions'] = extensions
+            xtnpts.sort(lambda x,y: cmp(x['name'], y['name']))
+            plugin['extension_points'] = xtnpts
+
+            plugins.append(plugin)
+
+        def plugincmp(x, y):
+            c = cmp(len(x['module'].split('.')), len(y['module'].split('.')))
+            if c == 0:
+                c = cmp(x['module'].lower(), y['module'].lower())
+                if c == 0:
+                    c = cmp(x['name'].lower(), y['name'].lower())
+            return c
+        plugins.sort(plugincmp)
+
+        req.hdf['about.plugins'] = plugins

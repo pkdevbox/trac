@@ -14,11 +14,8 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
-from datetime import datetime
-from genshi.builder import tag
-
 from trac.core import *
-from trac.util.datefmt import all_timezones, utc
+from trac.util.html import html
 from trac.web import IRequestHandler
 from trac.web.chrome import INavigationContributor
 
@@ -27,7 +24,7 @@ class SettingsModule(Component):
 
     implements(INavigationContributor, IRequestHandler)
 
-    _form_fields = ['newsid','name', 'email', 'tz', 'accesskeys']
+    _form_fields = ['newsid','name', 'email']
 
     # INavigationContributor methods
 
@@ -36,7 +33,7 @@ class SettingsModule(Component):
 
     def get_navigation_items(self, req):
         yield ('metanav', 'settings',
-               tag.a('Settings', href=req.href.settings()))
+               html.A('Settings', href=req.href.settings()))
 
     # IRequestHandler methods
 
@@ -52,12 +49,12 @@ class SettingsModule(Component):
             elif action == 'load':
                 self._do_load(req)
 
-        data = {'session': req.session}
+        req.hdf['title'] = 'Settings'
+        req.hdf['settings'] = req.session
         if req.authname == 'anonymous':
-            data['session_id'] = req.session.sid
+            req.hdf['settings.session_id'] = req.session.sid
 
-        return 'settings.html', {'settings': data,
-                                 'timezones': all_timezones}, None
+        return 'settings.cs', None
 
     # Internal methods
 
@@ -65,15 +62,10 @@ class SettingsModule(Component):
         for field in self._form_fields:
             val = req.args.get(field)
             if val:
-                if field == 'tz' and 'tz' in req.session and \
-                        val not in all_timezones:
-                    del req.session['tz']
-                elif field == 'newsid' and val:
+                if field == 'newsid' and val:
                     req.session.change_sid(val)
                 else:
                     req.session[field] = val
-            elif field in req.session:
-                del req.session[field]
         req.redirect(req.href.settings())
 
     def _do_load(self, req):

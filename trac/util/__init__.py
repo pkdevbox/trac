@@ -28,7 +28,6 @@ from urllib import quote, unquote, urlencode
 
 # Imports for backward compatibility
 from trac.core import TracError
-from trac.util.compat import reversed, sorted
 from trac.util.html import escape, unescape, Markup, Deuglifier
 from trac.util.text import CRLF, to_utf8, to_unicode, shorten_line, \
                            wrap, pretty_size
@@ -55,6 +54,35 @@ def get_reporter_id(req, arg_name=None):
 
 
 # -- algorithmic utilities
+
+try:
+    reversed = reversed
+except NameError:
+    def reversed(x):
+        if hasattr(x, 'keys'):
+            raise ValueError('mappings do not support reverse iteration')
+        i = len(x)
+        while i > 0:
+            i -= 1
+            yield x[i]
+
+try:
+    sorted = sorted
+except NameError:
+    def sorted(iterable, cmp=None, key=None, reverse=False):
+        """Partial implementation of the "sorted" function from Python 2.4"""
+        if key is None:
+            lst = list(iterable)
+        else:
+            lst = [(key(val), idx, val) for idx, val in enumerate(iterable)]
+        lst.sort()
+        if key is None:
+            if reverse:
+                return lst[::-1]
+            return lst
+        if reverse:
+            lst = reversed(lst)
+        return [i[-1] for i in lst]
 
 DIGITS = re.compile(r'(\d+)')
 def embedded_numbers(s):
@@ -134,28 +162,6 @@ def get_last_traceback():
     tb = StringIO()
     traceback.print_exc(file=tb)
     return tb.getvalue()
-
-def get_lines_from_file(filename, lineno, context=0):
-    """Return `content` number of lines before and after the specified
-    `lineno` from the file identified by `filename`.
-    
-    Returns a `(lines_before, line, lines_after)` tuple.
-    """
-    if os.path.isfile(filename):
-        fileobj = open(filename, 'U')
-        try:
-            lines = fileobj.readlines()
-            lbound = max(0, lineno - context)
-            ubound = lineno + 1 + context
-
-            before = [l.rstrip('\n') for l in lines[lbound:lineno]]
-            line = lines[lineno].rstrip('\n')
-            after = [l.rstrip('\n') for l in lines[lineno + 1:ubound]]
-
-            return before, line, after
-        finally:
-            fileobj.close()
-    return (), None, ()
 
 def safe__import__(module_name):
     """
@@ -251,104 +257,3 @@ def md5crypt(password, salt, magic='$1$'):
         rearranged += itoa64[v & 0x3f]; v >>= 6
 
     return magic + salt + '$' + rearranged
-
-
-# -- misc. utils
-
-class Ranges(object):
-    """
-    Holds information about ranges parsed from a string
-    
-    >>> x = Ranges("1,2,9-15")
-    >>> 1 in x
-    True
-    >>> 5 in x
-    False
-    >>> 10 in x
-    True
-    >>> 16 in x
-    False
-    >>> [i for i in range(20) if i in x]
-    [1, 2, 9, 10, 11, 12, 13, 14, 15]
-    
-    Also supports iteration, which makes that last example a bit simpler:
-    
-    >>> list(x)
-    [1, 2, 9, 10, 11, 12, 13, 14, 15]
-    
-    Note that it automatically reduces the list and short-circuits when the
-    desired ranges are a relatively small portion of the entire set:
-    
-    >>> x = Ranges("99")
-    >>> 1 in x # really fast
-    False
-    >>> x = Ranges("1, 2, 1-2, 2") # reduces this to 1-2
-    >>> x.pairs
-    [(1, 2)]
-    >>> x = Ranges("1-9,2-4") # handle ranges that completely overlap
-    >>> list(x)
-    [1, 2, 3, 4, 5, 6, 7, 8, 9]
-    
-    Empty ranges are ok, and ranges can be constructed in pieces, if you
-    so choose:
-    
-    >>> x = Ranges()
-    >>> x.appendrange("1, 2, 3")
-    >>> x.appendrange("5-9")
-    >>> x.appendrange("2-3") # reduce'd away
-    >>> list(x)
-    [1, 2, 3, 5, 6, 7, 8, 9]
-
-    ''Code contributed by Tim Hatch''
-    """
-    def __init__(self, r=None):
-        self.pairs = []
-        self.appendrange(r)
-
-    def appendrange(self, r):
-        """Add a range (from a string or None) to the current one"""
-        if not r: return
-        p = self.pairs
-        for x in r.split(","):
-            try:
-                a, b = map(int, x.split('-', 1))
-            except ValueError:
-                a, b = int(x), int(x)
-            p.append((a, b))
-        self._reduce()
-
-    def _reduce(self):
-        """Come up with the minimal representation of the ranges"""
-        d = [] # list of indices to delete
-        p = self.pairs
-        p.sort()
-        for i in range(len(p) - 1):
-            if p[i+1][0] <= p[i][1]: # this item overlaps with the next
-	        # make the first one include the second
-                p[i] = (p[i][0], max(p[i][1], p[i+1][1]))
-	        d.append(i+1) # delete the second on a later pass
-        d.reverse()
-        for i in d:
-            del p[i]
-        self.a = p[0][0]  # min value
-        self.b = p[-1][1] # max value
-
-    def __iter__(self):
-        """
-        This is another way I came up with to do it.  Is it faster?
-        
-        from itertools import chain
-        return chain(*[xrange(a, b+1) for a, b in self.pairs])
-        """
-        for a, b in self.pairs:
-            for i in range(a, b+1):
-                yield i
-
-    def __contains__(self, x):
-        if self.a <= x <= self.b: # short-circuit if outside of possible range
-            for a, b in self.pairs:
-                if a <= x <= b:
-                    return True
-                if b > x: # short-circuit if we've gone too far
-                    break
-        return False

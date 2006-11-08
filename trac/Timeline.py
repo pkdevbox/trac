@@ -17,16 +17,14 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime, timedelta
-from heapq import heappush, heappop
 import re
 import time
 
 from trac.config import IntOption
 from trac.core import *
 from trac.perm import IPermissionRequestor
-from trac.util.datefmt import format_date, parse_date, to_timestamp, utc
-from trac.util.html import html, plaintext, Markup
+from trac.util.datefmt import format_date, format_time, http_date
+from trac.util.html import html, Markup
 from trac.util.text import to_unicode
 from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
@@ -76,9 +74,10 @@ class TimelineModule(Component):
         return 'timeline'
 
     def get_navigation_items(self, req):
-        if 'TIMELINE_VIEW' in req.perm:
-            yield ('mainnav', 'timeline',
-                   html.A('Timeline', href=req.href.timeline(), accesskey=2))
+        if not req.perm.has_permission('TIMELINE_VIEW'):
+            return
+        yield ('mainnav', 'timeline',
+               html.A('Timeline', href=req.href.timeline(), accesskey=2))
 
     # IPermissionRequestor methods
 
@@ -92,27 +91,26 @@ class TimelineModule(Component):
 
     def process_request(self, req):
         req.perm.assert_permission('TIMELINE_VIEW')
-        data = {}
 
         format = req.args.get('format')
         maxrows = int(req.args.get('max', 0))
 
         # Parse the from date and adjust the timestamp to the last second of
         # the day
-        t = datetime.now(utc)
-        if 'from' in req.args:
+        t = time.localtime()
+        if req.args.has_key('from'):
             try:
-                t =  parse_date(req.args.get('from'), req.tz)
+                t = time.strptime(req.args.get('from'), '%x')
             except:
                 pass
-        fromdate = t.replace(hour=23, minute=59, second=59)
+
+        fromdate = time.mktime((t[0], t[1], t[2], 23, 59, 59, t[6], t[7], t[8]))
         try:
             daysback = max(0, int(req.args.get('daysback', '')))
         except ValueError:
             daysback = self.default_daysback
-
-        data = {'fromdate': fromdate, 'daysback': daysback,
-                'events': [], 'filters': []}
+        req.hdf['timeline.from'] = format_date(fromdate)
+        req.hdf['timeline.daysback'] = daysback
 
         available_filters = []
         for event_provider in self.event_providers:
@@ -120,7 +118,7 @@ class TimelineModule(Component):
 
         filters = []
         # check the request or session for enabled filters, or use default
-        for test in (lambda f: f[0] in req.args,
+        for test in (lambda f: req.args.has_key(f[0]),
                      lambda f: req.session.get('timeline.filter.%s' % f[0], '')\
                                == '1',
                      lambda f: len(f) == 2 or f[2]):
@@ -129,33 +127,31 @@ class TimelineModule(Component):
             filters = [f[0] for f in available_filters if test(f)]
 
         # save the results of submitting the timeline form to the session
-        if 'update' in req.args:
+        if req.args.has_key('update'):
             for filter in available_filters:
                 key = 'timeline.filter.%s' % filter[0]
-                if filter[0] in req.args:
+                if req.args.has_key(filter[0]):
                     req.session[key] = '1'
-                elif key in req.session:
+                elif req.session.has_key(key):
                     del req.session[key]
 
         stop = fromdate
-        start = stop - timedelta(days=daysback + 1)
+        start = stop - (daysback + 1) * 86400
 
         events = []
         for event_provider in self.event_providers:
             try:
-                for event in event_provider.get_timeline_events(req, start,
-                                                                stop, filters):
-                    kind, href, title, date, author, message = event
-                    if not isinstance(date, datetime):
-                        date = datetime.fromtimestamp(event[3], utc)
-                    heappush(events, (-to_timestamp(date),
-                             (kind, href, title, date, author, message)))
+                events += event_provider.get_timeline_events(req, start, stop,
+                                                             filters)
             except Exception, e: # cope with a failure of that provider
                 self._provider_failure(e, req, event_provider, filters,
                                        [f[0] for f in available_filters])
 
+        events.sort(lambda x,y: cmp(y[3], x[3]))
         if maxrows and len(events) > maxrows:
             del events[maxrows:]
+
+        req.hdf['title'] = 'Timeline'
 
         # Get the email addresses of all known users
         email_map = {}
@@ -163,48 +159,46 @@ class TimelineModule(Component):
             if email:
                 email_map[username] = email
 
-        while events:
-            _, (kind, href, title, date, author, message) = heappop(events)
+        idx = 0
+        for kind, href, title, date, author, message in events:
             event = {'kind': kind, 'title': title, 'href': href,
                      'author': author or 'anonymous',
-                     'date': date,
-                     # for speeding-up the grouping by day:
-                     'day': format_date(date, tzinfo=req.tz),
-                     'dateuid': to_timestamp(date),
+                     'date': format_date(date),
+                     'time': format_time(date, '%H:%M'),
+                     'dateuid': int(date),
                      'message': message}
 
             if format == 'rss':
                 # Strip/escape HTML markup
                 if isinstance(title, Markup):
-                    title = plaintext(title, keeplinebreaks=False)
+                    title = title.plaintext(keeplinebreaks=False)
                 event['title'] = title
                 event['message'] = to_unicode(message)
 
                 if author:
                     # For RSS, author must be an email address
-                    if '@' in author:
-                        event['author'] = author
-                    elif author in email_map:
-                        event['author'] = email_map[author]
-                    else:
-                        del event['author']
+                    if author.find('@') != -1:
+                        event['author.email'] = author
+                    elif email_map.has_key(author):
+                        event['author.email'] = email_map[author]
+                event['date'] = http_date(date)
 
-            data['events'].append(event)
+            req.hdf['timeline.events.%s' % idx] = event
+            idx += 1
 
         if format == 'rss':
-            return 'timeline.rss', data, 'application/rss+xml'
+            return 'timeline_rss.cs', 'application/rss+xml'
 
         add_stylesheet(req, 'common/css/timeline.css')
         rss_href = req.href.timeline([(f, 'on') for f in filters],
                                      daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, 'RSS Feed', 'application/rss+xml',
                  'rss')
+        for idx,fltr in enumerate(available_filters):
+            req.hdf['timeline.filters.%d' % idx] = {'name': fltr[0],
+                'label': fltr[1], 'enabled': int(fltr[0] in filters)}
 
-        for filter_ in available_filters:
-            data['filters'].append({'name': filter_[0], 'label': filter_[1],
-                                    'enabled': filter_[0] in filters})
-
-        return 'timeline.html', data, None
+        return 'timeline.cs', None
 
     def _provider_failure(self, exc, req, ep, current_filters, all_filters):
         """Raise a TracError exception explaining the failure of a provider.
@@ -213,8 +207,6 @@ class TimelineModule(Component):
         without the filters corresponding to the guilty event provider `ep`.
         """
         ep_name, exc_name = [i.__class__.__name__ for i in (ep, exc)]
-        self.log.exception('Timeline event provider %s failed', ep_name)
-
         guilty_filters = [f[0] for f in ep.get_timeline_filters(req)]
         guilty_kinds = [f[1] for f in ep.get_timeline_filters(req)]
         other_filters = [f for f in current_filters if not f in guilty_filters]
