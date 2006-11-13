@@ -1,7 +1,5 @@
-from datetime import datetime
 import unittest
 
-from trac.util.datefmt import utc
 from trac.wiki.api import WikiSystem
 from trac.wiki.model import WikiPage
 from trac.wiki.tests import formatter
@@ -207,21 +205,20 @@ nolink:ignored
 """ #" Emacs likes it that way better
 
 def wiki_setup(tc):
-    now = datetime.now(utc)
     wiki1 = WikiPage(tc.env)
     wiki1.name = 'TestPage'
     wiki1.text = '--'
-    wiki1.save('joe', 'normal WikiPageNames', '::1', now)
+    wiki1.save('joe', 'normal WikiPageNames', '::1', 42)
 
     wiki2 = WikiPage(tc.env)
     wiki2.name = 'Space 1 23'
     wiki2.text = '--'
-    wiki2.save('joe', 'not a WikiPageNames', '::1', now)
+    wiki2.save('joe', 'not a WikiPageNames', '::1', 42)
 
     wiki3 = WikiPage(tc.env)
     wiki3.name = u"C'est l'\xe9t\xe9"
     wiki3.text = '--'
-    wiki3.save('joe', 'unicode WikiPageNames', '::1', now)
+    wiki3.save('joe', 'unicode WikiPageNames', '::1', 42)
 
     imt = WikiPage(tc.env)
     imt.name = u"InterMapTxt"
@@ -238,7 +235,7 @@ complex         http://server/$1/page/$2?format=txt  # resource $2 in $1
 nolink          http://noweb
 }}}
 """
-    imt.save('joe', 'test InterWiki links', '::1', now)
+    imt.save('joe', 'test InterWiki links', '::1', 42)
 
 
 def suite():

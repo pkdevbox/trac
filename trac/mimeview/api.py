@@ -59,13 +59,11 @@ an object that can be `read()`.
 import re
 from StringIO import StringIO
 
-from genshi.core import escape, Markup, Stream
-from genshi.builder import Fragment, tag
-
 from trac.config import IntOption, ListOption, Option
 from trac.core import *
-from trac.util import sorted, Ranges
+from trac.util import sorted
 from trac.util.text import to_utf8, to_unicode
+from trac.util.html import escape, Markup, Fragment, html
 
 
 __all__ = ['get_mimetype', 'is_binary', 'detect_unicode', 'Mimeview',
@@ -450,14 +448,12 @@ class Mimeview(Component):
                                          filename, url)
                 if not result:
                     continue
-                elif isinstance(result, (Fragment, Stream)):
+                elif isinstance(result, Fragment):
                     return result
                 elif isinstance(result, basestring):
                     return Markup(to_unicode(result))
                 elif annotations:
-                    m = req.args.get('marks')
-                    return Markup(self._annotate(result, annotations,
-                                                 m and Ranges(m)))
+                    return Markup(self._annotate(result, annotations))
                 else:
                     buf = StringIO()
                     buf.write('<div class="code"><pre>')
@@ -469,7 +465,7 @@ class Mimeview(Component):
                 self.log.warning('HTML preview using %s failed (%s)'
                                  % (renderer, e), exc_info=True)
 
-    def _annotate(self, lines, annotations, marks=None):
+    def _annotate(self, lines, annotations):
         buf = StringIO()
         buf.write('<table class="code"><thead><tr>')
         annotators = []
@@ -496,11 +492,7 @@ class Mimeview(Component):
             for annotator in annotators:
                 cells.append(annotator.annotate_line(num + 1, line))
             cells.append('<td>%s</td>\n' % space_re.sub(htmlify, line))
-            if marks and num+1 in marks:
-                buf.write('<tr class="%s">' % ('hilite',) +
-                          '\n'.join(cells) + '</tr>')
-            else:
-                buf.write('<tr>' + '\n'.join(cells) + '</tr>')
+            buf.write('<tr>' + '\n'.join(cells) + '</tr>')
         else:
             if num < 0:
                 return ''
@@ -588,8 +580,8 @@ class Mimeview(Component):
                                  "option." % (mapping, option))
         return types
     
-    def preview_data(self, req, content, length, mimetype, filename,
-                     url=None, annotations=None):
+    def preview_to_hdf(self, req, content, length, mimetype, filename,
+                       url=None, annotations=None):
         """Prepares a rendered preview of the given `content`.
 
         Note: `content` will usually be an object with a `read` method.
@@ -599,8 +591,8 @@ class Mimeview(Component):
                     'max_file_size': self.max_preview_size,
                     'raw_href': url}
         else:
-            return {'rendered': self.render(req, mimetype, content,
-                                            filename, url, annotations),
+            return {'preview': self.render(req, mimetype, content, filename,
+                                           url, annotations),
                     'raw_href': url}
 
     def send_converted(self, req, in_type, content, selector, filename='file'):
@@ -711,8 +703,8 @@ class ImageRenderer(Component):
 
     def render(self, req, mimetype, content, filename=None, url=None):
         if url:
-            return tag.div(tag.img(src=url, alt=filename),
-                           class_="image-file")
+            return html.DIV(html.IMG(src=url,alt=filename),
+                            class_="image-file")
 
 
 class WikiTextRenderer(Component):

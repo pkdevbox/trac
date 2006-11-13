@@ -14,10 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
-
 from trac.core import TracError
-from trac.util.datefmt import utc, to_timestamp
 from trac.versioncontrol import Changeset, Node, Repository, Authorizer, \
                                 NoSuchChangeset
 
@@ -43,8 +40,8 @@ class CachedRepository(Repository):
         if not self.synced:
             self.sync()
             self.synced = 1
-        return CachedChangeset(self.repos, self.repos.normalize_rev(rev),
-                               self.db, self.authz)
+        return CachedChangeset(self.repos.normalize_rev(rev), self.db,
+                               self.authz)
 
     def get_changesets(self, start, stop):
         if not self.synced:
@@ -53,7 +50,7 @@ class CachedRepository(Repository):
         cursor = self.db.cursor()
         cursor.execute("SELECT rev FROM revision "
                        "WHERE time >= %s AND time < %s "
-                       "ORDER BY time", (to_timestamp(start), to_timestamp(stop)))
+                       "ORDER BY time", (start, stop))
         for rev, in cursor:
             if self.authz.has_permission_for_changeset(rev):
                 yield self.get_changeset(rev)
@@ -64,14 +61,15 @@ class CachedRepository(Repository):
 
         # -- repository used for populating the cache
         cursor.execute("SELECT value FROM system WHERE name='repository_dir'")
-        for previous_repository_dir, in cursor:
-            if previous_repository_dir != self.name:
-                raise TracError("The 'repository_dir' has changed, "
-                                "a 'trac-admin resync' operation is needed.")
-            break
+        row = cursor.fetchone()
+        if row:
+            previous_repository_dir = row[0]
         else: # no 'repository_dir' stored yet, assume everything's OK
-            cursor.execute("INSERT INTO system (name,value) "
-                           "VALUES ('repository_dir',%s)", (self.name,))
+            previous_repository_dir = self.name
+
+        if self.name != previous_repository_dir:
+            raise TracError, ("The 'repository_dir' has changed, "
+                              "a 'trac-admin resync' operation is needed.")
 
         youngest_stored = self.repos.get_youngest_rev_in_cache(self.db)
 
@@ -95,9 +93,8 @@ class CachedRepository(Repository):
                 changeset = self.repos.get_changeset(current_rev)
                 cursor.execute("INSERT INTO revision (rev,time,author,message) "
                                "VALUES (%s,%s,%s,%s)", (str(current_rev),
-                                                        to_timestamp(changeset.date),
-                                                        changeset.author,
-                                                        changeset.message))
+                               changeset.date, changeset.author,
+                               changeset.message))
                 for path,kind,action,base_path,base_rev in changeset.get_changes():
                     self.log.debug("Caching node change in [%s]: %s"
                                    % (current_rev, (path, kind, action,
@@ -110,7 +107,13 @@ class CachedRepository(Repository):
                                    (str(current_rev), path, kind, action,
                                    base_path, base_rev))
                 current_rev = self.repos.next_rev(current_rev)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except:
+                # See <http://trac.edgewall.org/ticket/4120>: this breaks badly
+                # while rendering the timeline, because the commit happens
+                # while iterating over a recordset
+                pass
             self.repos.authz = authz # restore permission checking
 
     def get_node(self, path, rev=None):
@@ -149,8 +152,7 @@ class CachedRepository(Repository):
 
 class CachedChangeset(Changeset):
 
-    def __init__(self, repos, rev, db, authz):
-        self.repos = repos
+    def __init__(self, rev, db, authz):
         self.db = db
         self.authz = authz
         cursor = self.db.cursor()
@@ -158,9 +160,8 @@ class CachedChangeset(Changeset):
                        "WHERE rev=%s", (rev,))
         row = cursor.fetchone()
         if row:
-            _date, author, message = row
-            date = datetime.fromtimestamp(_date, utc)
-            Changeset.__init__(self, rev, message, author, date)
+            date, author, message = row
+            Changeset.__init__(self, rev, message, author, int(date))
         else:
             raise NoSuchChangeset(rev)
 
@@ -178,5 +179,4 @@ class CachedChangeset(Changeset):
             yield path, kind, change, base_path, base_rev
 
     def get_properties(self):
-        for prop in self.repos.get_changeset(self.rev).get_properties():
-            yield prop
+        return []

@@ -14,7 +14,6 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import imp
 import inspect
 import os
@@ -27,10 +26,10 @@ from StringIO import StringIO
 
 from trac.config import default_dir
 from trac.core import *
-from trac.util.datefmt import format_date, utc
-from trac.util.compat import sorted, groupby, any
+from trac.util import sorted
+from trac.util.datefmt import format_date
 from trac.util.html import escape, html, Markup
-from trac.wiki.api import IWikiMacroProvider, WikiSystem, parse_args
+from trac.wiki.api import IWikiMacroProvider, WikiSystem
 from trac.wiki.model import WikiPage
 from trac.web.chrome import add_stylesheet
 
@@ -62,58 +61,17 @@ class TitleIndexMacro(WikiMacroBase):
     Accepts a prefix string as parameter: if provided, only pages with names
     that start with the prefix are included in the resulting list. If this
     parameter is omitted, all pages are listed.
-
-    Alternate `format` can be specified:
-     - `format=group`: The list of page will be structured in groups
-        according to common prefix. This format also supports a `min=n`
-        argument, where `n` is the minimal number of pages for a group.
     """
 
-    SPLIT_RE = re.compile(r"( |/|[0-9])")
-
     def render_macro(self, req, name, content):
-        args, kw = parse_args(content)
-        prefix = args and args[0] or None
-        format = kw.get('format', '')
-        minsize = max(int(kw.get('min', 2)), 2)
+        prefix = content or None
 
         wiki = WikiSystem(self.env)
-        pages = sorted(wiki.get_pages(prefix))
 
-        if format != 'group':
-            return html.UL([html.LI(html.A(wiki.format_page_name(page),
-                                           href=req.href.wiki(page)))
-                            for page in pages])
-        
-        # Group by Wiki word and/or Wiki hierarchy
-        pages = [(self.SPLIT_RE.split(wiki.format_page_name(page, split=True)),
-                  page) for page in pages]
-        def split_in_groups(group):
-            """Return list of pagename or (key, sublist) elements"""
-            groups = []
-            for key, subgrp in groupby(group, lambda (k,p): k and k[0] or ''):
-                subgrp = [(k[1:],p) for k,p in subgrp]
-                if key and len(subgrp) >= minsize:
-                    sublist = split_in_groups(sorted(subgrp))
-                    if len(sublist) == 1:
-                        elt = (key+sublist[0][0], sublist[0][1])
-                    else:
-                        elt = (key, sublist)
-                    groups.append(elt)
-                else:
-                    for elt in subgrp:
-                        groups.append(elt[1])
-            return groups
+        return html.UL([html.LI(html.A(wiki.format_page_name(page),
+                                       href=req.href.wiki(page)))
+                        for page in sorted(wiki.get_pages(prefix))])
 
-        def render_groups(groups):
-            return html.UL(
-                [html.LI(isinstance(elt, tuple) and 
-                         html(html.STRONG(elt[0]), render_groups(elt[1])) or
-                         html.A(wiki.format_page_name(elt),
-                                href=req.href.wiki(elt)))
-                 for elt in groups])
-        return render_groups(split_in_groups(pages))
-            
 
 class RecentChangesMacro(WikiMacroBase):
     """Lists all pages that have recently been modified, grouping them by the
@@ -156,8 +114,7 @@ class RecentChangesMacro(WikiMacroBase):
 
         entries_per_date = []
         prevdate = None
-        for name, version, ts in cursor:
-            time = datetime.fromtimestamp(ts, utc)
+        for name, version, time in cursor:
             date = format_date(time)
             if date != prevdate:
                 prevdate = date
@@ -202,7 +159,6 @@ class PageOutlineMacro(WikiMacroBase):
 
     def render_macro(self, req, name, content):
         from trac.wiki.formatter import wiki_to_outline
-        from genshi.builder import tag
         min_depth, max_depth = 1, 6
         title = None
         inline = 0
@@ -224,13 +180,16 @@ class PageOutlineMacro(WikiMacroBase):
         pagename = req.args.get('page') or 'WikiStart'
         page = WikiPage(self.env, pagename)
 
-        outline = wiki_to_outline(page.text, self.env, db=db,
-                                  max_depth=max_depth, min_depth=min_depth)
-        if title:
-            outline = tag.h4(title) + outline
+        buf = StringIO()
         if not inline:
-            outline = tag.div(outline, class_="wiki-toc")
-        return outline
+            buf.write('<div class="wiki-toc">')
+        if title:
+            buf.write('<h4>%s</h4>' % escape(title))
+        buf.write(wiki_to_outline(page.text, self.env, db=db,
+                                  max_depth=max_depth, min_depth=min_depth))
+        if not inline:
+            buf.write('</div>')
+        return buf.getvalue()
 
 
 class ImageMacro(WikiMacroBase):
@@ -390,7 +349,7 @@ class ImageMacro(WikiMacroBase):
         if style:
             attr['style'] = '; '.join(['%s:%s' % (k, escape(v))
                                        for k, v in style.iteritems()])
-        result = html.IMG(src=raw_url, **attr)
+        result = Markup(html.IMG(src=raw_url, **attr)).sanitize()
         if not nolink:
             result = html.A(result, href=url, style='padding:0; border:none')
         return result
@@ -442,7 +401,7 @@ class TracIniMacro(WikiMacroBase):
 
     def render_macro(self, req, name, filter):
         from trac.config import Option
-        from trac.wiki.formatter import wiki_to_oneliner
+        from trac.wiki.formatter import wiki_to_html, wiki_to_oneliner
         filter = filter or ''
 
         sections = set([section for section, option in Option.registry.keys()
@@ -453,8 +412,7 @@ class TracIniMacro(WikiMacroBase):
               html.TABLE(class_='wiki')(
                   html.TBODY([html.TR(html.TD(html.TT(option.name)),
                                       html.TD(wiki_to_oneliner(option.__doc__,
-                                                               self.env,
-                                                               req=req)))
+                                                               self.env)))
                               for option in Option.registry.values()
                               if option.section == section])))
              for section in sorted(sections)])

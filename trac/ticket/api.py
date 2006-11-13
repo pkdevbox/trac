@@ -15,15 +15,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import re
-from datetime import datetime
 
 from trac.config import *
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionSystem
-from trac.util import Ranges
-from trac.util.html import html
+from trac.Search import ISearchSource, search_to_sql, shorten_result
+from trac.util.html import html, Markup
 from trac.util.text import shorten_line
-from trac.util.datefmt import utc
 from trac.wiki import IWikiSyntaxProvider, Formatter
 
 
@@ -61,7 +59,7 @@ class ITicketManipulator(Interface):
 
 
 class TicketSystem(Component):
-    implements(IPermissionRequestor, IWikiSyntaxProvider)
+    implements(IPermissionRequestor, IWikiSyntaxProvider, ISearchSource)
 
     change_listeners = ExtensionPoint(ITicketChangeListener)
 
@@ -101,7 +99,7 @@ class TicketSystem(Component):
         field = {'name': 'owner', 'label': 'Owner'}
         if self.restrict_owner:
             field['type'] = 'select'
-            users = [''] # for clearing assignment
+            users = []
             perm = PermissionSystem(self.env)
             for username, name, email in self.env.get_known_users(db):
                 if perm.get_user_permissions(username).get('TICKET_MODIFY'):
@@ -202,8 +200,7 @@ class TicketSystem(Component):
             # matches #... but not &#... (HTML entity)
             r"!?(?<!&)#"
             # optional intertrac shorthand #T... + digits
-            r"(?P<it_ticket>%s)%s" % (Formatter.INTERTRAC_SCHEME,
-                                      Ranges.RE_STR),
+            r"(?P<it_ticket>%s)\d+" % Formatter.INTERTRAC_SCHEME,
             lambda x, y, z: self._format_link(x, 'ticket', y[1:], y, z))
 
     def _format_link(self, formatter, ns, target, label, fullmatch=None):
@@ -212,23 +209,14 @@ class TicketSystem(Component):
         if intertrac:
             return intertrac
         try:
-            r = Ranges(target)
-            if len(r) == 1:
-                cursor = formatter.db.cursor()
-                cursor.execute("SELECT summary,status FROM ticket WHERE id=%s",
-                               (str(r.a),))
-                for summary, status in cursor:
-                    return html.A(label, class_='%s ticket' % status,
-                                  title=shorten_line(summary)+' (%s)' % status,
-                                  href=formatter.href.ticket(target))
-                else:
-                    return html.A(label, class_='missing ticket',
-                                  href=formatter.href.ticket(target),
-                                  rel="nofollow")
-            else:
-                ranges = str(r)
-                return html.A(label, title='Tickets '+ranges,
-                              href=formatter.href.query(id=ranges))
+            cursor = formatter.db.cursor()
+            cursor.execute("SELECT summary,status FROM ticket WHERE id=%s",
+                           (str(int(target)),))
+            row = cursor.fetchone()
+            if row:
+                return html.A(label, class_='%s ticket' % row[1],
+                              title=shorten_line(row[0]) + ' (%s)' % row[1],
+                              href=formatter.href.ticket(target))
         except ValueError:
             pass
         return html.A(label, class_='missing ticket', rel='nofollow',
@@ -240,9 +228,7 @@ class TicketSystem(Component):
         if ':' in target:
             elts = target.split(':')
             if len(elts) == 3:
-                cnum, type, id = elts
-                if cnum != 'description' and cnum and not cnum[0].isdigit():
-                    type, id, cnum = elts # support old comment: style
+                type, id, cnum = elts
                 href = formatter.href(type, id)
         else:
             # FIXME: the formatter should know which object the text being
@@ -259,3 +245,30 @@ class TicketSystem(Component):
         else:
             return label
  
+    # ISearchSource methods
+
+    def get_search_filters(self, req):
+        if req.perm.has_permission('TICKET_VIEW'):
+            yield ('ticket', 'Tickets')
+
+    def get_search_results(self, req, terms, filters):
+        if not 'ticket' in filters:
+            return
+        db = self.env.get_db_cnx()
+        sql, args = search_to_sql(db, ['b.newvalue'], terms)
+        sql2, args2 = search_to_sql(db, ['summary', 'keywords', 'description',
+                                         'reporter', 'cc'], terms)
+        cursor = db.cursor()
+        cursor.execute("SELECT DISTINCT a.summary,a.description,a.reporter, "
+                       "a.keywords,a.id,a.time,a.status FROM ticket a "
+                       "LEFT JOIN ticket_change b ON a.id = b.ticket "
+                       "WHERE (b.field='comment' AND %s ) OR %s" % (sql, sql2),
+                       args + args2)
+        for summary, desc, author, keywords, tid, date, status in cursor:
+            ticket = '#%d: ' % tid
+            if status == 'closed':
+                ticket = Markup('<span style="text-decoration: line-through">'
+                                '#%s</span>: ', tid)
+            yield (req.href.ticket(tid),
+                   ticket + shorten_line(summary),
+                   date, author, shorten_result(desc, terms))

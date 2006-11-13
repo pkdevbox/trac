@@ -16,7 +16,6 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import os
 import re
 import shutil
@@ -28,14 +27,14 @@ from trac.config import BoolOption, IntOption
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
 from trac.mimeview import *
-from trac.timeline.api import TimelineEvent
 from trac.util import get_reporter_id, create_unique_file
-from trac.util.datefmt import utc
+from trac.util.datefmt import format_datetime, pretty_timedelta
 from trac.util.html import Markup, html
 from trac.util.text import unicode_quote, unicode_unquote, pretty_size
 from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider
+from trac.wiki.formatter import wiki_to_html, wiki_to_oneliner
 
 
 class InvalidAttachment(TracError):
@@ -45,7 +44,6 @@ class InvalidAttachment(TracError):
 class IAttachmentChangeListener(Interface):
     """Extension point interface for components that require notification when
     attachments are created or deleted."""
-
     def attachment_added(attachment):
         """Called when an attachment is added."""
 
@@ -59,7 +57,6 @@ class IAttachmentManipulator(Interface):
     
     Unlike change listeners, a manipulator can reject changes being committed
     to the database."""
-
     def prepare_attachment(req, attachment, fields):
         """Not currently called, but should be provided for future
         compatibility."""
@@ -87,7 +84,7 @@ class Attachment(object):
             self.filename = None
             self.description = None
             self.size = None
-            self.date = None
+            self.time = None
             self.author = None
             self.ipnr = None
 
@@ -108,8 +105,7 @@ class Attachment(object):
         self.filename = row[0]
         self.description = row[1]
         self.size = row[2] and int(row[2]) or 0
-        time = row[3] and int(row[3]) or 0
-        self.date = datetime.fromtimestamp(time, utc)
+        self.time = row[3] and int(row[3]) or 0
         self.author = row[4]
         self.ipnr = row[5]
 
@@ -124,10 +120,6 @@ class Attachment(object):
     def href(self, req, *args, **dict):
         return req.href.attachment(self.parent_type, self.parent_id,
                                    self.filename, *args, **dict)
-
-    def raw_href(self, req):
-        return req.href('raw-attachment', self.parent_type, self.parent_id,
-                        self.filename)
 
     def parent_href(self, req):
         return req.href(self.parent_type, self.parent_id)
@@ -168,7 +160,6 @@ class Attachment(object):
 
 
     def insert(self, filename, fileobj, size, t=None, db=None):
-        # FIXME: `t` should probably be switched to `datetime` too
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -176,8 +167,7 @@ class Attachment(object):
             handle_ta = False
 
         self.size = size and int(size) or 0
-        timestamp = int(t or time.time())
-        self.date = datetime.fromtimestamp(timestamp, utc)
+        self.time = int(t or time.time())
 
         # Make sure the path to the attachment is inside the environment
         # attachments directory
@@ -201,8 +191,8 @@ class Attachment(object):
             cursor.execute("INSERT INTO attachment "
                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                            (self.parent_type, self.parent_id, filename,
-                            self.size, timestamp, self.description,
-                            self.author, self.ipnr))
+                            self.size, self.time, self.description, self.author,
+                            self.ipnr))
             shutil.copyfileobj(fileobj, targetfile)
             self.filename = filename
 
@@ -230,8 +220,7 @@ class Attachment(object):
             attachment.filename = filename
             attachment.description = description
             attachment.size = size and int(size) or 0
-            time = time and int(time) or 0
-            attachment.date = datetime.fromtimestamp(time, utc)
+            attachment.time = time and int(time) or 0
             attachment.author = author
             attachment.ipnr = ipnr
             yield attachment
@@ -263,6 +252,28 @@ class Attachment(object):
         except IOError:
             raise TracError('Attachment %s not found' % self.filename)
         return fd
+
+
+# Templating utilities
+
+def attachments_to_hdf(env, req, db, parent_type, parent_id):
+    return [attachment_to_hdf(env, req, db, attachment) for attachment
+            in Attachment.select(env, parent_type, parent_id, db)]
+    
+def attachment_to_hdf(env, req, db, attachment):
+    if not db:
+        db = env.get_db_cnx()
+    hdf = {
+        'filename': attachment.filename,
+        'description': wiki_to_oneliner(attachment.description, env, db),
+        'author': attachment.author,
+        'ipnr': attachment.ipnr,
+        'size': pretty_size(attachment.size),
+        'time': format_datetime(attachment.time),
+        'age': pretty_timedelta(attachment.time),
+        'href': attachment.href(req)
+    }
+    return hdf
 
 
 class AttachmentModule(Component):
@@ -314,12 +325,11 @@ class AttachmentModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'^/(raw-)?attachment/([^/]+)(?:[/:](.*))?$',
+        match = re.match(r'^/attachment/(ticket|wiki)(?:[/:](.*))?$',
                          req.path_info)
         if match:
-            req.args['format'] = match.group(1) and 'raw' or ''
-            req.args['type'] = match.group(2)
-            req.args['path'] = match.group(3).replace(':', '/')
+            req.args['type'] = match.group(1)
+            req.args['path'] = match.group(2).replace(':', '/')
             return True
 
     def process_request(self, req):
@@ -330,16 +340,6 @@ class AttachmentModule(Component):
         if not parent_type in ['ticket', 'wiki']:
             raise HTTPBadRequest('Unknown attachment type')
 
-        def parent_data(parent_type, parent_id):
-            # Populate attachment.parent:
-            parent_href = req.href(parent_type, parent_id)
-            if parent_type == 'ticket':
-                parent_name = 'Ticket #' + parent_id
-            else: # 'wiki'
-                parent_name = parent_id
-            return {'type': parent_type, 'id': parent_id,
-                    'name': parent_name, 'href': parent_href}
-
         action = req.args.get('action', 'view')
         if action == 'new':
             attachment = Attachment(self.env, parent_type, path)
@@ -348,37 +348,42 @@ class AttachmentModule(Component):
             parent_id = '/'.join(segments[:-1])
             last_segment = segments[-1]
             if len(segments) == 1:
-                # No specific attachment specified, show the list
-                data = {
-                    'mode': 'list',
-                    'parent': parent_data(parent_type, last_segment),
-                    'attachments': Attachment.select(env, parent_type,
-                                                     last_segment),
-                }
-                return 'attachment.html', data, None
+                self._render_list(req, parent_type, last_segment)
+                return 'attachment.cs', None
             if not last_segment:
                 raise HTTPBadRequest('Bad request')
             attachment = Attachment(self.env, parent_type, parent_id,
                                     last_segment)
-
-        parent_data = parent_data(attachment.parent_type, attachment.parent_id)
+        parent_link, parent_text = self._parent_to_hdf(
+            req, attachment.parent_type, attachment.parent_id)
         if req.method == 'POST':
             if action == 'new':
                 self._do_save(req, attachment)
             elif action == 'delete':
                 self._do_delete(req, attachment)
         elif action == 'delete':
-            data = self._render_confirm(req, attachment)
+            self._render_confirm(req, attachment)
         elif action == 'new':
-            data = self._render_form(req, attachment)
+            self._render_form(req, attachment)
         else:
-            add_link(req, 'up', parent_data['href'], parent_data['name'])
-            data = self._render_view(req, attachment)
-
-        data['parent'] = parent_data
+            add_link(req, 'up', parent_link, parent_text)
+            self._render_view(req, attachment)
 
         add_stylesheet(req, 'common/css/code.css')
-        return 'attachment.html', data, None
+        return 'attachment.cs', None
+
+    def _parent_to_hdf(self, req, parent_type, parent_id):
+        # Populate attachment.parent:
+        parent_link = req.href(parent_type, parent_id)
+        if parent_type == 'ticket':
+            parent_text = 'Ticket #' + parent_id
+        else: # 'wiki'
+            parent_text = parent_id
+        req.hdf['attachment.parent'] = {
+            'type': parent_type, 'id': parent_id,
+            'name': parent_text, 'href': parent_link
+        }
+        return parent_link, parent_text
 
     # IWikiSyntaxProvider methods
     
@@ -386,7 +391,6 @@ class AttachmentModule(Component):
         return []
 
     def get_link_resolvers(self):
-        yield ('raw-attachment', self._format_link)
         yield ('attachment', self._format_link)
 
     # Public methods
@@ -404,30 +408,34 @@ class AttachmentModule(Component):
                        "  FROM attachment "
                        "  WHERE time > %s AND time < %s "
                        "        AND type = %s", (start, stop, type))
-        for type, id, filename, ts, description, author in cursor:
-            time = datetime.fromtimestamp(ts, utc)
+        for type, id, filename, time, description, author in cursor:
             yield ('created', type, id, filename, time, description, author)
 
-    def get_timeline_events(self, req, db, type, start, stop, display):
+    def get_timeline_events(self, req, db, type, format, start, stop, display):
         """Return an iterable of events suitable for ITimelineEventProvider.
 
         `display` is a callback for formatting the attachment's parent
         """
         for change, type, id, filename, time, descr, author in \
                 self.get_history(start, stop, type):
-            title = html(html.em(os.path.basename(filename)),
-                         ' attached to ', display(id))
-            event = TimelineEvent('attachment', title,
-                                  req.href.attachment(type, id, filename))
-            event.set_changeinfo(time, author)
-            event.set_context('attachment', type+':'+id, descr)
-            yield event
-            
+            title = html.EM(os.path.basename(filename)) + \
+                    ' attached to ' + display(id)
+            if format == 'rss':
+                descr = wiki_to_html(descr or '--', self.env, req, db,
+                                     absurls=True)
+                href = req.abs_href
+            else:
+                descr = wiki_to_oneliner(descr, self.env, db, shorten=True)
+                title += Markup(' by %s', author)
+                href = req.href
+            yield('attachment', href.attachment(type, id, filename), title,
+                  time, author, descr)
+
     # Internal methods
 
     def _do_save(self, req, attachment):
         perm_map = {'ticket': 'TICKET_APPEND', 'wiki': 'WIKI_MODIFY'}
-        req.perm.require(perm_map[attachment.parent_type])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
         if req.args.has_key('cancel'):
             req.redirect(attachment.parent_href(req))
@@ -477,7 +485,7 @@ class AttachmentModule(Component):
                 if not (old_attachment.author and req.authname \
                         and old_attachment.author == req.authname):
                     perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-                    req.perm.require(perm_map[old_attachment.parent_type])
+                    req.perm.assert_permission(perm_map[old_attachment.parent_type])
                 old_attachment.delete()
             except TracError:
                 pass # don't worry if there's nothing to replace
@@ -489,7 +497,7 @@ class AttachmentModule(Component):
 
     def _do_delete(self, req, attachment):
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        req.perm.require(perm_map[attachment.parent_type])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
         if req.args.has_key('cancel'):
             req.redirect(attachment.href(req))
@@ -501,29 +509,36 @@ class AttachmentModule(Component):
 
     def _render_confirm(self, req, attachment):
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        req.perm.require(perm_map[attachment.parent_type])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        return {'mode': 'delete', 'title': '%s (delete)' % attachment.title,
-                'attachment': attachment}
+        req.hdf['title'] = '%s (delete)' % attachment.title
+        req.hdf['attachment'] = {'filename': attachment.filename,
+                                 'mode': 'delete'}
 
     def _render_form(self, req, attachment):
         perm_map = {'ticket': 'TICKET_APPEND', 'wiki': 'WIKI_MODIFY'}
-        req.perm.require(perm_map[attachment.parent_type])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        return {'mode': 'new', 'author': get_reporter_id(req)}
+        req.hdf['attachment'] = {'mode': 'new',
+                                 'author': get_reporter_id(req)}
 
     def _render_view(self, req, attachment):
         perm_map = {'ticket': 'TICKET_VIEW', 'wiki': 'WIKI_VIEW'}
-        req.perm.require(perm_map[attachment.parent_type])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        req.check_modified(attachment.date)
+        req.check_modified(attachment.time)
 
-        data = {'mode': 'view', 'title': attachment.title,
-                'attachment': attachment}
+        # Render HTML view
+        req.hdf['title'] = attachment.title
+        req.hdf['attachment'] = attachment_to_hdf(self.env, req, None,
+                                                  attachment)
+        # Override the 'oneliner'
+        req.hdf['attachment.description'] = wiki_to_html(attachment.description,
+                                                         self.env, req)
 
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        if perm_map[attachment.parent_type] in req.perm:
-            data['can_delete'] = True
+        if req.perm.has_permission(perm_map[attachment.parent_type]):
+            req.hdf['attachment.can_delete'] = 1
 
         fd = attachment.open()
         try:
@@ -560,27 +575,32 @@ class AttachmentModule(Component):
                          mime_type)
 
             # add ''Original Format'' alternate link (always)
-            raw_href = attachment.raw_href(req)
+            raw_href = attachment.href(req, format='raw')
             add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
 
             self.log.debug("Rendering preview of file %s with mime-type %s"
                            % (attachment.filename, mime_type))
 
-            data['preview'] = mimeview.preview_data(
+            req.hdf['attachment'] = mimeview.preview_to_hdf(
                 req, fd, os.fstat(fd.fileno()).st_size, mime_type,
                 attachment.filename, raw_href, annotations=['lineno'])
-            return data
         finally:
             fd.close()
+
+    def _render_list(self, req, p_type, p_id):
+        self._parent_to_hdf(req, p_type, p_id)
+        req.hdf['attachment'] = {
+            'mode': 'list',
+            'list': attachments_to_hdf(self.env, req, None, p_type, p_id),
+            'attach_href': req.href.attachment(p_type, p_id)
+            }
 
     def _format_link(self, formatter, ns, target, label):
         link, params, fragment = formatter.split_link(target)
         ids = link.split(':', 2)
         if len(ids) == 3:
-            filename, parent_type, parent_id = ids
-            permute = True
+            parent_type, parent_id, filename = ids
         else:
-            permute = False
             # FIXME: the formatter should know which object the text being
             #        formatter belongs to
             parent_type, parent_id = 'wiki', 'WikiStart'
@@ -591,24 +611,13 @@ class AttachmentModule(Component):
                 if len(path_info) > 2:
                     parent_id = path_info[2]
             filename = link
-        def attachment_link(parent_type, parent_id, filename):
-            href = formatter.href()
-            try:
-                attachment = Attachment(self.env, parent_type, parent_id,
-                                        filename)
-                if ns.startswith('raw'):
-                    href = attachment.raw_href(formatter.req)
-                elif formatter.req:
-                    href = attachment.href(formatter.req) + params
-                return html.A(label, class_='attachment', href=href,
-                              title='Attachment %s' % attachment.title)
-            except TracError:
-                return None
-        link = attachment_link(parent_type, parent_id, filename)
-        if not link and permute: # support old attachment: syntax
-            link = attachment_link(filename, parent_type, parent_id)
-        if not link:
-            link = html.A(label, class_='missing attachment', rel='nofollow',
+        href = formatter.href()
+        try:
+            attachment = Attachment(self.env, parent_type, parent_id, filename)
+            if formatter.req:
+                href = attachment.href(formatter.req) + params
+            return html.A(label, class_='attachment', href=href,
+                          title='Attachment %s' % attachment.title)
+        except TracError:
+            return html.A(label, class_='missing attachment', rel='nofollow',
                           href=formatter.href())
-        return link
-        
