@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
 import os
+import os.path
 import sys
 import string
 from glob import glob
-if 'develop' in sys.argv:
-    from setuptools import setup
-else:
-    from distutils.core import setup
+from distutils.core import setup
 from distutils.command.install import install
 from distutils.command.install_data import install_data
 from distutils.command.install_scripts import install_scripts
@@ -224,11 +222,10 @@ facilities.
       author_email="info@edgewall.com",
       license=LICENSE,
       url=URL,
-      packages=['trac', 'trac.admin', 'trac.db', 'trac.mimeview',
-                'trac.prefs', 'trac.search', 'trac.ticket', 'trac.timeline',
-                'trac.upgrades', 'trac.util',
+      packages=['trac', 'trac.db', 'trac.mimeview', 'trac.scripts',
+                'trac.ticket', 'trac.upgrades', 'trac.util', 'trac.web',
                 'trac.versioncontrol', 'trac.versioncontrol.web_ui', 
-                'trac.web', 'trac.wiki'],
+                'trac.wiki'],
       data_files=[(_p('share/trac/templates'), glob('templates/*')),
                   (_p('share/trac/htdocs'), glob(_p('htdocs/*.*')) + [_p('htdocs/README')]),
                   (_p('share/trac/htdocs/css'), glob(_p('htdocs/css/*'))),

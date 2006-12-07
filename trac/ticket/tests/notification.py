@@ -17,20 +17,17 @@
 #
 
 from trac.core import TracError
-from trac.util.datefmt import utc
 from trac.ticket.model import Ticket
 from trac.ticket.notification import TicketNotifyEmail
 from trac.test import EnvironmentStub, Mock
 from trac.tests.notification import SMTPThreadedServer, parse_smtp_message, \
                                     smtp_address
                                     
-import base64
-from datetime import datetime
-import os
-import quopri
-import re
-import time
 import unittest
+import re
+import base64
+import quopri
+import time
 
 SMTP_TEST_PORT = 8225
 MAXBODYWIDTH = 76
@@ -42,9 +39,6 @@ class NotificationTestCase(unittest.TestCase):
     
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
-        self.env.config.set('trac', 'templates_dir',
-                            os.path.join(os.path.dirname(self.env.path),
-                                         'templates'))
         self.env.config.set('project',      'name', 'TracTest')
         self.env.config.set('notification', 'smtp_enabled', 'true')
         self.env.config.set('notification', 'always_notify_owner', 'true')
@@ -54,7 +48,7 @@ class NotificationTestCase(unittest.TestCase):
         self.env.config.set('notification', 'use_public_cc', 'true')
         self.env.config.set('notification', 'smtp_port', str(SMTP_TEST_PORT))
         self.env.config.set('notification', 'smtp_server','localhost')
-        self.req = Mock(href=self.env.href, abs_href=self.env.abs_href, tz=utc)
+        self.req = Mock(href=self.env.href, abs_href=self.env.abs_href)
 
     def tearDown(self):
         """Signal the notification test suite that a test is over"""
@@ -400,7 +394,7 @@ class NotificationTestCase(unittest.TestCase):
             ticket['cc'] = 'joe.bar@example.com'
             ticket.insert()
             ticket['component'] = 'dummy'
-            now = datetime.now(utc)
+            now = time.time()
             ticket.save_changes('joe.bar2@example.com', 'This is a change',
                                 when=now)
             tn = TicketNotifyEmail(self.env)
@@ -558,7 +552,7 @@ class NotificationTestCase(unittest.TestCase):
                 # note project title / URL are not validated yet
 
         # ticket properties which are not expected in the banner
-        xlist = ['summary', 'description', 'link', 'comment', 'new']
+        xlist = ['summary', 'description', 'link', 'comment']
         # check banner content (field exists, msg value matches ticket value)
         for p in [prop for prop in ticket.values.keys() if prop not in xlist]:
             self.failIf(not props.has_key(p))

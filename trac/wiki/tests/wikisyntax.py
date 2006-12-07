@@ -1,7 +1,5 @@
-from datetime import datetime
 import unittest
 
-from trac.util.datefmt import utc
 from trac.wiki.api import WikiSystem
 from trac.wiki.model import WikiPage
 from trac.wiki.tests import formatter
@@ -24,19 +22,6 @@ wiki:abc
 <a class="missing wiki" href="/wiki/MissingPage" rel="nofollow">wiki:MissingPage?</a>
 <a class="missing wiki" href="/wiki/12" rel="nofollow">wiki:12?</a>
 <a class="missing wiki" href="/wiki/abc" rel="nofollow">wiki:abc?</a>
-</p>
-------------------------------
-============================== wiki: link resolver + query and fragment
-wiki:TestPage?format=txt
-wiki:TestPage/?version=12
-wiki:TestPage/?action=diff&version=12
-wiki:"Space 1 23#heading"
-------------------------------
-<p>
-<a class="wiki" href="/wiki/TestPage?format=txt">wiki:TestPage?format=txt</a>
-<a class="wiki" href="/wiki/TestPage?version=12">wiki:TestPage/?version=12</a>
-<a class="wiki" href="/wiki/TestPage?action=diff&amp;version=12">wiki:TestPage/?action=diff&amp;version=12</a>
-<a class="wiki" href="/wiki/Space%201%2023#heading">wiki:"Space 1 23#heading"</a>
 </p>
 ------------------------------
 ============================== WikiPageNames conformance
@@ -154,25 +139,6 @@ This is a ["Wiki"] page link.
 This is a <a class="missing wiki" href="/wiki/Wiki" rel="nofollow">Wiki?</a> page link.
 </p>
 ------------------------------
-============================== Wiki links with @version
-wiki:page@12
-WikiStart@12
-WikiStart@12#heading
-[WikiStart@12]
-[WikiStart@12#heading]
-This is a ["Wiki@12"] page link.
-[wiki:WikiStart@12?format=txt v12 as text]
-------------------------------
-<p>
-<a class="missing wiki" href="/wiki/page?version=12" rel="nofollow">wiki:page@12?</a>
-<a class="missing wiki" href="/wiki/WikiStart?version=12" rel="nofollow">WikiStart@12?</a>
-<a class="missing wiki" href="/wiki/WikiStart?version=12#heading" rel="nofollow">WikiStart@12#heading?</a>
-[<a class="missing wiki" href="/wiki/WikiStart?version=12" rel="nofollow">WikiStart@12?</a>]
-[<a class="missing wiki" href="/wiki/WikiStart?version=12#heading" rel="nofollow">WikiStart@12#heading?</a>]
-This is a <a class="missing wiki" href="/wiki/Wiki?version=12" rel="nofollow">Wiki@12?</a> page link.
-<a class="missing wiki" href="/wiki/WikiStart?version=12&amp;format=txt" rel="nofollow">v12 as text?</a>
-</p>
-------------------------------
 ============================== WikiPageName with label
 See details of the [WikiPageNames wiki page name] syntax.
 ------------------------------
@@ -243,21 +209,20 @@ NoLink:ignored
 """ #" Emacs likes it that way better
 
 def wiki_setup(tc):
-    now = datetime.now(utc)
     wiki1 = WikiPage(tc.env)
     wiki1.name = 'TestPage'
     wiki1.text = '--'
-    wiki1.save('joe', 'normal WikiPageNames', '::1', now)
+    wiki1.save('joe', 'normal WikiPageNames', '::1', 42)
 
     wiki2 = WikiPage(tc.env)
     wiki2.name = 'Space 1 23'
     wiki2.text = '--'
-    wiki2.save('joe', 'not a WikiPageNames', '::1', now)
+    wiki2.save('joe', 'not a WikiPageNames', '::1', 42)
 
     wiki3 = WikiPage(tc.env)
     wiki3.name = u"C'est l'\xe9t\xe9"
     wiki3.text = '--'
-    wiki3.save('joe', 'unicode WikiPageNames', '::1', now)
+    wiki3.save('joe', 'unicode WikiPageNames', '::1', 42)
 
     imt = WikiPage(tc.env)
     imt.name = u"InterMapTxt"
@@ -274,7 +239,7 @@ complex         http://server/$1/page/$2?format=txt  # resource $2 in $1
 nolink          http://noweb
 }}}
 """
-    imt.save('joe', 'test InterWiki links', '::1', now)
+    imt.save('joe', 'test InterWiki links', '::1', 42)
 
 
 def suite():
