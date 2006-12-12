@@ -27,7 +27,7 @@ from StringIO import StringIO
 from trac.core import *
 from trac.mimeview import *
 from trac.wiki.api import WikiSystem
-from trac.util.html import escape, plaintext, Markup, Element, html
+from trac.util.html import escape, Markup, Element, html
 from trac.util.text import shorten_line, to_unicode
 
 __all__ = ['wiki_to_html', 'wiki_to_oneliner', 'wiki_to_outline',
@@ -83,13 +83,10 @@ class WikiProcessor(object):
         return html.PRE(text, class_="wiki")
 
     def _html_processor(self, req, text):
-        from genshi import Stream
-        from genshi.input import HTMLParser, ParseError
-        from genshi.filters import HTMLSanitizer
+        from HTMLParser import HTMLParseError
         try:
-            stream = Stream(HTMLSanitizer()(HTMLParser(StringIO(text))))
-            return stream.render('xhtml', encoding=None)
-        except ParseError, e:
+            return Markup(text).sanitize()
+        except HTMLParseError, e:
             self.env.log.warn(e)
             return system_message('HTML parsing error: %s' % escape(e.msg),
                                   text.splitlines()[e.lineno - 1].strip())
@@ -119,9 +116,9 @@ class WikiProcessor(object):
             content_for_span = None
             interrupt_paragraph = False
             if isinstance(text, Element):
-                tagname = text.tag.lower()
+                tagname = text.tagname.lower()
                 if tagname == 'div':
-                    class_ = text.attrib.get('class', '')
+                    class_ = text.attr.get('class_', '')
                     if class_ and 'code' in class_:
                         content_for_span = text.children
                     else:
@@ -129,8 +126,7 @@ class WikiProcessor(object):
                 elif tagname == 'table':
                     interrupt_paragraph = True
             else:
-                text = to_unicode(text)
-                match = re.match(self._code_block_re, unicode(text))
+                match = re.match(self._code_block_re, text)
                 if match:
                     if match.group(1) and 'code' in match.group(1):
                         content_for_span = match.group(2)
@@ -139,7 +135,7 @@ class WikiProcessor(object):
                 elif text.startswith('<table'):
                     interrupt_paragraph = True
             if content_for_span:
-                text = html.SPAN(class_='code-block')(*content_for_span)
+                text = html.SPAN(content_for_span, class_='code-block')
             elif interrupt_paragraph:
                 text = "</p>%s<p>" % to_unicode(text)
         return text
@@ -456,11 +452,11 @@ class Formatter(object):
         anchor = fullmatch.group('hanchor') or ''
         heading_text = match[depth+1:-depth-1-len(anchor)]
         heading = wiki_to_oneliner(heading_text, self.env, self.db, False,
-                                   self._absurls, self.req)
+                                   self._absurls)
         if anchor:
             anchor = anchor[1:]
         else:
-            sans_markup = plaintext(heading, keeplinebreaks=False)
+            sans_markup = heading.plaintext(keeplinebreaks=False)
             anchor = self._anchor_re.sub('', sans_markup)
             if not anchor or anchor[0].isdigit() or anchor[0] in '.-':
                 # an ID must start with a Name-start character in XHTML
@@ -473,7 +469,7 @@ class Formatter(object):
         self._anchors[anchor] = True
         if shorten:
             heading = wiki_to_oneliner(heading_text, self.env, self.db, True,
-                                       self._absurls, self.req)
+                                       self._absurls)
         return (depth, heading, anchor)
 
     def _heading_formatter(self, match, fullmatch):
@@ -575,7 +571,7 @@ class Formatter(object):
         tmp = self.in_def_list and '</dd>' or '<dl>'
         definition = match[:match.find('::')]
         tmp += '<dt>%s</dt><dd>' % wiki_to_oneliner(definition, self.env,
-                                                    self.db, req=self.req)
+                                                    self.db)
         self.in_def_list = True
         return tmp
 
@@ -771,8 +767,6 @@ class Formatter(object):
         """Replace one match with its corresponding expansion"""
         replacement = self.handle_match(fullmatch)
         if replacement:
-            if isinstance(replacement, Element):
-                return replacement.generate().render('xhtml', encoding=None)
             return to_unicode(replacement)
 
     def reset(self, out=None):
@@ -861,8 +855,8 @@ class OneLinerFormatter(Formatter):
     """
     flavor = 'oneliner'
 
-    def __init__(self, env, absurls=False, db=None, req=None):
-        Formatter.__init__(self, env, req, absurls, db)
+    def __init__(self, env, absurls=False, db=None):
+        Formatter.__init__(self, env, None, absurls, db)
 
     # Override a few formatters to disable some wiki syntax in "oneliner"-mode
     def _list_formatter(self, match, fullmatch): return match
@@ -934,8 +928,8 @@ class OutlineFormatter(Formatter):
     """Special formatter that generates an outline of all the headings."""
     flavor = 'outline'
     
-    def __init__(self, env, absurls=False, db=None, req=None):
-        Formatter.__init__(self, env, req, absurls, db)
+    def __init__(self, env, absurls=False, db=None):
+        Formatter.__init__(self, env, None, absurls, db)
 
     # Avoid the possible side-effects of rendering WikiProcessors
 
@@ -981,8 +975,8 @@ class LinkFormatter(OutlineFormatter):
     """Special formatter that focuses on TracLinks."""
     flavor = 'link'
     
-    def __init__(self, env, absurls=False, db=None, req=None):
-        OutlineFormatter.__init__(self, env, absurls, db, req)
+    def __init__(self, env, absurls=False, db=None):
+        OutlineFormatter.__init__(self, env, absurls, db)
         
     def _heading_formatter(self, match, fullmatch):
          return ''
@@ -1005,12 +999,11 @@ def wiki_to_html(wikitext, env, req, db=None,
     Formatter(env, req, absurls, db).format(wikitext, out, escape_newlines)
     return Markup(out.getvalue())
 
-def wiki_to_oneliner(wikitext, env, db=None, shorten=False, absurls=False,
-                     req=None):
+def wiki_to_oneliner(wikitext, env, db=None, shorten=False, absurls=False):
     if not wikitext:
         return Markup()
     out = StringIO()
-    OneLinerFormatter(env, absurls, db, req=req).format(wikitext, out, shorten)
+    OneLinerFormatter(env, absurls, db).format(wikitext, out, shorten)
     return Markup(out.getvalue())
 
 def wiki_to_outline(wikitext, env, db=None,
@@ -1025,4 +1018,4 @@ def wiki_to_outline(wikitext, env, db=None,
 def wiki_to_link(wikitext, env, req):
     if not wikitext:
         return ''
-    return LinkFormatter(env, False, None, req).match(wikitext)
+    return LinkFormatter(env, False, None).match(wikitext)

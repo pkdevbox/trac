@@ -15,17 +15,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import os
-import sys
-from urlparse import urlsplit
 
-from trac import db_default
+from trac import db_default, util
 from trac.config import *
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
 from trac.db import DatabaseManager
-from trac.util import get_pkginfo
 from trac.versioncontrol import RepositoryManager
-from trac.web.href import Href
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
 
@@ -83,9 +79,6 @@ class Environment(Component, ComponentManager):
     project_url = Option('project', 'url', 'http://example.org/',
         """URL of the main project web site.""")
 
-    project_admin = Option('project', 'admin', '',
-        """E-Mail address of the project's administrator.""")
-
     project_footer = Option('project', 'footer',
                             'Visit the Trac open source project at<br />'
                             '<a href="http://trac.edgewall.org/">'
@@ -123,13 +116,6 @@ class Environment(Component, ComponentManager):
         self.path = path
         self.setup_config(load_defaults=create)
         self.setup_log()
-
-        from trac import core, __version__ as VERSION
-        self.systeminfo = [
-            ('Trac', get_pkginfo(core).get('version', VERSION)),
-            ('Python', sys.version)
-            ]
-        self._href = self._abs_href = None
 
         from trac.loader import load_components
         load_components(self)
@@ -316,7 +302,7 @@ class Environment(Component, ComponentManager):
 
         db_str = self.config.get('trac', 'database')
         if not db_str.startswith('sqlite:'):
-            raise TracError('Can only backup sqlite databases')
+            raise EnvironmentError('Can only backup sqlite databases')
         db_name = os.path.join(self.path, db_str[7:])
         if not dest:
             dest = '%s.%i.bak' % (db_name, self.get_version())
@@ -361,23 +347,6 @@ class Environment(Component, ComponentManager):
         self.shutdown()
 
         return True
-
-    def _get_href(self):
-        if not self._href:
-            self._href = Href(urlsplit(self.abs_href.base)[2])
-        return self._href
-    href = property(_get_href, 'The application root path')
-
-    def _get_abs_href(self):
-        if not self._abs_href:
-            if not self.base_url:
-                self.log.warn('base_url option not set in configuration, '
-                              'generated links may be incorrect')
-                self._abs_href = Href('')
-            else:
-                self._abs_href = Href(self.base_url)
-        return self._abs_href
-    abs_href = property(_get_abs_href, 'The application URL')
 
 
 class EnvironmentSetup(Component):

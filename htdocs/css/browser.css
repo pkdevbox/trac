@@ -13,14 +13,9 @@ h1 :link, h1 :visited { color: #b00 }
 h1 .first:link, h1 .first:visited { color: #998 }
 h1 .sep { color: #666; padding: 0 .1em }
 
-#jumprev, #jumploc { float: right; font-size: 10px; margin: 0 0 0.6em }
-#jumprev form, #jumploc form { margin: 0 }
-#jumprev input, #jumploc select, #jumploc input { 
-  font-size: 10px; 
-  margin: 0; 
-}
-#jumploc div.buttons { margin: 0;}
-#jumploc { margin-right: 2em;}
+#jumprev { float: right; font-size: 10px; margin: 0 0 0 }
+#jumprev form { margin: 0 }
+#jumprev input { font-size: 10px; margin-right: 0 }
 
 /* Styles for the directory entries table
    (extends the styles for "table.listing") */
@@ -56,10 +51,9 @@ h1 .sep { color: #666; padding: 0 .1em }
 #dirlist td.rev { text-align: right }
 #dirlist td.change { font-size: 85%; vertical-align: middle; white-space: nowrap }
 
-/* Style for the ''View Changes'' button and the diff preparation form */
+/* Style for the ''View Changes'' button */
 #anydiff { margin: 0 0 1em; float: left }
 #anydiff form, #anydiff div, #anydiff h2 { display: inline }
-#anydiff form th { text-align: right }
 #anydiff input {  vertical-align: baseline; margin: 0 -0.5em 0 1em }
 @media print {
  #anydiff form { display:  none }
@@ -68,7 +62,7 @@ h1 .sep { color: #666; padding: 0 .1em }
 /* Log */
 tr.diff input { padding: 0 1em; margin: 0 }
 
-div.log div.buttons { clear: left }
+div.buttons { clear: left }
 @media print { 
  th.diff, td.diff { display: none }
 }

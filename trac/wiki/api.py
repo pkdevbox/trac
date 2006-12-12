@@ -100,35 +100,7 @@ class IWikiSyntaxProvider(Interface):
         return some HTML fragment.
         The `label` is already HTML escaped, whereas the `target` is not.
         """
-
-
-def parse_args(args):
-    """Utility for parsing macro "content" and splitting them into arguments.
-
-    The content is split along commas, unless they are escaped with a
-    backquote (like this: \,).
-    Named arguments a la Python are supported, and keys must be  valid python
-    identifiers immediately followed by the "=" sign.
-
-    >>> parse_args('')
-    ([], {})
-    >>> parse_args('Some text')
-    (['Some text'], {})
-    >>> parse_args('Some text, mode= 3, some other arg\, with a comma.')
-    (['Some text', ' some other arg, with a comma.'], {'mode': ' 3'})
-    
-    """    
-    largs, kwargs = [], {}
-    if args:
-        for arg in re.split(r'(?<!\\),', args):
-            arg = arg.replace(r'\,', ',')
-            m = re.match(r'\s*[a-zA-Z_]\w+=', arg)
-            if m:
-                kwargs[arg[:m.end()-1].lstrip()] = arg[m.end():]
-            else:
-                largs.append(arg)
-    return largs, kwargs
-
+ 
 
 class WikiSystem(Component):
     """Represents the wiki system."""
@@ -183,8 +155,6 @@ class WikiSystem(Component):
         prefix are included.
         """
         self._update_index()
-        # Note: use of keys() is intentional since iterkeys() is prone to
-        # errors with concurrent modification
         for page in self._index.keys():
             if not prefix or page.startswith(prefix):
                 yield page
@@ -264,18 +234,15 @@ class WikiSystem(Component):
     # See http://www.w3.org/TR/REC-xml/#id,
     # here adapted to exclude terminal "." and ":" characters
 
-    PAGE_SPLIT_RE = re.compile(r"([a-z])([A-Z][a-z])")
-    
-    def format_page_name(self, page, split=False):
-        if split or self.split_page_names:
-            return self.PAGE_SPLIT_RE.sub(r"\1 \2", page)
+    def format_page_name(self, page):
+        if self.split_page_names:
+            return re.sub(r"([a-z])([A-Z][a-z])", r"\1 \2", page)
         return page
     
     def get_wiki_syntax(self):
         from trac.wiki.formatter import Formatter
         wiki_page_name = (
             r"[A-Z][a-z]+(?:[A-Z][a-z]*[a-z/])+" # wiki words
-            r"(?:@\d+)?" # optional version
             r"(?:#%s)?" % self.XML_NAME + # optional fragment id
             r"(?=:(?:\Z|\s)|[^:a-zA-Z]|\s|\Z)" # what should follow it
             )
@@ -310,16 +277,11 @@ class WikiSystem(Component):
 
     def _format_link(self, formatter, ns, page, label, ignore_missing):
         page, query, fragment = formatter.split_link(page)
-        version = None
-        if '@' in page:
-            page, version = page.split('@', 1)
-        if version and query:
-            query = '&' + query[1:]
-        href = formatter.href.wiki(page, version=version) + query + fragment
-        if not self.has_page(page): # TODO: check for the version?
+        href = formatter.href.wiki(page) + fragment
+        if not self.has_page(page):
             if ignore_missing:
                 return label
             return html.A(label+'?', href=href, class_='missing wiki',
                           rel='nofollow')
         else:
-            return html.A(label, href=href, class_='wiki', version=version)
+            return html.A(label, href=href, class_='wiki')

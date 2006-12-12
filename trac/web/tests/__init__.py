@@ -1,22 +1,16 @@
 import unittest
 
-from trac.web.tests import api, auth, cgi_frontend, chrome, href, session, \
-                           wikisyntax
-
-try:
-    import neo_cgi
-    from trac.web.tests import clearsilver
-except ImportError:
-    clearsilver = None
+from trac.web.tests import api, auth, cgi_frontend, chrome, clearsilver, \
+                           href, session, wikisyntax
 
 def suite():
+
     suite = unittest.TestSuite()
     suite.addTest(api.suite())
     suite.addTest(auth.suite())
     suite.addTest(cgi_frontend.suite())
     suite.addTest(chrome.suite())
-    if clearsilver:
-        suite.addTest(clearsilver.suite())
+    suite.addTest(clearsilver.suite())
     suite.addTest(href.suite())
     suite.addTest(session.suite())
     suite.addTest(wikisyntax.suite())

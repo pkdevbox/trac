@@ -18,7 +18,6 @@ wiki_pages = [
  "InterMapTxt",
  "InterTrac",
  "InterWiki",
- "PageTemplates",
  "RecentChanges",
  "TitleIndex",
  "TracAccessibility",

@@ -24,7 +24,6 @@ from trac.core import *
 __all__ = ['IPermissionRequestor', 'IPermissionStore',
            'IPermissionGroupProvider', 'PermissionError', 'PermissionSystem']
 
-
 class PermissionError(StandardError):
     """Insufficient permissions to complete the operation"""
 
@@ -260,17 +259,28 @@ class PermissionSystem(Component):
 class PermissionCache(object):
     """Cache that maintains the permissions of a single user."""
 
-    def __init__(self, perms=None):
-        self.perms = perms or {}
+    def __init__(self, env, username):
+        self.perms = PermissionSystem(env).get_user_permissions(username)
 
-    def __contains__(self, action):
-        return action in self.perms
-    has_permission = __contains__
+    def has_permission(self, action):
+        return self.perms.has_key(action)
 
-    def require(self, action):
-        if action not in self.perms:
+    def assert_permission(self, action):
+        if not self.perms.has_key(action):
             raise PermissionError(action)
-    assert_permission = require
 
     def permissions(self):
         return self.perms.keys()
+
+
+class NoPermissionCache(object):
+    """Permission cache for ''anonymous requests''."""
+
+    def has_permission(self, action):
+        return False
+
+    def assert_permission(self, action):
+        raise PermissionError(action)
+
+    def permissions(self):
+        return []

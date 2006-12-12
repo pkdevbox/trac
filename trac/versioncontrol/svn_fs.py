@@ -43,18 +43,14 @@ import os.path
 import time
 import weakref
 import posixpath
-from datetime import datetime
 
-from trac.config import ListOption
 from trac.core import *
 from trac.versioncontrol import Changeset, Node, Repository, \
                                 IRepositoryConnector, \
                                 NoSuchChangeset, NoSuchNode
 from trac.versioncontrol.cache import CachedRepository
 from trac.versioncontrol.svn_authz import SubversionAuthorizer
-from trac.util import sorted, embedded_numbers
 from trac.util.text import to_unicode
-from trac.util.datefmt import utc
 
 try:
     from svn import fs, repos, core, delta
@@ -248,21 +244,6 @@ class SubversionConnector(Component):
 
     implements(IRepositoryConnector)
 
-    branches = ListOption('svn', 'branches', 'trunk,branches/*', doc=
-        """List of paths categorized as ''branches''.
-        If a path ends with '*', then all the directory entries found
-        below that path will be returned.
-        """)
-
-    tags = ListOption('svn', 'tags', 'tags/*', doc=
-        """List of paths categorized as ''tags''.
-        If a path ends with '*', then all the directory entries found
-        below that path will be returned.
-        """)
-
-    def __init__(self):
-        self._version = None
-
     def get_supported_types(self):
         global has_subversion
         if has_subversion:
@@ -272,27 +253,16 @@ class SubversionConnector(Component):
     def get_repository(self, type, dir, authname):
         """Return a `SubversionRepository`.
 
-        The repository is wrapped in a `CachedRepository`.
+        The repository is generally wrapped in a `CachedRepository`,
+        unless `direct-svn-fs` is the specified type.
         """
-        if not self._version:
-            self._version = self._get_version()
-            self.env.systeminfo.append(('Subversion', self._version))
-        repos = SubversionRepository(dir, None, self.log,
-                                     {'tags': self.tags,
-                                      'branches': self.branches})
+        repos = SubversionRepository(dir, None, self.log)
         crepos = CachedRepository(self.env.get_db_cnx(), repos, None, self.log)
         if authname:
             authz = SubversionAuthorizer(self.env, crepos, authname)
             repos.authz = crepos.authz = authz
         return crepos
-
-    def _get_version(self):
-        version = (core.SVN_VER_MAJOR, core.SVN_VER_MINOR, core.SVN_VER_MICRO)
-        version_string = '%d.%d.%d' % version
-        if version[0] < 1:
-            raise TracError("Subversion >= 1.0 required: Found " +
-                            version_string)
-        return version_string
+            
 
 
 class SubversionRepository(Repository):
@@ -300,10 +270,14 @@ class SubversionRepository(Repository):
     Repository implementation based on the svn.fs API.
     """
 
-    def __init__(self, path, authz, log, options={}):
+    def __init__(self, path, authz, log):
         self.path = path # might be needed by __del__()/close()
         self.log = log
-        self.options = options
+        if core.SVN_VER_MAJOR < 1:
+            raise TracError("Subversion >= 1.0 required: Found %d.%d.%d" % \
+                            (core.SVN_VER_MAJOR,
+                             core.SVN_VER_MINOR,
+                             core.SVN_VER_MICRO))
         self.pool = Pool()
         
         # Remove any trailing slash or else subversion might abort
@@ -350,50 +324,20 @@ class SubversionRepository(Repository):
         return _normalize_path(path)
 
     def normalize_rev(self, rev):
-        if rev is None or isinstance(rev, basestring) and \
-               rev.lower() in ('', 'head', 'latest', 'youngest'):
-            return self.youngest_rev
-        else:
-            try:
-                rev = int(rev)
-                if rev <= self.youngest_rev:
-                    return rev
-            except (ValueError, TypeError):
-                pass
+        try:
+            rev =  int(rev)
+        except (ValueError, TypeError):
+            rev = None
+        if rev is None:
+            rev = self.youngest_rev
+        elif rev > self.youngest_rev:
             raise NoSuchChangeset(rev)
+        return rev
 
     def close(self):
         self.repos = None
         self.fs_ptr = None
         self.pool = None
-
-    def _get_tags_or_branches(self, paths):
-        """Retrieve known branches or tags."""
-        for path in self.options.get(paths, []):
-            if path.endswith('*'):
-                folder = posixpath.dirname(path)
-                try:
-                    entries = [n for n in self.get_node(folder).get_entries()]
-                    for node in sorted(entries, key=lambda n: 
-                                       embedded_numbers(n.path.lower())):
-                        if node.kind == Node.DIRECTORY:
-                            yield node
-                except: # no right (TODO: should use a specific Exception here)
-                    pass
-            else:
-                try:
-                    yield self.get_node(path)
-                except: # no right
-                    pass
-
-    def get_quickjump_entries(self, rev):
-        """Retrieve known branches, as (name, id) pairs.
-        Purposedly ignores `rev` and takes always last revision.
-        """
-        for n in self._get_tags_or_branches('branches'):
-            yield 'branches', n.path, n.path, None
-        for n in self._get_tags_or_branches('tags'):
-            yield 'tags', n.path, n.created_path, n.created_rev
 
     def get_changeset(self, rev):
         return SubversionChangeset(int(rev), self.authz, self.scope,
@@ -405,7 +349,7 @@ class SubversionRepository(Repository):
         if path and path[-1] == '/':
             path = path[:-1]
 
-        rev = self.normalize_rev(rev) or self.youngest_rev
+        rev = self.normalize_rev(rev)
 
         return SubversionNode(path, rev, self.authz, self.scope, self.fs_ptr,
                               self.pool)
@@ -671,12 +615,11 @@ class SubversionNode(Node):
         return self._get_prop(core.SVN_PROP_MIME_TYPE)
 
     def get_last_modified(self):
-        _date = fs.revision_prop(self.fs_ptr, self.created_rev,
-                                 core.SVN_PROP_REVISION_DATE, self.pool())
-        if not _date:
-            return None
-        ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-        return datetime.fromtimestamp(ts, utc)
+        date = fs.revision_prop(self.fs_ptr, self.created_rev,
+                                core.SVN_PROP_REVISION_DATE, self.pool())
+        if not date:
+            return 0
+        return core.svn_time_from_cstring(date, self.pool()) / 1000000
 
     def _get_prop(self, name):
         return fs.node_prop(self.root, self._scoped_svn_path, name, self.pool())
@@ -690,23 +633,14 @@ class SubversionChangeset(Changeset):
         self.scope = scope
         self.fs_ptr = fs_ptr
         self.pool = Pool(pool)
-        message = _from_svn(self._get_prop(core.SVN_PROP_REVISION_LOG))
-        author = _from_svn(self._get_prop(core.SVN_PROP_REVISION_AUTHOR))
-        _date = self._get_prop(core.SVN_PROP_REVISION_DATE)
-        if _date:
-            ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-            date = datetime.fromtimestamp(ts, utc)
+        message = self._get_prop(core.SVN_PROP_REVISION_LOG)
+        author = self._get_prop(core.SVN_PROP_REVISION_AUTHOR)
+        date = self._get_prop(core.SVN_PROP_REVISION_DATE)
+        if date:
+            date = core.svn_time_from_cstring(date, self.pool()) / 1000000
         else:
-            date = None
+            date = 0
         Changeset.__init__(self, rev, message, author, date)
-
-    def get_properties(self):
-        props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
-        for k,v in props.iteritems():
-            if k not in (core.SVN_PROP_REVISION_LOG,
-                         core.SVN_PROP_REVISION_AUTHOR,
-                         core.SVN_PROP_REVISION_DATE):
-                yield (k, to_unicode(v), False, '')
 
     def get_changes(self):
         pool = Pool(self.pool)

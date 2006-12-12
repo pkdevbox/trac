@@ -14,43 +14,22 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-import datetime
 import os
-import pprint
 import re
 
-from genshi import Markup
-from genshi.builder import tag
-from genshi.core import Attrs, START
-from genshi.output import DocType
-from genshi.template import TemplateLoader, MarkupTemplate, TextTemplate
-
-from trac import __version__ as VERSION
 from trac import mimeview
 from trac.config import *
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
-from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
-                      get_module_path
-from trac.util.compat import partial, set
-from trac.util.html import plaintext
-from trac.util.text import pretty_size, shorten_line, unicode_quote_plus, \
-                           to_unicode
-from trac.util.datefmt import pretty_timedelta, format_datetime, format_date, \
-                              format_time, http_date
+from trac.util.html import html
 from trac.web.api import IRequestHandler, HTTPNotFound
 from trac.web.href import Href
-from trac.wiki import IWikiSyntaxProvider, wiki_to_html, wiki_to_oneliner
+from trac.wiki import IWikiSyntaxProvider
 
 def add_link(req, rel, href, title=None, mimetype=None, classname=None):
     """Add a link to the HDF data set that will be inserted as <link> element in
     the <head> of the generated HTML
     """
-    linkid = '%s:%s' % (rel, href)
-    linkset = req.chrome.setdefault('linkset', set())
-    if linkid in linkset:
-        return # Already added that link
-
     link = {'href': href}
     if title:
         link['title'] = title
@@ -58,51 +37,39 @@ def add_link(req, rel, href, title=None, mimetype=None, classname=None):
         link['type'] = mimetype
     if classname:
         link['class'] = classname
-
-    links = req.chrome.setdefault('links', {})
-    links.setdefault(rel, []).append(link)
-    linkset.add(linkid)
+    idx = 0
+    while req.hdf.get('chrome.links.%s.%d.href' % (rel, idx)):
+        idx += 1
+    req.hdf['chrome.links.%s.%d' % (rel, idx)] = link
 
 def add_stylesheet(req, filename, mimetype='text/css'):
     """Add a link to a style sheet to the HDF data set so that it gets included
     in the generated HTML page.
-    
-    If the filename is absolute (i.e. starts with a slash), the generated link
-    will be based off the application root path. If it is relative, the link
-    will be based off the `/chrome/` path.
     """
-    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])
+    if filename.startswith('common/') and 'htdocs_location' in req.hdf:
+        href = Href(req.hdf['htdocs_location'])
         filename = filename[7:]
     else:
-        href = req.href
-        if not filename.startswith('/'):
-            href = href.chrome
+        href = Href(req.base_path).chrome
     add_link(req, 'stylesheet', href(filename), mimetype=mimetype)
 
 def add_script(req, filename, mimetype='text/javascript'):
-    """Add a reference to an external javascript file to the template.
-    
-    If the filename is absolute (i.e. starts with a slash), the generated link
-    will be based off the application root path. If it is relative, the link
-    will be based off the `/chrome/` path.
-    """
-    scriptset = req.chrome.setdefault('trac.chrome.scriptset', set())
-    if filename in scriptset:
-        return False # Already added that script
-
-    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])
-        path = filename[7:]
+    """Add a reference to an external javascript file to the template."""
+    if filename.startswith('common/') and 'htdocs_location' in req.hdf:
+        href = Href(req.hdf['htdocs_location'])
+        filename = filename[7:]
     else:
-        href = req.href
-        if not filename.startswith('/'):
-            href = href.chrome
-        path = filename
-    script = {'href': href(path), 'type': mimetype}
-
-    req.chrome.setdefault('scripts', []).append(script)
-    scriptset.add(filename)
+        href = Href(req.base_path).chrome
+    href = href(filename)
+    idx = 0
+    while True:
+        js = req.hdf.get('chrome.scripts.%i.href' % idx)
+        if not js:
+            break
+        if js == href: # already added
+            return
+        idx += 1
+    req.hdf['chrome.scripts.%i' % idx] = {'href': href, 'type': mimetype}
 
 def add_javascript(req, filename):
     """Deprecated: use `add_script()` instead."""
@@ -146,8 +113,8 @@ class ITemplateProvider(Interface):
         """
 
     def get_templates_dirs():
-        """Return a list of directories containing the provided template
-        files.
+        """Return a list of directories containing the provided ClearSilver
+        templates.
         """
 
 
@@ -162,16 +129,13 @@ class Chrome(Component):
     template_providers = ExtensionPoint(ITemplateProvider)
 
     templates_dir = Option('trac', 'templates_dir', default_dir('templates'),
-        """Path to the template files.""")
-
-    auto_reload = Option('trac', 'auto_reload', False,
-        """Automatically reload template files after modification.""")
+        """Path to the !ClearSilver templates.""")
 
     htdocs_location = Option('trac', 'htdocs_location', '',
         """Base URL of the core static resources.""")
 
     metanav_order = ListOption('trac', 'metanav',
-                               'login,logout,prefs,help,about', doc=
+                               'login,logout,settings,help,about', doc=
         """List of items IDs to display in the navigation bar `metanav`.""")
 
     mainnav_order = ListOption('trac', 'mainnav',
@@ -194,59 +158,43 @@ class Chrome(Component):
     logo_height = IntOption('header_logo', 'height', -1,
         """Height of the header logo image in pixels.""")
 
-    templates = None
-
-    # A dictionary of default context data for templates
-    _default_context_data = {
-        'all': compat.all,
-        'any': compat.any,
-        'attrgetter': compat.attrgetter,
-        'date': datetime.date,
-        'datetime': datetime.datetime,
-        'first_last': presentation.first_last,
-        'get_reporter_id': get_reporter_id,
-        'group': presentation.group,
-        'groupby': compat.groupby,
-        'http_date': http_date,
-        'itemgetter': compat.itemgetter,
-        'paginate': presentation.paginate,
-        'partial': partial,
-        'plaintext': plaintext,
-        'pprint': pprint.pformat,
-        'pretty_size': pretty_size,
-        'pretty_timedelta': pretty_timedelta,
-        'quote_plus': unicode_quote_plus,
-        'reversed': compat.reversed,
-        'shorten_line': shorten_line,
-        'sorted': compat.sorted,
-        'time': datetime.time,
-        'timedelta': datetime.timedelta,
-        'to_unicode': to_unicode,
-    }
-
-    def __init__(self):
-        import genshi
-        self.env.systeminfo.append(('Genshi',
-                                    get_pkginfo(genshi).get('version')))
-
     # IEnvironmentSetupParticipant methods
 
     def environment_created(self):
-        """Create the environment templates directory."""
+        """Create the templates directory and some templates for
+        customization.
+        """
+        def _create_file(filename, data=None):
+            fd = open(filename, 'w')
+            if data:
+                fd.write(data)
+            fd.close()
+
         if self.env.path:
             templates_dir = os.path.join(self.env.path, 'templates')
             if not os.path.exists(templates_dir):
                 os.mkdir(templates_dir)
-
-            fileobj = open(os.path.join(templates_dir, 'site.html'), 'w')
-            try:
-                fileobj.write("""<html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:py="http://genshi.edgewall.org/" py:strip="">
-  <!-- Custom match templates fo here -->
-</html>""")
-            finally:
-                fileobj.close()
-
+            _create_file(os.path.join(templates_dir, 'README'),
+                        'This directory contains project-specific custom '
+                        'templates and style sheet.\n')
+            _create_file(os.path.join(templates_dir, 'site_header.cs'),
+                         """<?cs
+####################################################################
+# Site header - Contents are automatically inserted above Trac HTML
+?>
+""")
+            _create_file(os.path.join(templates_dir, 'site_footer.cs'),
+                         """<?cs
+#########################################################################
+# Site footer - Contents are automatically inserted after main Trac HTML
+?>
+""")
+            _create_file(os.path.join(templates_dir, 'site_css.cs'),
+                         """<?cs
+##################################################################
+# Site CSS - Place custom CSS, including overriding styles here.
+?>
+""")
 
     def environment_needs_upgrade(self, db):
         return False
@@ -254,10 +202,14 @@ class Chrome(Component):
     def upgrade_environment(self, db):
         pass
 
+
     # IRequestHandler methods
 
+    anonymous_request = True
+    use_template = False
+
     def match_request(self, req):
-        match = re.match(r'/chrome/(?P<prefix>[^/]+)/+(?P<filename>[/\w\-\.]+)',
+        match = re.match(r'/chrome/(?P<prefix>[^/]+)/(?P<filename>[/\w\-\.]+)',
                          req.path_info)
         if match:
             req.args['prefix'] = match.group('prefix')
@@ -300,7 +252,7 @@ class Chrome(Component):
         yield ('htdocs', self._format_link)
 
     def _format_link(self, formatter, ns, file, label):
-        return tag.a(label, href=formatter.href.chrome('site', file))
+        return html.A(label, href=formatter.href.chrome('site', file))
 
     # Public API methods
 
@@ -311,59 +263,65 @@ class Chrome(Component):
             dirs += provider.get_templates_dirs()
         return dirs
 
-    def prepare_request(self, req, handler=None):
-        """Prepare the basic chrome data for the request.
-        
-        @param req: the request object
-        @param handler: the `IRequestHandler` instance that is processing the
-            request
-        """
-        self.log.debug('Prepare chrome data for request')
+    def populate_hdf(self, req, handler):
+        """Add chrome-related data to the HDF."""
 
-        chrome = {'links': {}, 'scripts': []}
+        # Provided for template customization
+        req.hdf['HTTP.PathInfo'] = req.path_info
 
-        # This is ugly... we can't pass the real Request object to the
-        # add_xxx methods, because it doesn't yet have the chrome attribute
-        class FakeRequest(object):
-            def __init__(self, req):
-                self.base_path = req.base_path
-                self.chrome = chrome
-        fakereq = FakeRequest(req)
-
-        htdocs_location = self.htdocs_location or req.href.chrome('common')
-        chrome['htdocs_location'] = htdocs_location.rstrip('/') + '/'
+        href = Href(req.base_path)
+        req.hdf['chrome.href'] = href.chrome()
+        htdocs_location = self.htdocs_location or href.chrome('common')
+        req.hdf['htdocs_location'] = htdocs_location.rstrip('/') + '/'
 
         # HTML <head> links
-        add_link(fakereq, 'start', req.href.wiki())
-        add_link(fakereq, 'search', req.href.search())
-        add_link(fakereq, 'help', req.href.wiki('TracGuide'))
-        add_stylesheet(fakereq, 'common/css/trac.css')
-        add_script(fakereq, 'common/js/jquery.js')
-        add_script(fakereq, 'common/js/trac.js')
-        add_script(fakereq, 'common/js/search.js')
+        add_link(req, 'start', req.href.wiki())
+        add_link(req, 'search', req.href.search())
+        add_link(req, 'help', req.href.wiki('TracGuide'))
+        add_stylesheet(req, 'common/css/trac.css')
+        add_script(req, 'common/js/trac.js')
 
-        # Shortcut icon
-        chrome['icon'] = self.get_icon_data(req)
-        if chrome['icon']:
-            src = chrome['icon']['src']
-            mimetype = chrome['icon']['mimetype']
-            add_link(fakereq, 'icon', src, mimetype=mimetype)
-            add_link(fakereq, 'shortcut icon', src, mimetype=mimetype)
+        icon = self.env.project_icon
+        if icon:
+            if not icon.startswith('/') and icon.find('://') == -1:
+                if '/' in icon:
+                    icon = href.chrome(icon)
+                else:
+                    icon = href.chrome('common', icon)
+            mimetype = mimeview.get_mimetype(icon)
+            add_link(req, 'icon', icon, mimetype=mimetype)
+            add_link(req, 'shortcut icon', icon, mimetype=mimetype)
 
         # Logo image
-        chrome['logo'] = self.get_logo_data(req.href)
+        logo_src = self.logo_src
+        if logo_src:
+            logo_src_abs = logo_src.startswith('http://') or \
+                           logo_src.startswith('https://')
+            if not logo_src.startswith('/') and not logo_src_abs:
+                if '/' in logo_src:
+                    logo_src = href.chrome(logo_src)
+                else:
+                    logo_src = href.chrome('common', logo_src)
+            width = self.logo_width > -1 and self.logo_width
+            height = self.logo_height > -1 and self.logo_height
+            req.hdf['chrome.logo'] = {
+                'link': self.logo_link, 'src': logo_src,
+                'src_abs': logo_src_abs, 'alt': self.logo_alt,
+                'width': width, 'height': height
+            }
+        else:
+            req.hdf['chrome.logo.link'] = self.logo_link
 
         # Navigation links
-        allitems = {}
+        navigation = {}
         active = None
         for contributor in self.navigation_contributors:
             for category, name, text in contributor.get_navigation_items(req):
-                allitems.setdefault(category, {})[name] = text
+                navigation.setdefault(category, {})[name] = text
             if contributor is handler:
                 active = contributor.get_active_navigation_item(req)
 
-        nav = {}
-        for category, items in [(k, v.items()) for k, v in allitems.items()]:
+        for category, items in [(k, v.items()) for k, v in navigation.items()]:
             category_order = category + '_order'
             if hasattr(self, category_order):
                 order = getattr(self, category_order)
@@ -375,197 +333,7 @@ class Chrome(Component):
                     return cmp(order.index(x[0]), order.index(y[0]))
                 items.sort(navcmp)
 
-            nav[category] = []
-            for name, label in items:
-                nav[category].append({'name': name, 'label': label})
+            for name, text in items:
+                req.hdf['chrome.nav.%s.%s' % (category, name)] = text
                 if name == active:
-                    nav[category][-1]['active'] = True
-
-        chrome['nav'] = nav
-
-        return chrome
-
-
-    def get_icon_data(self, req):
-        icon = {}
-        icon_src = icon_abs_src = self.env.project_icon
-        if icon_src:
-            if not icon_src.startswith('/') and icon_src.find('://') == -1:
-                if '/' in icon_src:
-                    icon_abs_src = req.abs_href.chrome(icon_src)
-                    icon_src = req.href.chrome(icon_src)
-                else:
-                    icon_abs_src = req.abs_href.chrome('common', icon_src)
-                    icon_src = req.href.chrome('common', icon_src)
-            mimetype = mimeview.get_mimetype(icon_src)
-            icon = {'src': icon_src, 'abs_src': icon_abs_src,
-                    'mimetype': mimetype}
-        return icon
-
-    def get_logo_data(self, href):
-        logo = {}
-        logo_src = self.logo_src
-        if logo_src:
-            logo_src_abs = logo_src.startswith('http://') or \
-                           logo_src.startswith('https://')
-            if not logo_src.startswith('/') and not logo_src_abs:
-                if '/' in logo_src:
-                    logo_src = href.chrome(logo_src)
-                else:
-                    logo_src = href.chrome('common', logo_src)
-            width = self.logo_width > -1 and self.logo_width or None
-            height = self.logo_height > -1 and self.logo_height or None
-            logo = {
-                'link': self.logo_link, 'src': logo_src,
-                'src_abs': logo_src_abs, 'alt': self.logo_alt,
-                'width': width, 'height': height
-            }
-        else:
-            logo = {'link': self.logo_link, 'alt': self.logo_alt}
-        return logo
-
-    def populate_hdf(self, req):
-        """Add chrome-related data to the HDF (deprecated)."""
-        req.hdf['HTTP.PathInfo'] = req.path_info
-        req.hdf['htdocs_location'] = req.chrome['htdocs_location']
-
-        req.hdf['chrome.href'] = req.href.chrome()
-        req.hdf['chrome.links'] = req.chrome['links']
-        req.hdf['chrome.scripts'] = req.chrome['scripts']
-        req.hdf['chrome.logo'] = req.chrome['logo']
-
-        for category, items in req.chrome['nav'].items():
-            for item in items:
-                prefix = 'chrome.nav.%s.%s' % (category, item['name'])
-                req.hdf[prefix] = item['label']
-
-    def populate_data(self, req, data):
-        d = self._default_context_data.copy()
-        d['trac'] = {
-            'version': VERSION,
-            'homepage': 'http://trac.edgewall.org/', # FIXME: use setup data
-            'systeminfo': self.env.systeminfo,
-        }
-        d['project'] = {
-            'name': self.env.project_name,
-            'descr': self.env.project_description,
-            'url': self.env.project_url,
-            'admin': self.env.project_admin,
-        }
-        d['chrome'] = {
-            'footer': Markup(self.env.project_footer)
-        }
-        if req:
-            d['chrome'].update(req.chrome)
-        else:
-            d['chrome'].update({
-                'htdocs_location': self.htdocs_location,
-                'logo': self.get_logo_data(self.env.abs_href),
-            })
-
-        tzinfo = None
-        if req:
-            tzinfo = req.tz
-
-        d.update({
-            'req': req,
-            'abs_href': req and req.abs_href or self.env.abs_href,
-            'href': req and req.href,
-            'perm': req and req.perm,
-            'authname': req and req.authname or '<trac>',
-
-            # Date/time formatting
-            'format_datetime': partial(format_datetime, tzinfo=tzinfo),
-            'format_date': partial(format_date, tzinfo=tzinfo),
-            'format_time': partial(format_time, tzinfo=tzinfo),
-            'fromtimestamp': partial(datetime.datetime.fromtimestamp,
-                                     tz=tzinfo),
-
-            # Wiki-formatting functions
-            'wiki_to_html': partial(wiki_to_html, env=self.env, req=req),
-            'wiki_to_oneliner': partial(wiki_to_oneliner, env=self.env, req=req),
-        })
-
-        # Finally merge in the page-specific data
-        d.update(data)
-        return d
-
-    def load_template(self, filename, method=None):
-        """Retrieve a Template and optionally preset the template data.
-
-        Also, if the optional `method` argument is set to `'text'`, a
-        TextTemplate instance will be created instead of a MarkupTemplate.
-        """
-        if not self.templates:
-            self.templates = TemplateLoader(self.get_all_templates_dirs(),
-                                            auto_reload=self.auto_reload)
-        if method == 'text':
-            cls = TextTemplate
-        else:
-            cls = MarkupTemplate
-
-        return self.templates.load(filename, cls=cls)
-
-    def render_template(self, req, filename, data, content_type=None,
-                        fragment=False):
-        """Render the `filename` using the `data` for the context.
-
-        The `content_type` argument is used to choose the kind of template
-        used (TextTemplate if `'text/plain'`, MarkupTemplate otherwise), and
-        tweak the rendering process (use of XHTML Strict doctype if
-        `'text/html'` is given).
-        """
-        if content_type is None:
-            content_type = 'text/html'
-        method = {'text/html': 'xhtml',
-                  'text/plain': 'text'}.get(content_type, 'xml')
-
-        template = self.load_template(filename, method=method)
-        data = self.populate_data(req, data)
-
-        stream = template.generate(**data)
-        if fragment:
-            return stream
-
-        if method == 'text':
-            return stream.render('text')
-
-        doctype = {'text/html': DocType.XHTML_STRICT}.get(content_type)
-        if doctype:
-            if req.form_token:
-                stream |= self._add_form_token(req.form_token)
-            if not req.session or not int(req.session.get('accesskeys', 0)):
-                stream |= self._strip_accesskeys
-
-        req.chrome['links'] = {}
-        req.chrome['scripts'] = []
-        data.setdefault('chrome', {}).update({
-            'late_links': req.chrome['links'],
-            'late_scripts': req.chrome['scripts'],
-        })
-
-        return stream.render(method, doctype=doctype)
-
-    # Template filters
-
-    def _add_form_token(self, token):
-        elem = tag.div(
-            tag.input(type='hidden', name='__FORM_TOKEN', value=token)
-        )
-        def _generate(stream, ctxt=None):
-            for kind, data, pos in stream:
-                if kind is START and data[0].localname == 'form' \
-                                 and data[1].get('method', '').lower() == 'post':
-                    yield kind, data, pos
-                    for event in elem.generate():
-                        yield event
-                else:
-                    yield kind, data, pos
-        return _generate
-
-    def _strip_accesskeys(self, stream, ctxt=None):
-        for kind, data, pos in stream:
-            if kind is START and 'accesskey' in data[1]:
-                data = data[0], Attrs([(k,v) for k,v in data[1]
-                                       if k != 'accesskey'])
-            yield kind, data, pos
+                    req.hdf['chrome.nav.%s.%s.active' % (category, name)] = 1

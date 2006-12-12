@@ -17,7 +17,6 @@
 from BaseHTTPServer import BaseHTTPRequestHandler
 from Cookie import CookieError, BaseCookie, SimpleCookie
 import cgi
-from datetime import datetime
 import mimetypes
 import os
 from StringIO import StringIO
@@ -26,7 +25,7 @@ import urlparse
 
 from trac.core import Interface
 from trac.util import get_last_traceback
-from trac.util.datefmt import http_date, localtz
+from trac.util.datefmt import http_date
 from trac.web.href import Href
 
 HTTP_STATUS = dict([(code, reason.title()) for code, (reason, description)
@@ -123,14 +122,18 @@ class Request(object):
     
     This class provides a convenience API over WSGI.
     """
+    args = None
+    hdf = None
+    authname = None
+    perm = None
+    session = None
+    form_token = None
 
     def __init__(self, environ, start_response):
         """Create the request wrapper.
         
         @param environ: The WSGI environment dict
         @param start_response: The WSGI callback for starting the response
-        @param callbacks: A dictionary of functions that are used to lazily
-            evaluate attribute lookups
         """
         self.environ = environ
         self._start_response = start_response
@@ -138,15 +141,22 @@ class Request(object):
         self._status = '200 OK'
         self._response = None
 
+        self._inheaders = [(name[5:].replace('_', '-').lower(), value)
+                           for name, value in environ.items()
+                           if name.startswith('HTTP_')]
+        if 'CONTENT_LENGTH' in environ:
+            self._inheaders.append(('content-length',
+                                    environ['CONTENT_LENGTH']))
+        if 'CONTENT_TYPE' in environ:
+            self._inheaders.append(('content-type', environ['CONTENT_TYPE']))
         self._outheaders = []
         self._outcharset = None
-        self.outcookie = Cookie()
 
-        self.callbacks = {
-            'args': Request._parse_args,
-            'incookie': Request._parse_cookies,
-            '_inheaders': Request._parse_headers
-        }
+        self.incookie = Cookie()
+        cookie = self.get_header('Cookie')
+        if cookie:
+            self.incookie.load(cookie, ignore_parse_errors=True)
+        self.outcookie = Cookie()
 
         self.base_url = self.environ.get('trac.base_url')
         if not self.base_url:
@@ -154,20 +164,55 @@ class Request(object):
         self.href = Href(self.base_path)
         self.abs_href = Href(self.base_url)
 
-    def __getattr__(self, name):
-        """Performs lazy attribute lookup by delegating to the functions in the
-        callbacks dictionary."""
-        if name in self.callbacks:
-            value = self.callbacks[name](self)
-            setattr(self, name, value)
-            return value
-        raise AttributeError(name)
+        self.args = self._parse_args()
 
-    def __repr__(self):
-        return '<%s "%s %s">' % (self.__class__.__name__, self.method,
-                                 self.path_info)
+    def _parse_args(self):
+        """Parse the supplied request parameters into a dictionary."""
+        args = _RequestArgs()
 
-    # Public API
+        fp = self.environ['wsgi.input']
+
+        # Avoid letting cgi.FieldStorage consume the input stream when the
+        # request does not contain form data
+        ctype = self.get_header('Content-Type')
+        if ctype:
+            ctype, options = cgi.parse_header(ctype)
+        if ctype not in ('application/x-www-form-urlencoded',
+                         'multipart/form-data'):
+            fp = StringIO('')
+
+        fs = cgi.FieldStorage(fp, environ=self.environ, keep_blank_values=True)
+        if fs.list:
+            for name in fs.keys():
+                values = fs[name]
+                if not isinstance(values, list):
+                    values = [values]
+                for value in values:
+                    if not value.filename:
+                        value = unicode(value.value, 'utf-8')
+                    if name in args:
+                        if isinstance(args[name], list):
+                            args[name].append(value)
+                        else:
+                            args[name] = [args[name], value]
+                    else:
+                        args[name] = value
+
+        return args
+
+    def _reconstruct_url(self):
+        """Reconstruct the absolute base URL of the application."""
+        host = self.get_header('Host')
+        if not host:
+            # Missing host header, so reconstruct the host from the
+            # server name and port
+            default_port = {'http': 80, 'https': 443}
+            if self.server_port and self.server_port != default_port[self.scheme]:
+                host = '%s:%d' % (self.server_name, self.server_port)
+            else:
+                host = self.server_name
+        return urlparse.urlunparse((self.scheme, host, self.base_path, None,
+                                    None, None))
 
     method = property(fget=lambda self: self.environ['REQUEST_METHOD'],
                       doc='The HTTP method of the request')
@@ -213,6 +258,19 @@ class Request(object):
                 self._outcharset = value[ctpos + 8:].strip()
         self._outheaders.append((name, unicode(value).encode('utf-8')))
 
+    def _send_cookie_headers(self):
+        for name in self.outcookie.keys():
+            path = self.outcookie[name].get('path')
+            if path:
+                path = path.replace(' ', '%20') \
+                           .replace(';', '%3B') \
+                           .replace(',', '%3C')
+            self.outcookie[name]['path'] = path
+
+        cookies = self.outcookie.output(header='')
+        for cookie in cookies.splitlines():
+            self._outheaders.append(('Set-Cookie', cookie.strip()))
+
     def end_headers(self):
         """Must be called after all headers have been sent and before the actual
         content is written.
@@ -220,11 +278,11 @@ class Request(object):
         self._send_cookie_headers()
         self._write = self._start_response(self._status, self._outheaders)
 
-    def check_modified(self, datetime, extra=''):
+    def check_modified(self, timesecs, extra=''):
         """Check the request "If-None-Match" header against an entity tag.
 
         The entity tag is generated from the specified last modified time
-        (`datetime`), optionally appending an `extra` string to
+        in seconds (`timesecs`), optionally appending an `extra` string to
         indicate variants of the requested resource.
 
         That `extra` parameter can also be a list, in which case the MD5 sum
@@ -241,7 +299,7 @@ class Request(object):
             for elt in extra:
                 m.update(repr(elt))
             extra = m.hexdigest()
-        etag = 'W"%s/%s/%s"' % (self.authname, http_date(datetime), extra)
+        etag = 'W"%s/%d/%s"' % (self.authname, timesecs, extra)
         inm = self.get_header('If-None-Match')
         if (not inm or inm != etag):
             self.send_header('ETag', etag)
@@ -287,49 +345,42 @@ class Request(object):
         `template` parameter, which can be either the name of the template file,
         or an already parsed `neo_cs.CS` object.
         """
-        assert self.hdf, 'HDF dataset not available. Check your clearsilver installation'
+        assert self.hdf, 'HDF dataset not available'
         if self.args.has_key('hdfdump'):
             # FIXME: the administrator should probably be able to disable HDF
             #        dumps
             content_type = 'text/plain'
             data = str(self.hdf)
         else:
-            try:
+            form_token = None
+            if content_type in ('text/html', 'application/xhtml+xml'):
                 form_token = self.form_token
-            except AttributeError:
-                form_token = None
             data = self.hdf.render(template, form_token)
 
-        self.send(data, content_type, status)
-
-    def send(self, content, content_type='text/html', status=200):
         self.send_response(status)
         self.send_header('Cache-control', 'must-revalidate')
+        self.send_header('Expires', 'Fri, 01 Jan 1999 00:00:00 GMT')
         self.send_header('Content-Type', content_type + ';charset=utf-8')
-        self.send_header('Content-Length', len(content))
+        self.send_header('Content-Length', len(data))
         self.end_headers()
 
         if self.method != 'HEAD':
-            self.write(content)
+            self.write(data)
         raise RequestDone
 
-    def send_error(self, exc_info, template='error.html',
-                   content_type='text/html', status=500, env=None, data={}):
-        try:
-            if self.hdf and template.endswith('.cs'): # FIXME: remove this
-                if self.args.has_key('hdfdump'):
-                    content_type = 'text/plain'
-                    data = str(self.hdf)
-                else:
-                    data = self.hdf.render(template)
-
-            if template.endswith('.html'):
-                from trac.web.chrome import Chrome
-                data = Chrome(env).render_template(self, template, data,
-                                                   'text/html')
-        except: # failed to render
-            data = get_last_traceback()
+    def send_error(self, exc_info, template='error.cs',
+                   content_type='text/html', status=500):
+        if self.hdf:
+            if self.args.has_key('hdfdump'):
+                # FIXME: the administrator should probably be able to disable HDF
+                #        dumps
+                content_type = 'text/plain'
+                data = str(self.hdf)
+            else:
+                data = self.hdf.render(template)
+        else:
             content_type = 'text/plain'
+            data = get_last_traceback()
 
         self.send_response(status)
         self._outheaders = []
@@ -359,8 +410,7 @@ class Request(object):
             raise HTTPNotFound("File %s not found" % path)
 
         stat = os.stat(path)
-        mtime = datetime.fromtimestamp(stat.st_mtime, localtz)
-        last_modified = http_date(mtime)
+        last_modified = http_date(stat.st_mtime)
         if last_modified == self.get_header('If-Modified-Since'):
             self.send_response(304)
             self.end_headers()
@@ -409,86 +459,6 @@ class Request(object):
             data = data.encode(self._outcharset or 'utf-8')
         self._write(data)
 
-    # Internal methods
-
-    def _parse_args(self):
-        """Parse the supplied request parameters into a dictionary."""
-        args = _RequestArgs()
-
-        fp = self.environ['wsgi.input']
-
-        # Avoid letting cgi.FieldStorage consume the input stream when the
-        # request does not contain form data
-        ctype = self.get_header('Content-Type')
-        if ctype:
-            ctype, options = cgi.parse_header(ctype)
-        if ctype not in ('application/x-www-form-urlencoded',
-                         'multipart/form-data'):
-            fp = StringIO('')
-
-        fs = cgi.FieldStorage(fp, environ=self.environ, keep_blank_values=True)
-        if fs.list:
-            for name in fs.keys():
-                values = fs[name]
-                if not isinstance(values, list):
-                    values = [values]
-                for value in values:
-                    if not value.filename:
-                        value = unicode(value.value, 'utf-8')
-                    if name in args:
-                        if isinstance(args[name], list):
-                            args[name].append(value)
-                        else:
-                            args[name] = [args[name], value]
-                    else:
-                        args[name] = value
-
-        return args
-
-    def _parse_cookies(self):
-        cookies = Cookie()
-        header = self.get_header('Cookie')
-        if header:
-            cookies.load(header, ignore_parse_errors=True)
-        return cookies
-
-    def _parse_headers(self):
-        headers = [(name[5:].replace('_', '-').lower(), value)
-                   for name, value in self.environ.items()
-                   if name.startswith('HTTP_')]
-        if 'CONTENT_LENGTH' in self.environ:
-            headers.append(('content-length', self.environ['CONTENT_LENGTH']))
-        if 'CONTENT_TYPE' in self.environ:
-            headers.append(('content-type', self.environ['CONTENT_TYPE']))
-        return headers
-
-    def _reconstruct_url(self):
-        """Reconstruct the absolute base URL of the application."""
-        host = self.get_header('Host')
-        if not host:
-            # Missing host header, so reconstruct the host from the
-            # server name and port
-            default_port = {'http': 80, 'https': 443}
-            if self.server_port and self.server_port != default_port[self.scheme]:
-                host = '%s:%d' % (self.server_name, self.server_port)
-            else:
-                host = self.server_name
-        return urlparse.urlunparse((self.scheme, host, self.base_path, None,
-                                    None, None))
-
-    def _send_cookie_headers(self):
-        for name in self.outcookie.keys():
-            path = self.outcookie[name].get('path')
-            if path:
-                path = path.replace(' ', '%20') \
-                           .replace(';', '%3B') \
-                           .replace(',', '%3C')
-            self.outcookie[name]['path'] = path
-
-        cookies = self.outcookie.output(header='')
-        for cookie in cookies.splitlines():
-            self._outheaders.append(('Set-Cookie', cookie.strip()))
-
 
 class IAuthenticator(Interface):
     """Extension point interface for components that can provide the name
@@ -502,6 +472,14 @@ class IAuthenticator(Interface):
 class IRequestHandler(Interface):
     """Extension point interface for request handlers."""
 
+    # implementing classes should set this property to `True` if they
+    # don't need session and authentication related information
+    anonymous_request = False
+    
+    # implementing classes should set this property to `False` if they
+    # don't need the HDF data and don't produce content using a template
+    use_template = True
+    
     def match_request(req):
         """Return whether the handler wants to process the given request."""
 
