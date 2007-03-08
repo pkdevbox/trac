@@ -14,10 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
-
 from trac.core import TracError
-from trac.util.datefmt import utc, to_timestamp
 from trac.versioncontrol import Changeset, Node, Repository, Authorizer, \
                                 NoSuchChangeset
 
@@ -34,29 +31,20 @@ class CachedRepository(Repository):
         Repository.__init__(self, repos.name, authz, log)
         self.db = db
         self.repos = repos
-        try:
-            self.sync()
-        except TracError:
-            raise
-        except Exception, e: # most probably 2 concurrent resync attempts
-            log.warning('Error during sync(): %s' % e) 
+        self.sync()
 
     def close(self):
         self.repos.close()
 
-    def get_quickjump_entries(self, rev):
-        for category, name, path, rev in self.repos.get_quickjump_entries(rev):
-            yield category, name, path, rev
-
     def get_changeset(self, rev):
-        return CachedChangeset(self.repos, self.repos.normalize_rev(rev),
-                               self.db, self.authz)
+        return CachedChangeset(self.repos.normalize_rev(rev), self.db,
+                               self.authz)
 
     def get_changesets(self, start, stop):
         cursor = self.db.cursor()
         cursor.execute("SELECT rev FROM revision "
                        "WHERE time >= %s AND time < %s "
-                       "ORDER BY time", (to_timestamp(start), to_timestamp(stop)))
+                       "ORDER BY time", (start, stop))
         for rev, in cursor:
             if self.authz.has_permission_for_changeset(rev):
                 yield self.get_changeset(rev)
@@ -98,9 +86,8 @@ class CachedRepository(Repository):
                 changeset = self.repos.get_changeset(current_rev)
                 cursor.execute("INSERT INTO revision (rev,time,author,message) "
                                "VALUES (%s,%s,%s,%s)", (str(current_rev),
-                                                        to_timestamp(changeset.date),
-                                                        changeset.author,
-                                                        changeset.message))
+                               changeset.date, changeset.author,
+                               changeset.message))
                 for path,kind,action,base_path,base_rev in changeset.get_changes():
                     self.log.debug("Caching node change in [%s]: %s"
                                    % (current_rev, (path, kind, action,
@@ -152,8 +139,7 @@ class CachedRepository(Repository):
 
 class CachedChangeset(Changeset):
 
-    def __init__(self, repos, rev, db, authz):
-        self.repos = repos
+    def __init__(self, rev, db, authz):
         self.db = db
         self.authz = authz
         cursor = self.db.cursor()
@@ -161,9 +147,8 @@ class CachedChangeset(Changeset):
                        "WHERE rev=%s", (rev,))
         row = cursor.fetchone()
         if row:
-            _date, author, message = row
-            date = datetime.fromtimestamp(_date, utc)
-            Changeset.__init__(self, rev, message, author, date)
+            date, author, message = row
+            Changeset.__init__(self, rev, message, author, int(date))
         else:
             raise NoSuchChangeset(rev)
 
@@ -181,4 +166,4 @@ class CachedChangeset(Changeset):
             yield path, kind, change, base_path, base_rev
 
     def get_properties(self):
-        return self.repos.get_changeset(self.rev).get_properties()
+        return []

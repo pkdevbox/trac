@@ -125,7 +125,7 @@ __foo__ x
 </p>
 ------------------------------
 <tt>verbatim</tt>
- […]
+ [&hellip;]
 <tt>{{{this is verbatim}}}</tt> and <tt>`that` should also `be` verbatim</tt>
 ============================================================
 
@@ -166,7 +166,6 @@ link:1
 This ticket is the first one
 link:123>
 link:123&
-see link:xü.
 ------------------------------
 <p>
 Add-on to <a class="odd resolver" href="/thing/123">link:123</a>:
@@ -175,7 +174,6 @@ Some change.
 This ticket is the first one
 <a class="odd resolver" href="/thing/123">link:123</a>&gt;
 <a class="odd resolver" href="/thing/123">link:123</a>&amp;
-see <a class="text resolver" href="/stuff/x%C3%BC">link:xü</a>.
 </p>
 ------------------------------
 Add-on to <a class="odd resolver" href="/thing/123">link:123</a>:
@@ -184,16 +182,13 @@ Some change.
 This ticket is the first one
 <a class="odd resolver" href="/thing/123">link:123</a>&gt;
 <a class="odd resolver" href="/thing/123">link:123</a>&amp;
-see <a class="text resolver" href="/stuff/x%C3%BC">link:xü</a>.
 ============================== Link resolver SHREF_TARGET_FIRST
 <bug>http://localhost/bugzilla/show_bug.cgi?id=1284</bug> 804
 __Summary:__
-see link:Überflüssigkeit
 ------------------------------
 <p>
 &lt;bug&gt;<a class="ext-link" href="http://localhost/bugzilla/show_bug.cgi?id=1284"><span class="icon">http://localhost/bugzilla/show_bug.cgi?id=1284</span></a>&lt;/bug&gt; 804
 <span class="underline">Summary:</span>
-see <a class="text resolver" href="/stuff/%C3%9Cberfl%C3%BCssigkeit">link:Überflüssigkeit</a>
 </p>
 ------------------------------
 ============================== Link resolver SHREF_TARGET_MIDDLE
@@ -272,21 +267,19 @@ link:"123"
 
 ============================== Relative links
 Relative links are supported:
-[../parent See above] Note: see wikisyntax tests for other parent tests
-[//docs See documentation]
-[//images/logo.png Our logo]
-[/] Note: "" is an Href("/") artifact
-[/newticket?component=test new ticket]
+[../parent See above]
+[/docs See documentation]
+[/images/logo.png Our logo]
+[/]
 [#title]
 [#title see Title]
 ------------------------------
 <p>
 Relative links are supported:
-<a href="/parent">See above</a> Note: see wikisyntax tests for other parent tests
+<a href="../parent">See above</a>
 <a href="/docs">See documentation</a>
 <a href="/images/logo.png">Our logo</a>
-<a href="">/</a> Note: "" is an Href("/") artifact
-<a href="/newticket?component=test">new ticket</a>
+<a href="/">/</a>
 <a href="#title">#title</a>
 <a href="#title">see Title</a>
 </p>
@@ -358,7 +351,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Code Block 2
 {{{
@@ -371,7 +364,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Embedded code blocks
 {{{
@@ -390,7 +383,7 @@ Inner block.
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Consecutive code blocks
 Block 
@@ -416,14 +409,15 @@ and block
 </p>
 ------------------------------
 Block 
- […]
+ [&hellip;]
 and block
- […]
+ [&hellip;]
 .
 ============================== Unfinished code blocks
 Block 
 {{{
 number one
+
 and block
 {{{
 number two
@@ -433,13 +427,14 @@ number two
 Block 
 </p>
 <pre class="wiki">number one
+
 and block
 {{{
 number two
  }}
 }}}
 </pre>------------------------------
-Block […]
+Block [&hellip;]
 ============================== Wiki processor
 {{{
 #!default
@@ -452,7 +447,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Wiki processor counter example
 {{{
@@ -467,7 +462,7 @@ echo "foo"
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== HTML wiki processor
 {{{
@@ -477,7 +472,7 @@ Paragraph
 ------------------------------
 <p>Hello World</p>
 ------------------------------
- […]
+ [&hellip;]
 ============================== HTML wiki processor, XSS check 1
 {{{
 #!html
@@ -486,7 +481,7 @@ Paragraph
 ------------------------------
 
 ------------------------------
- […]
+ [&hellip;]
 ============================== HTML wiki processor, XSS check 2
 {{{
 #!html
@@ -495,7 +490,7 @@ Paragraph
 ------------------------------
 <div>Click me</div>
 ------------------------------
- […]
+ [&hellip;]
 ============================================================
 
         Wiki Macros

@@ -76,6 +76,7 @@ class RepositoryManager(Component):
     def post_process_request(self, req, template, content_type):
         return (template, content_type)
 
+
     # Public API methods
 
     def get_repository(self, authname):
@@ -87,12 +88,9 @@ class RepositoryManager(Component):
                         continue
                     heappush(candidates, (-prio, connector))
             if not candidates:
-                raise TracError('Unsupported version control system "%s". '
-                                'Check that the Python bindings for "%s" are '
-                                'correctly installed.' %
-                                ((self.repository_type,)*2))
+                raise TracError('Unsupported version control system "%s"'
+                                % self.repository_type)
             self._connector = heappop(candidates)[1]
-        db = self.env.get_db_cnx() # prevent possible deadlock, see #4465
         try:
             self._lock.acquire()
             tid = threading._get_ident()
@@ -123,7 +121,7 @@ class NoSuchChangeset(TracError):
 class NoSuchNode(TracError):
     def __init__(self, path, rev, msg=None):
         TracError.__init__(self, "%sNo node %s at revision %s" \
-                           % ((msg and '%s: ' % msg) or '', path, rev))
+                           % (msg and '%s: ' % msg or '', path, rev))
 
 class Repository(object):
     """Base class for a repository provided by a version control system."""
@@ -141,16 +139,6 @@ class Repository(object):
         """Clear any data that may have been cached in instance properties."""
         pass
 
-    def get_quickjump_entries(self, rev):
-        """Generate a list of interesting places in the repository.
-
-        `rev` might be used to restrict the list of available locations,
-        but in general it's best to produce all known locations.
-
-        The generated results must be of the form (category, name, path, rev).
-        """
-        return []
-    
     def get_changeset(self, rev):
         """Retrieve a Changeset corresponding to the  given revision `rev`."""
         raise NotImplementedError
@@ -332,15 +320,6 @@ class Node(object):
             else:
                 return p
 
-    def get_annotations(self):
-        """Provide detailed backward history for the content of this Node.
-
-        Retrieve an array of revisions, one `rev` for each line of content
-        for that node.
-        Only expected to work on (text) FILE nodes, of course.
-        """
-        raise NotImplementedError
-
     def get_properties(self):
         """Returns the properties (meta-data) of the node, as a dictionary.
 
@@ -387,23 +366,25 @@ class Changeset(object):
 
     # change types which can have diff associated to them
     DIFF_CHANGES = (EDIT, COPY, MOVE) # MERGE
-    OTHER_CHANGES = (ADD, DELETE)
-    ALL_CHANGES = DIFF_CHANGES + OTHER_CHANGES
 
     def __init__(self, rev, message, author, date):
         self.rev = rev
-        self.message = message or ''
-        self.author = author or ''
+        self.message = message
+        self.author = author
         self.date = date
 
     def get_properties(self):
-        """Returns the properties (meta-data) of the node, as a dictionary.
+        """Generator that provide additional metadata for this changeset.
 
-        The set of properties depends on the version control system.
+        Each additional property is a 4 element tuple:
+         * `name` is the name of the property,
+         * `text` its value
+         * `wikiflag` indicates whether the `text` should be interpreted as
+            wiki text or not
+         * `htmlclass` enables to attach special formatting to the displayed
+            property, e.g. `'author'`, `'time'`, `'message'` or `'changeset'`.
 
-        Warning: this used to yield 4-elements tuple (besides `name` and
-        `text`, there were `wikiflag` and `htmlclass` values).
-        This is now replaced by the usage of IPropertyRenderer (see #1601).
+        Warning: API will be improved (see #1601 and #2545).
         """
         
     def get_changes(self):
@@ -413,10 +394,6 @@ class Changeset(object):
         where `change` can be one of Changeset.ADD, Changeset.COPY,
         Changeset.DELETE, Changeset.EDIT or Changeset.MOVE,
         and `kind` is one of Node.FILE or Node.DIRECTORY.
-        The `path` is the targeted path for the `change` (which is
-        the ''deleted'' path  for a DELETE change).
-        The `base_path` and `base_rev` are the source path and rev for the
-        action (`None` and `-1` in the case of an ADD change).
         """
         raise NotImplementedError
 

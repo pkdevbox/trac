@@ -16,29 +16,25 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import os
 import re
 import shutil
 import time
 import unicodedata
 
-from genshi.builder import tag
-
 from trac import perm, util
 from trac.config import BoolOption, IntOption
-from trac.context import IContextProvider, Context, ResourceSystem
-from trac.context import Context
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant
 from trac.mimeview import *
-from trac.timeline.api import TimelineEvent
-from trac.util import get_reporter_id, create_unique_file, content_disposition
-from trac.util.datefmt import utc
+from trac.util import get_reporter_id, create_unique_file
+from trac.util.datefmt import format_datetime, pretty_timedelta
+from trac.util.html import Markup, html
 from trac.util.text import unicode_quote, unicode_unquote, pretty_size
 from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider
+from trac.wiki.formatter import wiki_to_html, wiki_to_oneliner
 
 
 class InvalidAttachment(TracError):
@@ -48,7 +44,6 @@ class InvalidAttachment(TracError):
 class IAttachmentChangeListener(Interface):
     """Extension point interface for components that require notification when
     attachments are created or deleted."""
-
     def attachment_added(attachment):
         """Called when an attachment is added."""
 
@@ -62,7 +57,6 @@ class IAttachmentManipulator(Interface):
     
     Unlike change listeners, a manipulator can reject changes being committed
     to the database."""
-
     def prepare_attachment(req, attachment, fields):
         """Not currently called, but should be provided for future
         compatibility."""
@@ -78,53 +72,11 @@ class IAttachmentManipulator(Interface):
         OK."""
 
 
-class AttachmentContext(Context):
-    """Context for attachment resources."""
-
-    realm = 'attachment'
-
-    # methods reimplemented from Context
-
-    def get_resource(self):
-        return Attachment(self.env, self.parent.realm, self.parent.id,
-                          filename=self.id, db=self._db)
-
-    def resource_href(self, path=None, **kwargs):
-        """Return an URL to the attachment itself.
-
-        A `format` keyword argument equal to `'raw'` will be converted
-        to the raw-attachment prefix.
-        """
-        format = kwargs.get('format')
-        prefix = 'attachment'
-        if format == 'raw':
-            kwargs.pop('format')
-            prefix = 'raw-attachment'
-        path = [unicode(p) for p in [prefix, self.parent.realm, self.parent.id,
-                                     self.id, path] if p]
-        return Context.resource_href(self, '/' + '/'.join(path), **kwargs)
-
-    def permid(self):
-        return self.parent.permid() + (self.realm, self.id)
-
-    def name(self):
-        if self.id:
-            return "Attachment '%s' in %s" % (self.id, self.parent.name())
-        else:
-            return 'Attachments of ' + self.parent.name()
-
-    def shortname(self):
-        return '%s:%s' % (self.parent.shortname(), self.filename)
-
-    def summary(self):
-        return self.resource.description
-
-
 class Attachment(object):
 
-    def __init__(self, env, parent_realm, parent_id, filename=None, db=None):
+    def __init__(self, env, parent_type, parent_id, filename=None, db=None):
         self.env = env
-        self.parent_realm = parent_realm
+        self.parent_type = parent_type
         self.parent_id = unicode(parent_id)
         if filename:
             self._fetch(filename, db)
@@ -132,7 +84,7 @@ class Attachment(object):
             self.filename = None
             self.description = None
             self.size = None
-            self.date = None
+            self.time = None
             self.author = None
             self.ipnr = None
 
@@ -143,7 +95,7 @@ class Attachment(object):
         cursor.execute("SELECT filename,description,size,time,author,ipnr "
                        "FROM attachment WHERE type=%s AND id=%s "
                        "AND filename=%s ORDER BY time",
-                       (self.parent_realm, unicode(self.parent_id), filename))
+                       (self.parent_type, unicode(self.parent_id), filename))
         row = cursor.fetchone()
         cursor.close()
         if not row:
@@ -153,22 +105,28 @@ class Attachment(object):
         self.filename = row[0]
         self.description = row[1]
         self.size = row[2] and int(row[2]) or 0
-        time = row[3] and int(row[3]) or 0
-        self.date = datetime.fromtimestamp(time, utc)
+        self.time = row[3] and int(row[3]) or 0
         self.author = row[4]
         self.ipnr = row[5]
 
     def _get_path(self):
-        path = os.path.join(self.env.path, 'attachments', self.parent_realm,
+        path = os.path.join(self.env.path, 'attachments', self.parent_type,
                             unicode_quote(self.parent_id))
         if self.filename:
             path = os.path.join(path, unicode_quote(self.filename))
         return os.path.normpath(path)
     path = property(_get_path)
 
+    def href(self, req, *args, **dict):
+        return req.href.attachment(self.parent_type, self.parent_id,
+                                   self.filename, *args, **dict)
+
+    def parent_href(self, req):
+        return req.href(self.parent_type, self.parent_id)
+
     def _get_title(self):
-        return '%s:%s: %s' % (self.parent_realm, 
-                              self.parent_id, self.filename)
+        return '%s%s: %s' % (self.parent_type == 'ticket' and '#' or '',
+                             self.parent_id, self.filename)
     title = property(_get_title)
 
     def delete(self, db=None):
@@ -181,7 +139,7 @@ class Attachment(object):
 
         cursor = db.cursor()
         cursor.execute("DELETE FROM attachment WHERE type=%s AND id=%s "
-                       "AND filename=%s", (self.parent_realm, self.parent_id,
+                       "AND filename=%s", (self.parent_type, self.parent_id,
                        self.filename))
         if os.path.isfile(self.path):
             try:
@@ -202,7 +160,6 @@ class Attachment(object):
 
 
     def insert(self, filename, fileobj, size, t=None, db=None):
-        # FIXME: `t` should probably be switched to `datetime` too
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -210,8 +167,7 @@ class Attachment(object):
             handle_ta = False
 
         self.size = size and int(size) or 0
-        timestamp = int(t or time.time())
-        self.date = datetime.fromtimestamp(timestamp, utc)
+        self.time = int(t or time.time())
 
         # Make sure the path to the attachment is inside the environment
         # attachments directory
@@ -234,9 +190,9 @@ class Attachment(object):
             cursor = db.cursor()
             cursor.execute("INSERT INTO attachment "
                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                           (self.parent_realm, self.parent_id, filename,
-                            self.size, timestamp, self.description,
-                            self.author, self.ipnr))
+                           (self.parent_type, self.parent_id, filename,
+                            self.size, self.time, self.description, self.author,
+                            self.ipnr))
             shutil.copyfileobj(fileobj, targetfile)
             self.filename = filename
 
@@ -252,32 +208,31 @@ class Attachment(object):
         finally:
             targetfile.close()
 
-    def select(cls, env, parent_realm, parent_id, db=None):
+    def select(cls, env, parent_type, parent_id, db=None):
         if not db:
             db = env.get_db_cnx()
         cursor = db.cursor()
         cursor.execute("SELECT filename,description,size,time,author,ipnr "
                        "FROM attachment WHERE type=%s AND id=%s ORDER BY time",
-                       (parent_realm, unicode(parent_id)))
+                       (parent_type, unicode(parent_id)))
         for filename,description,size,time,author,ipnr in cursor:
-            attachment = Attachment(env, parent_realm, parent_id)
+            attachment = Attachment(env, parent_type, parent_id)
             attachment.filename = filename
             attachment.description = description
             attachment.size = size and int(size) or 0
-            time = time and int(time) or 0
-            attachment.date = datetime.fromtimestamp(time, utc)
+            attachment.time = time and int(time) or 0
             attachment.author = author
             attachment.ipnr = ipnr
             yield attachment
 
-    def delete_all(cls, env, parent_realm, parent_id, db):
+    def delete_all(cls, env, parent_type, parent_id, db):
         """Delete all attachments of a given resource.
 
         As this is usually done while deleting the parent resource,
         the `db` argument is ''not'' optional here.
         """
         attachment_dir = None
-        for attachment in list(cls.select(env, parent_realm, parent_id, db)):
+        for attachment in list(cls.select(env, parent_type, parent_id, db)):
             attachment_dir = os.path.dirname(attachment.path)
             attachment.delete(db)
         if attachment_dir:
@@ -299,11 +254,32 @@ class Attachment(object):
         return fd
 
 
+# Templating utilities
+
+def attachments_to_hdf(env, req, db, parent_type, parent_id):
+    return [attachment_to_hdf(env, req, db, attachment) for attachment
+            in Attachment.select(env, parent_type, parent_id, db)]
+    
+def attachment_to_hdf(env, req, db, attachment):
+    if not db:
+        db = env.get_db_cnx()
+    hdf = {
+        'filename': attachment.filename,
+        'description': wiki_to_oneliner(attachment.description, env, db),
+        'author': attachment.author,
+        'ipnr': attachment.ipnr,
+        'size': pretty_size(attachment.size),
+        'time': format_datetime(attachment.time),
+        'age': pretty_timedelta(attachment.time),
+        'href': attachment.href(req)
+    }
+    return hdf
+
+
 class AttachmentModule(Component):
 
     implements(IEnvironmentSetupParticipant, IRequestHandler,
-               INavigationContributor, IWikiSyntaxProvider,
-               IContextProvider)
+               INavigationContributor, IWikiSyntaxProvider)
 
     change_listeners = ExtensionPoint(IAttachmentChangeListener)
     manipulators = ExtensionPoint(IAttachmentManipulator)
@@ -322,7 +298,7 @@ class AttachmentModule(Component):
         which allows a malicious user to attach a file containing cross-site
         scripting attacks.
 
-        For public sites where anonymous users can create attachments it is
+        For public sites where anonymous users can create attachments, it is
         recommended to leave this option disabled (which is the default).""")
 
     # IEnvironmentSetupParticipant methods
@@ -341,7 +317,7 @@ class AttachmentModule(Component):
     # INavigationContributor methods
 
     def get_active_navigation_item(self, req):
-        return req.args.get('realm')
+        return req.args.get('type')
 
     def get_navigation_items(self, req):
         return []
@@ -349,59 +325,65 @@ class AttachmentModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'^/(raw-)?attachment/([^/]+)(?:[/:](.*))?$',
+        match = re.match(r'^/attachment/(ticket|wiki)(?:[/:](.*))?$',
                          req.path_info)
         if match:
-            raw, realm, filename = match.groups()
-            if raw:
-                req.args['format'] = 'raw'
-            req.args['realm'] = realm
-            if filename:
-                req.args['path'] = filename.replace(':', '/')
+            req.args['type'] = match.group(1)
+            req.args['path'] = match.group(2).replace(':', '/')
             return True
 
     def process_request(self, req):
-        parent_realm = req.args.get('realm')
+        parent_type = req.args.get('type')
         path = req.args.get('path')
-        
-        if not parent_realm or not path:
+        if not parent_type or not path:
             raise HTTPBadRequest('Bad request')
-
-        context = Context(self.env, req)
+        if not parent_type in ['ticket', 'wiki']:
+            raise HTTPBadRequest('Unknown attachment type')
 
         action = req.args.get('action', 'view')
         if action == 'new':
-            attachment = Attachment(self.env, parent_realm, path)
+            attachment = Attachment(self.env, parent_type, path)
         else:
             segments = path.split('/')
             parent_id = '/'.join(segments[:-1])
-            filename = len(segments) > 1 and segments[-1]
-            if not filename: # if there's a trailing '/', show the list
-                return self._render_list(context(parent_realm, parent_id) \
-                                         ('attachment'))
-            attachment = Attachment(self.env, parent_realm, parent_id,
-                                    filename)
-
-        ctx = context(attachment.parent_realm, attachment.parent_id) \
-              ('attachment', attachment.filename, resource=attachment)
-        
+            last_segment = segments[-1]
+            if len(segments) == 1:
+                self._render_list(req, parent_type, last_segment)
+                return 'attachment.cs', None
+            if not last_segment:
+                raise HTTPBadRequest('Bad request')
+            attachment = Attachment(self.env, parent_type, parent_id,
+                                    last_segment)
+        parent_link, parent_text = self._parent_to_hdf(
+            req, attachment.parent_type, attachment.parent_id)
         if req.method == 'POST':
             if action == 'new':
-                self._do_save(ctx)
+                self._do_save(req, attachment)
             elif action == 'delete':
-                self._do_delete(ctx)
+                self._do_delete(req, attachment)
         elif action == 'delete':
-            data = self._render_confirm_delete(ctx)
+            self._render_confirm(req, attachment)
         elif action == 'new':
-            data = self._render_form(ctx)
+            self._render_form(req, attachment)
         else:
-            add_link(req, 'up', ctx.parent.resource_href(), ctx.parent.name())
-            data = self._render_view(ctx)
-
-        data['context'] = ctx
+            add_link(req, 'up', parent_link, parent_text)
+            self._render_view(req, attachment)
 
         add_stylesheet(req, 'common/css/code.css')
-        return 'attachment.html', data, None
+        return 'attachment.cs', None
+
+    def _parent_to_hdf(self, req, parent_type, parent_id):
+        # Populate attachment.parent:
+        parent_link = req.href(parent_type, parent_id)
+        if parent_type == 'ticket':
+            parent_text = 'Ticket #' + parent_id
+        else: # 'wiki'
+            parent_text = parent_id
+        req.hdf['attachment.parent'] = {
+            'type': parent_type, 'id': parent_id,
+            'name': parent_text, 'href': parent_link
+        }
+        return parent_link, parent_text
 
     # IWikiSyntaxProvider methods
     
@@ -409,16 +391,15 @@ class AttachmentModule(Component):
         return []
 
     def get_link_resolvers(self):
-        yield ('raw-attachment', self._format_link)
         yield ('attachment', self._format_link)
 
     # Public methods
 
-    def get_history(self, start, stop, realm):
+    def get_history(self, start, stop, type):
         """Return an iterable of tuples describing changes to attachments on
-        a particular object realm.
+        a particular object type.
 
-        The tuples are in the form (change, realm, id, filename, time,
+        The tuples are in the form (change, type, id, filename, time,
         description, author). `change` can currently only be `created`."""
         # Traverse attachment directory
         db = self.env.get_db_cnx()
@@ -426,41 +407,39 @@ class AttachmentModule(Component):
         cursor.execute("SELECT type, id, filename, time, description, author "
                        "  FROM attachment "
                        "  WHERE time > %s AND time < %s "
-                       "        AND type = %s", (start, stop, realm))
-        for realm, id, filename, ts, description, author in cursor:
-            time = datetime.fromtimestamp(ts, utc)
-            yield ('created', realm, id, filename, time, description, author)
+                       "        AND type = %s", (start, stop, type))
+        for type, id, filename, time, description, author in cursor:
+            yield ('created', type, id, filename, time, description, author)
 
-    def get_timeline_events(self, context, start, stop):
+    def get_timeline_events(self, req, db, type, format, start, stop, display):
         """Return an iterable of events suitable for ITimelineEventProvider.
 
-        `context` specifies the realm.
+        `display` is a callback for formatting the attachment's parent
         """
-        for change, realm, id, filename, time, descr, author in \
-                self.get_history(start, stop, context.realm):
-            ctx = context(realm=realm, id=id)('attachment', filename)
-            title = tag(tag.em(os.path.basename(filename)), ' attached to ',
-                        tag.em(ctx.parent.name(), title=ctx.parent.summary()))
-            event = TimelineEvent('attachment', title,
-                                  context.href.attachment(realm, id, filename))
-            event.set_changeinfo(time, author)
-            event.set_context(ctx, descr)
-            yield event
-            
-    # IContextProvider methods
-
-    def get_context_classes(self):
-        yield AttachmentContext
+        for change, type, id, filename, time, descr, author in \
+                self.get_history(start, stop, type):
+            title = html.EM(os.path.basename(filename)) + \
+                    ' attached to ' + display(id)
+            if format == 'rss':
+                title = Markup(title).striptags()
+                descr = wiki_to_html(descr or '--', self.env, req, db,
+                                     absurls=True)
+                href = req.abs_href
+            else:
+                descr = wiki_to_oneliner(descr, self.env, db, shorten=True)
+                title += Markup(' by %s', author)
+                href = req.href
+            yield('attachment', href.attachment(type, id, filename), title,
+                  time, author, descr)
 
     # Internal methods
 
-    def _do_save(self, context):
-        req, attachment = context.req, context.resource
+    def _do_save(self, req, attachment):
         perm_map = {'ticket': 'TICKET_APPEND', 'wiki': 'WIKI_MODIFY'}
-        req.perm.require(perm_map[attachment.parent_realm])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        if 'cancel' in req.args:
-            req.redirect(context.parent.resource_href())
+        if req.args.has_key('cancel'):
+            req.redirect(attachment.parent_href(req))
 
         upload = req.args['attachment']
         if not hasattr(upload, 'filename') or not upload.filename:
@@ -468,9 +447,7 @@ class AttachmentModule(Component):
         if hasattr(upload.file, 'fileno'):
             size = os.fstat(upload.file.fileno())[6]
         else:
-            upload.file.seek(0, 2) # seek to end of file
-            size = upload.file.tell()
-            upload.file.seek(0)
+            size = upload.file.len
         if size == 0:
             raise TracError("Can't upload empty file")
 
@@ -488,8 +465,6 @@ class AttachmentModule(Component):
         filename = os.path.basename(filename)
         if not filename:
             raise TracError('No file uploaded')
-        # Now the filename is known, update the attachment context
-        context.id = filename
 
         attachment.description = req.args.get('description', '')
         attachment.author = get_reporter_id(req, 'author')
@@ -497,8 +472,7 @@ class AttachmentModule(Component):
 
         # Validate attachment
         for manipulator in self.manipulators:
-            for field, message in manipulator.validate_attachment(req,
-                                                                  attachment):
+            for field, message in manipulator.validate_attachment(req, attachment):
                 if field:
                     raise InvalidAttachment('Attachment field %s is invalid: %s'
                                             % (field, message))
@@ -507,76 +481,65 @@ class AttachmentModule(Component):
 
         if req.args.get('replace'):
             try:
-                old_attachment = Attachment(self.env, attachment.parent_realm,
+                old_attachment = Attachment(self.env, attachment.parent_type,
                                             attachment.parent_id, filename)
                 if not (old_attachment.author and req.authname \
                         and old_attachment.author == req.authname):
                     perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-                    req.perm.require(perm_map[old_attachment.parent_realm])
+                    req.perm.assert_permission(perm_map[old_attachment.parent_type])
                 old_attachment.delete()
             except TracError:
                 pass # don't worry if there's nothing to replace
             attachment.filename = None
         attachment.insert(filename, upload.file, size)
 
-        # Redirect the user to list of attachments (must add a trailing '/')
-        req.redirect(context.resource_href('..') + '/')
+        # Redirect the user to the newly created attachment
+        req.redirect(attachment.href(req))
 
-    def _do_delete(self, context):
-        req, attachment = context.req, context.resource
+    def _do_delete(self, req, attachment):
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        req.perm.require(perm_map[attachment.parent_realm])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        parent_href = context.parent.resource_href()
-        if 'cancel' in req.args:
-            req.redirect(parent_href)
+        if req.args.has_key('cancel'):
+            req.redirect(attachment.href(req))
 
-        context.resource.delete()
+        attachment.delete()
 
         # Redirect the user to the attachment parent page
-        req.redirect(parent_href)
+        req.redirect(attachment.parent_href(req))
 
-    def _render_confirm_delete(self, context):
-        req, attachment = context.req, context.resource
+    def _render_confirm(self, req, attachment):
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        req.perm.require(perm_map[attachment.parent_realm])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        attachment = context.resource
-        return {'mode': 'delete', 'title': '%s (delete)' % context.name(),
-                'attachment': attachment}
+        req.hdf['title'] = '%s (delete)' % attachment.title
+        req.hdf['attachment'] = {'filename': attachment.filename,
+                                 'mode': 'delete'}
 
-    def _render_form(self, context):
-        req, attachment = context.req, context.resource
+    def _render_form(self, req, attachment):
         perm_map = {'ticket': 'TICKET_APPEND', 'wiki': 'WIKI_MODIFY'}
-        req.perm.require(perm_map[attachment.parent_realm])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        return {'mode': 'new', 'author': get_reporter_id(context.req)}
+        req.hdf['attachment'] = {'mode': 'new',
+                                 'author': get_reporter_id(req)}
 
-    def _render_list(self, context):
-        req, attachment = context.req, context.resource
+    def _render_view(self, req, attachment):
         perm_map = {'ticket': 'TICKET_VIEW', 'wiki': 'WIKI_VIEW'}
-        req.perm.require(perm_map[attachment.parent_realm])
+        req.perm.assert_permission(perm_map[attachment.parent_type])
 
-        data = {
-            'mode': 'list', 'context': context,
-            'attachments': Attachment.select(self.env, context.parent.realm,
-                                             context.parent.id),
-            }
-        return 'attachment.html', data, None
+        req.check_modified(attachment.time)
 
-    def _render_view(self, context):
-        req, attachment = context.req, context.resource
-        perm_map = {'ticket': 'TICKET_VIEW', 'wiki': 'WIKI_VIEW'}
-        req.perm.require(perm_map[attachment.parent_realm])
-
-        req.check_modified(attachment.date)
-
-        data = {'mode': 'view', 'title': context.name(),
-                'attachment': attachment}
+        # Render HTML view
+        req.hdf['title'] = attachment.title
+        req.hdf['attachment'] = attachment_to_hdf(self.env, req, None,
+                                                  attachment)
+        # Override the 'oneliner'
+        req.hdf['attachment.description'] = wiki_to_html(attachment.description,
+                                                         self.env, req)
 
         perm_map = {'ticket': 'TICKET_ADMIN', 'wiki': 'WIKI_DELETE'}
-        if perm_map[attachment.parent_realm] in req.perm:
-            data['can_delete'] = True
+        if req.perm.has_permission(perm_map[attachment.parent_type]):
+            req.hdf['attachment.can_delete'] = 1
 
         fd = attachment.open()
         try:
@@ -595,9 +558,8 @@ class AttachmentModule(Component):
                 if not self.render_unsafe_content and not binary:
                     # Force browser to download HTML/SVG/etc pages that may
                     # contain malicious code enabling XSS attacks
-                    req.send_header('Content-Disposition',
-                                    content_disposition('attachment',
-                                                        attachment.filename))
+                    req.send_header('Content-Disposition', 'attachment;' +
+                                    'filename=' + attachment.filename)
                 if not mime_type or (self.render_unsafe_content and \
                                      not binary and format == 'txt'):
                     mime_type = 'text/plain'
@@ -609,49 +571,54 @@ class AttachmentModule(Component):
             # add ''Plain Text'' alternate link if needed
             if self.render_unsafe_content and not binary and \
                mime_type and not mime_type.startswith('text/plain'):
-                plaintext_href = context.resource_href(format='txt')
+                plaintext_href = attachment.href(req, format='txt')
                 add_link(req, 'alternate', plaintext_href, 'Plain Text',
                          mime_type)
 
             # add ''Original Format'' alternate link (always)
-            raw_href = context.resource_href(format='raw')
+            raw_href = attachment.href(req, format='raw')
             add_link(req, 'alternate', raw_href, 'Original Format', mime_type)
 
             self.log.debug("Rendering preview of file %s with mime-type %s"
                            % (attachment.filename, mime_type))
 
-            data['preview'] = mimeview.preview_data(
-                context, fd, os.fstat(fd.fileno()).st_size, mime_type,
+            req.hdf['attachment'] = mimeview.preview_to_hdf(
+                req, fd, os.fstat(fd.fileno()).st_size, mime_type,
                 attachment.filename, raw_href, annotations=['lineno'])
-            return data
         finally:
             fd.close()
+
+    def _render_list(self, req, p_type, p_id):
+        self._parent_to_hdf(req, p_type, p_id)
+        req.hdf['attachment'] = {
+            'mode': 'list',
+            'list': attachments_to_hdf(self.env, req, None, p_type, p_id),
+            'attach_href': req.href.attachment(p_type, p_id)
+            }
 
     def _format_link(self, formatter, ns, target, label):
         link, params, fragment = formatter.split_link(target)
         ids = link.split(':', 2)
-        context = None
         if len(ids) == 3:
-            known_realms = ResourceSystem(self.env).get_known_realms()
-            # new-style attachment: TracLinks (filename:realm:id)
-            if ids[1] in known_realms:
-                context = formatter.context(ids[1], ids[2]) \
-                          ('attachment', ids[0])
-            else: # try old-style attachment: TracLinks (realm:id:filename)
-                if ids[0] in known_realms:
-                    context = formatter.context(ids[0], ids[1]) \
-                              ('attachment', ids[2])
-        else: # local attachment: TracLinks (filename)
-            context = formatter.context('attachment', link)
-        if context:
-            try:
-                attachment = context.resource
-                format = None
-                if ns.startswith('raw'):
-                    format = 'raw'
-                return tag.a(label, class_='attachment',
-                             href=context.resource_href(format=format) + params,
-                             title=context.name())
-            except TracError, e:
-                pass
-        return tag.a(label, class_='missing attachment', rel='nofollow')
+            parent_type, parent_id, filename = ids
+        else:
+            # FIXME: the formatter should know which object the text being
+            #        formatter belongs to
+            parent_type, parent_id = 'wiki', 'WikiStart'
+            if formatter.req:
+                path_info = formatter.req.path_info.split('/', 2)
+                if len(path_info) > 1:
+                    parent_type = path_info[1]
+                if len(path_info) > 2:
+                    parent_id = path_info[2]
+            filename = link
+        href = formatter.href()
+        try:
+            attachment = Attachment(self.env, parent_type, parent_id, filename)
+            if formatter.req:
+                href = attachment.href(formatter.req) + params
+            return html.A(label, class_='attachment', href=href,
+                          title='Attachment %s' % attachment.title)
+        except TracError:
+            return html.A(label, class_='missing attachment', rel='nofollow',
+                          href=formatter.href())

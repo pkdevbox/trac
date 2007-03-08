@@ -273,7 +273,7 @@ SELECT p.value AS __color__,
    (CASE status 
       WHEN 'closed' THEN 'color: #777; background: #ddd; border-color: #ccc;'
       ELSE 
-        (CASE owner WHEN $USER THEN 'font-weight: bold' END)
+        (CASE owner WHEN '$USER' THEN 'font-weight: bold' END)
     END) AS __style__,
    id AS ticket, summary, component, status, 
    resolution,version, t.type AS type, priority, owner,
@@ -300,7 +300,7 @@ SELECT p.value AS __color__,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE t.status IN ('new', 'assigned', 'reopened') AND owner = $USER
+  WHERE t.status IN ('new', 'assigned', 'reopened') AND owner = '$USER'
   ORDER BY (status = 'assigned') DESC, p.value, milestone, t.type, time
 """),
 #----------------------------------------------------------------------------
@@ -312,7 +312,7 @@ SELECT p.value AS __color__,
 """
 SELECT p.value AS __color__,
    (CASE owner 
-     WHEN $USER THEN 'My Tickets' 
+     WHEN '$USER' THEN 'My Tickets' 
      ELSE 'Active Tickets' 
     END) AS __group__,
    id AS ticket, summary, component, version, milestone, t.type AS type, 
@@ -323,7 +323,7 @@ SELECT p.value AS __color__,
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
   WHERE status IN ('new', 'assigned', 'reopened') 
-  ORDER BY (owner = $USER) DESC, p.value, milestone, t.type, time
+  ORDER BY (owner = '$USER') DESC, p.value, milestone, t.type, time
 """ % owner))
 
 
@@ -392,17 +392,17 @@ def get_data(db):
                __mkreports(get_reports(db))))
 
 
-default_components = ('trac.about', 'trac.admin.console', 'trac.admin.web_ui',
-                      'trac.attachment', 'trac.db.mysql_backend',
-                      'trac.db.postgres_backend', 'trac.db.sqlite_backend',
+default_components = ('trac.About', 'trac.attachment',
+                      'trac.db.mysql_backend', 'trac.db.postgres_backend',
+                      'trac.db.sqlite_backend',
                       'trac.mimeview.enscript', 'trac.mimeview.patch',
-                      'trac.mimeview.php', 'trac.mimeview.pygments_renderer',
-                      'trac.mimeview.rst', 'trac.mimeview.silvercity',
-                      'trac.mimeview.txtl',
-                      'trac.prefs.web_ui', 'trac.search.web_ui',
-                      'trac.ticket.admin', 'trac.ticket.query',
-                      'trac.ticket.report', 'trac.ticket.roadmap',
-                      'trac.ticket.web_ui', 'trac.timeline.web_ui',
+                      'trac.mimeview.php', 'trac.mimeview.rst',
+                      'trac.mimeview.silvercity', 'trac.mimeview.txtl',
+                      'trac.scripts.admin',
+                      'trac.Search', 'trac.Settings',
+                      'trac.ticket.query', 'trac.ticket.report',
+                      'trac.ticket.roadmap', 'trac.ticket.web_ui',
+                      'trac.Timeline',
                       'trac.versioncontrol.web_ui',
                       'trac.versioncontrol.svn_fs',
                       'trac.wiki.macros', 'trac.wiki.web_ui',

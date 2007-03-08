@@ -1,12 +1,5 @@
-# -*- coding: utf-8 -*-
-
-from datetime import datetime
 import unittest
 
-from trac.context import Context
-from trac.test import Mock
-from trac.util.datefmt import utc
-from trac.web.href import Href
 from trac.wiki.api import WikiSystem
 from trac.wiki.model import WikiPage
 from trac.wiki.tests import formatter
@@ -31,33 +24,11 @@ wiki:abc
 <a class="missing wiki" href="/wiki/abc" rel="nofollow">wiki:abc?</a>
 </p>
 ------------------------------
-============================== wiki: link resolver + query and fragment
-wiki:TestPage?format=txt
-wiki:TestPage/?version=12
-wiki:TestPage/?action=diff&version=12
-wiki:"Space 1 23#heading"
-------------------------------
-<p>
-<a class="wiki" href="/wiki/TestPage?format=txt">wiki:TestPage?format=txt</a>
-<a class="wiki" href="/wiki/TestPage?version=12">wiki:TestPage/?version=12</a>
-<a class="wiki" href="/wiki/TestPage?action=diff&amp;version=12">wiki:TestPage/?action=diff&amp;version=12</a>
-<a class="wiki" href="/wiki/Space%201%2023#heading">wiki:"Space 1 23#heading"</a>
-</p>
-------------------------------
 ============================== WikiPageNames conformance
 CamelCase AlabamA ABc AlaBamA FooBar
 ------------------------------
 <p>
 <a class="missing wiki" href="/wiki/CamelCase" rel="nofollow">CamelCase?</a> AlabamA ABc AlaBamA <a class="missing wiki" href="/wiki/FooBar" rel="nofollow">FooBar?</a>
-</p>
-------------------------------
-============================== WikiPageNames conformance (unicode)
-SmÅogstore should produce a link
-and so should wiki:ÜberflüssigkeitsTheorie
-------------------------------
-<p>
-<a class="missing wiki" href="/wiki/Sm%C3%85ogstore" rel="nofollow">SmÅogstore?</a> should produce a link
-and so should <a class="missing wiki" href="/wiki/%C3%9Cberfl%C3%BCssigkeitsTheorie" rel="nofollow">wiki:ÜberflüssigkeitsTheorie?</a>
 </p>
 ------------------------------
 ============================== More WikiPageNames conformance
@@ -161,41 +132,11 @@ anotherWikiPageName
 ------------------------------
 8FjBpOmy
 anotherWikiPageName
-============================== WikiPageNames counter examples (unicode)
-Småbokstaver should not produce a link
-neither should AbAbÅ nor AbAbÅÅb
-------------------------------
-<p>
-Småbokstaver should not produce a link
-neither should AbAbÅ nor AbAbÅÅb
-</p>
-------------------------------
-Småbokstaver should not produce a link
-neither should AbAbÅ nor AbAbÅÅb
 ============================== MoinMoin style forced links
 This is a ["Wiki"] page link.
 ------------------------------
 <p>
 This is a <a class="missing wiki" href="/wiki/Wiki" rel="nofollow">Wiki?</a> page link.
-</p>
-------------------------------
-============================== Wiki links with @version
-wiki:page@12
-WikiStart@12
-WikiStart@12#heading
-[WikiStart@12]
-[WikiStart@12#heading]
-This is a ["Wiki@12"] page link.
-[wiki:WikiStart@12?format=txt v12 as text]
-------------------------------
-<p>
-<a class="missing wiki" href="/wiki/page?version=12" rel="nofollow">wiki:page@12?</a>
-<a class="missing wiki" href="/wiki/WikiStart?version=12" rel="nofollow">WikiStart@12?</a>
-<a class="missing wiki" href="/wiki/WikiStart?version=12#heading" rel="nofollow">WikiStart@12#heading?</a>
-[<a class="missing wiki" href="/wiki/WikiStart?version=12" rel="nofollow">WikiStart@12?</a>]
-[<a class="missing wiki" href="/wiki/WikiStart?version=12#heading" rel="nofollow">WikiStart@12#heading?</a>]
-This is a <a class="missing wiki" href="/wiki/Wiki?version=12" rel="nofollow">Wiki@12?</a> page link.
-<a class="missing wiki" href="/wiki/WikiStart?version=12&amp;format=txt" rel="nofollow">v12 as text?</a>
 </p>
 ------------------------------
 ============================== WikiPageName with label
@@ -267,75 +208,21 @@ NoLink:ignored
 ------------------------------
 """ #" Emacs likes it that way better
 
-
-RELATIVE_LINKS_TESTS=u"""
-============================== Relative to the project url
-[//docs Documentation]
-------------------------------
-<p>
-<a href="/docs">Documentation</a>
-</p>
-------------------------------
-============================== Relative to the base url
-[/newticket?priority=high bug]
-[/ Project]
-------------------------------
-<p>
-<a href="/trac/newticket?priority=high">bug</a>
-<a href="/trac">Project</a>
-</p>
-------------------------------
-============================== Relative to the current page
-[./Detail see detail]
-[.. see parent]
-[../Other see other]
-------------------------------
-<p>
-<a href="/trac/wiki/Main/Sub/Detail">see detail</a>
-<a href="/trac/wiki/Main">see parent</a>
-<a href="/trac/wiki/Main/Other">see other</a>
-</p>
-------------------------------
-============================== Relative to the current page with anchors
-[#topic see topic]
-[.#topic see topic]
-[./#topic see topic]
-[./Detail#topic see detail]
-[..#topic see parent]
-[../#topic see parent]
-[../Other#topic see other]
-[../Other/#topic see other]
-------------------------------
-<p>
-<a href="/trac/wiki/Main/Sub#topic">see topic</a>
-<a href="/trac/wiki/Main/Sub#topic">see topic</a>
-<a href="/trac/wiki/Main/Sub#topic">see topic</a>
-<a href="/trac/wiki/Main/Sub/Detail#topic">see detail</a>
-<a href="/trac/wiki/Main#topic">see parent</a>
-<a href="/trac/wiki/Main#topic">see parent</a>
-<a href="/trac/wiki/Main/Other#topic">see other</a>
-<a href="/trac/wiki/Main/Other#topic">see other</a>
-</p>
-------------------------------
-""" # "
-
-
 def wiki_setup(tc):
-    now = datetime.now(utc)
     wiki1 = WikiPage(tc.env)
     wiki1.name = 'TestPage'
     wiki1.text = '--'
-    wiki1.save('joe', 'normal WikiPageNames', '::1', now)
+    wiki1.save('joe', 'normal WikiPageNames', '::1', 42)
 
     wiki2 = WikiPage(tc.env)
     wiki2.name = 'Space 1 23'
     wiki2.text = '--'
-    wiki2.save('joe', 'not a WikiPageNames', '::1', now)
+    wiki2.save('joe', 'not a WikiPageNames', '::1', 42)
 
     wiki3 = WikiPage(tc.env)
     wiki3.name = u"C'est l'\xe9t\xe9"
     wiki3.text = '--'
-    wiki3.save('joe', 'unicode WikiPageNames', '::1', now)
+    wiki3.save('joe', 'unicode WikiPageNames', '::1', 42)
 
     imt = WikiPage(tc.env)
     imt.name = u"InterMapTxt"
@@ -351,20 +238,12 @@ complex         http://server/$1/page/$2?format=txt  # resource $2 in $1
 {{{
 nolink          http://noweb
 }}}
-""" 
-    imt.save('joe', 'test InterWiki links', '::1', now)
+"""
+    imt.save('joe', 'test InterWiki links', '::1', 42)
 
 
 def suite():
-    suite = unittest.TestSuite()
-    suite.addTest(formatter.suite(TEST_CASES, wiki_setup, __file__))
-    context = Context(Mock(), Mock(href=Href('/trac'),
-                                   abs_href=Href('http://www.example.com/'),
-                                   authname='anonymous'),
-                      'wiki', 'Main/Sub')
-    suite.addTest(formatter.suite(RELATIVE_LINKS_TESTS, wiki_setup, __file__,
-                                  context=context))
-    return suite
+    return formatter.suite(TEST_CASES, wiki_setup, __file__)
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite') 

@@ -108,8 +108,6 @@ class HDFWrapper:
     False
     """
 
-    has_clearsilver = None
-    
     def __init__(self, loadpaths=[]):
         """Create a new HDF dataset.
         
@@ -133,25 +131,15 @@ class HDFWrapper:
             neo_cgi.update()
             import neo_util
             self.hdf = neo_util.HDF()
-            self.has_clearsilver = True
         except ImportError, e:
-            self.has_clearsilver = False
+            raise TracError, "ClearSilver not installed (%s)" % e
         
         self['hdf.loadpaths'] = loadpaths
-
-    def __repr__(self):
-        return '<HDFWrapper 0x%x>' % id(self)
-
-    def __nonzero__(self):
-        return self.has_clearsilver
 
     def __getattr__(self, name):
         # For backwards compatibility, expose the interface of the underlying HDF
         # object
-        if self.has_clearsilver:
-            return getattr(self.hdf, name)
-        else:
-            return None
+        return getattr(self.hdf, name)
 
     def __contains__(self, name):
         return self.hdf.getObj(str(name)) != None
@@ -221,8 +209,6 @@ class HDFWrapper:
         """
         Add data to the HDF dataset.
         """
-        if not self.has_clearsilver:
-            return
         def set_unicode(prefix, value):
             self.hdf.setValue(prefix.encode('utf-8'), value.encode('utf-8'))
         def set_str(prefix, value):
@@ -248,7 +234,7 @@ class HDFWrapper:
                     set_unicode(prefix, value)
             elif isinstance(value, dict):
                 for k in value.keys():
-                    add_value('%s.%s' % (prefix, to_unicode(k)), value[k])
+                    add_value('%s.%s' % (prefix, k), value[k])
             else:
                 if hasattr(value, '__iter__') or \
                         isinstance(value, (list, tuple)):
@@ -316,7 +302,7 @@ class HDFWrapper:
 class FormTokenInjector(HTMLParser):
     """Identify and protect forms from CSRF attacks
 
-    This filter works by adding a input type=hidden field to POST forms.
+    This filter works by adding a hidden input field to all POST forms.
     """
     def __init__(self, form_token, out):
         HTMLParser.__init__(self)
@@ -328,13 +314,14 @@ class FormTokenInjector(HTMLParser):
         if tag.lower() == 'form':
             for name, value in attrs:
                 if name.lower() == 'method' and value.lower() == 'post':
-                    self.out.write('<input type="hidden" name="__FORM_TOKEN"'
-                                   ' value="%s"/>' % self.token)
+                    self.out.write('<div><input type="hidden" '
+                                   ' name="__FORM_TOKEN" value="%s" /></div>'
+                                   % self.token)
                     break
-                    
+
     def handle_startendtag(self, tag, attrs):
         self.out.write(self.get_starttag_text())
-        
+
     def handle_charref(self, name):
         self.out.write('&#%s;' % name)
 
@@ -348,7 +335,7 @@ class FormTokenInjector(HTMLParser):
         self.out.write('<!%s>' % data)
 
     def handle_pi(self, data):
-        self.out.write('<?%s?>' % data)
+        self.out.write('<?%s>' % data)
 
     def handle_data(self, data):
         self.out.write(data)

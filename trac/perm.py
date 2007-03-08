@@ -20,11 +20,9 @@
 
 from trac.config import ExtensionOption
 from trac.core import *
-from trac.util.compat import set
 
 __all__ = ['IPermissionRequestor', 'IPermissionStore',
            'IPermissionGroupProvider', 'PermissionError', 'PermissionSystem']
-
 
 class PermissionError(StandardError):
     """Insufficient permissions to complete the operation"""
@@ -60,12 +58,6 @@ class IPermissionStore(Interface):
         The permissions are returned as a dictionary where the key is the name
         of the permission, and the value is either `True` for granted
         permissions or `False` for explicitly denied permissions."""
-
-    def get_users_with_permissions(self, permissions):
-        """Retrieve a list of users that have any of the specified permissions.
-
-        Users are returned as a list of usernames.
-        """
 
     def get_all_permissions():
         """Return all permissions for all users.
@@ -132,35 +124,6 @@ class DefaultPermissionStore(Component):
             if num_users == len(subjects) and num_actions == len(actions):
                 break
         return [action for action in actions if not action.islower()]
-
-    def get_users_with_permissions(self, permissions):
-        """Retrieve a list of users that have any of the specified permissions
-        
-        Users are returned as a list of usernames.
-        """
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        groups = permissions
-        users = set([u[0] for u in self.env.get_known_users()])
-        result = set()
-
-        # First iteration finds all users and groups that have any of the
-        # needed permissions. Subsequent iterations expand groups recursively
-        # and merge the results
-        while len(groups):
-            cursor.execute("SELECT p.username, COUNT(m.username) "
-                           "FROM permission AS p "
-                           "LEFT JOIN permission AS m ON m.action = p.username "
-                           "WHERE p.action IN (%s) GROUP BY p.username"
-                           % (', '.join(['%s'] * len(groups))), groups)
-            groups = []
-            for username, nummembers in cursor:
-                if username in users:
-                    result.add(username)
-                elif nummembers:
-                    groups.append(username)
-
-        return list(result)
 
     def get_all_permissions(self):
         """Return all permissions for all users.
@@ -279,62 +242,45 @@ class PermissionSystem(Component):
         formatted tuples."""
         return self.store.get_all_permissions()
 
-    def get_users_with_permission(self, permission):
-        """Return all users that have the specified permission.
-        
-        Users are returned as a list of user names.
-        """
-        # this should probably be cached
-        parent_map = {}
-        for requestor in self.requestors:
-            for action in requestor.get_permission_actions():
-                for child in action[1]:
-                    parent_map.setdefault(child, []).append(action[0])
-
-        satisfying_perms = {}
-        def _append_with_parents(action):
-            if action in satisfying_perms:
-                return # avoid unneccesary work and infinite loops
-            satisfying_perms[action] = True
-            if action in parent_map:
-                map(_append_with_parents, parent_map[action])
-        _append_with_parents(permission)
-
-        return self.store.get_users_with_permissions(satisfying_perms.keys())
-
     # IPermissionRequestor methods
 
     def get_permission_actions(self):
-        """Implement the global `TRAC_ADMIN` meta permission.
-        
-        Implements also the `EMAIL_VIEW` permission which allows for
-        showing email addresses even if `[trac] show_email_addresses`
-        is `false`.
-        """
-        actions = ['EMAIL_VIEW']
+        """Implement the global `TRAC_ADMIN` meta permission."""
+        actions = []
         for requestor in [r for r in self.requestors if r is not self]:
             for action in requestor.get_permission_actions():
                 if isinstance(action, tuple):
                     actions.append(action[0])
                 else:
                     actions.append(action)
-        return [('TRAC_ADMIN', actions), 'EMAIL_VIEW']
+        return [('TRAC_ADMIN', actions)]
 
 
 class PermissionCache(object):
     """Cache that maintains the permissions of a single user."""
 
-    def __init__(self, perms=None):
-        self.perms = perms or {}
+    def __init__(self, env, username):
+        self.perms = PermissionSystem(env).get_user_permissions(username)
 
-    def __contains__(self, action):
-        return action in self.perms
-    has_permission = __contains__
+    def has_permission(self, action):
+        return self.perms.has_key(action)
 
-    def require(self, action):
-        if action not in self.perms:
+    def assert_permission(self, action):
+        if not self.perms.has_key(action):
             raise PermissionError(action)
-    assert_permission = require
 
     def permissions(self):
         return self.perms.keys()
+
+
+class NoPermissionCache(object):
+    """Permission cache for ''anonymous requests''."""
+
+    def has_permission(self, action):
+        return False
+
+    def assert_permission(self, action):
+        raise PermissionError(action)
+
+    def permissions(self):
+        return []

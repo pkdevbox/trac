@@ -19,8 +19,6 @@
 import os
 import re
 
-from genshi.core import Markup
-
 from trac.core import *
 from trac.config import Option
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
@@ -69,16 +67,14 @@ class PHPRenderer(Component):
     path = Option('mimeviewer', 'php_path', 'php',
         """Path to the PHP executable (''since 0.9'').""")
 
-    returns_source = True
-
     # IHTMLPreviewRenderer methods
 
     def get_quality_ratio(self, mimetype):
         if mimetype in php_types:
-            return 5
+            return 4
         return 0
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         # -n to ignore php.ini so we're using default colors
         cmdline = '%s -sn' % self.path
         self.env.log.debug("PHP command line: %s" % cmdline)
@@ -106,8 +102,7 @@ class PHPRenderer(Component):
                 break
 
         html = PhpDeuglifier().format(odata.decode('utf-8'))
-
-        # PHP generates _way_ too many non-breaking spaces...
-        # We don't need them anyway, so replace them by normal spaces
-        return [Markup(line.replace('&nbsp;', ' '))
-                for line in html.split('<br />')]
+        for line in html.split('<br />'):
+            # PHP generates _way_ too many non-breaking spaces...
+            # We don't need them anyway, so replace them by normal spaces
+            yield line.replace('&nbsp;', ' ')

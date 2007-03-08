@@ -18,7 +18,7 @@
 #         Matthew Good <trac@matt-good.net>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import pkg_resources
+import errno
 import os
 import sys
 from SocketServer import ThreadingMixIn
@@ -121,7 +121,7 @@ def main():
             print >>sys.stderr, 'Ignoring duplicate authentication option for ' \
                                 'project: %s' % env_name
         else:
-            auths[env_name] = cls(os.path.abspath(filename), realm)
+            auths[env_name] = cls(filename, realm)
 
     def _validate_callback(option, opt_str, value, parser, valid_values):
         if value not in valid_values:
@@ -176,13 +176,9 @@ def main():
     if not args and not options.env_parent_dir:
         parser.error('either the --env-parent-dir option or at least one '
                      'environment must be specified')
-    if options.single_env:
-        if options.env_parent_dir:
-            parser.error('the --single-env option cannot be used with '
-                         '--env-parent-dir')
-        elif len(args) > 1:
-            parser.error('the --single-env option cannot be used with '
-                         'more than one enviroment')
+    if options.single_env and len(args) > 1:
+        parser.error('the --single-env option cannot be used with more '
+                     'than one enviroment')
 
     if options.port is None:
         options.port = {
@@ -192,28 +188,12 @@ def main():
         }[options.protocol]
     server_address = (options.hostname, options.port)
 
-    # autoreload doesn't work when daemonized and using relative paths
-    if options.daemonize and options.autoreload:
-        for path in args + [options.env_parent_dir, options.pidfile]:
-            if path and not os.path.isabs(path):
-                parser.error('"%s" is not an absolute path.\n\n'
-                             'when using both --auto-reload and --daemonize '
-                             'all path arguments must be absolute'
-                             % path)
-
-    # relative paths don't work when daemonized
-    args = [os.path.abspath(a) for a in args]
-    if options.env_parent_dir:
-        options.env_parent_dir = os.path.abspath(options.env_parent_dir)
-    if parser.has_option('pidfile') and options.pidfile:
-        options.pidfile = os.path.abspath(options.pidfile)
-
     wsgi_app = TracEnvironMiddleware(dispatch_request,
                                      options.env_parent_dir, args,
                                      options.single_env)
     if auths:
         if options.single_env:
-            project_name = os.path.basename(args[0])
+            project_name = os.path.basename(os.path.normpath(args[0]))
             wsgi_app = AuthenticationMiddleware(wsgi_app, auths, project_name)
         else:
             wsgi_app = AuthenticationMiddleware(wsgi_app, auths)
@@ -225,13 +205,6 @@ def main():
         def serve():
             httpd = TracHTTPServer(server_address, wsgi_app,
                                    options.env_parent_dir, args)
-            print 'Server starting in PID %i.' % os.getpid()
-            addr, port = server_address
-            if not addr or addr == '0.0.0.0':
-                print 'Serving on 0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
-                       % (port, port, base_path)
-            else:
-                print 'Serving on http://%s:%s/%s' % (addr, port, base_path)
             httpd.serve_forever()
     elif options.protocol in ('scgi', 'ajp'):
         def serve():
@@ -241,8 +214,39 @@ def main():
             sys.exit(ret and 42 or 0) # if SIGHUP exit with status 42
 
     try:
-        if options.daemonize:
-            daemon.daemonize(pidfile=options.pidfile, progname='tracd')
+        if os.name == 'posix':
+            if options.pidfile:
+                options.pidfile = os.path.abspath(options.pidfile)
+                if os.path.exists(options.pidfile):
+                    pidfile = open(options.pidfile)
+                    try:
+                        pid = int(pidfile.read())
+                    finally:
+                        pidfile.close()
+
+                    try:
+                        # signal the process to see if it is still running
+                        os.kill(pid, 0)
+                    except OSError, e:
+                        if e.errno != errno.ESRCH:
+                            raise
+                    else:
+                        sys.exit("tracd is already running with pid %s" % pid)
+                realserve = serve
+                def serve():
+                    try:
+                        pidfile = open(options.pidfile, 'w')
+                        try:
+                            pidfile.write(str(os.getpid()))
+                        finally:
+                            pidfile.close()
+                        realserve()
+                    finally:
+                       if os.path.exists(options.pidfile):
+                           os.remove(options.pidfile)
+
+            if options.daemonize:
+                daemon.daemonize()
 
         if options.autoreload:
             def modification_callback(file):
@@ -258,5 +262,4 @@ def main():
         pass
 
 if __name__ == '__main__':
-    pkg_resources.require('Trac==%s' % VERSION)
     main()

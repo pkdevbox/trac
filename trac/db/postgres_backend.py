@@ -19,7 +19,6 @@ import re
 from trac.core import *
 from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper
-from trac.util import get_pkginfo
 
 psycopg = None
 PgSQL = None
@@ -33,32 +32,12 @@ class PostgreSQLConnector(Component):
 
     implements(IDatabaseConnector)
 
-    def __init__(self):
-        self._version = None
-
     def get_supported_schemes(self):
         return [('postgres', 1)]
 
     def get_connection(self, path, user=None, password=None, host=None,
                        port=None, params={}):
-        global psycopg
-        global PgSQL
-        cnx = PostgreSQLConnection(path, user, password, host, port, params)
-        if not self._version:
-            if psycopg:
-                self._version = get_pkginfo(psycopg).get('version',
-                                                         psycopg.__version__)
-                name = 'psycopg2'
-            elif PgSQL:
-                import pyPgSQL
-                self._version = get_pkginfo(pyPgSQL).get('version',
-                                                         pyPgSQL.__version__)
-                name = 'pyPgSQL'
-            else:
-                name = 'unknown postgreSQL driver'
-                self._version = '?'
-            self.env.systeminfo.append((name, self._version))
-        return cnx
+        return PostgreSQLConnection(path, user, password, host, port, params)
 
     def init_db(self, path, user=None, password=None, host=None, port=None,
                 params={}):
@@ -116,8 +95,6 @@ class PostgreSQLConnection(ConnectionWrapper):
             except ImportError:
                 from pyPgSQL import PgSQL
                 from pyPgSQL.libpq import OperationalError as PGSchemaError
-        if 'host' in params:
-            host = params['host']
         if psycopg:
             dsn = []
             if path:
@@ -133,10 +110,6 @@ class PostgreSQLConnection(ConnectionWrapper):
             cnx = psycopg.connect(' '.join(dsn))
             cnx.set_client_encoding('UNICODE')
         else:
-            # Don't use chatty, inefficient server-side cursors.
-            # http://pypgsql.sourceforge.net/pypgsql-faq.html#id2787367
-            PgSQL.fetchReturnsList = 1
-            PgSQL.noPostgresCursor = 1
             cnx = PgSQL.connect('', user, password, host, path, port, 
                                 client_encoding='utf-8', unicode_results=True)
         try:

@@ -31,8 +31,8 @@ from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
 from trac.util.html import Element, Markup
 from trac.web.href import Href
-from trac.wiki.api import WikiSystem
-from trac.wiki.formatter import WikiProcessor, Formatter, extract_link
+from trac.wiki.formatter import WikiProcessor
+from trac.wiki import WikiSystem, wiki_to_link
 
 class ReStructuredTextRenderer(Component):
     """
@@ -45,7 +45,7 @@ class ReStructuredTextRenderer(Component):
             return 8
         return 0
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         try:
             from docutils import nodes
             from docutils.core import publish_parts
@@ -59,7 +59,7 @@ class ReStructuredTextRenderer(Component):
 
         def trac_get_reference(rawtext, target, text):
             fulltext = text and target+' '+text or target
-            link = extract_link(context, fulltext)
+            link = wiki_to_link(fulltext, self.env, req)
             uri = None
             missing = False
             if isinstance(link, Element):
@@ -69,10 +69,10 @@ class ReStructuredTextRenderer(Component):
                 #  - space eventually introduced due to split_page_names option
                 if linktext.rstrip('?').replace(' ', '') != target:
                     text = linktext
-                uri = link.attrib.get('href', '')
-                missing = 'missing' in link.attrib.get('class', '')
+                uri = link.attr.get('href', '')
+                missing = 'missing' in link.attr.get('class_', '')
             else:
-                uri = context.href.wiki(target)
+                uri = req.href.wiki(target)
                 missing = not WikiSystem(self.env).has_page(target)
             if uri:                    
                 reference = nodes.reference(rawtext, text or target)
@@ -142,8 +142,8 @@ class ReStructuredTextRenderer(Component):
 
         # The code_block could is taken from the leo plugin rst2
         def code_formatter(language, text):
-            processor = WikiProcessor(Formatter(context), language)
-            html = processor.process(text)
+            processor = WikiProcessor(self.env, language)
+            html = processor.process(req, text)
             raw = nodes.raw('', html, format='html')
             return raw
         

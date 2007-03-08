@@ -14,44 +14,201 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from datetime import datetime
 import os
-import pkg_resources
 import re
-from StringIO import StringIO
 import time
+from StringIO import StringIO
 
-from genshi.core import Markup
-from genshi.builder import tag
-
-from trac.attachment import Attachment, AttachmentModule
+from trac.attachment import attachments_to_hdf, Attachment, AttachmentModule
 from trac.config import BoolOption, Option
-from trac.context import Context
 from trac.core import *
-from trac.mimeview.api import Mimeview, IContentConverter
-from trac.search import ISearchSource, search_to_sql, shorten_result
+from trac.env import IEnvironmentSetupParticipant
 from trac.ticket import Milestone, Ticket, TicketSystem, ITicketManipulator
 from trac.ticket.notification import TicketNotifyEmail
-from trac.timeline.api import ITimelineEventProvider, TimelineEvent
+from trac.Timeline import ITimelineEventProvider
 from trac.util import get_reporter_id
-from trac.util.compat import any
-from trac.util.datefmt import to_timestamp, utc
-from trac.util.text import CRLF, shorten_line
-from trac.versioncontrol.diff import get_diff_options, diff_blocks
+from trac.util.datefmt import format_datetime, pretty_timedelta, http_date
+from trac.util.html import html, Markup
+from trac.util.text import CRLF
 from trac.web import IRequestHandler
-from trac.web.chrome import add_link, add_script, add_stylesheet, Chrome, \
-                            INavigationContributor, ITemplateProvider
+from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
+from trac.wiki import wiki_to_html, wiki_to_oneliner
+from trac.mimeview.api import Mimeview, IContentConverter
+
 
 class InvalidTicket(TracError):
     """Exception raised when a ticket fails validation."""
 
 
-class TicketModule(Component):
-
-    implements(IContentConverter, INavigationContributor, IRequestHandler,
-               ISearchSource, ITemplateProvider, ITimelineEventProvider)
+class TicketModuleBase(Component):
+    # FIXME: temporary place-holder for unified ticket validation until
+    #        ticket controller unification is merged
+    abstract = True
 
     ticket_manipulators = ExtensionPoint(ITicketManipulator)
+
+    def _validate_ticket(self, req, ticket):
+        # Always validate for known values
+        for field in ticket.fields:
+            if 'options' not in field:
+                continue
+            name = field['name']
+            if name in ticket.values and name in ticket._old:
+                value = ticket[name]
+                if value:
+                    if value not in field['options']:
+                        raise InvalidTicket('"%s" is not a valid value for '
+                                            'the %s field.' % (value, name))
+                elif not field.get('optional', False):
+                    raise InvalidTicket('field %s must be set' % name)
+        # Custom validation rules
+        for manipulator in self.ticket_manipulators:
+            for field, message in manipulator.validate_ticket(req, ticket):
+                if field:
+                    raise InvalidTicket("The ticket %s field is invalid: %s" %
+                                        (field, message))
+                else:
+                    raise InvalidTicket("Invalid ticket: %s" % message)
+
+
+class NewticketModule(TicketModuleBase):
+
+    implements(IEnvironmentSetupParticipant, INavigationContributor,
+               IRequestHandler)
+
+    # IEnvironmentSetupParticipant methods
+
+    def environment_created(self):
+        """Create the `site_newticket.cs` template file in the environment."""
+        if self.env.path:
+            templates_dir = os.path.join(self.env.path, 'templates')
+            if not os.path.exists(templates_dir):
+                os.mkdir(templates_dir)
+            template_name = os.path.join(templates_dir, 'site_newticket.cs')
+            template_file = file(template_name, 'w')
+            template_file.write("""<?cs
+####################################################################
+# New ticket prelude - Included directly above the new ticket form
+?>
+""")
+
+    def environment_needs_upgrade(self, db):
+        return False
+
+    def upgrade_environment(self, db):
+        pass
+
+    # INavigationContributor methods
+
+    def get_active_navigation_item(self, req):
+        return 'newticket'
+
+    def get_navigation_items(self, req):
+        if not req.perm.has_permission('TICKET_CREATE'):
+            return
+        yield ('mainnav', 'newticket', 
+               html.A('New Ticket', href=req.href.newticket(), accesskey=7))
+
+    # IRequestHandler methods
+
+    def match_request(self, req):
+        return re.match(r'/newticket/?$', req.path_info) is not None
+
+    def process_request(self, req):
+        req.perm.assert_permission('TICKET_CREATE')
+
+        db = self.env.get_db_cnx()
+
+        if req.method == 'POST' and 'owner' in req.args and \
+               not req.perm.has_permission('TICKET_MODIFY'):
+            del req.args['owner']
+
+        if req.method == 'POST' and not req.args.has_key('preview'):
+            self._do_create(req, db)
+
+        ticket = Ticket(self.env, db=db)
+        ticket.populate(req.args)
+        ticket.values['reporter'] = get_reporter_id(req, 'reporter')
+
+        if ticket.values.has_key('description'):
+            description = wiki_to_html(ticket['description'], self.env, req, db)
+            req.hdf['newticket.description_preview'] = description
+
+        req.hdf['title'] = 'New Ticket'
+        req.hdf['newticket'] = ticket.values
+
+        field_names = [field['name'] for field in ticket.fields
+                       if not field.get('custom')]
+        if 'owner' in field_names:
+            curr_idx = field_names.index('owner')
+            if 'cc' in field_names:
+                insert_idx = field_names.index('cc')
+            else:
+                insert_idx = len(field_names)
+            if curr_idx < insert_idx:
+                ticket.fields.insert(insert_idx, ticket.fields[curr_idx])
+                del ticket.fields[curr_idx]
+
+        for field in ticket.fields:
+            name = field['name']
+            del field['name']
+            if name in ('summary', 'reporter', 'description', 'type', 'status',
+                        'resolution'):
+                field['skip'] = True
+            elif name == 'owner':
+                field['label'] = 'Assign to'
+                if not req.perm.has_permission('TICKET_MODIFY'):
+                    field['skip'] = True
+            elif name == 'milestone':
+                # Don't make completed milestones available for selection
+                options = field['options'][:]
+                for option in field['options']:
+                    milestone = Milestone(self.env, option, db=db)
+                    if milestone.is_completed:
+                        options.remove(option)
+                field['options'] = options
+            req.hdf['newticket.fields.' + name] = field
+
+        if req.perm.has_permission('TICKET_APPEND'):
+            req.hdf['newticket.can_attach'] = True
+            req.hdf['newticket.attachment'] = req.args.get('attachment')
+
+        add_stylesheet(req, 'common/css/ticket.css')
+        return 'newticket.cs', None
+
+    # Internal methods
+
+    def _do_create(self, req, db):
+        if not req.args.get('summary'):
+            raise TracError('Tickets must contain a summary.')
+
+        ticket = Ticket(self.env, db=db)
+        ticket.populate(req.args)
+        ticket.values['reporter'] = get_reporter_id(req, 'reporter')
+        self._validate_ticket(req, ticket)
+
+        ticket.insert(db=db)
+        db.commit()
+
+        # Notify
+        try:
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True)
+        except Exception, e:
+            self.log.exception("Failure sending notification on creation of "
+                               "ticket #%s: %s" % (ticket.id, e))
+
+        # Redirect the user to the newly created ticket
+        if req.args.get('attachment'):
+            req.redirect(req.href.attachment('ticket', ticket.id, action='new'))
+        else:
+            req.redirect(req.href.ticket(ticket.id))
+
+
+class TicketModule(TicketModuleBase):
+
+    implements(INavigationContributor, IRequestHandler, ITimelineEventProvider,
+               IContentConverter)
 
     default_version = Option('ticket', 'default_version', '',
         """Default version for newly created tickets.""")
@@ -94,127 +251,154 @@ class TicketModule(Component):
     # INavigationContributor methods
 
     def get_active_navigation_item(self, req):
-        if re.match(r'/newticket/?', req.path_info):
-            return 'newticket'
         return 'tickets'
 
     def get_navigation_items(self, req):
-        if 'TICKET_CREATE' in req.perm:
-            yield ('mainnav', 'newticket', 
-                   tag.a('New Ticket', href=req.href.newticket(), accesskey=7))
+        return []
 
     # IRequestHandler methods
 
     def match_request(self, req):
-        if re.match(r'/newticket/?$', req.path_info) is not None:
-            return True
         match = re.match(r'/ticket/([0-9]+)$', req.path_info)
         if match:
             req.args['id'] = match.group(1)
             return True
 
     def process_request(self, req):
-        if 'id' in req.args:
-            return self._process_ticket_request(req)
-        return self._process_newticket_request(req)
+        req.perm.assert_permission('TICKET_VIEW')
 
-    # ITemplateProvider methods
+        action = req.args.get('action', 'view')
 
-    def get_htdocs_dirs(self):
-        return []
+        db = self.env.get_db_cnx()
+        id = int(req.args.get('id'))
 
-    def get_templates_dirs(self):
-        return [pkg_resources.resource_filename('trac.ticket', 'templates')]
+        ticket = Ticket(self.env, id, db=db)
 
-    # ISearchSource methods
+        if req.method == 'POST':
+            if not req.args.has_key('preview'):
+                self._do_save(req, db, ticket)
+            else:
+                # Use user supplied values
+                ticket.populate(req.args)
+                self._validate_ticket(req, ticket)
 
-    def get_search_filters(self, req):
-        if 'TICKET_VIEW' in req.perm:
-            yield ('ticket', 'Tickets')
+                req.hdf['ticket.action'] = action
+                req.hdf['ticket.ts'] = req.args.get('ts')
+                req.hdf['ticket.reassign_owner'] = req.args.get('reassign_owner') \
+                                                   or req.authname
+                req.hdf['ticket.resolve_resolution'] = req.args.get('resolve_resolution')
+                comment = req.args.get('comment')
+                if comment:
+                    req.hdf['ticket.comment'] = comment
+                    # Wiki format a preview of comment
+                    req.hdf['ticket.comment_preview'] = wiki_to_html(
+                        comment, self.env, req, db)
+        else:
+            req.hdf['ticket.reassign_owner'] = req.authname
+            # Store a timestamp in order to detect "mid air collisions"
+            req.hdf['ticket.ts'] = ticket.time_changed
 
-    def get_search_results(self, req, terms, filters):
-        if not 'ticket' in filters:
-            return
-        context = Context(self.env, req)
-        db = context.db
-        sql, args = search_to_sql(db, ['b.newvalue'], terms)
-        sql2, args2 = search_to_sql(db, ['summary', 'keywords', 'description',
-                                         'reporter', 'cc', 'id'], terms)
-        cursor = db.cursor()
-        cursor.execute("SELECT DISTINCT a.summary,a.description,a.reporter, "
-                       "a.type,a.id,a.time,a.status,a.resolution "
-                       "FROM ticket a "
-                       "LEFT JOIN ticket_change b ON a.id = b.ticket "
-                       "WHERE (b.field='comment' AND %s ) OR %s" % (sql, sql2),
-                       args + args2)
-        for summary, desc, author, type, tid, ts, status, resolution in cursor:
-            ctx = context('ticket', tid)
-            yield (ctx.resource_href(),
-                   tag(tag.span(ctx.shortname(), class_=status), ': ',
-                       ctx.format_summary(summary, status, resolution, type)),
-                   datetime.fromtimestamp(ts, utc), author,
-                   shorten_result(desc, terms))
+        self._insert_ticket_data(req, db, ticket,
+                                 get_reporter_id(req, 'author'))
+
+        mime = Mimeview(self.env)
+        format = req.args.get('format')
+        if format:
+            mime.send_converted(req, 'trac.ticket.Ticket', ticket, format,
+                                'ticket_%d' % ticket.id)
+
+        # If the ticket is being shown in the context of a query, add
+        # links to help navigate in the query result set
+        if 'query_tickets' in req.session:
+            tickets = req.session['query_tickets'].split()
+            if str(id) in tickets:
+                idx = tickets.index(str(ticket.id))
+                if idx > 0:
+                    add_link(req, 'first', req.href.ticket(tickets[0]),
+                             'Ticket #%s' % tickets[0])
+                    add_link(req, 'prev', req.href.ticket(tickets[idx - 1]),
+                             'Ticket #%s' % tickets[idx - 1])
+                if idx < len(tickets) - 1:
+                    add_link(req, 'next', req.href.ticket(tickets[idx + 1]),
+                             'Ticket #%s' % tickets[idx + 1])
+                    add_link(req, 'last', req.href.ticket(tickets[-1]),
+                             'Ticket #%s' % tickets[-1])
+                add_link(req, 'up', req.session['query_href'])
+
+        add_stylesheet(req, 'common/css/ticket.css')
+
+        # Add registered converters
+        for conversion in mime.get_supported_conversions('trac.ticket.Ticket'):
+            conversion_href = req.href.ticket(ticket.id, format=conversion[0])
+            add_link(req, 'alternate', conversion_href, conversion[1],
+                     conversion[3])
+
+        return 'ticket.cs', None
 
     # ITimelineEventProvider methods
 
     def get_timeline_filters(self, req):
-        if 'TICKET_VIEW' in req.perm:
+        if req.perm.has_permission('TICKET_VIEW'):
             yield ('ticket', 'Ticket changes')
             if self.timeline_details:
                 yield ('ticket_details', 'Ticket details', False)
 
     def get_timeline_events(self, req, start, stop, filters):
-        start = to_timestamp(start)
-        stop = to_timestamp(stop)
+        format = req.args.get('format')
 
         status_map = {'new': ('newticket', 'created'),
                       'reopened': ('newticket', 'reopened'),
                       'closed': ('closedticket', 'closed'),
                       'edit': ('editedticket', 'updated')}
-        context = Context(self.env, req)
 
-        def produce((id, ts, author, type, summary), status, fields,
+        href = format == 'rss' and req.abs_href or req.href
+
+        def produce((id, t, author, type, summary), status, fields,
                     comment, cid):
-            ctx = context('ticket', id)
-            info = ''
-            resolution = fields.get('resolution')
             if status == 'edit':
                 if 'ticket_details' in filters:
+                    info = ''
                     if len(fields) > 0:
-                        keys = fields.keys()
-                        info = tag([[tag.i(f), ', '] for f in keys[:-1]],
-                                   tag.i(keys[-1]), ' changed', tag.br())
+                        info = ', '.join(['<i>%s</i>' % f for f in \
+                                          fields.keys()]) + ' changed<br />'
                 else:
                     return None
             elif 'ticket' in filters:
-                if status == 'closed' and resolution:
-                    info = resolution
+                if status == 'closed' and fields.has_key('resolution'):
+                    info = fields['resolution']
                     if info and comment:
-                        info += ': '
+                        info = '%s: ' % info
+                else:
+                    info = ''
             else:
                 return None
             kind, verb = status_map[status]
-            title = ctx.format_summary(summary, status, resolution, type)
-            title = tag('Ticket ', tag.em(ctx.shortname(), title=title),
-                        ' (', shorten_line(summary), ') ', verb)
-            ticket_href = ctx.resource_href()
+            if format == 'rss':
+                title = 'Ticket #%s (%s %s): %s' % \
+                        (id, type.lower(), verb, summary)
+            else:
+                title = Markup('Ticket <em title="%s">#%s</em> (%s) %s by %s',
+                               summary, id, type, verb, author)
+            ticket_href = href.ticket(id)
             if cid:
                 ticket_href += '#comment:' + cid
-            markup = message = None
             if status == 'new':
-                markup = summary
+                message = summary
             else:
-                markup = info
-                message = comment
-            t = datetime.fromtimestamp(ts, utc)
-            event = TimelineEvent(kind, title, ticket_href, markup)
-            event.set_changeinfo(t, author)
-            event.set_context(ctx, message)
-            return event
+                message = Markup(info)
+                if comment:
+                    if format == 'rss':
+                        message += wiki_to_html(comment, self.env, req, db,
+                                                absurls=True)
+                    else:
+                        message += wiki_to_oneliner(comment, self.env, db,
+                                                    shorten=True)
+            return kind, ticket_href, title, t, author, message
 
         # Ticket changes
         if 'ticket' in filters or 'ticket_details' in filters:
-            cursor = context.db.cursor()
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
 
             cursor.execute("SELECT t.id,tc.time,tc.author,t.type,t.summary, "
                            "       tc.field,tc.oldvalue,tc.newvalue "
@@ -244,7 +428,7 @@ class TicketModule(Component):
                 ev = produce(previous_update, status, fields, comment, cid)
                 if ev:
                     yield ev
-
+            
             # New tickets
             if 'ticket' in filters:
                 cursor.execute("SELECT id,time,reporter,type,summary"
@@ -255,344 +439,15 @@ class TicketModule(Component):
 
             # Attachments
             if 'ticket_details' in filters:
-                for event in AttachmentModule(self.env) \
-                        .get_timeline_events(context('ticket'), start, stop):
+                def display(id):
+                    return Markup('ticket %s', html.EM('#', id))
+                att = AttachmentModule(self.env)
+                for event in att.get_timeline_events(req, db, 'ticket',
+                                                     format, start, stop,
+                                                     display):
                     yield event
 
     # Internal methods
-
-    def _process_newticket_request(self, req):
-        context = Context(self.env, req)('ticket')
-        req.perm.require('TICKET_CREATE')
-
-        if req.method == 'POST' and 'field_owner' in req.args and \
-               'TICKET_MODIFY' not in req.perm:
-            del req.args['field_owner']
-
-        if req.method == 'POST' and 'preview' not in req.args:
-            self._do_create(context) # ...redirected
-
-        # Preview a new ticket
-        ticket = Ticket(self.env, db=context.db)
-        context = context('ticket', ticket.id, resource=ticket)
-        
-        self._populate(req, ticket)
-        ticket.values['reporter'] = get_reporter_id(req, 'reporter')
-
-        data = {}
-        data['ticket'] = ticket
-        data['context'] = context
-
-        field_names = [field['name'] for field in ticket.fields
-                       if not field.get('custom')]
-        if 'owner' in field_names:
-            curr_idx = field_names.index('owner')
-            if 'cc' in field_names:
-                insert_idx = field_names.index('cc')
-            else:
-                insert_idx = len(field_names)
-            if curr_idx < insert_idx:
-                ticket.fields.insert(insert_idx, ticket.fields[curr_idx])
-                del ticket.fields[curr_idx]
-
-        data['fields'] = []
-        for field in ticket.fields:
-            name = field['name']
-            if name in ('summary', 'reporter', 'description', 'status',
-                        'resolution'):
-                field['skip'] = True
-            elif name == 'owner':
-                field['label'] = 'Assign to'
-                if 'TICKET_MODIFY' not in req.perm:
-                    field['skip'] = True
-            elif name == 'milestone':
-                # Don't make completed milestones available for selection
-                options = [opt for opt in field['options'] if not
-                           Milestone(self.env, opt, db=context.db).is_completed]
-                # TODO:    context('milestone', opt).resource.is_completed
-                field['options'] = options
-            data['fields'].append(field)
-
-        if 'TICKET_APPEND' in req.perm:
-            data['can_attach'] = True
-            data['attachment'] = req.args.get('attachment')
-
-        add_stylesheet(req, 'common/css/ticket.css')
-        return 'ticket_new.html', data, None
-
-    def _process_ticket_request(self, req):
-        req.perm.require('TICKET_VIEW')
-        action = req.args.get('action', ('history' in req.args and 'history' or
-                                         'view'))
-        id = int(req.args.get('id'))
-        
-        context = Context(self.env, req)('ticket', id)
-        
-        ticket = context.resource
-        
-        data = {}
-        data['ticket'] = ticket
-        data['context'] = context
-        
-        if action in ('history', 'diff'):
-            field = req.args.get('field')
-            if field:
-                text_fields = [field]
-            else:
-                text_fields = [field['name'] for field in 
-                               TicketSystem(self.env).get_ticket_fields() if
-                               field['type'] == 'textarea']
-            if action == 'history':
-                return self._render_history(context, data, text_fields)
-            elif action == 'diff':
-                return self._render_diff(context, data, text_fields)
-        elif req.method == 'POST':
-            if 'preview' not in req.args:
-                self._do_save(context)
-            else:
-                # Use user supplied values
-                self._populate(req, ticket)
-                self._validate_ticket(req, ticket)
-
-                data['action'] = action
-                data['timestamp'] = req.args.get('ts')
-                data['reassign_owner'] = req.args.get('reassign_choice') \
-                                         or req.authname
-                data['resolve_resolution'] = req.args.get('resolve_choice')
-                comment = req.args.get('comment')
-                if comment:
-                    data['comment'] = comment
-        else:
-            data['reassign_owner'] = req.authname
-            # Store a timestamp in order to detect "mid air collisions"
-            data['timestamp'] = str(ticket.time_changed)
-
-        self._insert_ticket_data(context, data, get_reporter_id(req, 'author'))
-
-        mime = Mimeview(self.env)
-        format = req.args.get('format')
-        if format:
-            mime.send_converted(req, 'trac.ticket.Ticket', ticket, format,
-                                'ticket_%d' % ticket.id)
-
-        def add_ticket_link(css_class, id):
-            ctx = context('ticket', id)
-            add_link(req, css_class, ctx.resource_href(), ctx.name())
-
-        global_sequence = True
-        # If the ticket is being shown in the context of a query, add
-        # links to help navigate in the query result set
-        if 'query_tickets' in req.session:
-            tickets = req.session['query_tickets'].split()
-            if str(id) in tickets:
-                idx = tickets.index(str(ticket.id))
-                if idx > 0:
-                    add_ticket_link('first', tickets[0])
-                    add_ticket_link('prev', tickets[idx - 1])
-                if idx < len(tickets) - 1:
-                    add_ticket_link('next', tickets[idx + 1])
-                    add_ticket_link('last', tickets[-1])
-                add_link(req, 'up', req.session['query_href'])
-                global_sequence = False
-        if global_sequence:
-            db = self.env.get_db_cnx()
-            cursor = db.cursor()
-            cursor.execute("SELECT max(id) FROM ticket")
-            for max_id, in cursor:
-                max_id = int(max_id)
-                if ticket.id > 1:
-                    add_ticket_link('first', 1)
-                    add_ticket_link('prev', ticket.id - 1)
-                if ticket.id < max_id:
-                    add_ticket_link('next', ticket.id + 1)
-                    add_ticket_link('last', max_id)
-
-        add_stylesheet(req, 'common/css/ticket.css')
-
-        # Add registered converters
-        for conversion in mime.get_supported_conversions('trac.ticket.Ticket'):
-            conversion_href = req.href.ticket(ticket.id, format=conversion[0])
-            add_link(req, 'alternate', conversion_href, conversion[1],
-                     conversion[3])
-
-        return 'ticket_view.html', data, None
-
-    def _populate(self, req, ticket):
-        ticket.populate(dict([(k[6:],v) for k,v in req.args.iteritems()
-                              if k.startswith('field_')]))
-
-    def _get_history(self, context):
-        ticket = context.resource
-        history = []
-        for change in self.grouped_changelog_entries(ticket, context.db):
-            if change['permanent']:
-                change['version'] = change['cnum']
-                history.append(change)
-        return history
-        
-    def _render_history(self, context, data, text_fields):
-        """Extract the history for a ticket description."""
-        
-        req = context.req
-        ticket = context.resource
-        req.perm.require('TICKET_VIEW')
-
-        history = self._get_history(context)
-        history.reverse()
-        history = [c for c in history if any([f in text_fields
-                                              for f in c['fields']])]
-        history.append({'version': 0, 'comment': "''Initial version''",
-                        'date': ticket.time_created,
-                        'author': ticket['reporter'] # not 100% accurate...
-                        })
-        data.update({'title': 'Ticket History', 'history': history})
-
-        return 'history_view.html', data, None
-
-    def _render_diff(self, context, data, text_fields):
-        """Show differences between two versions of a ticket description.
-
-        `text_fields` is optionally a list of fields of interest, that are
-        considered for jumping to the next change.
-        """
-        req = context.req
-        ticket = context.resource
-        req.perm.require('TICKET_VIEW')
-
-        new_version = int(req.args.get('version', 1))
-        old_version = int(req.args.get('old_version', new_version))
-        if old_version > new_version:
-            old_version, new_version = new_version, old_version
-
-        # get the list of versions having a description change
-        history = self._get_history(context)
-        changes = {}
-        descriptions = []
-        old_idx = new_idx = -1 # indexes in descriptions
-        for change in history:
-            version = change['version']
-            changes[version] = change
-            if any([f in text_fields for f in change['fields']]):
-                if old_version and version <= old_version:
-                    old_idx = len(descriptions)
-                if new_idx == -1 and new_version and version >= new_version:
-                    new_idx = len(descriptions)
-                descriptions.append((version, change))
-
-        # determine precisely old and new versions
-        if old_version == new_version:
-            if new_idx >= 0:
-                old_idx = new_idx - 1
-        if old_idx >= 0:
-            old_version, old_change = descriptions[old_idx]
-        else:
-            old_version, old_change = 0, None
-        num_changes = new_idx - old_idx
-        if new_idx >= 0:
-            new_version, new_change = descriptions[new_idx]
-        else:
-            raise TracError('No differences to show')
-
-        # determine prev and next versions
-        prev_version = old_version
-        next_version = None
-        if new_idx < len(descriptions) - 1:
-            next_version = descriptions[new_idx+1][0]
-
-        # -- old properties (old_ticket) and new properties (new_ticket)
-
-        # assume a linear sequence of change numbers, starting at 1, with gaps
-        def replay_changes(values, old_values, from_version, to_version):
-            for version in range(from_version, to_version+1):
-                if version in changes:
-                    for k, v in changes[version]['fields'].iteritems():
-                        values[k] = v['new']
-                        if old_values is not None and k not in old_values:
-                            old_values[k] = v['old']
-
-        old_ticket = {}
-        if old_version:
-            replay_changes(old_ticket, None, 1, old_version)
-
-        new_ticket = dict(old_ticket)
-        replay_changes(new_ticket, old_ticket, old_version+1, new_version)
-
-        changes = []
-
-        def version_info(v, field=None):
-            path = context.name()
-            # TODO: field info should probably be part of the Context as well
-            if field:
-                path = tag(path, Markup(' &ndash; '), field)
-            if v:
-                rev, shortrev = 'Version %d' % v, 'v%d' % v
-            else:
-                rev, shortrev = 'Initial Version', 'initial'
-            return {'path':  path, 'rev': rev, 'shortrev': shortrev,
-                    'href': context.resource_href(version=v)}
-
-        # -- prop changes
-        props = []
-        for k, v in new_ticket.iteritems():
-            if k not in text_fields:
-                old, new = old_ticket[k], new_ticket[k]
-                if old != new:
-                    props.append({'name': k,
-                                  'old': {'name': k, 'value': old},
-                                  'new': {'name': k, 'value': new}})
-        changes.append({'props': props,
-                        'new': version_info(new_version),
-                        'old': version_info(old_version)})
-
-
-        # -- text diffs
-        diff_style, diff_options, diff_data = get_diff_options(req)
-        diff_context = 3
-        for option in diff_options:
-            if option.startswith('-U'):
-                diff_context = int(option[2:])
-                break
-        if diff_context < 0:
-            diff_context = None
-
-        for field in text_fields:
-            old_text = old_ticket.get(field)
-            old_text = old_text and old_text.splitlines() or []
-            new_text = new_ticket.get(field)
-            new_text = new_text and new_text.splitlines() or []
-            diffs = diff_blocks(old_text, new_text, context=diff_context,
-                                ignore_blank_lines='-B' in diff_options,
-                                ignore_case='-i' in diff_options,
-                                ignore_space_changes='-b' in diff_options)
-
-            changes.append({'diffs': diffs,
-                            'new': version_info(new_version, field),
-                            'old': version_info(old_version, field)})
-
-        # -- prev/up/next links
-        if prev_version:
-            add_link(req, 'prev', req.href.ticket(ticket.id, action='diff',
-                                                  version=prev_version),
-                     'Version %d' % prev_version)
-        add_link(req, 'up', req.href.ticket(ticket.id, action='history'),
-                 'Ticket History')
-        if next_version:
-            add_link(req, 'next', req.href.ticket(ticket.id, action='diff',
-                                                  version=next_version),
-                     'Version %d' % next_version)
-
-        add_stylesheet(req, 'common/css/diff.css')
-        add_script(req, 'common/js/diff.js')
-        
-        data.update({
-            'title': 'Ticket Diff',
-            'old_version': old_version, 'new_version': new_version,
-            'changes': changes, 'diff': diff_data,
-            'num_changes': num_changes, 'change': new_change,
-            'old_ticket': old_ticket, 'new_ticket': new_ticket
-            })
-
-        return 'diff_view.html', data, None
 
     def export_csv(self, ticket, sep=',', mimetype='text/plain'):
         content = StringIO()
@@ -604,11 +459,14 @@ class TicketModule(Component):
                                  .replace('\n', '\\n').replace('\r', '\\r')
                                  for f in ticket.fields]) + CRLF)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
-
+        
     def export_rss(self, req, ticket):
         db = self.env.get_db_cnx()
         changes = []
         change_summary = {}
+
+        description = wiki_to_html(ticket['description'], self.env, req, db)
+        req.hdf['ticket.description.formatted'] = unicode(description)
 
         for change in self.grouped_changelog_entries(ticket, db):
             changes.append(change)
@@ -616,6 +474,9 @@ class TicketModule(Component):
             change_summary = {}
             # wikify comment
             if 'comment' in change:
+                comment = change['comment']
+                change['comment'] = unicode(wiki_to_html(
+                    comment, self.env, req, db, absurls=True))
                 change_summary['added'] = ['comment']
             for field, values in change['fields'].iteritems():
                 if field == 'description':
@@ -629,88 +490,25 @@ class TicketModule(Component):
                     change_summary.setdefault(chg, []).append(field)
             change['title'] = '; '.join(['%s %s' % (', '.join(v), k) for k, v \
                                          in change_summary.iteritems()])
+        req.hdf['ticket.changes'] = changes
+        return (req.hdf.render('ticket_rss.cs'), 'application/rss+xml')
 
-        data = {
-            'ticket': ticket,
-            'context': Context(self.env, req, 'ticket', ticket.id, db=db),
-            'changes': changes,
-        }
 
-        output = Chrome(self.env).render_template(req, 'ticket.rss', data,
-                                                  'application/rss+xml')
-        return output, 'application/rss+xml'
-
-    def _validate_ticket(self, req, ticket):
-        # Always validate for known values
-        for field in ticket.fields:
-            if 'options' not in field:
-                continue
-            name = field['name']
-            if name in ticket.values and name in ticket._old:
-                value = ticket[name]
-                if value:
-                    if value not in field['options']:
-                        raise InvalidTicket('"%s" is not a valid value for '
-                                            'the %s field.' % (value, name))
-                elif not field.get('optional', False):
-                    raise InvalidTicket('field %s must be set' % name)
-
-        # Custom validation rules
-        for manipulator in self.ticket_manipulators:
-            for field, message in manipulator.validate_ticket(req, ticket):
-                if field:
-                    raise InvalidTicket("The ticket %s field is invalid: %s" %
-                                        (field, message))
-                else:
-                    raise InvalidTicket("Invalid ticket: %s" % message)
-
-    def _do_create(self, context):
-        req = context.req
-        ticket = context.resource
-
-        if 'field_summary' not in req.args:
-            raise TracError('Tickets must contain a summary.')
-
-        self._populate(req, ticket)
-        ticket.values['reporter'] = get_reporter_id(req, 'reporter')
-        self._validate_ticket(req, ticket)
-
-        ticket.insert(db=context.db)
-        context.db.commit()
-        context.id = ticket.id
-
-        # Notify
-        try:
-            tn = TicketNotifyEmail(self.env)
-            tn.notify(ticket, newticket=True)
-        except Exception, e:
-            self.log.exception("Failure sending notification on creation of "
-                               "ticket #%s: %s" % (ticket.id, e))
-
-        # Redirect the user to the newly created ticket or add attachment
-        if 'attachment' in req.args:
-            req.redirect(req.href.attachment('ticket', ticket.id, action='new'))
-
-        req.redirect(req.href.ticket(ticket.id))
-
-    def _do_save(self, context):
-        req = context.req
-        ticket = context.resource
-        
-        if 'TICKET_CHGPROP' in req.perm:
+    def _do_save(self, req, db, ticket):
+        if req.perm.has_permission('TICKET_CHGPROP'):
             # TICKET_CHGPROP gives permission to edit the ticket
-            if not req.args.get('field_summary'):
+            if not req.args.get('summary'):
                 raise TracError('Tickets must contain summary.')
 
-            if 'field_description' in req.args or 'field_reporter' in req.args:
-                req.perm.require('TICKET_ADMIN')
+            if req.args.has_key('description') or req.args.has_key('reporter'):
+                req.perm.assert_permission('TICKET_ADMIN')
 
-            self._populate(req, ticket)
+            ticket.populate(req.args)
         else:
-            req.perm.require('TICKET_APPEND')
+            req.perm.assert_permission('TICKET_APPEND')
 
         # Mid air collision?
-        if req.args.get('ts') != str(ticket.time_changed):
+        if int(req.args.get('ts')) != ticket.time_changed:
             raise TracError("Sorry, can not save your changes. "
                             "This ticket has been modified by someone else "
                             "since you started", 'Mid Air Collision')
@@ -719,7 +517,7 @@ class TicketModule(Component):
         action = req.args.get('action')
         actions = TicketSystem(self.env).get_available_actions(ticket, req.perm)
         if action not in actions:
-            raise TracError('Invalid action "%s"' % action)
+            raise TracError('Invalid action')
 
         # TODO: this should not be hard-coded like this
         if action == 'accept':
@@ -727,26 +525,26 @@ class TicketModule(Component):
             ticket['owner'] = req.authname
         if action == 'resolve':
             ticket['status'] = 'closed'
-            ticket['resolution'] = req.args.get('resolve_choice')
+            ticket['resolution'] = req.args.get('resolve_resolution')
         elif action == 'reassign':
-            ticket['owner'] = req.args.get('reassign_choice')
+            ticket['owner'] = req.args.get('reassign_owner')
             ticket['status'] = 'new'
         elif action == 'reopen':
             ticket['status'] = 'reopened'
             ticket['resolution'] = ''
 
-        now = datetime.now(utc)
         self._validate_ticket(req, ticket)
 
+        now = int(time.time())
         cnum = req.args.get('cnum')        
         replyto = req.args.get('replyto')
         internal_cnum = cnum
         if cnum and replyto: # record parent.child relationship
             internal_cnum = '%s.%s' % (replyto, cnum)
         if ticket.save_changes(get_reporter_id(req, 'author'),
-                               req.args.get('comment'), when=now,
-                               db=context.db, cnum=internal_cnum):
-            context.db.commit()
+                               req.args.get('comment'), when=now, db=db,
+                               cnum=internal_cnum):
+            db.commit()
 
             try:
                 tn = TicketNotifyEmail(self.env)
@@ -758,111 +556,110 @@ class TicketModule(Component):
         fragment = cnum and '#comment:'+cnum or ''
         req.redirect(req.href.ticket(ticket.id) + fragment)
 
-    def _insert_ticket_data(self, context, data, reporter_id):
+    def _insert_ticket_data(self, req, db, ticket, reporter_id):
         """Insert ticket data into the hdf"""
-        req = context.req
-        ticket = context.resource
-
         replyto = req.args.get('replyto')
-        version = req.args.get('version', None)
-        
-        data['replyto'] = replyto
-        if version is not None:
-            try:
-                version = int(version)
-            except ValueError:
-                version = None
-        data['version'] = version
+        req.hdf['title'] = '#%d (%s)' % (ticket.id, ticket['summary'])
+        req.hdf['ticket'] = ticket.values
+        req.hdf['ticket'] = {
+            'id': ticket.id,
+            'href': req.href.ticket(ticket.id),
+            'replyto': replyto
+            }
 
         # -- Ticket fields
-        types = {}
-        fields = []
+        
         for field in TicketSystem(self.env).get_ticket_fields():
-            name = field['name']
-            type_ = field['type']
-            types[name] = type_
-            if type_ in ('radio', 'select'):
+            if field['type'] in ('radio', 'select'):
                 value = ticket.values.get(field['name'])
                 options = field['options']
-                if name == 'milestone' and 'TICKET_ADMIN' not in req.perm:
+                if field['name'] == 'milestone' \
+                    and not req.perm.has_permission('TICKET_ADMIN'):
                     options = [opt for opt in options if not
-                               Milestone(self.env, opt,
-                                         db=context.db).is_completed]
-                    # FIXME: ... un air de "deja vu" ;)
+                               Milestone(self.env, opt, db=db).is_completed]
                 if value and not value in options:
                     # Current ticket value must be visible even if its not in the
                     # possible values
                     options.append(value)
                 field['options'] = options
-            if name in ('summary', 'reporter', 'description', 'status',
+            name = field['name']
+            del field['name']
+            if name in ('summary', 'reporter', 'description', 'type', 'status',
                         'resolution', 'owner'):
                 field['skip'] = True
-            fields.append(field)
+            req.hdf['ticket.fields.' + name] = field
 
-        data['reporter_id'] = reporter_id
+        req.hdf['ticket.reporter_id'] = reporter_id
+        req.hdf['ticket.description.formatted'] = wiki_to_html(
+            ticket['description'], self.env, req, db)
 
-        # FIXME: get rid of this once datetime branch is merged
-        data['opened'] = ticket.time_created
+        req.hdf['ticket.opened'] = format_datetime(ticket.time_created)
+        req.hdf['ticket.opened_delta'] = pretty_timedelta(ticket.time_created)
         if ticket.time_changed != ticket.time_created:
-            data['lastmod'] = ticket.time_changed
+            req.hdf['ticket'] = {
+                'lastmod': format_datetime(ticket.time_changed),
+                'lastmod_delta': pretty_timedelta(ticket.time_changed)
+                }
 
         # -- Ticket Change History
 
         def quote_original(author, original, link):
-            if 'comment' not in req.args: # i.e. the comment was not yet edited
-                data['comment'] = '\n'.join(
+            if not 'comment' in req.args: # i.e. the comment was not yet edited
+                req.hdf['ticket.comment'] = '\n'.join(
                     ['Replying to [%s %s]:' % (link, author)] +
                     ['> %s' % line for line in original.splitlines()] + [''])
 
         if replyto == 'description':
             quote_original(ticket['reporter'], ticket['description'],
                            'ticket:%d' % ticket.id)
-        values = {}
         replies = {}
         changes = []
         cnum = 0
-        skip = False
-        for change in self.grouped_changelog_entries(ticket, context.db):
+        description_lastmod = description_author = None
+        for change in self.grouped_changelog_entries(ticket, db):
+            changes.append(change)
+            # wikify comment
+            comment = ''
+            if 'comment' in change:
+                comment = change['comment']
+                change['comment'] = wiki_to_html(comment, self.env, req, db)
             if change['permanent']:
                 cnum = change['cnum']
-                if version is not None and cnum > version:
-                    # Retrieve initial ticket values from later changes
-                    for k, v in change['fields'].iteritems():
-                        if k not in values:
-                            values[k] = v['old']
-                    skip = True
-                else:
-                    # keep track of replies threading
-                    if 'replyto' in change:
-                        replies.setdefault(change['replyto'], []).append(cnum)
-                    # eventually cite the replied to comment
-                    if replyto == str(cnum):
-                        quote_original(change['author'], change['comment'],
-                                       'comment:%s' % replyto)
-                    if version:
-                        # Override ticket value by current changes
-                        for k, v in change['fields'].iteritems():
-                            values[k] = v['new']
-                    if 'description' in change['fields']:
-                        data['description_change'] = change
-            if not skip:
-                changes.append(change)
+                # keep track of replies threading
+                if 'replyto' in change:
+                    replies.setdefault(change['replyto'], []).append(cnum)
+                # eventually cite the replied to comment
+                if replyto == str(cnum):
+                    quote_original(change['author'], comment,
+                                   'comment:%s' % replyto)
+            if 'description' in change['fields']:
+                change['fields']['description'] = ''
+                description_lastmod = change['date']
+                description_author = change['author']
+                
+        req.hdf['ticket'] = {
+            'changes': changes,
+            'replies': replies,
+            'cnum': cnum + 1
+           }
+        if description_lastmod:
+            req.hdf['ticket.description'] = {'lastmod': description_lastmod,
+                                             'author': description_author}
 
-        if version is not None:
-            ticket.values.update(values)
-            
-        data.update({
-            'fields': fields, 'changes': changes, 'field_types': types,
-            'replies': replies, 'cnum': cnum + 1,
-            'attachments': list(Attachment.select(self.env, 'ticket',
-                                                  ticket.id)),
-            'attach_href': ('TICKET_APPEND' in req.perm and \
-                            req.href.attachment('ticket', ticket.id)),
-            'actions': TicketSystem(self.env).get_available_actions(ticket,
-                                                                    req.perm)
-            })
+        # -- Ticket Attachments
 
-    def grouped_changelog_entries(self, ticket, db, when=None):
+        req.hdf['ticket.attachments'] = attachments_to_hdf(self.env, req, db,
+                                                           'ticket', ticket.id)
+        if req.perm.has_permission('TICKET_APPEND'):
+            req.hdf['ticket.attach_href'] = req.href.attachment('ticket',
+                                                                ticket.id)
+
+        # Add the possible actions to hdf
+        actions = TicketSystem(self.env).get_available_actions(ticket, req.perm)
+        for action in actions:
+            req.hdf['ticket.actions.' + action] = '1'
+
+    def grouped_changelog_entries(self, ticket, db, when=0):
         """Iterate on changelog entries, consolidating related changes
         in a `dict` object.
         """
@@ -875,8 +672,13 @@ class TicketModule(Component):
                 if current:
                     yield current
                 last_uid = uid
-                current = {'date': date, 'author': author, 'fields': {},
-                           'permanent': permanent}
+                current = {
+                    'http_date': http_date(date),
+                    'date': format_datetime(date),
+                    'author': author,
+                    'fields': {},
+                    'permanent': permanent
+                }
                 if permanent and not when:
                     autonum += 1
                     current['cnum'] = autonum
