@@ -227,7 +227,7 @@ SELECT p.value AS __color__,
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
   WHERE status IN ('new', 'assigned', 'reopened') 
   ORDER BY (milestone IS NULL),milestone, p.value, t.type, time
-""" % (db.concat("'Milestone '", 'milestone'), owner)),
+""" % (db.concat('milestone', "' Release'"), owner)),
 #----------------------------------------------------------------------------
 ('Assigned, Active Tickets by Owner',
 """
@@ -393,17 +393,17 @@ def get_data(db):
                __mkreports(get_reports(db))))
 
 
-default_components = ('trac.about', 'trac.admin.console', 'trac.admin.web_ui',
-                      'trac.attachment', 'trac.db.mysql_backend',
-                      'trac.db.postgres_backend', 'trac.db.sqlite_backend',
+default_components = ('trac.About', 'trac.attachment',
+                      'trac.db.mysql_backend', 'trac.db.postgres_backend',
+                      'trac.db.sqlite_backend',
                       'trac.mimeview.enscript', 'trac.mimeview.patch',
-                      'trac.mimeview.php', 'trac.mimeview.pygments_renderer',
-                      'trac.mimeview.rst', 'trac.mimeview.silvercity',
-                      'trac.mimeview.txtl',
-                      'trac.prefs.web_ui', 'trac.search.web_ui',
-                      'trac.ticket.admin', 'trac.ticket.query',
-                      'trac.ticket.report', 'trac.ticket.roadmap',
-                      'trac.ticket.web_ui', 'trac.timeline.web_ui',
+                      'trac.mimeview.php', 'trac.mimeview.rst',
+                      'trac.mimeview.silvercity', 'trac.mimeview.txtl',
+                      'trac.scripts.admin',
+                      'trac.Search', 'trac.Settings',
+                      'trac.ticket.query', 'trac.ticket.report',
+                      'trac.ticket.roadmap', 'trac.ticket.web_ui',
+                      'trac.Timeline',
                       'trac.versioncontrol.web_ui',
                       'trac.versioncontrol.svn_fs',
                       'trac.wiki.macros', 'trac.wiki.web_ui',

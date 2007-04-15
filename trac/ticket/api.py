@@ -15,18 +15,14 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import re
-from datetime import datetime
-
-from genshi.builder import tag
 
 from trac.config import *
-from trac.context import IContextProvider, Context
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionSystem
-from trac.util import Ranges
+from trac.Search import ISearchSource, search_to_sql, shorten_result
+from trac.util.html import html, Markup
 from trac.util.text import shorten_line
-from trac.util.datefmt import utc
-from trac.wiki import IWikiSyntaxProvider, WikiParser
+from trac.wiki import IWikiSyntaxProvider, Formatter
 
 
 class ITicketChangeListener(Interface):
@@ -62,43 +58,8 @@ class ITicketManipulator(Interface):
         ticket. Therefore, a return value of `[]` means everything is OK."""
 
 
-class TicketContext(Context):
-    """Context used for describing Ticket resources."""
-
-    realm = 'ticket'
-
-    # methods reimplemented from Context
-
-    def get_resource(self):
-        from trac.ticket.model import Ticket
-        return Ticket(self.env, self.id and int(self.id) or None, self.db)
-
-    def name(self):
-        return 'Ticket ' + self.shortname()
-
-    def shortname(self):
-        return '#%s' % self.id
-
-    def summary(self):
-        args = [self.resource[f] for f in ('summary', 'status',
-                                           'resolution', 'type')]
-        return self.format_summary(*args)
-
-    def format_summary(self, summary, status=None, resolution=None, type=None):
-        summary = shorten_line(summary)
-        if type:
-            summary = type + ': ' + summary
-        if status:
-            if status == 'closed' and resolution:
-                status += ': ' + resolution
-            return "%s (%s)" % (summary, status)
-        else:
-            return summary
-        
-
-
 class TicketSystem(Component):
-    implements(IPermissionRequestor, IWikiSyntaxProvider, IContextProvider)
+    implements(IPermissionRequestor, IWikiSyntaxProvider, ISearchSource)
 
     change_listeners = ExtensionPoint(ITicketChangeListener)
 
@@ -119,8 +80,7 @@ class TicketSystem(Component):
         }
         perms = {'resolve': 'TICKET_MODIFY', 'reassign': 'TICKET_MODIFY',
                  'accept': 'TICKET_MODIFY', 'reopen': 'TICKET_CREATE'}
-        return [action for action in actions.get(ticket['status'] or 'new',
-                                                 ['leave'])
+        return [action for action in actions.get(ticket['status'], ['leave'])
                 if action not in perms or perm_.has_permission(perms[action])]
 
     def get_ticket_fields(self):
@@ -139,8 +99,12 @@ class TicketSystem(Component):
         field = {'name': 'owner', 'label': 'Owner'}
         if self.restrict_owner:
             field['type'] = 'select'
+            users = []
             perm = PermissionSystem(self.env)
-            field['options'] = perm.get_users_with_permission('TICKET_MODIFY')
+            for username, name, email in self.env.get_known_users(db):
+                if perm.get_user_permissions(username).get('TICKET_MODIFY'):
+                    users.append(username)
+            field['options'] = users
             field['optional'] = True
         else:
             field['type'] = 'text'
@@ -236,8 +200,7 @@ class TicketSystem(Component):
             # matches #... but not &#... (HTML entity)
             r"!?(?<!&)#"
             # optional intertrac shorthand #T... + digits
-            r"(?P<it_ticket>%s)%s" % (WikiParser.INTERTRAC_SCHEME,
-                                      Ranges.RE_STR),
+            r"(?P<it_ticket>%s)\d+" % Formatter.INTERTRAC_SCHEME,
             lambda x, y, z: self._format_link(x, 'ticket', y[1:], y, z))
 
     def _format_link(self, formatter, ns, target, label, fullmatch=None):
@@ -246,57 +209,69 @@ class TicketSystem(Component):
         if intertrac:
             return intertrac
         try:
-            link, params, fragment = formatter.split_link(target)
-            r = Ranges(link)
-            if len(r) == 1:
-                num = r.a
-                ctx = formatter.context('ticket', num)
-                if 0 < num <= 1L << 31: # TODO: implement ctx.exists()
-                    # status = ctx.resource['status']  -> currently expensive
-                    cursor = formatter.db.cursor() 
-                    cursor.execute("SELECT type,summary,status,resolution "
-                                   "FROM ticket WHERE id=%s", (str(num),)) 
-                    for type, summary, status, resolution in cursor:
-                        title = ctx.format_summary(summary, status, resolution,
-                                                   type)
-                        return tag.a(label, class_='%s ticket' % status, 
-                                     title=title,
-                                     href=(ctx.resource_href() + params +
-                                           fragment))
-                    else: 
-                        return tag.a(label, class_='missing ticket',  
-                                     href=ctx.resource_href(), rel="nofollow")
-            else:
-                ranges = str(r)
-                if params:
-                    params = '&' + params[1:]
-                return tag.a(label, title='Tickets '+ranges,
-                             href=formatter.href.query(id=ranges) + params)
+            num = int(target)
+            if 0 < num <= 1L << 31:
+                cursor = formatter.db.cursor()
+                cursor.execute("SELECT summary,status FROM ticket WHERE id=%s",
+                               (str(num),))
+                row = cursor.fetchone()
+                if row:
+                    return html.A(label, class_='%s ticket' % row[1],
+                                  title=(shorten_line(row[0]) + \
+                                         ' (%s)' % row[1]),
+                                  href=formatter.href.ticket(target))
         except ValueError:
             pass
-        return tag.a(label, class_='missing ticket')
+        return html.A(label, class_='missing ticket', rel='nofollow',
+                      href=formatter.href.ticket(target))
 
     def _format_comment_link(self, formatter, ns, target, label):
-        context = None
+        type, id, cnum = 'ticket', '1', 0
+        href = None
         if ':' in target:
             elts = target.split(':')
             if len(elts) == 3:
-                cnum, realm, id = elts
-                if cnum != 'description' and cnum and not cnum[0].isdigit():
-                    realm, id, cnum = elts # support old comment: style
-                context = formatter.context(realm, id)
+                type, id, cnum = elts
+                href = formatter.href(type, id)
         else:
-            context = formatter.context
-            cnum = target
-
-        if context:
-            return tag.a(label, href=("%s#comment:%s" %
-                                      (context.resource_href(), cnum)),
-                         title="Comment %s for %s" % (cnum, context.name()))
+            # FIXME: the formatter should know which object the text being
+            #        formatted belongs to
+            if formatter.req:
+                path_info = formatter.req.path_info.strip('/').split('/', 2)
+                if len(path_info) == 2:
+                    type, id = path_info[:2]
+                    href = formatter.href(type, id)
+                    cnum = target
+        if href:
+            return html.A(label, href="%s#comment:%s" % (href, cnum),
+                          title="Comment %s for %s:%s" % (cnum, type, id))
         else:
             return label
  
-    # IContextProvider methods
+    # ISearchSource methods
 
-    def get_context_classes(self):
-        yield TicketContext
+    def get_search_filters(self, req):
+        if req.perm.has_permission('TICKET_VIEW'):
+            yield ('ticket', 'Tickets')
+
+    def get_search_results(self, req, terms, filters):
+        if not 'ticket' in filters:
+            return
+        db = self.env.get_db_cnx()
+        sql, args = search_to_sql(db, ['b.newvalue'], terms)
+        sql2, args2 = search_to_sql(db, ['summary', 'keywords', 'description',
+                                         'reporter', 'cc'], terms)
+        cursor = db.cursor()
+        cursor.execute("SELECT DISTINCT a.summary,a.description,a.reporter, "
+                       "a.keywords,a.id,a.time,a.status FROM ticket a "
+                       "LEFT JOIN ticket_change b ON a.id = b.ticket "
+                       "WHERE (b.field='comment' AND %s ) OR %s" % (sql, sql2),
+                       args + args2)
+        for summary, desc, author, keywords, tid, date, status in cursor:
+            ticket = '#%d: ' % tid
+            if status == 'closed':
+                ticket = Markup('<span style="text-decoration: line-through">'
+                                '#%s</span>: ', tid)
+            yield (req.href.ticket(tid),
+                   ticket + shorten_line(summary),
+                   date, author, shorten_result(desc, terms))

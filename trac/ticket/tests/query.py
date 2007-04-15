@@ -1,4 +1,3 @@
-from trac.context import Context
 from trac.log import logger_factory
 from trac.test import Mock, EnvironmentStub
 from trac.ticket.query import Query, QueryModule
@@ -11,7 +10,6 @@ class QueryTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
-        self.req = Mock(authname='anonymous')
         
 
     def test_all_ordered_by_id(self):
@@ -94,7 +92,7 @@ ORDER BY COALESCE(t.version,'')='' DESC,COALESCE(version.time,0)=0 DESC,version.
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_milestone(self):
-        query = Query.from_string(self.env, None, 'milestone=milestone1', order='id')
+        query = Query.from_string(self.env, 'milestone=milestone1', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.component AS component,t.time AS time,t.changetime AS changetime,t.milestone AS milestone,priority.value AS priority_value
@@ -141,7 +139,7 @@ ORDER BY COALESCE(t.priority,'')='',priority.value,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_milestone_not(self):
-        query = Query.from_string(self.env, None, 'milestone!=milestone1', order='id')
+        query = Query.from_string(self.env, 'milestone!=milestone1', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.milestone AS milestone,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
@@ -153,7 +151,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_status(self):
-        query = Query.from_string(self.env, None, 'status=new|assigned|reopened',
+        query = Query.from_string(self.env, 'status=new|assigned|reopened',
                                   order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
@@ -166,56 +164,56 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_owner_containing(self):
-        query = Query.from_string(self.env, None, 'owner~=someone', order='id')
+        query = Query.from_string(self.env, 'owner~=someone', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
-WHERE COALESCE(t.owner,'') LIKE %s ESCAPE '/'
+WHERE COALESCE(t.owner,'') LIKE %s
 ORDER BY COALESCE(t.id,0)=0,t.id""")
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_owner_not_containing(self):
-        query = Query.from_string(self.env, None, 'owner!~=someone', order='id')
+        query = Query.from_string(self.env, 'owner!~=someone', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
-WHERE COALESCE(t.owner,'') NOT LIKE %s ESCAPE '/'
+WHERE COALESCE(t.owner,'') NOT LIKE %s
 ORDER BY COALESCE(t.id,0)=0,t.id""")
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_owner_beginswith(self):
-        query = Query.from_string(self.env, None, 'owner^=someone', order='id')
+        query = Query.from_string(self.env, 'owner^=someone', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
-WHERE COALESCE(t.owner,'') LIKE %s ESCAPE '/'
+WHERE COALESCE(t.owner,'') LIKE %s
 ORDER BY COALESCE(t.id,0)=0,t.id""")
         self.assertEqual(['someone%'], args)
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_owner_endswith(self):
-        query = Query.from_string(self.env, None, 'owner$=someone', order='id')
+        query = Query.from_string(self.env, 'owner$=someone', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
-WHERE COALESCE(t.owner,'') LIKE %s ESCAPE '/'
+WHERE COALESCE(t.owner,'') LIKE %s
 ORDER BY COALESCE(t.id,0)=0,t.id""")
         self.assertEqual(['%someone'], args)
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_custom_field(self):
         self.env.config.set('ticket-custom', 'foo', 'text')
-        query = Query.from_string(self.env, None, 'foo=something', order='id')
+        query = Query.from_string(self.env, 'foo=something', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value,foo.value AS foo
@@ -241,7 +239,7 @@ ORDER BY COALESCE(foo.value,'')='',foo.value,COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_multiple_owners(self):
-        query = Query.from_string(self.env, None, 'owner=someone|someone_else',
+        query = Query.from_string(self.env, 'owner=someone|someone_else',
                                   order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
@@ -254,7 +252,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_multiple_owners_not(self):
-        query = Query.from_string(self.env, None, 'owner!=someone|someone_else',
+        query = Query.from_string(self.env, 'owner!=someone|someone_else',
                                   order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
@@ -267,20 +265,20 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_multiple_owners_contain(self):
-        query = Query.from_string(self.env, None, 'owner~=someone|someone_else',
+        query = Query.from_string(self.env, 'owner~=someone|someone_else',
                                   order='id')
         sql, args = query.get_sql()
-        self.assertEqual(['%someone%', '%someone/_else%'], args)
+        self.assertEqual(['%someone%', '%someone_else%'], args)
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
-WHERE (COALESCE(t.owner,'') LIKE %s ESCAPE '/' OR COALESCE(t.owner,'') LIKE %s ESCAPE '/')
+WHERE (COALESCE(t.owner,'') LIKE %s OR COALESCE(t.owner,'') LIKE %s)
 ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_empty_value_contains(self):
-        query = Query.from_string(self.env, None, 'owner~=|', order='id')
+        query = Query.from_string(self.env, 'owner~=|', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
@@ -291,7 +289,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_empty_value_startswith(self):
-        query = Query.from_string(self.env, None, 'owner^=|', order='id')
+        query = Query.from_string(self.env, 'owner^=|', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
@@ -302,7 +300,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         tickets = query.execute(Mock(href=self.env.href))
 
     def test_constrained_by_empty_value_endswith(self):
-        query = Query.from_string(self.env, None, 'owner$=|', order='id')
+        query = Query.from_string(self.env, 'owner$=|', order='id')
         sql, args = query.get_sql()
         self.assertEqual(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
@@ -312,20 +310,11 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         self.assertEqual([], args)
         tickets = query.execute(Mock(href=self.env.href))
 
-    def test_csv_escape(self):
-        query = Mock(get_columns=lambda: ['col1'],
-                     execute=lambda r,c: [{'col1': 'value, needs escaped'}])
-        content, mimetype = QueryModule(self.env).export_csv(
-                                Mock(href=self.env.href), query)
-        self.assertEqual('col1\r\n"value, needs escaped"\r\n',
-                         content)
-
-
 class QueryLinksTestCase(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
         self.query_module = QueryModule(self.env)
-        self.formatter = LinkFormatter(Context(self.env, None))
+        self.formatter = LinkFormatter(self.env)
 
     def _format_link(self, query, label):
         return str(self.query_module._format_link(self.formatter, 'query',

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2007 Edgewall Software
+# Copyright (C) 2005-2006 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
-# Copyright (C) 2005-2007 Christian Boos <cboos@neuf.fr>
+# Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -24,10 +24,10 @@ Note about Unicode:
   All paths manipulated by Trac are `unicode` objects.
 
   Therefore:
-   * before being handed out to SVN, the Trac paths have to be encoded to
-     UTF-8, using `_to_svn()`
-   * before being handed out to Trac, a SVN path has to be decoded from
-     UTF-8, using `_from_svn()`
+   * before being handed out to SVN, the Trac paths have to be encoded to UTF-8,
+     using `_to_svn()`
+   * before being handed out to Trac, a SVN path has to be decoded from UTF-8,
+     using `_from_svn()`
 
   Warning: `SubversionNode.get_content` returns an object from which one
            can read a stream of bytes.
@@ -43,21 +43,14 @@ import os.path
 import time
 import weakref
 import posixpath
-from datetime import datetime
 
-from genshi.builder import tag
-
-from trac.config import ListOption
 from trac.core import *
 from trac.versioncontrol import Changeset, Node, Repository, \
                                 IRepositoryConnector, \
                                 NoSuchChangeset, NoSuchNode
 from trac.versioncontrol.cache import CachedRepository
 from trac.versioncontrol.svn_authz import SubversionAuthorizer
-from trac.versioncontrol.web_ui.browser import IPropertyRenderer
-from trac.util import sorted, embedded_numbers, reversed
 from trac.util.text import to_unicode
-from trac.util.datefmt import utc
 
 try:
     from svn import fs, repos, core, delta
@@ -82,16 +75,12 @@ application_pool = None
 
 def _to_svn(*args):
     """Expect a list of `unicode` path components.
+    Returns an UTF-8 encoded string suitable for the Subversion python bindings.
+    """
+    return '/'.join([path.strip('/') for path in args]).encode('utf-8')
     
-    Returns an UTF-8 encoded string suitable for the Subversion python bindings
-    (the returned path never starts with a leading "/")
-    """
-    return '/'.join([p for p in [p.strip('/') for p in args] if p]) \
-           .encode('utf-8')
-
 def _from_svn(path):
-    """Expect an UTF-8 encoded string and transform it to an `unicode` object
-    """
+    """Expect an UTF-8 encoded string and transform it to an `unicode` object"""
     return path and path.decode('utf-8')
     
 def _normalize_path(path):
@@ -119,22 +108,6 @@ def _is_path_within_scope(scope, fullpath):
     scope = scope.strip('/')
     return (fullpath + '/').startswith(scope + '/')
 
-# svn_opt_revision_t helpers
-
-def _svn_rev(num):
-    value = core.svn_opt_revision_value_t()
-    value.number = num
-    revision = core.svn_opt_revision_t()
-    revision.kind = core.svn_opt_revision_number
-    revision.value = value
-    return revision
-
-def _svn_head():
-    revision = core.svn_opt_revision_t()
-    revision.kind = core.svn_opt_revision_head
-    return revision
-
-# apr_pool_t helpers
 
 def _mark_weakpool_invalid(weakpool):
     if weakpool():
@@ -246,21 +219,6 @@ class SubversionConnector(Component):
 
     implements(IRepositoryConnector)
 
-    branches = ListOption('svn', 'branches', 'trunk,branches/*', doc=
-        """List of paths categorized as ''branches''.
-        If a path ends with '*', then all the directory entries found
-        below that path will be included.
-        """)
-
-    tags = ListOption('svn', 'tags', 'tags/*', doc=
-        """List of paths categorized as ''tags''.
-        If a path ends with '*', then all the directory entries found
-        below that path will be included.
-        """)
-
-    def __init__(self):
-        self._version = None
-
     def get_supported_types(self):
         global has_subversion
         if has_subversion:
@@ -270,100 +228,31 @@ class SubversionConnector(Component):
     def get_repository(self, type, dir, authname):
         """Return a `SubversionRepository`.
 
-        The repository is wrapped in a `CachedRepository`.
+        The repository is generally wrapped in a `CachedRepository`,
+        unless `direct-svn-fs` is the specified type.
         """
-        if not self._version:
-            self._version = self._get_version()
-            self.env.systeminfo.append(('Subversion', self._version))
-        repos = SubversionRepository(dir, None, self.log,
-                                     {'tags': self.tags,
-                                      'branches': self.branches})
+        repos = SubversionRepository(dir, None, self.log)
         crepos = CachedRepository(self.env.get_db_cnx(), repos, None, self.log)
         if authname:
             authz = SubversionAuthorizer(self.env, crepos, authname)
             repos.authz = crepos.authz = authz
         return crepos
-
-    def _get_version(self):
-        version = (core.SVN_VER_MAJOR, core.SVN_VER_MINOR, core.SVN_VER_MICRO)
-        version_string = '%d.%d.%d' % version + core.SVN_VER_TAG
-        if version[0] < 1:
-            raise TracError("Subversion >= 1.0 required: Found " +
-                            version_string)
-        return version_string
-
-
-class SubversionPropertyRenderer(Component):
-    implements(IPropertyRenderer)
-
-    def __init__(self):
-        self._externals_map = {}
-
-    # IPropertyRenderer methods
-
-    def match_property(self, name, mode):
-        return name in ('svn:externals', 'svn:needs-lock') and 4 or 0
-    
-    def render_property(self, name, mode, context, props):
-        if name == 'svn:externals':
-            return self._render_externals(props[name])
-        elif name == 'svn:needs-lock':
-            return self._render_needslock(context)
-
-    def _render_externals(self, prop):
-        if not self._externals_map:
-            for key, value in self.config.options('svn:externals'):
-                # ConfigParser splits at ':', i.e. key='http', value='//...'
-                value = value.split()
-                key, value = key+':'+value[0], ' '.join(value[1:])
-                self._externals_map[key] = value.replace('$path', '%(path)s') \
-                                           .replace('$rev', '%(rev)s')
-        externals = []
-        for external in prop.splitlines():
-            elements = external.split()
-            if not elements:
-                continue
-            localpath, rev, url = elements[0], None, elements[-1]
-            if len(elements) == 3:
-                rev = elements[1]
-                rev = rev.replace('-r', '')
-            # retrieve a matching entry in the externals map
-            prefix = []
-            base_url = url
-            while base_url:
-                if base_url in self._externals_map:
-                    break
-                base_url, pref = posixpath.split(base_url)
-                prefix.append(pref)
-            href = self._externals_map.get(base_url)
-            revstr = rev and 'at revision '+rev or ''
-            if not href and url.startswith('http://'):
-                href = url
-            if href:
-                remotepath = posixpath.join(*reversed(prefix))
-                externals.append((localpath, revstr, base_url, remotepath,
-                                  href % {'path': remotepath, 'rev': rev}))
-            else:
-                externals.append((localpath, revstr, url, None, None))
-        return tag.ul([tag.li(tag.a(localpath + (not href and ' %s in %s' %
-                                                 (rev, url) or ''),
-                                    href=href,
-                                    title=href and ('%s%s in %s repository' %
-                                                    (remotepath, rev, url)) or
-                                    'No svn:externals configured in trac.ini'))
-                       for localpath, rev, url, remotepath, href in externals])
-
-    def _render_needslock(self, context):
-        return tag.img(src=context.href.chrome('common/lock-locked.png'),
-                       alt="needs lock", title="needs lock")
+            
 
 
 class SubversionRepository(Repository):
-    """Repository implementation based on the svn.fs API."""
+    """
+    Repository implementation based on the svn.fs API.
+    """
 
-    def __init__(self, path, authz, log, options={}):
+    def __init__(self, path, authz, log):
+        self.path = path # might be needed by __del__()/close()
         self.log = log
-        self.options = options
+        if core.SVN_VER_MAJOR < 1:
+            raise TracError("Subversion >= 1.0 required: Found %d.%d.%d" % \
+                            (core.SVN_VER_MAJOR,
+                             core.SVN_VER_MINOR,
+                             core.SVN_VER_MICRO))
         self.pool = Pool()
         
         # Remove any trailing slash or else subversion might abort
@@ -372,14 +261,14 @@ class SubversionRepository(Repository):
         path = os.path.normpath(path).replace('\\', '/')
         self.path = repos.svn_repos_find_root_path(path, self.pool())
         if self.path is None:
-            raise TracError("%s does not appear to be a Subversion "
-                            "repository." % path)
+            raise TracError("%s does not appear to be a Subversion repository." \
+                            % path)
 
         self.repos = repos.svn_repos_open(self.path, self.pool())
         self.fs_ptr = repos.svn_repos_fs(self.repos)
         
         uuid = fs.get_uuid(self.fs_ptr, self.pool())
-        name = 'svn:%s:%s' % (uuid, path)
+        name = 'svn:%s:%s' % (uuid, _from_svn(path))
 
         Repository.__init__(self, name, authz, log)
 
@@ -413,49 +302,20 @@ class SubversionRepository(Repository):
         return _normalize_path(path)
 
     def normalize_rev(self, rev):
-        if rev is None or isinstance(rev, basestring) and \
-               rev.lower() in ('', 'head', 'latest', 'youngest'):
-            return self.youngest_rev
-        else:
-            try:
-                rev = int(rev)
-                if rev <= self.youngest_rev:
-                    return rev
-            except (ValueError, TypeError):
-                pass
+        try:
+            rev =  int(rev)
+        except (ValueError, TypeError):
+            rev = None
+        if rev is None:
+            rev = self.youngest_rev
+        elif rev > self.youngest_rev:
             raise NoSuchChangeset(rev)
+        return rev
 
     def close(self):
-        self.repos = self.fs_ptr = self.pool = None
-
-    def _get_tags_or_branches(self, paths):
-        """Retrieve known branches or tags."""
-        for path in self.options.get(paths, []):
-            if path.endswith('*'):
-                folder = posixpath.dirname(path)
-                try:
-                    entries = [n for n in self.get_node(folder).get_entries()]
-                    for node in sorted(entries, key=lambda n: 
-                                       embedded_numbers(n.path.lower())):
-                        if node.kind == Node.DIRECTORY:
-                            yield node
-                except: # no right (TODO: should use a specific Exception here)
-                    pass
-            else:
-                try:
-                    yield self.get_node(path)
-                except: # no right
-                    pass
-
-    def get_quickjump_entries(self, rev):
-        """Retrieve known branches, as (name, id) pairs.
-        
-        Purposedly ignores `rev` and always takes the last revision.
-        """
-        for n in self._get_tags_or_branches('branches'):
-            yield 'branches', n.path, n.path, None
-        for n in self._get_tags_or_branches('tags'):
-            yield 'tags', n.path, n.created_path, n.created_rev
+        self.repos = None
+        self.fs_ptr = None
+        self.pool = None
 
     def get_changeset(self, rev):
         rev = self.normalize_rev(rev)
@@ -468,7 +328,7 @@ class SubversionRepository(Repository):
         if path and path[-1] == '/':
             path = path[:-1]
 
-        rev = self.normalize_rev(rev) or self.youngest_rev
+        rev = self.normalize_rev(rev)
 
         return SubversionNode(path, rev, self, self.pool)
 
@@ -552,9 +412,6 @@ class SubversionRepository(Repository):
     def get_youngest_rev_in_cache(self, db):
         """Get the latest stored revision by sorting the revision strings
         numerically
-
-        (deprecated, only used for transparent migration to the new caching
-        scheme).
         """
         cursor = db.cursor()
         cursor.execute("SELECT rev FROM revision "
@@ -616,8 +473,7 @@ class SubversionRepository(Repository):
         if self.has_node(new_path, new_rev):
             new_node = self.get_node(new_path, new_rev)
         else:
-            raise NoSuchNode(new_path, new_rev,
-                             'The Target for Diff is invalid')
+            raise NoSuchNode(new_path, new_rev, 'The Target for Diff is invalid')
         if new_node.kind != old_node.kind:
             raise TracError('Diff mismatch: Base is a %s (%s in revision %s) '
                             'and Target is a %s (%s in revision %s).' \
@@ -676,14 +532,14 @@ class SubversionNode(Node):
         self._scoped_svn_path = _to_svn(self.scope, path)
         self.pool = Pool(pool)
         self._requested_rev = rev
-        pool = self.pool()
 
-        self.root = fs.revision_root(self.fs_ptr, rev, pool)
-        node_type = fs.check_path(self.root, self._scoped_svn_path, pool)
+        self.root = fs.revision_root(self.fs_ptr, rev, self.pool())
+        node_type = fs.check_path(self.root, self._scoped_svn_path,
+                                  self.pool())
         if not node_type in _kindmap:
             raise NoSuchNode(path, rev)
-        cr = fs.node_created_rev(self.root, self._scoped_svn_path, pool)
-        cp = fs.node_created_path(self.root, self._scoped_svn_path, pool)
+        cr = fs.node_created_rev(self.root, self._scoped_svn_path, self.pool())
+        cp = fs.node_created_path(self.root, self._scoped_svn_path, self.pool())
         # Note: `cp` differs from `path` if the last change was a copy,
         #        In that case, `path` doesn't even exist at `cr`.
         #        The only guarantees are:
@@ -746,24 +602,6 @@ class SubversionNode(Node):
         if newer:
             yield newer
 
-    def get_annotations(self):
-        annotations = []
-        if self.isfile:
-            def blame_receiver(line_no, revision, author, date, line, pool):
-                annotations.append(revision)
-            rev = _svn_rev(self.rev)
-            start = _svn_rev(0)
-            repo_url = 'file:///%s/%s' % (self.repos.path.lstrip('/'),
-                                          self._scoped_svn_path)
-            self.repos.log.info('opening ra_local session to ' + repo_url)
-            from svn import client
-            try:
-                client.blame2(repo_url, rev, start, rev, blame_receiver,
-                              client.create_context(), self.pool())
-            except core.SubversionException, e: # svn thinks file is a binary
-                raise TracError('svn blame failed: '+to_unicode(e))
-        return annotations
-
 #    def get_previous(self):
 #        # FIXME: redo it with fs.node_history
 
@@ -786,16 +624,14 @@ class SubversionNode(Node):
         return self._get_prop(core.SVN_PROP_MIME_TYPE)
 
     def get_last_modified(self):
-        _date = fs.revision_prop(self.fs_ptr, self.created_rev,
-                                 core.SVN_PROP_REVISION_DATE, self.pool())
-        if not _date:
-            return None
-        ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-        return datetime.fromtimestamp(ts, utc)
+        date = fs.revision_prop(self.fs_ptr, self.created_rev,
+                                core.SVN_PROP_REVISION_DATE, self.pool())
+        if not date:
+            return 0
+        return core.svn_time_from_cstring(date, self.pool()) / 1000000
 
     def _get_prop(self, name):
-        return fs.node_prop(self.root, self._scoped_svn_path, name,
-                            self.pool())
+        return fs.node_prop(self.root, self._scoped_svn_path, name, self.pool())
 
 
 class SubversionChangeset(Changeset):
@@ -814,25 +650,12 @@ class SubversionChangeset(Changeset):
         # we _hope_ it's UTF-8, but can't be 100% sure (#4321)
         message = message and to_unicode(message, 'utf-8')
         author = author and to_unicode(author, 'utf-8')
-        _date = self._get_prop(core.SVN_PROP_REVISION_DATE)
-        if _date:
-            ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
-            date = datetime.fromtimestamp(ts, utc)
+        date = self._get_prop(core.SVN_PROP_REVISION_DATE)
+        if date:
+            date = core.svn_time_from_cstring(date, self.pool()) / 1000000
         else:
-            date = None
+            date = 0
         Changeset.__init__(self, rev, message, author, date)
-
-    def get_properties(self):
-        props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
-        properties = {}
-        for k,v in props.iteritems():
-            if k not in (core.SVN_PROP_REVISION_LOG,
-                         core.SVN_PROP_REVISION_AUTHOR,
-                         core.SVN_PROP_REVISION_DATE):
-                properties[k] = to_unicode(v)
-                # Note: the above `to_unicode` has a small probability
-                # to mess-up binary properties, like icons.
-        return properties
 
     def get_changes(self):
         pool = Pool(self.pool)

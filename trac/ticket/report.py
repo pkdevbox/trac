@@ -16,36 +16,26 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import csv
 import re
 from StringIO import StringIO
-from itertools import izip
 
-from genshi.builder import tag
-
-from trac.config import IntOption
-from trac.context import Context
+from trac import util
 from trac.core import *
 from trac.db import get_column_names
 from trac.perm import IPermissionRequestor
 from trac.util import sorted
-from trac.util.datefmt import format_datetime, format_time
-from trac.util.text import to_unicode, unicode_urlencode
-from trac.web.api import IRequestHandler, RequestDone
-from trac.web.chrome import add_link, add_stylesheet, INavigationContributor, \
-                            Chrome
-from trac.wiki import IWikiSyntaxProvider, WikiParser
-
+from trac.util.datefmt import format_date, format_time, format_datetime, \
+                               http_date
+from trac.util.html import html
+from trac.util.text import unicode_urlencode
+from trac.web import IRequestHandler
+from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
+from trac.wiki import wiki_to_html, IWikiSyntaxProvider, Formatter
 
 class ReportModule(Component):
 
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler,
                IWikiSyntaxProvider)
-
-    default_report = IntOption('ticket', 'default_report', -1,
-        """Report number to show when selecting ''View Tickets''.
-        Defaults to `-1`, the list of available reports.
-        (Since 0.11)""")
 
     # INavigationContributor methods
 
@@ -53,9 +43,10 @@ class ReportModule(Component):
         return 'tickets'
 
     def get_navigation_items(self, req):
-        if 'REPORT_VIEW' in req.perm:
-            yield ('mainnav', 'tickets', tag.a('View Tickets',
-                                               href=req.href.report()))
+        if not req.perm.has_permission('REPORT_VIEW'):
+            return
+        yield ('mainnav', 'tickets',
+               html.A('View Tickets', href=req.href.report()))
 
     # IPermissionRequestor methods  
 
@@ -67,22 +58,21 @@ class ReportModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        match = re.match(r'/report(?:/(-?[0-9]+))?', req.path_info)
+        match = re.match(r'/report(?:/([0-9]+))?', req.path_info)
         if match:
             if match.group(1):
                 req.args['id'] = match.group(1)
             return True
 
     def process_request(self, req):
-        req.perm.require('REPORT_VIEW')
+        req.perm.assert_permission('REPORT_VIEW')
 
         # did the user ask for any special report?
-        id = int(req.args.get('id', self.default_report))
-        action = req.args.get('action', 'view')
+        id = int(req.args.get('id', -1))
+        action = req.args.get('action', 'list')
 
         db = self.env.get_db_cnx()
 
-        data = {}
         if req.method == 'POST':
             if action == 'new':
                 self._do_create(req, db)
@@ -91,37 +81,42 @@ class ReportModule(Component):
             elif action == 'edit':
                 self._do_save(req, db, id)
         elif action in ('copy', 'edit', 'new'):
-            template = 'report_edit.html'
-            data = self._render_editor(req, db, id, action=='copy')
+            self._render_editor(req, db, id, action == 'copy')
         elif action == 'delete':
-            template = 'report_delete.html'
-            data = self._render_confirm_delete(req, db, id)
+            self._render_confirm_delete(req, db, id)
         else:
-            template, data, content_type = self._render_view(req, db, id)
-            if content_type: # i.e. alternate format
-               return template, data, content_type
+            resp = self._render_view(req, db, id)
+            if not resp:
+               return None
+            template, content_type = resp
+            if content_type:
+               return resp
 
         if id != -1 or action == 'new':
-            add_link(req, 'up', req.href.report(-1), 'Available Reports')
+            add_link(req, 'up', req.href.report(), 'Available Reports')
+
+            # Kludge: Reset session vars created by query module so that the
+            # query navigation links on the ticket page don't confuse the user
+            for var in ('query_constraints', 'query_time', 'query_tickets'):
+                if req.session.has_key(var):
+                    del req.session[var]
 
         # Kludge: only show link to custom query if the query module is actually
         # enabled
         from trac.ticket.query import QueryModule
-        if 'TICKET_VIEW' in req.perm and \
-                self.env.is_component_enabled(QueryModule):
-            data['query_href'] = req.href.query()
-        else:
-            data['query_href'] = None
+        if req.perm.has_permission('TICKET_VIEW') and \
+           self.env.is_component_enabled(QueryModule):
+            req.hdf['report.query_href'] = req.href.query()
 
         add_stylesheet(req, 'common/css/report.css')
-        return template, data, None
+        return 'report.cs', None
 
     # Internal methods
 
     def _do_create(self, req, db):
-        req.perm.require('REPORT_CREATE')
+        req.perm.assert_permission('REPORT_CREATE')
 
-        if 'cancel' in req.args:
+        if req.args.has_key('cancel'):
             req.redirect(req.href.report())
 
         title = req.args.get('title', '')
@@ -135,9 +130,9 @@ class ReportModule(Component):
         req.redirect(req.href.report(id))
 
     def _do_delete(self, req, db, id):
-        req.perm.require('REPORT_DELETE')
+        req.perm.assert_permission('REPORT_DELETE')
 
-        if 'cancel' in req.args:
+        if req.args.has_key('cancel'):
             req.redirect(req.href.report(id))
 
         cursor = db.cursor()
@@ -146,10 +141,12 @@ class ReportModule(Component):
         req.redirect(req.href.report())
 
     def _do_save(self, req, db, id):
-        """Save report changes to the database"""
-        req.perm.require('REPORT_MODIFY')
+        """
+        Saves report changes to the database
+        """
+        req.perm.assert_permission('REPORT_MODIFY')
 
-        if 'cancel' not in req.args:
+        if not req.args.has_key('cancel'):
             title = req.args.get('title', '')
             query = req.args.get('query', '')
             description = req.args.get('description', '')
@@ -160,263 +157,226 @@ class ReportModule(Component):
         req.redirect(req.href.report(id))
 
     def _render_confirm_delete(self, req, db, id):
-        req.perm.require('REPORT_DELETE')
+        req.perm.assert_permission('REPORT_DELETE')
 
         cursor = db.cursor()
-        cursor.execute("SELECT title FROM report WHERE id=%s", (id,))
-        for title, in cursor:
-            return {'title': 'Delete Report {%s} %s' % (id, title),
-                    'action': 'delete',
-                    'report': {'id': id, 'title': title}}
-        else:
+        cursor.execute("SELECT title FROM report WHERE id = %s", (id,))
+        row = cursor.fetchone()
+        if not row:
             raise TracError('Report %s does not exist.' % id,
                             'Invalid Report Number')
+        req.hdf['title'] = 'Delete Report {%s} %s' % (id, row[0])
+        req.hdf['report'] = {
+            'id': id,
+            'mode': 'delete',
+            'title': row[0],
+            'href': req.href.report(id)
+        }
 
-    def _render_editor(self, req, db, id, copy):
-        if id != -1:
-            req.perm.require('REPORT_MODIFY')
+    def _render_editor(self, req, db, id, copy=False):
+        if id == -1:
+            req.perm.assert_permission('REPORT_CREATE')
+            title = query = description = ''
+        else:
+            req.perm.assert_permission('REPORT_MODIFY')
             cursor = db.cursor()
             cursor.execute("SELECT title,description,query FROM report "
                            "WHERE id=%s", (id,))
-            for title, description, query in cursor:
-                break
-            else:
+            row = cursor.fetchone()
+            if not row:
                 raise TracError('Report %s does not exist.' % id,
                                 'Invalid Report Number')
-        else:
-            req.perm.require('REPORT_CREATE')
-            title = description = query = ''
-
-        # an explicitly given 'query' parameter will override the saved query
-        query = req.args.get('query', query)
+            title = row[0] or ''
+            description = row[1] or ''
+            query = row[2] or ''
 
         if copy:
             title += ' (copy)'
 
         if copy or id == -1:
-            data = {'title': 'Create New Report',
-                    'action': 'new',
-                    'error': None}
+            req.hdf['title'] = 'Create New Report'
+            req.hdf['report.href'] = req.href.report()
+            req.hdf['report.action'] = 'new'
         else:
-            data = {'title': 'Edit Report {%d} %s' % (id, title),
-                    'action': 'edit',
-                    'error': req.args.get('error')}
+            req.hdf['title'] = 'Edit Report {%d} %s' % (id, title)
+            req.hdf['report.href'] = req.href.report(id)
+            req.hdf['report.action'] = 'edit'
 
-        data['report'] = {'id': id, 'title': title,
-                          'sql': query, 'description': description}
-        return data
+        req.hdf['report.id'] = id
+        req.hdf['report.mode'] = 'edit'
+        req.hdf['report.title'] = title
+        req.hdf['report.sql'] = query
+        req.hdf['report.description'] = description
 
     def _render_view(self, req, db, id):
-        """Retrieve the report results and pre-process them for rendering."""
+        """
+        uses a user specified sql query to extract some information
+        from the database and presents it as a html table.
+        """
+        actions = {'create': 'REPORT_CREATE', 'delete': 'REPORT_DELETE',
+                   'modify': 'REPORT_MODIFY'}
+        for action in [k for k,v in actions.items()
+                       if req.perm.has_permission(v)]:
+            req.hdf['report.can_' + action] = True
+        req.hdf['report.href'] = req.href.report(id)
 
-        actions = {'CREATE': 'REPORT_CREATE', 'DELETE': 'REPORT_DELETE',
-                   'MODIFY': 'REPORT_MODIFY'}
-        perms = {}
-        for action in [k for k,v in actions.items() if v in req.perm]:
-            perms[action] = True
         try:
             args = self.get_var_args(req)
         except ValueError,e:
             raise TracError, 'Report failed: %s' % e
 
-        if id == -1:
-            # If no particular report was requested, display
-            # a list of available reports instead
-            title = 'Available Reports'
-            sql = 'SELECT id AS report, title FROM report ORDER BY report'
-            description = 'This is a list of available reports.'
-        else:
-            cursor = db.cursor()
-            cursor.execute("SELECT title,query,description from report "
-                           "WHERE id=%s", (id,))
-            for title, sql, description in cursor:
-                break
-            else:
-                raise TracError('Report %d does not exist.' % id,
-                                'Invalid Report Number')
-
-        # If this is a saved custom query. redirect to the query module
-        #
-        # A saved query is either an URL query (?... or query:?...),
-        # or a query language expression (query:...).
-        #
-        # It may eventually contain newlines, for increased clarity.
-        #
-        query = ''.join([line.strip() for line in sql.splitlines()])
-        if query and (query[0] == '?' or query.startswith('query:?')):
-            query = query[0] == '?' and query or query[6:]
-            report_id = 'report=%s' % id
-            if 'report=' in query:
-                if not report_id in query:
-                    err = 'When specified, report number should be "%s".' % id
-                    req.redirect(req.href.report(id, action='edit', error=err))
-            else:
-                if query[-1] != '?':
-                    query += '&'
-                query += report_id
-            req.redirect(req.href.query() + query)
-        elif query.startswith('query:'):
-            try:
-                from trac.ticket.query import Query, QuerySyntaxError
-                query = Query.from_string(self.env, req, query[6:], report=id)
-                req.redirect(query.get_href(req))
-            except QuerySyntaxError, e:
-                req.redirect(req.href.report(id, action='edit',
-                                             error=to_unicode(e)))
+        title, description, sql = self.get_info(db, id, args)
 
         format = req.args.get('format')
         if format == 'sql':
-            self._send_sql(req, id, title, description, sql)
+            self._render_sql(req, id, title, description, sql)
+            return
 
+        req.hdf['report.mode'] = 'list'
         if id > 0:
             title = '{%i} %s' % (id, title)
+        req.hdf['title'] = title
+        req.hdf['report.title'] = title
+        req.hdf['report.id'] = id
+        req.hdf['report.description'] = wiki_to_html(description, self.env, req)
+        if id != -1:
+            self.add_alternate_links(req, args)
 
-        context = Context(self.env, req, 'report', id)
-        data = {'action': 'view', 'title': title,
-                'context': context,
-                'report': {'id': id, 'title': title,
-                           'description': description,
-                           'perms': perms, 'args': args}}
         try:
-            cols, results = self.execute_report(req, db, id, sql, args)
+            cols, rows = self.execute_report(req, db, id, sql, args)
         except Exception, e:
-            data['message'] = 'Report execution failed: ' + to_unicode(e)
-            return 'report_view.html', data, None
+            req.hdf['report.message'] = 'Report execution failed: %s' % e
+            return 'report.cs', None
 
-        sort_col = req.args.get('sort', '')
-        asc = req.args.get('asc', 1)
-        asc = bool(int(asc)) # string '0' or '1' to int/boolean
+        # Convert the header info to HDF-format
+        idx = 0
+        for col in cols:
+            title=col.capitalize()
+            prefix = 'report.headers.%d' % idx
+            req.hdf['%s.real' % prefix] = col
+            if title.startswith('__') and title.endswith('__'):
+                continue
+            elif title[0] == '_' and title[-1] == '_':
+                title = title[1:-1].capitalize()
+                req.hdf[prefix + '.fullrow'] = 1
+            elif title[0] == '_':
+                continue
+            elif title[-1] == '_':
+                title = title[:-1]
+                req.hdf[prefix + '.breakrow'] = 1
+            req.hdf[prefix] = title
+            idx = idx + 1
 
-        # Place retrieved columns in groups, according to naming conventions
-        #  * _col_ means fullrow, i.e. a group with one header
-        #  * col_ means finish the current group and start a new one
-        header_groups = [[]]
-        for idx, col in enumerate(cols):
-            header = {
-                'col': col,
-                'title': col.strip('_').capitalize(),
-                'hidden': False,
-                'asc': False
-            }
-
-            if col == sort_col:
-                header['asc'] = asc
+        if req.args.has_key('sort'):
+            sortCol = req.args.get('sort')
+            colIndex = None
+            hiddenCols = 0
+            for x in range(len(cols)):
+                colName = cols[x]
+                if colName == sortCol:
+                    colIndex = x
+                if colName.startswith('__') and colName.endswith('__'):
+                    hiddenCols += 1
+            if colIndex != None:
+                k = 'report.headers.%d.asc' % (colIndex - hiddenCols)
+                asc = req.args.get('asc', None)
+                if asc:
+                    asc = int(asc) # string '0' or '1' to int/boolean
+                else:
+                    asc = 1
+                req.hdf[k] = asc
                 def sortkey(row):
-                    val = row[idx]
+                    val = row[colIndex]
                     if isinstance(val, basestring):
                         val = val.lower()
                     return val
-                results = sorted(results, key=sortkey, reverse=(not asc))
-
-            header_group = header_groups[-1]
-
-            if col.startswith('__') and col.endswith('__'): # __col__
-                header['hidden'] = True
-            elif col[0] == '_' and col[-1] == '_':          # _col_
-                header_group = []
-                header_groups.append(header_group)
-                header_groups.append([])
-            elif col[0] == '_':                             # _col
-                header['hidden'] = True
-            elif col[-1] == '_':                            # col_
-                header_groups.append([])
-            header_group.append(header)
-
-        # Structure the rows and cells:
-        #  - group rows according to __group__ value, if defined
-        #  - group cells the same way headers are grouped
-        row_groups = []
-        prev_group_value = None
-        for row_idx, result in enumerate(results):
-            col_idx = 0
-            cell_groups = []
-            row = {'cell_groups': cell_groups}
-            realm = 'ticket'
-            for header_group in header_groups:
-                cell_group = []
-                for header in header_group:
-                    value = unicode(result[col_idx])
-                    col_idx += 1
-                    cell = {'value': value, 'header': header}
-                    col = header['col']
-                    # Detect and create new group
-                    if col == '__group__' and value != prev_group_value:
-                        prev_group_value = value
-                        row_groups.append((value, []))
-                    # Other row properties
-                    row['__idx__'] = row_idx
-                    if col in ('__style__', '__color__',
-                               '__fgcolor__', '__bgcolor__'):
-                        row[col] = value
-                    if col in ('report', 'ticket', 'id', '_id'):
-                        row['id'] = value
-                    # Special casing based on column name
-                    col = col.strip('_')
-                    if col == 'reporter':
-                        cell['author'] = value
-                    elif col == 'realm':
-                        realm = value
-                    cell_group.append(cell)
-                cell_groups.append(cell_group)
-            row['context'] = context(realm, row.get('id'))
-            if row_groups:
-                row_group = row_groups[-1][1]
-            else:
-                row_group = []
-                row_groups = [(None, row_group)]
-            row_group.append(row)
+                rows = sorted(rows, key=sortkey, reverse=(not asc))
 
         # Get the email addresses of all known users
         email_map = {}
-        if Chrome(self.env).show_email_addresses:
-            for username, name, email in self.env.get_known_users():
-                if email:
-                    email_map[username] = email
+        for username, name, email in self.env.get_known_users():
+            if email:
+                email_map[username] = email
 
-        data.update({'header_groups': header_groups,
-                     'row_groups': row_groups,
-                     'numrows': len(results),
-                     'sorting_enabled': len(row_groups)==1,
-                     'email_map': email_map})
+        # Convert the rows and cells to HDF-format
+        row_idx = 0
+        for row in rows:
+            col_idx = 0
+            numrows = len(row)
+            for cell in row:
+                cell = unicode(cell)
+                column = cols[col_idx]
+                value = {}
+                # Special columns begin and end with '__'
+                if column.startswith('__') and column.endswith('__'):
+                    value['hidden'] = 1
+                elif (column[0] == '_' and column[-1] == '_'):
+                    value['fullrow'] = 1
+                    column = column[1:-1]
+                    req.hdf[prefix + '.breakrow'] = 1
+                elif column[-1] == '_':
+                    value['breakrow'] = 1
+                    value['breakafter'] = 1
+                    column = column[:-1]
+                elif column[0] == '_':
+                    value['hidehtml'] = 1
+                    column = column[1:]
+                if column in ('ticket', 'id', '_id', '#', 'summary'):
+                    id_cols = [idx for idx, col in enumerate(cols)
+                               if col in ('ticket', 'id', '_id')]
+                    if id_cols:
+                        id_val = row[id_cols[0]]
+                        value['ticket_href'] = req.href.ticket(id_val)
+                elif column == 'description':
+                    desc = wiki_to_html(cell, self.env, req, db,
+                                        absurls=(format == 'rss'))
+                    value['parsed'] = format == 'rss' and unicode(desc) or desc
+                elif column == 'reporter':
+                    if cell.find('@') != -1:
+                        value['rss'] = cell
+                    elif cell in email_map:
+                        value['rss'] = email_map[cell]
+                elif column == 'report':
+                    value['report_href'] = req.href.report(cell)
+                elif column in ('time', 'date','changetime', 'created', 'modified'):
+                    if cell == 'None':
+                        value['date'] = value['time'] = cell
+                        value['datetime'] = value['gmt'] = cell
+                    else:
+                        value['date'] = format_date(cell)
+                        value['time'] = format_time(cell)
+                        value['datetime'] = format_datetime(cell)
+                        value['gmt'] = http_date(cell)
+                prefix = 'report.items.%d.%s' % (row_idx, unicode(column))
+                req.hdf[prefix] = unicode(cell)
+                for key in value.keys():
+                    req.hdf[prefix + '.' + key] = value[key]
 
-        if id:
-            self.add_alternate_links(req, args)
+                col_idx += 1
+            row_idx += 1
+        req.hdf['report.numrows'] = row_idx
 
         if format == 'rss':
-            return 'report.rss', data, 'application/rss+xml'
+            return 'report_rss.cs', 'application/rss+xml'
         elif format == 'csv':
             filename = id and 'report_%s.csv' % id or 'report.csv'
-            self._send_csv(req, cols, results, mimetype='text/csv',
-                           filename=filename)
+            self._render_csv(req, cols, rows, mimetype='text/csv',
+                             filename=filename)
+            return None
         elif format == 'tab':
             filename = id and 'report_%s.tsv' % id or 'report.tsv'
-            self._send_csv(req, cols, results, '\t',
-                           mimetype='text/tab-separated-values',
-                           filename=filename)
-        else:
-            if id != -1:
-                # reuse the session vars of the query module so that
-                # the query navigation links on the ticket can be used to 
-                # navigate report results as well
-                try:
-                    req.session['query_tickets'] = \
-                        ' '.join([str(int(row['id']))
-                                  for rg in row_groups for row in rg[1]])
-                    req.session['query_href'] = req.href.report(id)
-                    # Kludge: we have to clear the other query session
-                    # variables, but only if the above succeeded 
-                    for var in ('query_constraints', 'query_time'):
-                        if var in req.session:
-                            del req.session[var]
-                except (ValueError, KeyError):
-                    pass
-            return 'report_view.html', data, None
+            self._render_csv(req, cols, rows, '\t',
+                             mimetype='text/tab-separated-values',
+                             filename=filename)
+            return None
+
+        return 'report.cs', None
 
     def add_alternate_links(self, req, args):
         params = args
-        if 'sort' in req.args:
+        if req.args.has_key('sort'):
             params['sort'] = req.args['sort']
-        if 'asc' in req.args:
+        if req.args.has_key('asc'):
             params['asc'] = req.args['asc']
         href = ''
         if params:
@@ -427,14 +387,17 @@ class ReportModule(Component):
                  'Comma-delimited Text', 'text/plain')
         add_link(req, 'alternate', '?format=tab' + href,
                  'Tab-delimited Text', 'text/plain')
-        if 'REPORT_SQL_VIEW' in req.perm:
+        if req.perm.has_permission('REPORT_SQL_VIEW'):
             add_link(req, 'alternate', '?format=sql', 'SQL Query',
                      'text/plain')
 
     def execute_report(self, req, db, id, sql, args):
-        sql, args = self.sql_sub_vars(sql, args, db)
+        sql, args = self.sql_sub_vars(req, sql, args, db)
         if not sql:
             raise TracError('Report %s has no SQL query.' % id)
+        if sql.find('__group__') == -1:
+            req.hdf['report.sorting.enabled'] = 1
+
         self.log.debug('Executing report with SQL "%s" (%s)', sql, args)
 
         cursor = db.cursor()
@@ -448,6 +411,27 @@ class ReportModule(Component):
 
         return cols, info
 
+    def get_info(self, db, id, args):
+        if id == -1:
+            # If no particular report was requested, display
+            # a list of available reports instead
+            title = 'Available Reports'
+            sql = 'SELECT id AS report, title FROM report ORDER BY report'
+            description = 'This is a list of reports available.'
+        else:
+            cursor = db.cursor()
+            cursor.execute("SELECT title,query,description from report "
+                           "WHERE id=%s", (id,))
+            row = cursor.fetchone()
+            if not row:
+                raise TracError('Report %d does not exist.' % id,
+                                'Invalid Report Number')
+            title = row[0] or ''
+            sql = row[1]
+            description = row[2] or ''
+
+        return [title, description, sql]
+
     def get_var_args(self, req):
         report_args = {}
         for arg in req.args.keys():
@@ -456,12 +440,12 @@ class ReportModule(Component):
             report_args[arg] = req.args.get(arg)
 
         # Set some default dynamic variables
-        if 'USER' not in report_args:
+        if not report_args.has_key('USER'):
             report_args['USER'] = req.authname
 
         return report_args
 
-    def sql_sub_vars(self, sql, args, db=None):
+    def sql_sub_vars(self, req, sql, args, db=None):
         if db is None:
             db = self.env.get_db_cnx()
         values = []
@@ -469,7 +453,9 @@ class ReportModule(Component):
             try:
                 arg = args[aname]
             except KeyError:
-                raise TracError("Dynamic variable '$%s' not defined." % aname)
+                raise TracError("Dynamic variable '$%s' not defined." \
+                                % aname)
+            req.hdf['report.var.' + aname] = arg
             values.append(arg)
 
         var_re = re.compile("[$]([A-Z]+)")
@@ -502,41 +488,22 @@ class ReportModule(Component):
                 sql_io.write(var_re.sub(repl, expr))
         return sql_io.getvalue(), values
 
-    def _send_csv(self, req, cols, rows, sep=',', mimetype='text/plain',
-                  filename=None):
+    def _render_csv(self, req, cols, rows, sep=',', mimetype='text/plain',
+                    filename=None):
         req.send_response(200)
         req.send_header('Content-Type', mimetype + ';charset=utf-8')
         if filename:
             req.send_header('Content-Disposition', 'filename=' + filename)
         req.end_headers()
 
-        def iso_time(t):
-            return format_time(t, 'iso8601')
-
-        def iso_datetime(dt):
-            return format_datetime(dt, 'iso8601')
-
-        col_conversions = {
-            'time': iso_time,
-            'datetime': iso_datetime,
-            'changetime': iso_datetime,
-            'date': iso_datetime,
-            'created': iso_datetime,
-            'modified': iso_datetime,
-        }
-
-        converters = [col_conversions.get(c.strip('_'), unicode) for c in cols]
-
-        writer = csv.writer(req, delimiter=sep)
-        writer.writerow([unicode(c).encode('utf-8') for c in cols])
+        req.write(sep.join(cols) + '\r\n')
         for row in rows:
-            writer.writerow([f(v).encode('utf-8') for f,v
-                             in izip(converters, row)])
+            req.write(sep.join(
+                [unicode(c).replace(sep,"_")
+                 .replace('\n',' ').replace('\r',' ') for c in row]) + '\r\n')
 
-        raise RequestDone
-
-    def _send_sql(self, req, id, title, description, sql):
-        req.perm.require('REPORT_SQL_VIEW')
+    def _render_sql(self, req, id, title, description, sql):
+        req.perm.assert_permission('REPORT_SQL_VIEW')
         req.send_response(200)
         req.send_header('Content-Type', 'text/plain;charset=utf-8')
         if id:
@@ -548,7 +515,6 @@ class ReportModule(Component):
         if description:
             req.write('-- %s\n\n' % '\n-- '.join(description.splitlines()))
         req.write(sql)
-        raise RequestDone
         
     # IWikiSyntaxProvider methods
     
@@ -556,7 +522,7 @@ class ReportModule(Component):
         yield ('report', self._format_link)
 
     def get_wiki_syntax(self):
-        yield (r"!?\{(?P<it_report>%s\s*)\d+\}" % WikiParser.INTERTRAC_SCHEME,
+        yield (r"!?\{(?P<it_report>%s\s*)\d+\}" % Formatter.INTERTRAC_SCHEME,
                lambda x, y, z: self._format_link(x, 'report', y[1:-1], y, z))
 
     def _format_link(self, formatter, ns, target, label, fullmatch=None):
@@ -565,5 +531,5 @@ class ReportModule(Component):
         if intertrac:
             return intertrac
         report, args, fragment = formatter.split_link(target)
-        return tag.a(label, href=formatter.href.report(report) + args,
-                     class_='report')
+        return html.A(label, href=formatter.href.report(report) + args,
+                      class_='report')

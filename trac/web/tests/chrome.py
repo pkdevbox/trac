@@ -1,7 +1,8 @@
 from trac.core import Component, ComponentManager, implements
 from trac.perm import PermissionCache
 from trac.test import EnvironmentStub, Mock
-from trac.web.chrome import add_link, add_script, add_stylesheet, Chrome, \
+from trac.web.clearsilver import HDFWrapper
+from trac.web.chrome import add_link, add_stylesheet, Chrome, \
                             INavigationContributor
 from trac.web.href import Href
 
@@ -10,124 +11,113 @@ import unittest
 
 class ChromeTestCase(unittest.TestCase):
 
-    def setUp(self):
-        self.env = EnvironmentStub()
-        from trac.core import ComponentMeta
-        self._old_registry = ComponentMeta._registry
-        ComponentMeta._registry = {}
-
-    def tearDown(self):
-        from trac.core import ComponentMeta
-        ComponentMeta._registry = self._old_registry
-
     def test_add_link_simple(self):
-        req = Mock(chrome={}, href=Href('/trac.cgi'))
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'))
         add_link(req, 'start', '/trac/wiki')
-        self.assertEqual('/trac/wiki',
-                         req.chrome['links']['start'][0]['href'])
+        self.assertEqual('/trac/wiki', req.hdf['chrome.links.start.0.href'])
 
     def test_add_link_advanced(self):
-        req = Mock(chrome={}, href=Href('/trac.cgi'))
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'))
         add_link(req, 'start', '/trac/wiki', 'Start page', 'text/html', 'home')
-        link = req.chrome['links']['start'][0]
-        self.assertEqual('/trac/wiki', link['href'])
-        self.assertEqual('Start page', link['title'])
-        self.assertEqual('text/html', link['type'])
-        self.assertEqual('home', link['class'])
-
-    def test_add_script(self):
-        req = Mock(base_path='/trac.cgi', chrome={}, href=Href('/trac.cgi'))
-        add_script(req, 'common/js/trac.js')
-        add_script(req, 'common/js/trac.js')
-        scripts = req.chrome['scripts']
-        self.assertEqual(1, len(scripts))
-        self.assertEqual('text/javascript', scripts[0]['type'])
-        self.assertEqual('/trac.cgi/chrome/common/js/trac.js',
-                         scripts[0]['href'])
+        self.assertEqual('/trac/wiki', req.hdf['chrome.links.start.0.href'])
+        self.assertEqual('Start page', req.hdf['chrome.links.start.0.title'])
+        self.assertEqual('text/html', req.hdf['chrome.links.start.0.type'])
+        self.assertEqual('home', req.hdf['chrome.links.start.0.class'])
 
     def test_add_stylesheet(self):
-        req = Mock(base_path='/trac.cgi', chrome={}, href=Href('/trac.cgi'))
+        req = Mock(base_path='/trac.cgi', hdf=HDFWrapper(), href=Href('/trac.cgi'))
         add_stylesheet(req, 'common/css/trac.css')
-        add_stylesheet(req, 'common/css/trac.css')
-        links = req.chrome['links']['stylesheet']
-        self.assertEqual(1, len(links))
-        self.assertEqual('text/css', links[0]['type'])
+        self.assertEqual('text/css', req.hdf['chrome.links.stylesheet.0.type'])
         self.assertEqual('/trac.cgi/chrome/common/css/trac.css',
-                         links[0]['href'])
+                         req.hdf['chrome.links.stylesheet.0.href'])
 
     def test_htdocs_location(self):
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), base_path='/trac.cgi', path_info='')
-        info = Chrome(self.env).prepare_request(req)
-        self.assertEqual('/trac.cgi/chrome/common/', info['htdocs_location'])
+        env = EnvironmentStub(enable=[])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   base_path='/trac.cgi', path_info='')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/trac.cgi/chrome/common/', req.hdf['htdocs_location'])
 
     def test_logo(self):
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), base_path='/trac.cgi', path_info='')
+        env = EnvironmentStub(enable=[])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   base_path='/trac.cgi', path_info='')
 
         # Verify that no logo data is put in the HDF if no logo is configured
-        self.env.config.set('header_logo', 'src', '')
-        info = Chrome(self.env).prepare_request(req)
-        assert 'src' not in info['logo']
+        env.config.set('header_logo', 'src', '')
+        Chrome(env).populate_hdf(req, None)
+        assert 'chrome.logo.src' not in req.hdf
 
         # Test with a relative path to the logo image
-        self.env.config.set('header_logo', 'src', 'foo.png')
-        info = Chrome(self.env).prepare_request(req)
-        self.assertEqual('/trac.cgi/chrome/common/foo.png', info['logo']['src'])
+        req.hdf = HDFWrapper()
+        env.config.set('header_logo', 'src', 'foo.png')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/trac.cgi/chrome/common/foo.png',
+                         req.hdf['chrome.logo.src'])
 
         # Test with a server-relative path to the logo image
-        self.env.config.set('header_logo', 'src', '/img/foo.png')
-        info = Chrome(self.env).prepare_request(req)
-        self.assertEqual('/img/foo.png', info['logo']['src'])
+        req.hdf = HDFWrapper()
+        env.config.set('header_logo', 'src', '/img/foo.png')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/img/foo.png', req.hdf['chrome.logo.src'])
 
         # Test with an absolute path to the logo image
-        self.env.config.set('header_logo', 'src',
-                            'http://www.example.org/foo.png')
-        info = Chrome(self.env).prepare_request(req)
-        self.assertEqual('http://www.example.org/foo.png', info['logo']['src'])
+        req.hdf = HDFWrapper()
+        env.config.set('header_logo', 'src', 'http://www.example.org/foo.png')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('http://www.example.org/foo.png',
+                         req.hdf['chrome.logo.src'])
 
     def test_default_links(self):
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), base_path='/trac.cgi', path_info='')
-        links = Chrome(self.env).prepare_request(req)['links']
-        self.assertEqual('/trac.cgi/wiki', links['start'][0]['href'])
-        self.assertEqual('/trac.cgi/search', links['search'][0]['href'])
-        self.assertEqual('/trac.cgi/wiki/TracGuide', links['help'][0]['href'])
+        env = EnvironmentStub(enable=[])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   base_path='/trac.cgi', path_info='')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/trac.cgi/wiki',
+                         req.hdf['chrome.links.start.0.href'])
+        self.assertEqual('/trac.cgi/search',
+                         req.hdf['chrome.links.search.0.href'])
+        self.assertEqual('/trac.cgi/wiki/TracGuide',
+                         req.hdf['chrome.links.help.0.href'])
         self.assertEqual('/trac.cgi/chrome/common/css/trac.css',
-                         links['stylesheet'][0]['href'])
+                         req.hdf['chrome.links.stylesheet.0.href'])
 
     def test_icon_links(self):
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), base_path='/trac.cgi', path_info='')
-        chrome = Chrome(self.env)
+        env = EnvironmentStub(enable=[])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   base_path='/trac.cgi', path_info='')
 
         # No icon set in config, so no icon links
-        self.env.config.set('project', 'icon', '')
-        links = chrome.prepare_request(req)['links']
-        assert 'icon' not in links
-        assert 'shortcut icon' not in links
+        env.config.set('project', 'icon', '')
+        Chrome(env).populate_hdf(req, None)
+        assert 'chrome.links.icon' not in req.hdf
+        assert 'chrome.links.shortcut icon' not in req.hdf
 
         # Relative URL for icon config option
-        self.env.config.set('project', 'icon', 'foo.ico')
-        links = chrome.prepare_request(req)['links']
-        self.assertEqual('/trac.cgi/chrome/common/foo.ico',
-                         links['icon'][0]['href'])
-        self.assertEqual('/trac.cgi/chrome/common/foo.ico',
-                         links['shortcut icon'][0]['href'])
+        env.config.set('project', 'icon', 'trac.ico')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/trac.cgi/chrome/common/trac.ico',
+                         req.hdf['chrome.links.icon.0.href'])
+        self.assertEqual('/trac.cgi/chrome/common/trac.ico',
+                         req.hdf['chrome.links.shortcut icon.0.href'])
 
         # URL relative to the server root for icon config option
-        self.env.config.set('project', 'icon', '/favicon.ico')
-        links = chrome.prepare_request(req)['links']
-        self.assertEqual('/favicon.ico', links['icon'][0]['href'])
-        self.assertEqual('/favicon.ico', links['shortcut icon'][0]['href'])
+        req.hdf = HDFWrapper()
+        env.config.set('project', 'icon', '/favicon.ico')
+        Chrome(env).populate_hdf(req, None)
+        self.assertEqual('/favicon.ico',
+                         req.hdf['chrome.links.icon.0.href'])
+        self.assertEqual('/favicon.ico',
+                         req.hdf['chrome.links.shortcut icon.0.href'])
 
         # Absolute URL for icon config option
-        self.env.config.set('project', 'icon', 'http://example.com/favicon.ico')
-        links = chrome.prepare_request(req)['links']
+        req.hdf = HDFWrapper()
+        env.config.set('project', 'icon', 'http://example.com/favicon.ico')
+        Chrome(env).populate_hdf(req, None)
         self.assertEqual('http://example.com/favicon.ico',
-                         links['icon'][0]['href'])
+                         req.hdf['chrome.links.icon.0.href'])
         self.assertEqual('http://example.com/favicon.ico',
-                         links['shortcut icon'][0]['href'])
+                         req.hdf['chrome.links.shortcut icon.0.href'])
 
     def test_nav_contributor(self):
         class TestNavigationContributor(Component):
@@ -136,11 +126,14 @@ class ChromeTestCase(unittest.TestCase):
                 return None
             def get_navigation_items(self, req):
                 yield 'metanav', 'test', 'Test'
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), path_info='/', base_path='/trac.cgi')
-        nav = Chrome(self.env).prepare_request(req)['nav']
-        self.assertEqual({'name': 'test', 'label': 'Test', 'active': False},
-                         nav['metanav'][0])
+        env = EnvironmentStub(enable=[TestNavigationContributor])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   path_info='/', base_path='/trac.cgi')
+        chrome = Chrome(env)
+        chrome.populate_hdf(req, None)
+        self.assertEqual('Test', req.hdf['chrome.nav.metanav.test'])
+        self.assertRaises(KeyError, req.hdf.__getitem__,
+                          'chrome.nav.metanav.test.active')
 
     def test_nav_contributor_active(self):
         class TestNavigationContributor(Component):
@@ -149,12 +142,13 @@ class ChromeTestCase(unittest.TestCase):
                 return 'test'
             def get_navigation_items(self, req):
                 yield 'metanav', 'test', 'Test'
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), path_info='/', base_path='/trac.cgi')
-        handler = TestNavigationContributor(self.env)
-        nav = Chrome(self.env).prepare_request(req, handler)['nav']
-        self.assertEqual({'name': 'test', 'label': 'Test', 'active': True},
-                         nav['metanav'][0])
+        env = EnvironmentStub(enable=[TestNavigationContributor])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   path_info='/', base_path='/trac.cgi')
+        chrome = Chrome(env)
+        chrome.populate_hdf(req, TestNavigationContributor(env))
+        self.assertEqual('Test', req.hdf['chrome.nav.metanav.test'])
+        self.assertEqual('1', req.hdf['chrome.nav.metanav.test.active'])
 
     def test_nav_contributor_order(self):
         class TestNavigationContributor1(Component):
@@ -169,38 +163,47 @@ class ChromeTestCase(unittest.TestCase):
                 return None
             def get_navigation_items(self, req):
                 yield 'metanav', 'test2', 'Test 2'
-        req = Mock(chrome={}, abs_href=Href('http://example.org/trac.cgi'),
-                   href=Href('/trac.cgi'), base_path='/trac.cgi', path_info='/')
-        chrome = Chrome(self.env)
+        env = EnvironmentStub(enable=[TestNavigationContributor1,
+                                      TestNavigationContributor2])
+        req = Mock(hdf=HDFWrapper(), href=Href('/trac.cgi'),
+                   path_info='/', base_path='/trac.cgi')
+        chrome = Chrome(env)
 
         # Test with both items set in the order option
-        self.env.config.set('trac', 'metanav', 'test2, test1')
-        items = chrome.prepare_request(req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
+        env.config.set('trac', 'metanav', 'test2, test1')
+        chrome.populate_hdf(req, None)
+        node = req.hdf.getObj('chrome.nav.metanav').child()
+        self.assertEqual('test2', node.name())
+        self.assertEqual('test1', node.next().name())
 
         # Test with only test1 in the order options
-        self.env.config.set('trac', 'metanav', 'test1')
-        items = chrome.prepare_request(req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
+        req.hdf = HDFWrapper()
+        env.config.set('trac', 'metanav', 'test1')
+        chrome.populate_hdf(req, None)
+        node = req.hdf.getObj('chrome.nav.metanav').child()
+        self.assertEqual('test1', node.name())
+        self.assertEqual('test2', node.next().name())
 
         # Test with only test2 in the order options
-        self.env.config.set('trac', 'metanav', 'test2')
-        items = chrome.prepare_request(req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
+        req.hdf = HDFWrapper()
+        env.config.set('trac', 'metanav', 'test2')
+        chrome.populate_hdf(req, None)
+        node = req.hdf.getObj('chrome.nav.metanav').child()
+        self.assertEqual('test2', node.name())
+        self.assertEqual('test1', node.next().name())
 
         # Test with none in the order options (order corresponds to
         # registration order)
-        self.env.config.set('trac', 'metanav', 'foo, bar')
-        items = chrome.prepare_request(req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
+        req.hdf = HDFWrapper()
+        env.config.set('trac', 'metanav', 'foo, bar')
+        chrome.populate_hdf(req, None)
+        node = req.hdf.getObj('chrome.nav.metanav').child()
+        self.assertEqual('test1', node.name())
+        self.assertEqual('test2', node.next().name())
 
 
 def suite():
     return unittest.makeSuite(ChromeTestCase, 'test')
 
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

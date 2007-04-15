@@ -15,19 +15,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import os
-import sys
-from urlparse import urlsplit
 
-import setuptools
-
-from trac import db_default
+from trac import db_default, util
 from trac.config import *
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
 from trac.db import DatabaseManager
-from trac.util import get_pkginfo
 from trac.versioncontrol import RepositoryManager
-from trac.web.href import Href
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
 
@@ -63,18 +57,10 @@ class Environment(Component, ComponentManager):
     things:
      * a configuration file.
      * an SQLite database (stores tickets, wiki pages...)
-     * Project specific templates and plugins.
+     * Project specific templates and wiki macros.
      * wiki and ticket attachments.
     """   
     setup_participants = ExtensionPoint(IEnvironmentSetupParticipant)
-
-    shared_plugins_dir = PathOption('inherit', 'plugins_dir', '',
-        """Path of the directory containing additional plugins.
-        
-        Plugins in that directory are loaded in addition to those in the
-        environments `plugins` directory, but the latter take precedence.
-        
-        (''since 0.11'')""")
 
     base_url = Option('trac', 'base_url', '',
         """Base URL of the Trac deployment.
@@ -90,12 +76,8 @@ class Environment(Component, ComponentManager):
     project_description = Option('project', 'descr', 'My example project',
         """Short description of the project.""")
 
-    project_url = Option('project', 'url', '',
-        """URL of the main project web site, usually the website in which
-        the `base_url` resides.""")
-
-    project_admin = Option('project', 'admin', '',
-        """E-Mail address of the project's administrator.""")
+    project_url = Option('project', 'url', 'http://example.org/',
+        """URL of the main project web site.""")
 
     project_footer = Option('project', 'footer',
                             'Visit the Trac open source project at<br />'
@@ -156,17 +138,8 @@ class Environment(Component, ComponentManager):
         self.setup_config(load_defaults=create)
         self.setup_log()
 
-        from trac import core, __version__ as VERSION
-        self.systeminfo = [
-            ('Trac', get_pkginfo(core).get('version', VERSION)),
-            ('Python', sys.version),
-            ('setuptools', setuptools.__version__),
-            ]
-        self._href = self._abs_href = None
-
         from trac.loader import load_components
-        plugins_dir = self.config.get('inherit', 'plugins_dir')
-        load_components(self, plugins_dir and (plugins_dir,))
+        load_components(self)
 
         if create:
             self.create(options)
@@ -202,12 +175,6 @@ class Environment(Component, ComponentManager):
         rules = [(name.lower(), value.lower() in ('enabled', 'on'))
                  for name, value in self.config.options('components')]
         rules.sort(lambda a, b: -cmp(len(a[0]), len(b[0])))
-
-        # warn if the pre-0.11 WebAdmin plugin gets loaded
-        if component_name.startswith('webadmin.'):
-            self.log.warning("TracWebAdmin plugin was used instead of Trac's "
-                             "builtin admin module. Disable the webadmin.* "
-                             "components or uninstall the 0.10 plugin.")
 
         for pattern, enabled in rules:
             if component_name == pattern or pattern.endswith('*') \
@@ -253,8 +220,7 @@ class Environment(Component, ComponentManager):
         the database and populate the configuration file with default values."""
         def _create_file(fname, data=None):
             fd = open(fname, 'w')
-            if data:
-                fd.write(data)
+            if data: fd.write(data)
             fd.close()
 
         # Create the directory structure
@@ -263,6 +229,7 @@ class Environment(Component, ComponentManager):
         os.mkdir(self.get_log_dir())
         os.mkdir(self.get_htdocs_dir())
         os.mkdir(os.path.join(self.path, 'plugins'))
+        os.mkdir(os.path.join(self.path, 'wiki-macros'))
 
         # Create a few files
         _create_file(os.path.join(self.path, 'VERSION'),
@@ -295,9 +262,9 @@ class Environment(Component, ComponentManager):
         """Load the configuration file."""
         self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'))
         if load_defaults:
-            for section, default_options in self.config.defaults().items():
-                for name, value in default_options.items():
-                    if self.config.parent and name in self.config.parent[section]:
+            for section, default_options in self.config.defaults().iteritems():
+                for name, value in default_options.iteritems():
+                    if self.config.has_site_option(section, name):
                         value = None
                     self.config.set(section, name, value)
 
@@ -363,7 +330,7 @@ class Environment(Component, ComponentManager):
 
         db_str = self.config.get('trac', 'database')
         if not db_str.startswith('sqlite:'):
-            raise TracError('Can only backup sqlite databases')
+            raise EnvironmentError('Can only backup sqlite databases')
         db_name = os.path.join(self.path, db_str[7:])
         if not dest:
             dest = '%s.%i.bak' % (db_name, self.get_version())
@@ -409,23 +376,6 @@ class Environment(Component, ComponentManager):
 
         return True
 
-    def _get_href(self):
-        if not self._href:
-            self._href = Href(urlsplit(self.abs_href.base)[2])
-        return self._href
-    href = property(_get_href, 'The application root path')
-
-    def _get_abs_href(self):
-        if not self._abs_href:
-            if not self.base_url:
-                self.log.warn('base_url option not set in configuration, '
-                              'generated links may be incorrect')
-                self._abs_href = Href('')
-            else:
-                self._abs_href = Href(self.base_url)
-        return self._abs_href
-    abs_href = property(_get_abs_href, 'The application URL')
-
 
 class EnvironmentSetup(Component):
     implements(IEnvironmentSetupParticipant)
@@ -448,7 +398,7 @@ class EnvironmentSetup(Component):
         if dbver == db_default.db_version:
             return False
         elif dbver > db_default.db_version:
-            raise TracError('Database newer than Trac version')
+            raise TracError, 'Database newer than Trac version'
         return True
 
     def upgrade_environment(self, db):
@@ -460,8 +410,8 @@ class EnvironmentSetup(Component):
                 upgrades = __import__('upgrades', globals(), locals(), [name])
                 script = getattr(upgrades, name)
             except AttributeError:
-                raise TracError('No upgrade module for version %i (%s.py)' %
-                                (i, name))
+                err = 'No upgrade module for version %i (%s.py)' % (i, name)
+                raise TracError, err
             script.do_upgrade(self.env, i, cursor)
         cursor.execute("UPDATE system SET value=%s WHERE "
                        "name='database_version'", (db_default.db_version,))
@@ -505,18 +455,12 @@ def open_environment(env_path=None):
     if not env_path:
         env_path = os.getenv('TRAC_ENV')
     if not env_path:
-        raise TracError('Missing environment variable "TRAC_ENV". '
-                        'Trac requires this variable to point to a valid '
-                        'Trac environment.')
+        raise TracError, 'Missing environment variable "TRAC_ENV". Trac ' \
+                         'requires this variable to point to a valid Trac ' \
+                         'environment.'
 
     env = Environment(env_path)
-    needs_upgrade = False
-    try:
-        needs_upgrade = env.needs_upgrade()
-    except Exception, e: # e.g. no database connection
-        raise TracError("The Trac Environment couldn't check for upgrade. "
-                        + str(e))
-    if needs_upgrade:
-        raise TracError('The Trac Environment needs to be upgraded.\n\n'
-                        'Run "trac-admin %s upgrade"' % env_path)
+    if env.needs_upgrade():
+        raise TracError, 'The Trac Environment needs to be upgraded. Run ' \
+                         'trac-admin %s upgrade"' % env_path
     return env

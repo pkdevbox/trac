@@ -1,7 +1,5 @@
-import doctest
 import unittest
 
-from trac import context
 from trac.tests import attachment, config, core, env, perm, wikisyntax
 
 def suite():
@@ -11,7 +9,6 @@ def suite():
     suite.addTest(core.suite())
     suite.addTest(env.suite())
     suite.addTest(perm.suite())
-    suite.addTest(doctest.DocTestSuite(context))
     suite.addTest(wikisyntax.suite())
     return suite
 

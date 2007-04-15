@@ -1,4 +1,3 @@
- * Ants Aasma                     ants.aasma@gmail.com
  * Pedro Algarvio (s0undt3ch)     ufs@ufsoft.org
  * Brad Anderson                  brad@dsource.org
  * Christopher Armstrong          radix
@@ -7,7 +6,6 @@
  * Christian Boos                 cboos@bct-technology.com
  * Rocky Burt                     rocky.burt@myrealbox.com
  * Toni Brkic                     toni.brkic@switchcore.com
- * Eli Carter                     eli.carter@commprove.com
  * Felix Colins                   felix@keyghost.com
  * Wesley Crucius                 wcrucius@sandc.com
  * dju'                           
@@ -42,7 +40,6 @@
  * Cap Petschulat                 cap@cdres.com
  * Nicholas Riley                 sabi
  * Manuzhai                       manuzhai@gmail.com
- * Armin Ronacher (mitsuhiko)     armin.ronacher@active-4.com
  * Mark Rowe                      mark.rowe@bdash.net.nz
  * Olliver Rutherfurd             ollie
  * pkou                           pkou@ua.fm
@@ -53,7 +50,6 @@
  * Noah Slater                    nslater@gmail.com
  * Bill Soudan                    bill@soudan.net
  * Ludvig Strigeus                
- * Markus Tacker                  m@tacker.org
  * Alec Thomas                    alec@swapoff.org
  * Jani Tiainen                   redetin@luukku.com
  * Zilvinas Valinskas             zilvinas@gemtek.lt
@@ -63,7 +59,7 @@
 
 The ever so elusive Anonymous.
 
-Diggs and Lula (official pawprint contributors)
+`Diggs and Lula`_ (official pawprint contributors)
 
 And everyone who keeps sending feedback, helping us improve Trac.
 
@@ -71,3 +67,5 @@ And everyone who keeps sending feedback, helping us improve Trac.
 
 Our apologies to everyone we forgot to mention, but without whose invaluable
 help, Trac would not continue to rapidly evolve.
+
+.. _Diggs and Lula: http://people.edgewall.com/~daniel/lula_diggs.jpg

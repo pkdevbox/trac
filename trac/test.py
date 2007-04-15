@@ -17,9 +17,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import os
 import unittest
-import sys
 
 from trac.config import Configuration
 from trac.core import Component, ComponentManager, ExtensionPoint
@@ -120,24 +118,25 @@ class InMemoryDatabase(SQLiteConnection):
         self.cnx.commit()
 
 
+class TestConfiguration(Configuration):
+    def __init__(self, filename):
+        Configuration.__init__(self, filename)
+        # insulate us from "real" global trac.ini (ref. #3700)
+        from ConfigParser import ConfigParser
+        self.site_parser = ConfigParser()
+
+
 class EnvironmentStub(Environment):
     """A stub of the trac.env.Environment object for testing."""
-
-    href = abs_href = None
 
     def __init__(self, default_data=False, enable=None):
         ComponentManager.__init__(self)
         Component.__init__(self)
         self.enabled_components = enable
         self.db = InMemoryDatabase()
-        self.systeminfo = [('Python', sys.version)]
+        self.path = ''
 
-        import trac
-        self.path = os.path.dirname(trac.__file__)
-        if not os.path.isabs(self.path):
-            self.path = os.path.join(os.getcwd(), self.path)
-
-        self.config = Configuration(None)
+        self.config = TestConfiguration(None)
 
         from trac.log import logger_factory
         self.log = logger_factory('test')
@@ -166,6 +165,9 @@ class EnvironmentStub(Environment):
     def get_db_cnx(self):
         return self.db
 
+    def get_templates_dir(self):
+        return None
+
     def get_known_users(self, db):
         return self.known_users
 
@@ -187,9 +189,9 @@ def locate(fn):
 
 def suite():
     import trac.tests
-    import trac.admin.tests
     import trac.db.tests
     import trac.mimeview.tests
+    import trac.scripts.tests
     import trac.ticket.tests
     import trac.util.tests
     import trac.versioncontrol.tests
@@ -199,9 +201,9 @@ def suite():
 
     suite = unittest.TestSuite()
     suite.addTest(trac.tests.suite())
-    suite.addTest(trac.admin.tests.suite())
     suite.addTest(trac.db.tests.suite())
     suite.addTest(trac.mimeview.tests.suite())
+    suite.addTest(trac.scripts.tests.suite())
     suite.addTest(trac.ticket.tests.suite())
     suite.addTest(trac.util.tests.suite())
     suite.addTest(trac.versioncontrol.tests.suite())

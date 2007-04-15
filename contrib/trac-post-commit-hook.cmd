@@ -19,6 +19,9 @@
 :: -- this one *must* be set
 SET TRAC_ENV=
 
+:: -- this one should be set if [project] url is not set in trac.ini
+SET TRAC_URL=http://%COMPUTERNAME%:8080/%REPNAME%
+
 :: -- set if Python is not in the system path
 SET PYTHON_PATH=
 
@@ -34,5 +37,5 @@ set PYTHONPATH=%TRAC_PATH%;%PYTHONPATH%
 
 SET REV=%2
 
-Python "%~dp0\trac-post-commit-hook" -p "%TRAC_ENV%" -r "%REV%" 
+Python "%~dp0\trac-post-commit-hook" -p "%TRAC_ENV%" -r "%REV%" -s "%TRAC_URL%"
 

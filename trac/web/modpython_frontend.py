@@ -16,11 +16,8 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
-import pkg_resources
-
 from mod_python import apache
 
-from trac import __version__ as VERSION
 from trac.web.main import dispatch_request
 from trac.web.wsgi import WSGIGateway, _ErrorsWrapper
 
@@ -85,7 +82,6 @@ class ModPythonGateway(WSGIGateway):
 
 
 def handler(req):
-    pkg_resources.require('Trac==%s' % VERSION)
     options = req.get_options()
     gateway = ModPythonGateway(req, options)
     gateway.run(dispatch_request)

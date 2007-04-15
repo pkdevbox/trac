@@ -14,7 +14,6 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import imp
 import inspect
 import os
@@ -25,16 +24,12 @@ except NameError:
     from sets import Set as set
 from StringIO import StringIO
 
-from genshi.builder import Element, tag
-from genshi.core import Markup
-
+from trac.config import default_dir
 from trac.core import *
-from trac.util.datefmt import format_date, utc
-from trac.util.compat import sorted, groupby, any
-from trac.util.html import escape
-from trac.wiki.api import IWikiMacroProvider, WikiSystem, parse_args
-from trac.wiki.formatter import format_to_html, format_to_oneliner, \
-                                extract_link, OutlineFormatter
+from trac.util import sorted
+from trac.util.datefmt import format_date
+from trac.util.html import escape, html, Markup
+from trac.wiki.api import IWikiMacroProvider, WikiSystem
 from trac.wiki.model import WikiPage
 from trac.web.chrome import add_stylesheet
 
@@ -56,16 +51,7 @@ class WikiMacroBase(Component):
         """Return the subclass's docstring."""
         return inspect.getdoc(self.__class__)
 
-    def parse_macro(self, parser, name, content):
-        raise NotImplementedError
-
-    def expand_macro(self, formatter, name, content):
-        # -- TODO: remove in 0.12
-        if hasattr(self, 'render_macro'):
-            self.log.warning('Executing pre-0.11 Wiki macro %s by provider %s'
-                             % (name, self.__class__))            
-            return self.render_macro(formatter.req, name, content)
-        # -- 
+    def render_macro(self, req, name, content):
         raise NotImplementedError
 
 
@@ -75,66 +61,17 @@ class TitleIndexMacro(WikiMacroBase):
     Accepts a prefix string as parameter: if provided, only pages with names
     that start with the prefix are included in the resulting list. If this
     parameter is omitted, all pages are listed.
-
-    Alternate `format` and `depth` can be specified:
-     - `format=group`: The list of page will be structured in groups
-       according to common prefix. This format also supports a `min=n`
-       argument, where `n` is the minimal number of pages for a group.
-     - `depth=n`: limit the depth of the pages to list. If set to 0,
-       only toplevel pages will be shown, if set to 1, only immediate
-       children pages will be shown, etc. If not set, or set to -1,
-       all pages in the hierarchy will be shown.
     """
 
-    SPLIT_RE = re.compile(r"( |/|[0-9])")
+    def render_macro(self, req, name, content):
+        prefix = content or None
 
-    def expand_macro(self, formatter, name, content):
-        args, kw = parse_args(content)
-        prefix = args and args[0] or None
-        format = kw.get('format', '')
-        minsize = max(int(kw.get('min', 2)), 2)
-        depth = int(kw.get('depth', -1))
-        start = prefix and prefix.count('/') or 0
+        wiki = WikiSystem(self.env)
 
-        wiki = formatter.wiki
-        pages = sorted(wiki.get_pages(prefix))
+        return html.UL([html.LI(html.A(wiki.format_page_name(page),
+                                       href=req.href.wiki(page)))
+                        for page in sorted(wiki.get_pages(prefix))])
 
-        if format != 'group':
-            return tag.ul([tag.li(tag.a(wiki.format_page_name(page),
-                                        href=formatter.href.wiki(page)))
-                           for page in pages
-                           if depth < 0 or depth >= page.count('/') - start])
-        
-        # Group by Wiki word and/or Wiki hierarchy
-        pages = [(self.SPLIT_RE.split(wiki.format_page_name(page, split=True)),
-                  page) for page in pages
-                 if depth < 0 or depth >= page.count('/') - start]
-        def split_in_groups(group):
-            """Return list of pagename or (key, sublist) elements"""
-            groups = []
-            for key, subgrp in groupby(group, lambda (k,p): k and k[0] or ''):
-                subgrp = [(k[1:],p) for k,p in subgrp]
-                if key and len(subgrp) >= minsize:
-                    sublist = split_in_groups(sorted(subgrp))
-                    if len(sublist) == 1:
-                        elt = (key+sublist[0][0], sublist[0][1])
-                    else:
-                        elt = (key, sublist)
-                    groups.append(elt)
-                else:
-                    for elt in subgrp:
-                        groups.append(elt[1])
-            return groups
-
-        def render_groups(groups):
-            return tag.ul(
-                [tag.li(isinstance(elt, tuple) and 
-                        tag(tag.strong(elt[0]), render_groups(elt[1])) or
-                        tag.a(wiki.format_page_name(elt),
-                              href=formatter.href.wiki(elt)))
-                 for elt in groups])
-        return render_groups(split_in_groups(pages))
-            
 
 class RecentChangesMacro(WikiMacroBase):
     """Lists all pages that have recently been modified, grouping them by the
@@ -149,7 +86,7 @@ class RecentChangesMacro(WikiMacroBase):
     recently changed pages to be included in the list.
     """
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
         prefix = limit = None
         if content:
             argv = [arg.strip() for arg in content.split(',')]
@@ -158,7 +95,8 @@ class RecentChangesMacro(WikiMacroBase):
                 if len(argv) > 1:
                     limit = int(argv[1])
 
-        cursor = formatter.db.cursor()
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
 
         sql = 'SELECT name, ' \
               '  max(version) AS max_version, ' \
@@ -176,33 +114,26 @@ class RecentChangesMacro(WikiMacroBase):
 
         entries_per_date = []
         prevdate = None
-        for name, version, ts in cursor:
-            time = datetime.fromtimestamp(ts, utc)
+        for name, version, time in cursor:
             date = format_date(time)
             if date != prevdate:
                 prevdate = date
                 entries_per_date.append((date, []))
-            version = int(version)
-            diff_href = None
-            if version > 1:
-                diff_href = formatter.href.wiki(name, action='diff',
-                                                version=version)
-            page_name = formatter.wiki.format_page_name(name)
-            entries_per_date[-1][1].append((page_name, name, version,
-                                            diff_href))
+            entries_per_date[-1][1].append((name, int(version)))
 
-        return tag.div([tag.h3(date) +
-                        tag.ul([tag.li(tag.a(page_name,
-                                             href=formatter.href.wiki(name)),
-                                       ' ',
-                                       diff_href and 
-                                       tag.small('(', tag.a('diff',
-                                                            href=diff_href),
-                                                 ')') or
-                                       None)
-                                for page_name, name, version, diff_href
-                                in entries])
-                        for date, entries in entries_per_date])
+        wiki = WikiSystem(self.env)
+        return html.DIV(
+            [html.H3(date) +
+             html.UL([html.LI(
+            html.A(wiki.format_page_name(name), href=req.href.wiki(name)),
+            ' ',
+            version > 1 and 
+            html.SMALL('(', html.A('diff',
+                                   href=req.href.wiki(name, action='diff',
+                                                      version=version)), ')') \
+            or None)
+                      for name, version in entries])
+             for date, entries in entries_per_date])
 
 
 class PageOutlineMacro(WikiMacroBase):
@@ -226,7 +157,8 @@ class PageOutlineMacro(WikiMacroBase):
        the right side of the other content.
     """
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
+        from trac.wiki.formatter import wiki_to_outline
         min_depth, max_depth = 1, 6
         title = None
         inline = 0
@@ -234,27 +166,30 @@ class PageOutlineMacro(WikiMacroBase):
             argv = [arg.strip() for arg in content.split(',')]
             if len(argv) > 0:
                 depth = argv[0]
-                if '-' in depth:
+                if depth.find('-') >= 0:
                     min_depth, max_depth = [int(d) for d in depth.split('-', 1)]
                 else:
-                    min_depth = max_depth = int(depth)
+                    min_depth, max_depth = int(depth), int(depth)
                 if len(argv) > 1:
                     title = argv[1].strip()
                     if len(argv) > 2:
                         inline = argv[2].strip().lower() == 'inline'
 
-        # TODO: - integrate the rest of the OutlineFormatter directly here
-        #       - use formatter.wikidom instead of formatter.source
-        out = StringIO()
-        OutlineFormatter(formatter.context).format(formatter.source, out,
-                                                   max_depth, min_depth)
-        outline = Markup(out.getvalue())
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        pagename = req.args.get('page') or 'WikiStart'
+        page = WikiPage(self.env, pagename)
 
-        if title:
-            outline = tag.h4(title) + outline
+        buf = StringIO()
         if not inline:
-            outline = tag.div(outline, class_="wiki-toc")
-        return outline
+            buf.write('<div class="wiki-toc">')
+        if title:
+            buf.write('<h4>%s</h4>' % escape(title))
+        buf.write(wiki_to_outline(page.text, self.env, db=db,
+                                  max_depth=max_depth, min_depth=min_depth))
+        if not inline:
+            buf.write('</div>')
+        return buf.getvalue()
 
 
 class ImageMacro(WikiMacroBase):
@@ -279,12 +214,9 @@ class ImageMacro(WikiMacroBase):
        for the image
      * `right`, `left`, `top` or `bottom` are interpreted as the alignment for
        the image
-     * `link=some TracLinks...` replaces the link to the image source by the
-       one specified using a TracLinks. If no value is specified, the link is
-       simply removed.
-     * `nolink` means without link to image source (deprecated, use `link=`)
+     * `nolink` means without link to image source.
      * `key=value` style are interpreted as HTML attributes or CSS style
-       indications for the image. Valid keys are:
+        indications for the image. Valid keys are:
         * align, border, width, height, alt, title, longdesc, class, id
           and usemap
         * `border` can only be a number
@@ -312,7 +244,7 @@ class ImageMacro(WikiMacroBase):
     <gotoh@taiyo.co.jp>''
     """
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
         # args will be null if the macro is called without parenthesis.
         if not content:
             return ''
@@ -322,15 +254,13 @@ class ImageMacro(WikiMacroBase):
         if len(args) == 0:
             raise Exception("No argument.")
         filespec = args[0]
-
-        # style information
         size_re = re.compile('[0-9]+%?$')
         attr_re = re.compile('(align|border|width|height|alt'
                              '|title|longdesc|class|id|usemap)=(.+)')
         quoted_re = re.compile("(?:[\"'])(.*)(?:[\"'])$")
         attr = {}
         style = {}
-        link = ''
+        nolink = False
         for arg in args[1:]:
             arg = arg.strip()
             if size_re.match(arg):
@@ -338,15 +268,7 @@ class ImageMacro(WikiMacroBase):
                 attr['width'] = arg
                 continue
             if arg == 'nolink':
-                link = None
-                continue
-            if arg.startswith('link='):
-                val = arg.split('=', 1)[1]
-                elt = extract_link(formatter.context, val.strip())
-                if isinstance(elt, Element):
-                    link = elt.attrib.get('href')
-                else:
-                    link = None
+                nolink = True
                 continue
             if arg in ('left', 'right', 'top', 'bottom'):
                 style['float'] = arg
@@ -364,66 +286,72 @@ class ImageMacro(WikiMacroBase):
                 else:
                     attr[str(key)] = val # will be used as a __call__ keyword
 
-        # parse filespec argument to get realm and id if contained.
+        # parse filespec argument to get module and id if contained.
         parts = filespec.split(':')
         url = None
-        context = None
-        if len(parts) == 3:                 # realm:id:attachment-filename
-            # TODO: consider using attachment-filename:realm:id?
-            realm, id, filename = parts
-            context = formatter.context(realm, id) \
-                      ('attachment', filename)
+        if len(parts) == 3:                 # module:id:attachment
+            if parts[0] in ['wiki', 'ticket']:
+                module, id, file = parts
+            else:
+                raise Exception("%s module can't have attachments" % parts[0])
         elif len(parts) == 2:
             from trac.versioncontrol.web_ui import BrowserModule
             try:
-                browser_links = [res[0] for res in
+                browser_links = [link for link,_ in 
                                  BrowserModule(self.env).get_link_resolvers()]
             except Exception:
                 browser_links = []
             if parts[0] in browser_links:   # source:path
-                # TODO: use context here as well
-                realm, filename = parts
+                module, file = parts
                 rev = None
-                if '@' in filename:
-                    filename, rev = filename.split('@')
-                url = formatter.href.browser(filename, rev=rev)
-                raw_url = formatter.href.browser(filename, rev=rev, format='raw')
+                if '@' in file:
+                    file, rev = file.split('@')
+                url = req.href.browser(file, rev=rev)
+                raw_url = req.href.browser(file, rev=rev, format='raw')
                 desc = filespec
             else: # #ticket:attachment or WikiPage:attachment
                 # FIXME: do something generic about shorthand forms...
-                realm = None
-                id, filename = parts
+                id, file = parts
                 if id and id[0] == '#':
-                    realm = 'ticket'
+                    module = 'ticket'
                     id = id[1:]
                 elif id == 'htdocs':
-                    raw_url = url = formatter.href.chrome('site', filename)
-                    desc = os.path.basename(filename)
+                    raw_url = url = req.href.chrome('site', file)
+                    desc = os.path.basename(file)
                 elif id in ('http', 'https', 'ftp'): # external URLs
-                    raw_url = url = desc = id+':'+filename
+                    raw_url = url = desc = id+':'+file
                 else:
-                    realm = 'wiki'
-                if realm:
-                    context = formatter.context(realm, id) \
-                              ('attachment', filename)
+                    module = 'wiki'
         elif len(parts) == 1:               # attachment
-            context = formatter.context('attachment', filespec)
+            # determine current object
+            # FIXME: should be retrieved from the formatter...
+            # ...and the formatter should be provided to the macro
+            file = filespec
+            module, id = 'wiki', 'WikiStart'
+            path_info = req.path_info.split('/',2)
+            if len(path_info) > 1:
+                module = path_info[1]
+            if len(path_info) > 2:
+                id = path_info[2]
+            if module not in ['wiki', 'ticket']:
+                raise Exception('Cannot reference local attachment from here')
         else:
             raise Exception('No filespec given')
-        if context: # this is an attachment
-            url = context.resource_href()
-            raw_url = context.resource_href(format='raw')
-            desc = context.summary()
-        for key in ('title', 'alt'):
-            if desc and not key in attr:
+        if not url: # this is an attachment
+            from trac.attachment import Attachment
+            attachment = Attachment(self.env, module, id, file)
+            url = attachment.href(req)
+            raw_url = attachment.href(req, format='raw')
+            desc = attachment.description
+        for key in ['title', 'alt']:
+            if desc and not attr.has_key(key):
                 attr[key] = desc
         if style:
             attr['style'] = '; '.join(['%s:%s' % (k, escape(v))
                                        for k, v in style.iteritems()])
-        result = tag.img(src=raw_url, **attr)
-        if link is not None:
-            result = tag.a(result, href=link or url,
-                           style='padding:0; border:none')
+        result = Markup(html.IMG(src=raw_url, **attr)).sanitize()
+        if not nolink:
+            result = html.A(result, href=url, style='padding:0; border:none')
         return result
 
 
@@ -438,27 +366,28 @@ class MacroListMacro(WikiMacroBase):
     macros if the `PythonOptimize` option is enabled for mod_python!
     """
 
-    def expand_macro(self, formatter, name, content):
-        from trac.wiki.formatter import system_message
+    def render_macro(self, req, name, content):
+        from trac.wiki.formatter import wiki_to_html, system_message
+        wiki = WikiSystem(self.env)
 
-        wikimacros = formatter.context('wiki', 'WikiMacros')
         def get_macro_descr():
-            for macro_provider in formatter.wiki.macro_providers:
+            for macro_provider in wiki.macro_providers:
                 for macro_name in macro_provider.get_macros():
                     if content and macro_name != content:
                         continue
                     try:
                         descr = macro_provider.get_macro_description(macro_name)
-                        descr = format_to_html(wikimacros, descr or '')
+                        descr = wiki_to_html(descr or '', self.env, req)
                     except Exception, e:
-                        descr = system_message("Error: Can't get description "
-                                               "for macro %s" % macro_name, e)
+                        descr = Markup(system_message(
+                            "Error: Can't get description for macro %s" \
+                            % macro_name, e))
                     yield (macro_name, descr)
 
-        return tag.dl([(tag.dt(tag.code('[[',macro_name,']]'),
-                               id='%s-macro' % macro_name),
-                        tag.dd(description))
-                       for macro_name, description in get_macro_descr()])
+        return html.DL([(html.DT(html.CODE('[[',macro_name,']]'),
+                                 id='%s-macro' % macro_name),
+                         html.DD(description))
+                        for macro_name, description in get_macro_descr()])
 
 
 class TracIniMacro(WikiMacroBase):
@@ -470,69 +399,71 @@ class TracIniMacro(WikiMacroBase):
     options whose section and name start with the filters are output.
     """
 
-    def expand_macro(self, formatter, name, filter):
+    def render_macro(self, req, name, filter):
         from trac.config import Option
+        from trac.wiki.formatter import wiki_to_html, wiki_to_oneliner
         filter = filter or ''
 
         sections = set([section for section, option in Option.registry.keys()
                         if section.startswith(filter)])
 
-        tracini = formatter.context('wiki', 'TracIni')
-        return tag.div(class_='tracini')(
-            [(tag.h2('[%s]' % section, id='%s-section' % section),
-              tag.table(class_='wiki')(
-            tag.tbody([tag.tr(tag.td(tag.tt(option.name)),
-                              tag.td(format_to_oneliner(tracini,
-                                                        option.__doc__)))
-                       for option in sorted(Option.registry.values(),
-                                            key=lambda o: o.name)
-                       if option.section == section])))
+        return html.DIV(class_='tracini')(
+            [(html.H2('[%s]' % section, id='%s-section' % section),
+              html.TABLE(class_='wiki')(
+                  html.TBODY([html.TR(html.TD(html.TT(option.name)),
+                                      html.TD(wiki_to_oneliner(option.__doc__,
+                                                               self.env)))
+                              for option in Option.registry.values()
+                              if option.section == section])))
              for section in sorted(sections)])
 
 
-
-class TracGuideTocMacro(WikiMacroBase):
+class UserMacroProvider(Component):
+    """Adds macros that are provided as Python source files in the
+    `wiki-macros` directory of the environment, or the global macros
+    directory.
     """
-    This macro shows a quick and dirty way to make a table-of-contents
-    for a set of wiki pages.
-    """
+    implements(IWikiMacroProvider)
 
-    TOC = [('TracGuide',                    'Index'),
-           ('TracInstall',                  'Installation'),
-           ('TracInterfaceCustomization',   'Customization'),
-           ('TracPlugins',                  'Plugins'),
-           ('TracUpgrade',                  'Upgrading'),
-           ('TracIni',                      'Configuration'),
-           ('TracAdmin',                    'Administration'),
-           ('TracBackup',                   'Backup'),
-           ('TracLogging',                  'Logging'),
-           ('TracPermissions' ,             'Permissions'),
-           ('TracWiki',                     'The Wiki'),
-           ('WikiFormatting',               'Wiki Formatting'),
-           ('TracTimeline',                 'Timeline'),
-           ('TracBrowser',                  'Repository Browser'),
-           ('TracRevisionLog',              'Revision Log'),
-           ('TracChangeset',                'Changesets'),
-           ('TracTickets',                  'Tickets'),
-           ('TracRoadmap',                  'Roadmap'),
-           ('TracQuery',                    'Ticket Queries'),
-           ('TracReports',                  'Reports'),
-           ('TracRss',                      'RSS Support'),
-           ('TracNotification',             'Notification'),
-          ]
+    def __init__(self):
+        self.env_macros = os.path.join(self.env.path, 'wiki-macros')
+        self.site_macros = default_dir('macros')
 
-    def expand_macro(self, formatter, name, args):
-        curpage = formatter.context.id
+    # IWikiMacroProvider methods
 
-        # Provision for multilingual TOC (e.g. TranslateRu/TracGuide ...)
-        lang = ''
-        idx = curpage.find('/')
-        if idx > 0:
-            lang = curpage[:idx+1]
-            
-        return tag.div(tag.h4('Table of Contents'),
-                       tag.ul([tag.li(tag.a(title,
-                                            href=formatter.href.wiki(lang+ref)),
-                                      class_=(ref == curpage and "active"))
-                               for ref, title in self.TOC]),
-                       class_="wiki-toc")
+    def get_macros(self):
+        found = []
+        for path in (self.env_macros, self.site_macros):
+            if not os.path.exists(path):
+                continue
+            for filename in [filename for filename in os.listdir(path)
+                             if filename.lower().endswith('.py')
+                             and not filename.startswith('__')]:
+                try:
+                    module = self._load_macro(filename[:-3])
+                    name = module.__name__
+                    if name in found:
+                        continue
+                    found.append(name)
+                    yield name
+                except Exception, e:
+                    self.log.error('Failed to load wiki macro %s (%s)',
+                                   filename, e, exc_info=True)
+
+    def get_macro_description(self, name):
+        return inspect.getdoc(self._load_macro(name))
+
+    def render_macro(self, req, name, content):
+        module = self._load_macro(name)
+        try:
+            return module.execute(req and req.hdf, content, self.env)
+        except Exception, e:
+            self.log.error('Wiki macro %s failed (%s)', name, e, exc_info=True)
+            raise
+
+    def _load_macro(self, name):
+        for path in (self.env_macros, self.site_macros):
+            macro_file = os.path.join(path, name + '.py')
+            if os.path.isfile(macro_file):
+                return imp.load_source(name, macro_file)
+        raise TracError, 'Macro %s not found' % name
