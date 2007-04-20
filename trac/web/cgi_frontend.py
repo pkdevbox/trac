@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2005 Edgewall Software
@@ -18,10 +17,8 @@
 #         Matthew Good <trac@matt-good.net>
 
 import os
-import pkg_resources
 import sys
 
-from trac import __version__ as VERSION
 from trac.web.main import dispatch_request
 from trac.web.wsgi import WSGIGateway
 
@@ -69,7 +66,3 @@ def run():
 
     gateway = CGIGateway()
     gateway.run(dispatch_request)
-
-if __name__ == '__main__':
-    pkg_resources.require('Trac==%s' % VERSION)
-    run()

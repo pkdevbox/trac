@@ -18,7 +18,6 @@ import re
 
 from trac.core import *
 from trac.wiki.formatter import Formatter
-from trac.wiki.parser import WikiParser
 from trac.wiki.api import IWikiChangeListener, IWikiMacroProvider
 
 
@@ -29,7 +28,7 @@ class InterWikiMap(Component):
 
     _page_name = 'InterMapTxt'
     _interwiki_re = re.compile(r"(%s)[ \t]+([^ \t]+)(?:[ \t]+#(.*))?" %
-                               WikiParser.LINK_SCHEME, re.UNICODE)
+                               Formatter.LINK_SCHEME, re.UNICODE)
     _argspec_re = re.compile(r"\$\d")
 
     def __init__(self):
@@ -134,7 +133,7 @@ class InterWikiMap(Component):
     def get_macro_description(self, name): 
         return "Provide a description list for the known InterWiki prefixes."
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
         from trac.util import sorted
         from trac.util.html import html as _
         interwikis = []

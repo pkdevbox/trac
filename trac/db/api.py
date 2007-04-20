@@ -84,6 +84,7 @@ class DatabaseManager(Component):
     def _get_connector(self): ### FIXME: Make it public?
         scheme, args = _parse_db_str(self.connection_uri)
         candidates = {}
+        connector = None
         for connector in self.connectors:
             for scheme_, priority in connector.get_supported_schemes():
                 if scheme_ != scheme:
@@ -91,8 +92,7 @@ class DatabaseManager(Component):
                 highest = candidates.get(scheme_, (None, 0))[1]
                 if priority > highest:
                     candidates[scheme] = (connector, priority)
-
-        connector = candidates.get(scheme, [None])[0]
+            connector = candidates.get(scheme, [None])[0]
         if not connector:
             raise TracError('Unsupported database type "%s"' % scheme)
 
@@ -119,7 +119,7 @@ def _parse_db_str(db_str):
             raise TracError('Database connection string must start with '
                             'scheme:/')
     else:
-        if not rest.startswith('//'):
+        if rest.startswith('/') and not rest.startswith('//'):
             host = None
             rest = rest[1:]
         elif rest.startswith('///'):
@@ -127,16 +127,16 @@ def _parse_db_str(db_str):
             rest = rest[3:]
         else:
             rest = rest[2:]
-            if '/' not in rest:
+            if rest.find('/') == -1:
                 host = rest
                 rest = ''
             else:
                 host, rest = rest.split('/', 1)
         path = None
 
-    if host and '@' in host:
+    if host and host.find('@') != -1:
         user, host = host.split('@', 1)
-        if ':' in user:
+        if user.find(':') != -1:
             user, password = user.split(':', 1)
         else:
             password = None
@@ -146,7 +146,7 @@ def _parse_db_str(db_str):
             password = unicode_passwd(urllib.unquote(password))
     else:
         user = password = None
-    if host and ':' in host:
+    if host and host.find(':') != -1:
         host, port = host.split(':')
         port = int(port)
     else:
@@ -160,7 +160,7 @@ def _parse_db_str(db_str):
             path = "%s:%s" % (rest[0], rest[2:])
 
     params = {}
-    if '?' in path:
+    if path.find('?') != -1:
         path, qs = path.split('?', 1)
         qs = qs.split('&')
         for param in qs:

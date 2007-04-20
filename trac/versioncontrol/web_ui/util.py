@@ -20,14 +20,17 @@ import re
 import urllib
 
 from trac.core import TracError
-from trac.util.datefmt import pretty_timedelta
-from trac.util.html import Markup
+from trac.util.datefmt import format_datetime, pretty_timedelta
+from trac.util.html import escape, html, Markup
 from trac.util.text import shorten_line
 from trac.versioncontrol.api import NoSuchNode, NoSuchChangeset
+from trac.wiki import wiki_to_html, wiki_to_oneliner
 
-__all__ = ['get_changes', 'get_path_links', 'get_existing_node']
+__all__ = ['get_changes', 'get_path_links', 'get_path_rev_line',
+           'get_existing_node', 'render_node_property']
 
-def get_changes(repos, revs):
+def get_changes(env, repos, revs, full=None, req=None, format=None):
+    db = env.get_db_cnx()
     changes = {}
     for rev in revs:
         try:
@@ -35,20 +38,60 @@ def get_changes(repos, revs):
         except NoSuchChangeset:
             changes[rev] = {}
             continue
-        changes[rev] = changeset
+
+        wiki_format = env.config['changeset'].getbool('wiki_format_messages')
+        message = changeset.message or '--'
+        absurls = (format == 'rss')
+        if wiki_format:
+            shortlog = wiki_to_oneliner(message, env, db,
+                                        shorten=True, absurls=absurls)
+        else:
+            shortlog = Markup.escape(shorten_line(message))
+
+        if full:
+            if wiki_format:
+                message = wiki_to_html(message, env, req, db,
+                                       absurls=absurls, escape_newlines=True)
+            else:
+                message = html.PRE(message)
+        else:
+            message = shortlog
+
+        if format == 'rss':
+            if isinstance(shortlog, Markup):
+                shortlog = shortlog.plaintext(keeplinebreaks=False)
+            message = unicode(message)
+
+        changes[rev] = {
+            'date_seconds': changeset.date,
+            'date': format_datetime(changeset.date),
+            'age': pretty_timedelta(changeset.date),
+            'author': changeset.author or 'anonymous',
+            'message': message, 'shortlog': shortlog,
+        }
     return changes
 
-def get_path_links(href, fullpath, rev, order=None, desc=None):
-    links = [{'name': 'root',
-              'href': href.browser(rev=rev, order=order, desc=desc)}]
+def get_path_links(href, fullpath, rev):
+    links = [{'name': 'root', 'href': href.browser(rev=rev)}]
     path = ''
     for part in [p for p in fullpath.split('/') if p]:
         path += part + '/'
-        links.append({
-            'name': part,
-            'href': href.browser(path, rev=rev, order=order, desc=desc)
-            })
+        links.append({'name': part, 'href': href.browser(path, rev=rev)})
     return links
+
+rev_re = re.compile(r"([^@#:]*)[@#:]([^#]+)?(?:#L(\d+))?")
+
+def get_path_rev_line(path):
+    rev = None
+    line = None
+    match = rev_re.search(path)
+    if match:
+        path = match.group(1)
+        rev = match.group(2)
+        if match.group(3):
+            line = int(match.group(3))
+    path = urllib.unquote(path)
+    return path, rev, line
 
 def get_existing_node(req, repos, path, rev):
     try: 
@@ -59,3 +102,13 @@ def get_existing_node(req, repos, path, rev):
                                'existed but was later removed.</p>', e.message,
                                req.href.log(path, rev=rev,
                                             mode='path_history')))
+
+def render_node_property(env, name, value):
+    """Renders a node property value to HTML.
+
+    Currently only handle multi-line properties. See also #1601.
+    """
+    if value and '\n' in value:
+        value = Markup(''.join(['<br />%s' % escape(v)
+                                for v in value.split('\n')]))
+    return value

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2003-2006 Edgewall Software
@@ -19,7 +18,7 @@
 #         Matthew Good <trac@matt-good.net>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import pkg_resources
+import errno
 import os
 import sys
 from SocketServer import ThreadingMixIn
@@ -226,13 +225,6 @@ def main():
         def serve():
             httpd = TracHTTPServer(server_address, wsgi_app,
                                    options.env_parent_dir, args)
-            print 'Server starting in PID %i.' % os.getpid()
-            addr, port = server_address
-            if not addr or addr == '0.0.0.0':
-                print 'Serving on 0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
-                       % (port, port, base_path)
-            else:
-                print 'Serving on http://%s:%s/%s' % (addr, port, base_path)
             httpd.serve_forever()
     elif options.protocol in ('scgi', 'ajp'):
         def serve():
@@ -242,8 +234,39 @@ def main():
             sys.exit(ret and 42 or 0) # if SIGHUP exit with status 42
 
     try:
-        if options.daemonize:
-            daemon.daemonize(pidfile=options.pidfile, progname='tracd')
+        if os.name == 'posix':
+            if options.pidfile:
+                options.pidfile = os.path.abspath(options.pidfile)
+                if os.path.exists(options.pidfile):
+                    pidfile = open(options.pidfile)
+                    try:
+                        pid = int(pidfile.read())
+                    finally:
+                        pidfile.close()
+
+                    try:
+                        # signal the process to see if it is still running
+                        os.kill(pid, 0)
+                    except OSError, e:
+                        if e.errno != errno.ESRCH:
+                            raise
+                    else:
+                        sys.exit("tracd is already running with pid %s" % pid)
+                realserve = serve
+                def serve():
+                    try:
+                        pidfile = open(options.pidfile, 'w')
+                        try:
+                            pidfile.write(str(os.getpid()))
+                        finally:
+                            pidfile.close()
+                        realserve()
+                    finally:
+                       if os.path.exists(options.pidfile):
+                           os.remove(options.pidfile)
+
+            if options.daemonize:
+                daemon.daemonize()
 
         if options.autoreload:
             def modification_callback(file):
@@ -259,5 +282,4 @@ def main():
         pass
 
 if __name__ == '__main__':
-    pkg_resources.require('Trac==%s' % VERSION)
     main()

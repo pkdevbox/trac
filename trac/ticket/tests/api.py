@@ -1,4 +1,3 @@
-from trac.perm import PermissionCache
 from trac.ticket.api import TicketSystem
 from trac.test import EnvironmentStub, Mock
 
@@ -65,7 +64,7 @@ class TicketSystemTestCase(unittest.TestCase):
 
     def test_available_actions_full_perms(self):
         ts = TicketSystem(self.env)
-        perm = PermissionCache({'TICKET_CREATE': True, 'TICKET_MODIFY': True})
+        perm = Mock(has_permission=lambda x: 1)
         self.assertEqual(['leave', 'resolve', 'reassign', 'accept'],
                          ts.get_available_actions({'status': 'new'}, perm))
         self.assertEqual(['leave', 'resolve', 'reassign'],
@@ -77,7 +76,7 @@ class TicketSystemTestCase(unittest.TestCase):
 
     def test_available_actions_no_perms(self):
         ts = TicketSystem(self.env)
-        perm = PermissionCache()
+        perm = Mock(has_permission=lambda x: 0)
         self.assertEqual(['leave'],
                          ts.get_available_actions({'status': 'new'}, perm))
         self.assertEqual(['leave'],
@@ -89,7 +88,7 @@ class TicketSystemTestCase(unittest.TestCase):
 
     def test_available_actions_create_only(self):
         ts = TicketSystem(self.env)
-        perm = PermissionCache({'TICKET_CREATE': True})
+        perm = Mock(has_permission=lambda x: x == 'TICKET_CREATE')
         self.assertEqual(['leave'],
                          ts.get_available_actions({'status': 'new'}, perm))
         self.assertEqual(['leave'],
@@ -102,7 +101,7 @@ class TicketSystemTestCase(unittest.TestCase):
     def test_available_actions_chgprop_only(self):
         # CHGPROP is not enough for changing a ticket's state (#3289)
         ts = TicketSystem(self.env)
-        perm = PermissionCache({'TICKET_CHGPROP': True})
+        perm = Mock(has_permission=lambda x: x == 'TICKET_CHGPROP')
         self.assertEqual(['leave'],
                          ts.get_available_actions({'status': 'new'}, perm))
         self.assertEqual(['leave'],

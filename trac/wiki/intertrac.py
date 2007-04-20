@@ -16,13 +16,12 @@
 
 import re
 
-from trac.context import Context
 from trac.core import *
 from trac.util import sorted
 from trac.util.html import Element, html
 from trac.web import IRequestHandler
 from trac.wiki.api import IWikiMacroProvider
-from trac.wiki.formatter import extract_link
+from trac.wiki.formatter import wiki_to_link
 
 
 class InterTracDispatcher(Component):
@@ -43,9 +42,9 @@ class InterTracDispatcher(Component):
         link = req.args.get('link', '')
         if not link:
             raise TracError('No TracLinks given')
-        link_elt = extract_link(Context(self.env, req), link)
+        link_elt = wiki_to_link(link, self.env, req)
         if isinstance(link_elt, Element):
-            href = link_elt.attrib.get('href')
+            href = link_elt.attr['href']
             if href:
                 req.redirect(href)
         raise TracError('"%s" is not a TracLinks' % link)
@@ -59,7 +58,7 @@ class InterTracDispatcher(Component):
     def get_macro_description(self, name): 
         return "Provide a list of known InterTrac prefixes."
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
         intertracs = {}
         for key, value in self.config.options('intertrac'):
             idx = key.rfind('.') # rsplit only in 2.4

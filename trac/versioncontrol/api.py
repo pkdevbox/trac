@@ -14,8 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-import os.path
-
+from heapq import heappop, heappush
 try:
     import threading
 except ImportError:
@@ -25,7 +24,6 @@ except ImportError:
 from trac.config import Option
 from trac.core import *
 from trac.perm import PermissionError
-from trac.util.text import to_unicode
 from trac.web.api import IRequestFilter
 
 
@@ -60,8 +58,7 @@ class RepositoryManager(Component):
     repository_type = Option('trac', 'repository_type', 'svn',
         """Repository connector type. (''since 0.10'')""")
     repository_dir = Option('trac', 'repository_dir', '',
-        """Path to local repository. This can also be a relative path
-        (''since 0.11'').""")
+        """Path to local repository""")
 
     def __init__(self):
         self._cache = {}
@@ -73,33 +70,29 @@ class RepositoryManager(Component):
     def pre_process_request(self, req, handler):
         from trac.web.chrome import Chrome        
         if handler is not Chrome(self.env):
-            try:
-                self.get_repository(req.authname).sync()
-            except TracError, e:
-                req.warning("Can't synchronize with the repository (%s)" %
-                            e.message)
+            self.get_repository(req.authname).sync()
         return handler
 
     def post_process_request(self, req, template, content_type):
         return (template, content_type)
 
+
     # Public API methods
 
     def get_repository(self, authname):
         if not self._connector:
-            candidates = [
-                (prio, connector)
-                for connector in self.connectors
-                for repos_type, prio in connector.get_supported_types()
-                if repos_type == self.repository_type
-            ]
-            if candidates:
-                self._connector = max(candidates)[1]
-            else:
+            candidates = []
+            for connector in self.connectors:
+                for repos_type_, prio in connector.get_supported_types():
+                    if self.repository_type != repos_type_:
+                        continue
+                    heappush(candidates, (-prio, connector))
+            if not candidates:
                 raise TracError('Unsupported version control system "%s". '
                                 'Check that the Python bindings for "%s" are '
                                 'correctly installed.' %
                                 ((self.repository_type,)*2))
+            self._connector = heappop(candidates)[1]
         db = self.env.get_db_cnx() # prevent possible deadlock, see #4465
         try:
             self._lock.acquire()
@@ -108,8 +101,6 @@ class RepositoryManager(Component):
                 repos = self._cache[tid]
             else:
                 rtype, rdir = self.repository_type, self.repository_dir
-                if not os.path.isabs(rdir):
-                    rdir = os.path.join(self.env.path, rdir)
                 repos = self._connector.get_repository(rtype, rdir, authname)
                 self._cache[tid] = repos
             return repos
@@ -121,23 +112,19 @@ class RepositoryManager(Component):
             assert tid == threading._get_ident()
             try:
                 self._lock.acquire()
-                repos = self._cache.pop(tid, None)
-                if repos:
-                    repos.close()
+                self._cache.pop(tid, None)
             finally:
                 self._lock.release()
 
 
 class NoSuchChangeset(TracError):
     def __init__(self, rev):
-        TracError.__init__(self, "No changeset %s in the repository" % rev,
-                           'No such changeset')
+        TracError.__init__(self, "No changeset %s in the repository" % rev)
 
 class NoSuchNode(TracError):
     def __init__(self, path, rev, msg=None):
-        TracError.__init__(self, "%sNo node %s at revision %s" %
-                           ((msg and '%s: ' % msg) or '', path, rev),
-                           'No such node')
+        TracError.__init__(self, "%sNo node %s at revision %s" \
+                           % (msg and '%s: ' % msg or '', path, rev))
 
 class Repository(object):
     """Base class for a repository provided by a version control system."""
@@ -173,16 +160,6 @@ class Repository(object):
         """Resync the repository cache for the given `rev`, if relevant."""
         raise NotImplementedError
 
-    def get_quickjump_entries(self, rev):
-        """Generate a list of interesting places in the repository.
-
-        `rev` might be used to restrict the list of available locations,
-        but in general it's best to produce all known locations.
-
-        The generated results must be of the form (category, name, path, rev).
-        """
-        return []
-    
     def get_changeset(self, rev):
         """Retrieve a Changeset corresponding to the  given revision `rev`."""
         raise NotImplementedError
@@ -322,7 +299,7 @@ class Node(object):
     def __init__(self, path, rev, kind):
         assert kind in (Node.DIRECTORY, Node.FILE), \
                "Unknown node kind %s" % kind
-        self.path = to_unicode(path)
+        self.path = unicode(path)
         self.rev = rev
         self.kind = kind
 
@@ -365,15 +342,6 @@ class Node(object):
                 skip = False
             else:
                 return p
-
-    def get_annotations(self):
-        """Provide detailed backward history for the content of this Node.
-
-        Retrieve an array of revisions, one `rev` for each line of content
-        for that node.
-        Only expected to work on (text) FILE nodes, of course.
-        """
-        raise NotImplementedError
 
     def get_properties(self):
         """Returns the properties (meta-data) of the node, as a dictionary.
@@ -421,23 +389,25 @@ class Changeset(object):
 
     # change types which can have diff associated to them
     DIFF_CHANGES = (EDIT, COPY, MOVE) # MERGE
-    OTHER_CHANGES = (ADD, DELETE)
-    ALL_CHANGES = DIFF_CHANGES + OTHER_CHANGES
 
     def __init__(self, rev, message, author, date):
         self.rev = rev
-        self.message = message or ''
-        self.author = author or ''
+        self.message = message
+        self.author = author
         self.date = date
 
     def get_properties(self):
-        """Returns the properties (meta-data) of the node, as a dictionary.
+        """Generator that provide additional metadata for this changeset.
 
-        The set of properties depends on the version control system.
+        Each additional property is a 4 element tuple:
+         * `name` is the name of the property,
+         * `text` its value
+         * `wikiflag` indicates whether the `text` should be interpreted as
+            wiki text or not
+         * `htmlclass` enables to attach special formatting to the displayed
+            property, e.g. `'author'`, `'time'`, `'message'` or `'changeset'`.
 
-        Warning: this used to yield 4-elements tuple (besides `name` and
-        `text`, there were `wikiflag` and `htmlclass` values).
-        This is now replaced by the usage of IPropertyRenderer (see #1601).
+        Warning: API will be improved (see #1601 and #2545).
         """
         
     def get_changes(self):
@@ -447,10 +417,6 @@ class Changeset(object):
         where `change` can be one of Changeset.ADD, Changeset.COPY,
         Changeset.DELETE, Changeset.EDIT or Changeset.MOVE,
         and `kind` is one of Node.FILE or Node.DIRECTORY.
-        The `path` is the targeted path for the `change` (which is
-        the ''deleted'' path  for a DELETE change).
-        The `base_path` and `base_rev` are the source path and rev for the
-        action (`None` and `-1` in the case of an ADD change).
         """
         raise NotImplementedError
 

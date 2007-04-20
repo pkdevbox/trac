@@ -23,16 +23,10 @@ except ImportError:
 import time
 import urllib
 import re
-from StringIO import StringIO
-
-from genshi.core import Markup
 
 from trac.config import BoolOption
-from trac.context import IContextProvider, Context
 from trac.core import *
-from trac.util import reversed, pairwise
 from trac.util.html import html
-from trac.wiki.parser import WikiParser
 
 
 class IWikiChangeListener(Interface):
@@ -54,7 +48,7 @@ class IWikiChangeListener(Interface):
 
 
 class IWikiPageManipulator(Interface):
-    """Extension point interface for components that need to do specific
+    """Extension point interface for components that need to to specific
     pre and post processing of wiki page changes.
     
     Unlike change listeners, a manipulator can reject changes being committed
@@ -84,13 +78,7 @@ class IWikiMacroProvider(Interface):
         """
 
     def render_macro(req, name, content):
-        """Return the HTML output of the macro (deprecated)"""
-
-    def expand_macro(formatter, name, content):
-        """Called by the formatter when rendering the parsed wiki text.
-
-        (since 0.11)
-        """
+        """Return the HTML output of the macro."""
 
 
 class IWikiSyntaxProvider(Interface):
@@ -112,74 +100,12 @@ class IWikiSyntaxProvider(Interface):
         return some HTML fragment.
         The `label` is already HTML escaped, whereas the `target` is not.
         """
-
-
-def parse_args(args):
-    """Utility for parsing macro "content" and splitting them into arguments.
-
-    The content is split along commas, unless they are escaped with a
-    backquote (like this: \,).
-    Named arguments a la Python are supported, and keys must be  valid python
-    identifiers immediately followed by the "=" sign.
-
-    >>> parse_args('')
-    ([], {})
-    >>> parse_args('Some text')
-    (['Some text'], {})
-    >>> parse_args('Some text, mode= 3, some other arg\, with a comma.')
-    (['Some text', ' some other arg, with a comma.'], {'mode': ' 3'})
-    
-    """    
-    largs, kwargs = [], {}
-    if args:
-        for arg in re.split(r'(?<!\\),', args):
-            arg = arg.replace(r'\,', ',')
-            m = re.match(r'\s*[a-zA-Z_]\w+=', arg)
-            if m:
-                kwargs[arg[:m.end()-1].lstrip()] = arg[m.end():]
-            else:
-                largs.append(arg)
-    return largs, kwargs
-
-
-class WikiContext(Context):
-    """Wiki Context."""
-
-    realm = 'wiki'
-
-    # methods reimplemented from Context
-
-    def set_resource(self, resource):
-        if resource:
-            self.version = resource.version
-
-    def get_resource(self):
-        from trac.wiki.model import WikiPage
-        return WikiPage(self.env, self.id, self.version, self.db)
-
-    def resource_href(self, path=None, **kwargs):
-        """
-        >>> from trac.test import EnvironmentStub
-        >>> c = Context(EnvironmentStub(), None)
-
-        >>> c('wiki', 'Main', version=3).resource_href()
-        '/trac.cgi/wiki/Main?version=3'
-
-        >>> c('wiki', 'Main', version=3).resource_href(action='diff')
-        '/trac.cgi/wiki/Main?action=diff&version=3'
-        """
-        if self.version is not None and 'version' not in kwargs:
-            kwargs['version'] = self.version
-        return Context.resource_href(self, path, **kwargs)
-
-    def name(self):
-        return WikiSystem(self.env).format_page_name(self.id)
-
+ 
 
 class WikiSystem(Component):
     """Represents the wiki system."""
 
-    implements(IWikiChangeListener, IWikiSyntaxProvider, IContextProvider)
+    implements(IWikiChangeListener, IWikiSyntaxProvider)
 
     change_listeners = ExtensionPoint(IWikiChangeListener)
     macro_providers = ExtensionPoint(IWikiMacroProvider)
@@ -207,6 +133,10 @@ class WikiSystem(Component):
         self._index = None
         self._last_index_update = 0
         self._index_lock = threading.RLock()
+        self._compiled_rules = None
+        self._link_resolvers = None
+        self._helper_patterns = None
+        self._external_handlers = None
 
     def _update_index(self):
         self._index_lock.acquire()
@@ -233,8 +163,6 @@ class WikiSystem(Component):
         prefix are included.
         """
         self._update_index()
-        # Note: use of keys() is intentional since iterkeys() is prone to
-        # errors with concurrent modification
         for page in self._index.keys():
             if not prefix or page.startswith(prefix):
                 yield page
@@ -243,6 +171,52 @@ class WikiSystem(Component):
         """Whether a page with the specified name exists."""
         self._update_index()
         return self._index.has_key(pagename.rstrip('/'))
+
+    def _get_rules(self):
+        self._prepare_rules()
+        return self._compiled_rules
+    rules = property(_get_rules)
+
+    def _get_helper_patterns(self):
+        self._prepare_rules()
+        return self._helper_patterns
+    helper_patterns = property(_get_helper_patterns)
+
+    def _get_external_handlers(self):
+        self._prepare_rules()
+        return self._external_handlers
+    external_handlers = property(_get_external_handlers)
+
+    def _prepare_rules(self):
+        from trac.wiki.formatter import Formatter
+        if not self._compiled_rules:
+            helpers = []
+            handlers = {}
+            syntax = Formatter._pre_rules[:]
+            i = 0
+            for resolver in self.syntax_providers:
+                for regexp, handler in resolver.get_wiki_syntax():
+                    handlers['i' + str(i)] = handler
+                    syntax.append('(?P<i%d>%s)' % (i, regexp))
+                    i += 1
+            syntax += Formatter._post_rules[:]
+            helper_re = re.compile(r'\?P<([a-z\d_]+)>')
+            for rule in syntax:
+                helpers += helper_re.findall(rule)[1:]
+            rules = re.compile('(?:' + '|'.join(syntax) + ')')
+            self._external_handlers = handlers
+            self._helper_patterns = helpers
+            self._compiled_rules = rules
+
+    def _get_link_resolvers(self):
+        if not self._link_resolvers:
+            resolvers = {}
+            for resolver in self.syntax_providers:
+                for namespace, handler in resolver.get_link_resolvers():
+                    resolvers[namespace] = handler
+            self._link_resolvers = resolvers
+        return self._link_resolvers
+    link_resolvers = property(_get_link_resolvers)
 
     # IWikiChangeListener methods
 
@@ -268,44 +242,21 @@ class WikiSystem(Component):
     # See http://www.w3.org/TR/REC-xml/#id,
     # here adapted to exclude terminal "." and ":" characters
 
-    PAGE_SPLIT_RE = re.compile(r"([a-z])([A-Z][a-z])")
-    
-    def format_page_name(self, page, split=False):
-        if split or self.split_page_names:
-            return self.PAGE_SPLIT_RE.sub(r"\1 \2", page)
+    def format_page_name(self, page):
+        if self.split_page_names:
+            return re.sub(r"([a-z])([A-Z][a-z])", r"\1 \2", page)
         return page
-
+    
     def get_wiki_syntax(self):
         from trac.wiki.formatter import Formatter
-        lower = r'(?<![A-Z0-9_])' # No Upper case when looking behind
-        upper = r'(?<![a-z0-9_])' # No Lower case when looking behind
         wiki_page_name = (
-            r"\w%s(?:\w%s)+(?:\w%s(?:\w%s)*[\w/]%s)+" % # wiki words
-            (upper, lower, upper, lower, lower) +
-            r"(?:@\d+)?" # optional version
+            r"[A-Z][a-z]+(?:[A-Z][a-z]*[a-z/])+" # wiki words
             r"(?:#%s)?" % self.XML_NAME + # optional fragment id
             r"(?=:(?:\Z|\s)|[^:a-zA-Z]|\s|\Z)" # what should follow it
             )
-
-        def check_unicode_camelcase(pagename):
-            if not pagename[0].isupper():
-                return False
-            pagename = pagename.split('@', 1)[0].split('#', 1)[0]
-            if not pagename[-1].islower():
-                return False
-            humps = 0
-            for a, b in pairwise(pagename):
-                if a.isupper():
-                    if b.islower():
-                        humps += 1
-                    else:
-                        return False
-            return humps > 1
         
         # Regular WikiPageNames
         def wikipagename_link(formatter, match, fullmatch):
-            if not check_unicode_camelcase(match):
-                return match
             return self._format_link(formatter, 'wiki', match,
                                      self.format_page_name(match),
                                      self.ignore_missing_pages)
@@ -316,18 +267,16 @@ class WikiSystem(Component):
         # [WikiPageNames with label]
         def wikipagename_with_label_link(formatter, match, fullmatch):
             page, label = match[1:-1].split(' ', 1)
-            if not check_unicode_camelcase(page):
-                return label
             return self._format_link(formatter, 'wiki', page, label.strip(),
                                      self.ignore_missing_pages)
         yield (r"!?\[%s\s+(?:%s|[^\]]+)\]" % (wiki_page_name,
-                                              WikiParser.QUOTED_STRING),
+                                              Formatter.QUOTED_STRING),
                wikipagename_with_label_link)
 
         # MoinMoin's ["internal free link"] 
         def internal_free_link(fmt, m, fullmatch): 
             return self._format_link(fmt, 'wiki', m[2:-2], m[2:-2], False) 
-        yield (r"!?\[(?:%s)\]" % WikiParser.QUOTED_STRING, internal_free_link) 
+        yield (r"!?\[(?:%s)\]" % Formatter.QUOTED_STRING, internal_free_link) 
 
     def get_link_resolvers(self):
         def link_resolver(formatter, ns, target, label):
@@ -336,21 +285,11 @@ class WikiSystem(Component):
 
     def _format_link(self, formatter, ns, page, label, ignore_missing):
         page, query, fragment = formatter.split_link(page)
-        version = None
-        if '@' in page:
-            page, version = page.split('@', 1)
-        if version and query:
-            query = '&' + query[1:]
-        href = formatter.href.wiki(page, version=version) + query + fragment
-        if not self.has_page(page): # TODO: check for the version?
+        href = formatter.href.wiki(page) + fragment
+        if not self.has_page(page):
             if ignore_missing:
                 return label
             return html.A(label+'?', href=href, class_='missing wiki',
                           rel='nofollow')
         else:
-            return html.A(label, href=href, class_='wiki', version=version)
-
-    # IContextProvider methods
-
-    def get_context_classes(self):
-        yield WikiContext
+            return html.A(label, href=href, class_='wiki')
