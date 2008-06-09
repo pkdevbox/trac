@@ -84,8 +84,7 @@ class ComponentAdminPanel(TicketAdminPanel):
                         comp.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Component %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Component %s already exists.') % name)
 
                 # Remove components
                 elif req.args.get('remove'):
@@ -181,8 +180,7 @@ class MilestoneAdminPanel(TicketAdminPanel):
                         mil.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Milestone %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Milestone %s already exists.') % name)
 
                 # Remove milestone
                 elif req.args.get('remove'):
@@ -262,8 +260,7 @@ class VersionAdminPanel(TicketAdminPanel):
                         ver.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Version %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Version %s already exists.') % name)
                          
                 # Remove versions
                 elif req.args.get('remove'):
@@ -342,8 +339,7 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                         enum.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('%(type)s %(name)s already exists',
-                                          type=self._type.title(), name=name))
+                        raise TracError(_('%s %s already exists') % (self._type.title(), name))
                          
                 # Remove enums
                 elif req.args.get('remove'):
