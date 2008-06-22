@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin
 # All rights reserved.
 #
@@ -31,6 +31,6 @@ class TextileRenderer(Component):
             return 8
         return 0
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         import textile
         return textile.textile(content.encode('utf-8'), encoding='utf-8')

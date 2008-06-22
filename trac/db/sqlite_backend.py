@@ -21,8 +21,6 @@ import weakref
 from trac.core import *
 from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper
-from trac.util import get_pkginfo
-from trac.util.translation import _
 
 _like_escape_re = re.compile(r'([/_%])')
 
@@ -43,7 +41,6 @@ except ImportError:
 if have_pysqlite == 2:
     _ver = sqlite.sqlite_version_info
     sqlite_version = _ver[0] * 10000 + _ver[1] * 100 + int(_ver[2])
-    sqlite_version_string = '%d.%d.%d' % (_ver[0], _ver[1], int(_ver[2]))
 
     class PyFormatCursor(sqlite.Cursor):
         def _rollback_on_error(self, function, *args, **kwargs):
@@ -66,7 +63,6 @@ if have_pysqlite == 2:
 elif have_pysqlite == 1:
     _ver = sqlite._sqlite.sqlite_version_info()
     sqlite_version = _ver[0] * 10000 + _ver[1] * 100 + _ver[2]
-    sqlite_version_string = '%d.%d.%d' % _ver
 
     class SQLiteUnicodeCursor(sqlite.Cursor):
         def _convert_row(self, row):
@@ -102,8 +98,7 @@ def _to_sql(table):
     sql.append(',\n'.join(coldefs) + '\n);')
     yield '\n'.join(sql)
     for index in table.indices:
-        unique = index.unique and 'UNIQUE' or ''
-        yield "CREATE %s INDEX %s_%s_idx ON %s (%s);" % (unique, table.name,
+        yield "CREATE INDEX %s_%s_idx ON %s (%s);" % (table.name,
               '_'.join(index.columns), table.name, ','.join(index.columns))
 
 
@@ -111,27 +106,17 @@ class SQLiteConnector(Component):
     """SQLite database support."""
     implements(IDatabaseConnector)
 
-    def __init__(self):
-        self._version = None
-
     def get_supported_schemes(self):
         return [('sqlite', 1)]
 
     def get_connection(self, path, params={}):
-        if not self._version:
-            global sqlite_version_string
-            self._version = get_pkginfo(sqlite).get(
-                'version', '%d.%d.%s' % sqlite.version_info)
-            self.env.systeminfo.extend([('SQLite', sqlite_version_string),
-                                        ('pysqlite', self._version)])
         return SQLiteConnection(path, params)
 
     def init_db(cls, path, params={}):
         if path != ':memory:':
             # make the directory to hold the database
             if os.path.exists(path):
-                raise TracError(_('Database already exists at %(path)s',
-                                  path=path))
+                raise TracError, 'Database already exists at %s' % path
             os.makedirs(os.path.split(path)[0])
         if isinstance(path, unicode): # needed with 2.4.0
             path = path.encode('utf-8')
@@ -158,16 +143,16 @@ class SQLiteConnection(ConnectionWrapper):
         self.cnx = None
         if path != ':memory:':
             if not os.access(path, os.F_OK):
-                raise TracError(_('Database "%(path)s" not found.', path=path))
+                raise TracError, 'Database "%s" not found.' % path
 
             dbdir = os.path.dirname(path)
             if not os.access(path, os.R_OK + os.W_OK) or \
                    not os.access(dbdir, os.R_OK + os.W_OK):
                 from getpass import getuser
-                raise TracError(_('The user %(user)s requires read _and_ write '
-                                  'permission to the database file %(path)s '
-                                  'and the directory it is located in.',
-                                  user=getuser(), path=path))
+                raise TracError('The user %s requires read _and_ write ' \
+                                'permission to the database file %s and the ' \
+                                'directory it is located in.' \
+                                % (getuser(), path))
 
         if have_pysqlite == 2:
             self._active_cursors = weakref.WeakKeyDictionary()

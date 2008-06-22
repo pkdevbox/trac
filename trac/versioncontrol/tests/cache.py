@@ -14,11 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
-
 from trac.log import logger_factory
 from trac.test import Mock, InMemoryDatabase
-from trac.util.datefmt import to_timestamp, utc
 from trac.versioncontrol import Repository, Changeset, Node, NoSuchChangeset
 from trac.versioncontrol.cache import CachedRepository
 
@@ -36,10 +33,9 @@ class CacheTestCase(unittest.TestCase):
                        ('youngest_rev', ''))
 
     def test_initial_sync_with_empty_repos(self):
-        t = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
         def no_changeset(rev):
             raise NoSuchChangeset(rev)
-            
+
         repos = Mock(Repository, 'test-repos', None, self.log,
                      get_changeset=no_changeset,
                      get_oldest_rev=lambda: 1,
@@ -56,13 +52,11 @@ class CacheTestCase(unittest.TestCase):
         self.assertEquals(0, cursor.fetchone()[0])
 
     def test_initial_sync(self):
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        t2 = datetime(2002, 1, 1, 1, 1, 1, 0, utc)
         changes = [('trunk', Node.DIRECTORY, Changeset.ADD, None, None),
                    ('trunk/README', Node.FILE, Changeset.ADD, None, None)]
-        changesets = [Mock(Changeset, 0, '', '', t1,
+        changesets = [Mock(Changeset, 0, '', '', 41000,
                            get_changes=lambda: []),
-                      Mock(Changeset, 1, 'Import', 'joe', t2,
+                      Mock(Changeset, 1, 'Import', 'joe', 42000,
                            get_changes=lambda: iter(changes))]
         repos = Mock(Repository, 'test-repos', None, self.log,
                      get_changeset=lambda x: changesets[int(x)],
@@ -75,8 +69,8 @@ class CacheTestCase(unittest.TestCase):
 
         cursor = self.db.cursor()
         cursor.execute("SELECT rev,time,author,message FROM revision")
-        self.assertEquals(('0', to_timestamp(t1), '', ''), cursor.fetchone())
-        self.assertEquals(('1', to_timestamp(t2), 'joe', 'Import'), cursor.fetchone())
+        self.assertEquals(('0', 41000, '', ''), cursor.fetchone())
+        self.assertEquals(('1', 42000, 'joe', 'Import'), cursor.fetchone())
         self.assertEquals(None, cursor.fetchone())
         cursor.execute("SELECT rev,path,node_type,change_type,base_path,"
                        "base_rev FROM node_change")
@@ -87,14 +81,11 @@ class CacheTestCase(unittest.TestCase):
         self.assertEquals(None, cursor.fetchone())
 
     def test_update_sync(self):
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        t2 = datetime(2002, 1, 1, 1, 1, 1, 0, utc)
-        t3 = datetime(2003, 1, 1, 1, 1, 1, 0, utc)
         cursor = self.db.cursor()
         cursor.execute("INSERT INTO revision (rev,time,author,message) "
-                       "VALUES (0,%s,'','')", (to_timestamp(t1),))
+                       "VALUES (0,41000,'','')")
         cursor.execute("INSERT INTO revision (rev,time,author,message) "
-                       "VALUES (1,%s,'joe','Import')", (to_timestamp(t2),))
+                       "VALUES (1,42000,'joe','Import')")
         cursor.executemany("INSERT INTO node_change (rev,path,node_type,"
                            "change_type,base_path,base_rev) "
                            "VALUES ('1',%s,%s,%s,%s,%s)",
@@ -103,7 +94,7 @@ class CacheTestCase(unittest.TestCase):
         cursor.execute("UPDATE system SET value='1' WHERE name='youngest_rev'")
 
         changes = [('trunk/README', Node.FILE, Changeset.EDIT, 'trunk/README', 1)]
-        changeset = Mock(Changeset, 2, 'Update', 'joe', t3,
+        changeset = Mock(Changeset, 2, 'Update', 'joe', 42042,
                          get_changes=lambda: iter(changes))
         repos = Mock(Repository, 'test-repos', None, self.log,
                      get_changeset=lambda x: changeset,
@@ -116,7 +107,7 @@ class CacheTestCase(unittest.TestCase):
 
         cursor = self.db.cursor()
         cursor.execute("SELECT time,author,message FROM revision WHERE rev='2'")
-        self.assertEquals((to_timestamp(t3), 'joe', 'Update'), cursor.fetchone())
+        self.assertEquals((42042, 'joe', 'Update'), cursor.fetchone())
         self.assertEquals(None, cursor.fetchone())
         cursor.execute("SELECT path,node_type,change_type,base_path,base_rev "
                        "FROM node_change WHERE rev='2'")
@@ -125,13 +116,11 @@ class CacheTestCase(unittest.TestCase):
         self.assertEquals(None, cursor.fetchone())
 
     def test_get_changes(self):
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        t2 = datetime(2002, 1, 1, 1, 1, 1, 0, utc)
         cursor = self.db.cursor()
         cursor.execute("INSERT INTO revision (rev,time,author,message) "
-                       "VALUES (0,%s,'','')", (to_timestamp(t1),))
+                       "VALUES (0,41000,'','')")
         cursor.execute("INSERT INTO revision (rev,time,author,message) "
-                       "VALUES (1,%s,'joe','Import')", (to_timestamp(t2),))
+                       "VALUES (1,42000,'joe','Import')")
         cursor.executemany("INSERT INTO node_change (rev,path,node_type,"
                            "change_type,base_path,base_rev) "
                            "VALUES ('1',%s,%s,%s,%s,%s)",
@@ -150,7 +139,7 @@ class CacheTestCase(unittest.TestCase):
         changeset = cache.get_changeset(1)
         self.assertEqual('joe', changeset.author)
         self.assertEqual('Import', changeset.message)
-        self.assertEqual(t2, changeset.date)
+        self.assertEqual(42000, changeset.date)
         changes = changeset.get_changes()
         self.assertEqual(('trunk', Node.DIRECTORY, Changeset.ADD, None, None),
                          changes.next())

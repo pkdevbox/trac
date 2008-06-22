@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
+# Copyright (C) 2005-2006 Edgewall Software
 # Copyright (C) 2005-2006 Emmanuel Blot <emmanuel.blot@free.fr>
 # All rights reserved.
 #
@@ -17,22 +17,19 @@
 #
 
 from trac.core import TracError
-from trac.util.datefmt import utc
 from trac.ticket.model import Ticket
 from trac.ticket.notification import TicketNotifyEmail
-from trac.test import EnvironmentStub, Mock, MockPerm
+from trac.test import EnvironmentStub, Mock
 from trac.tests.notification import SMTPThreadedServer, parse_smtp_message, \
                                     smtp_address
                                     
-import base64
-from datetime import datetime
-import os
-import quopri
-import re
-import time
 import unittest
+import re
+import base64
+import quopri
+import time
 
-SMTP_TEST_PORT = 7000 + os.getpid() % 1000
+SMTP_TEST_PORT = 8225
 MAXBODYWIDTH = 76
 notifysuite = None
 
@@ -42,7 +39,7 @@ class NotificationTestCase(unittest.TestCase):
     
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
-        self.env.config.set('project','name', 'TracTest')
+        self.env.config.set('project',      'name', 'TracTest')
         self.env.config.set('notification', 'smtp_enabled', 'true')
         self.env.config.set('notification', 'always_notify_owner', 'true')
         self.env.config.set('notification', 'always_notify_reporter', 'true')
@@ -51,8 +48,7 @@ class NotificationTestCase(unittest.TestCase):
         self.env.config.set('notification', 'use_public_cc', 'true')
         self.env.config.set('notification', 'smtp_port', str(SMTP_TEST_PORT))
         self.env.config.set('notification', 'smtp_server','localhost')
-        self.req = Mock(href=self.env.href, abs_href=self.env.abs_href, tz=utc,
-                        perm=MockPerm())
+        self.req = Mock(href=self.env.href, abs_href=self.env.abs_href)
 
     def tearDown(self):
         """Signal the notification test suite that a test is over"""
@@ -137,6 +133,7 @@ class NotificationTestCase(unittest.TestCase):
         self.failIf('Subject' not in headers)
         self.failIf('Message-ID' not in headers)
         self.failIf('From' not in headers)
+        self.failIf('Sender' not in headers)
 
     def test_date(self):
         """Date format compliance (RFC822) 
@@ -321,56 +318,6 @@ class NotificationTestCase(unittest.TestCase):
         # 'To' list should have been resolved to the real email address
         self.failIf('user-joe@example.com' not in tolist)
         self.failIf('joeuser' in tolist)
-        
-    def test_ignore_domains(self):
-        """Non-SMTP domain exclusion"""
-        self.env.config.set('notification', 'ignore_domains',
-                            'example.com, example.org')
-        self.env.known_users = \
-            [('kerberos@example.com', 'No Email', ''), 
-             ('kerberos@example.org', 'With Email', 'kerb@example.net')]
-        ticket = Ticket(self.env)
-        ticket['reporter'] = 'kerberos@example.com'
-        ticket['owner'] = 'kerberos@example.org'
-        ticket['summary'] = 'This is a summary'
-        ticket.insert()
-        tn = TicketNotifyEmail(self.env)
-        tn.notify(ticket, newticket=True)
-        message = notifysuite.smtpd.get_message()
-        (headers, body) = parse_smtp_message(message)
-        # Msg should always have a 'To' field
-        self.failIf('To' not in headers)
-        tolist = [addr.strip() for addr in headers['To'].split(',')]
-        # 'To' list should not contain addresses with non-SMTP domains
-        self.failIf('kerberos@example.com' in tolist)
-        self.failIf('kerberos@example.org' in tolist)
-        # 'To' list should have been resolved to the actual email address
-        self.failIf('kerb@example.net' not in tolist)
-        self.failIf(len(tolist) != 1)
-        
-    def test_admit_domains(self):
-        """SMTP domain inclusion"""
-        self.env.config.set('notification', 'admit_domains',
-                            'localdomain, mail.custom')
-        ticket = Ticket(self.env)
-        ticket['reporter'] = 'joeuser@example.com'
-        ticket['summary'] = 'This is a summary'
-        ticket['cc'] = 'joe.user@localdomain, joe.user@mail.nocustom, ' \
-                       'joe.user@mail.custom'
-        ticket.insert()
-        tn = TicketNotifyEmail(self.env)
-        tn.notify(ticket, newticket=True)
-        message = notifysuite.smtpd.get_message()
-        (headers, body) = parse_smtp_message(message)
-        # Msg should always have a 'To' field
-        self.failIf('Cc' not in headers)
-        cclist = [addr.strip() for addr in headers['Cc'].split(',')]
-        # 'Cc' list should contain addresses with SMTP included domains
-        self.failIf('joe.user@localdomain' not in cclist)
-        self.failIf('joe.user@mail.custom' not in cclist)
-        # 'Cc' list should not contain non-FQDN domains
-        self.failIf('joe.user@mail.nocustom' in cclist)
-        self.failIf(len(cclist) != 2+2)
 
     def test_multiline_header(self):
         """Encoded headers split into multiple lines"""
@@ -447,7 +394,7 @@ class NotificationTestCase(unittest.TestCase):
             ticket['cc'] = 'joe.bar@example.com'
             ticket.insert()
             ticket['component'] = 'dummy'
-            now = datetime.now(utc)
+            now = time.time()
             ticket.save_changes('joe.bar2@example.com', 'This is a change',
                                 when=now)
             tn = TicketNotifyEmail(self.env)
@@ -605,7 +552,7 @@ class NotificationTestCase(unittest.TestCase):
                 # note project title / URL are not validated yet
 
         # ticket properties which are not expected in the banner
-        xlist = ['summary', 'description', 'link', 'comment', 'new']
+        xlist = ['summary', 'description', 'link', 'comment']
         # check banner content (field exists, msg value matches ticket value)
         for p in [prop for prop in ticket.values.keys() if prop not in xlist]:
             self.failIf(not props.has_key(p))

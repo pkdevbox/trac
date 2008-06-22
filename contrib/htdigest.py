@@ -22,37 +22,23 @@ import sys
 from optparse import OptionParser
 from getpass import getpass
 
-def ask_pass():
+def get_digest(userprefix):
     pass1 = getpass('New password: ')
     pass2 = getpass('Re-type new password: ')
     if pass1 != pass2:
         print >>sys.stderr, "They don't match, sorry"
         sys.exit(1)
-    return pass1
+    return userprefix + md5.new(userprefix + pass1).hexdigest()
 
-def get_digest(userprefix, password=None):
-    if password == None:
-        password = ask_pass()
-    return make_digest(userprefix, password)
-
-def make_digest(userprefix, password):
-    return userprefix + md5.new(userprefix + password).hexdigest()
-
-usage = "%prog [-c] [-b] passwordfile realm username"
+usage = "%prog [-c] passwordfile realm username"
 parser = OptionParser(usage=usage)
 parser.add_option('-c', action='store_true', dest='create', default=False,
                   help='Create a new file')
-parser.add_option('-b', action='store_true', dest='batch', default=False,
-                  help='Batch mode, password on the commandline.')
 
 opts, args = parser.parse_args()
 
 try:
-    if opts.batch:
-        filename, realm, username, password = args
-    else:
-        filename, realm, username = args
-        password = None
+    filename, realm, username = args
 except ValueError:
     parser.error('Wrong number of arguments')
 
@@ -68,7 +54,7 @@ if opts.create:
         else:
             raise
     try:
-        print >>f, get_digest(prefix, password)
+        print >>f, get_digest(prefix)
     finally:
         f.close()
 else:
@@ -77,14 +63,14 @@ else:
         for line in fileinput.input(filename, inplace=True):
             if line.startswith(prefix):
                 if not matched:
-                    print get_digest(prefix, password)
+                    print get_digest(prefix)
                 matched = True
             else:
                 print line,
         if not matched:
             f = open(filename, 'a')
             try:
-                print >>f, get_digest(prefix, password)
+                print >>f, get_digest(prefix)
             finally:
                 f.close()
     except EnvironmentError, e:

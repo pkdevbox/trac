@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
-# Copyright (C) 2005-2007 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2005 Edgewall Software
+# Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2005 Matthew Good <trac@matt-good.net>
 # All rights reserved.
 #
@@ -18,48 +18,62 @@
 
 import cgi
 import dircache
-import gc
 import locale
 import os
-import pkg_resources
 import sys
-try:
-    import threading
-except ImportError:
-    import dummy_threading as threading
+import urllib
 
-try:
-    from babel import Locale
-except ImportError:
-    Locale = None
-from genshi import Markup
-from genshi.output import DocType
-from genshi.template import TemplateLoader
-
-from trac import __version__ as TRAC_VERSION
-from trac.config import ExtensionOption, Option, OrderedExtensionsOption
+from trac.config import ExtensionOption, OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
-from trac.perm import PermissionCache, PermissionError, PermissionSystem
-from trac.resource import ResourceNotFound
-from trac.util import get_lines_from_file, get_last_traceback, hex_entropy, \
-                      arity, translation
-from trac.util.compat import partial, reversed
-from trac.util.datefmt import format_datetime, http_date, localtz, timezone
-from trac.util.text import shorten_line, to_unicode
+from trac.perm import PermissionCache, NoPermissionCache, PermissionError
+from trac.util import reversed, get_last_traceback, hex_entropy
+from trac.util.datefmt import format_datetime, http_date
+from trac.util.html import Markup
+from trac.util.text import to_unicode
 from trac.web.api import *
 from trac.web.chrome import Chrome
 from trac.web.clearsilver import HDFWrapper
 from trac.web.href import Href
 from trac.web.session import Session
 
+# Environment cache for multithreaded front-ends:
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
+
+env_cache = {}
+env_cache_lock = threading.Lock()
+
+def _open_environment(env_path, run_once=False):
+    if run_once:
+        return open_environment(env_path)
+
+    global env_cache, env_cache_lock
+    env = None
+    env_cache_lock.acquire()
+    try:
+        if not env_path in env_cache:
+            env_cache[env_path] = open_environment(env_path)
+        env = env_cache[env_path]
+    finally:
+        env_cache_lock.release()
+
+    # Re-parse the configuration file if it changed since the last the time it
+    # was parsed
+    env.config.parse_if_needed()
+
+    return env
+
 def populate_hdf(hdf, env, req=None):
     """Populate the HDF data set with various information, such as common URLs,
     project information and request-related information.
+    FIXME: do we really have req==None at times?
     """
-    # FIXME: do we really have req==None at times?
+    from trac import __version__
     hdf['trac'] = {
-        'version': TRAC_VERSION,
+        'version': __version__,
         'time': format_datetime(),
         'time.gmt': http_date()
     }
@@ -98,7 +112,7 @@ def populate_hdf(hdf, env, req=None):
 
         if req.perm:
             for action in req.perm.permissions():
-                hdf['trac.acl.' + action] = True
+                req.hdf['trac.acl.' + action] = True
 
         for arg in [k for k in req.args.keys() if k]:
             if isinstance(req.args[arg], (list, tuple)):
@@ -123,10 +137,7 @@ class RequestDispatcher(Component):
         """Name of the component that handles requests to the base URL.
         
         Options include `TimelineModule`, `RoadmapModule`, `BrowserModule`,
-        `QueryModule`, `ReportModule` and `TicketModule` (''since 0.9'').""")
-
-    default_timezone = Option('trac', 'default_timezone', '',
-        """The default timezone to use""")
+        `QueryModule`, `ReportModule` and `NewticketModule` (''since 0.9'').""")
 
     # Public API
 
@@ -145,147 +156,118 @@ class RequestDispatcher(Component):
         In addition, this method initializes the HDF data set and adds the web
         site chrome.
         """
-        self.log.debug('Dispatching %r', req)
-        chrome = Chrome(self.env)
+        # FIXME: For backwards compatibility, should be removed in 0.11
+        self.env.href = req.href
+        # FIXME in 0.11: self.env.abs_href = Href(self.env.base_url)
+        self.env.abs_href = req.abs_href
 
-        # Setup request callbacks for lazily-evaluated properties
-        req.callbacks.update({
-            'authname': self.authenticate,
-            'chrome': chrome.prepare_request,
-            'hdf': self._get_hdf,
-            'perm': self._get_perm,
-            'session': self._get_session,
-            'locale': self._get_locale,
-            'tz': self._get_timezone,
-            'form_token': self._get_form_token
-        })
+        # Select the component that should handle the request
+        chosen_handler = None
+        early_error = None
+        req.authname = 'anonymous'
+        req.perm = NoPermissionCache()
+        try:
+            if not req.path_info or req.path_info == '/':
+                chosen_handler = self.default_handler
+            else:
+                for handler in self.handlers:
+                    if handler.match_request(req):
+                        chosen_handler = handler
+                        break
 
+            # Attach user information to the request early, so that
+            # the IRequestFilter can see it while preprocessing
+            if not getattr(chosen_handler, 'anonymous_request', False):
+                try:
+                    req.authname = self.authenticate(req)
+                    req.perm = PermissionCache(self.env, req.authname)
+                    req.session = Session(self.env, req)
+                    req.form_token = self._get_form_token(req)
+                except:
+                    req.authname = 'anonymous'
+                    req.perm = NoPermissionCache()
+                    early_error = sys.exc_info()
+
+            chosen_handler = self._pre_process_request(req, chosen_handler)
+        except:
+            early_error = sys.exc_info()
+            
+        if not chosen_handler and not early_error:
+            early_error = (HTTPNotFound('No handler matched request to %s',
+                                        req.path_info),
+                           None, None)
+
+        # Prepare HDF for the clearsilver template
+        try:
+            use_template = getattr(chosen_handler, 'use_template', True)
+            req.hdf = None
+            if use_template:
+                chrome = Chrome(self.env)
+                req.hdf = HDFWrapper(loadpaths=chrome.get_all_templates_dirs())
+                populate_hdf(req.hdf, self.env, req)
+                chrome.populate_hdf(req, chosen_handler)
+        except:
+            req.hdf = None # revert to sending plaintext error
+            if not early_error:
+                raise
+
+        if early_error:
+            try:
+                self._post_process_request(req)
+            except Exception, e:
+                self.log.exception(e)
+            raise early_error[0], early_error[1], early_error[2]
+
+        # Process the request and render the template
         try:
             try:
+                # Protect against CSRF attacks: we validate the form token for
+                # all POST requests with a content-type corresponding to form
+                # submissions
+                if req.method == 'POST':
+                    ctype = req.get_header('Content-Type')
+                    if ctype:
+                        ctype, options = cgi.parse_header(ctype)
+                    if ctype in ('application/x-www-form-urlencoded',
+                                 'multipart/form-data') and \
+                            req.args.get('__FORM_TOKEN') != req.form_token:
+                        raise HTTPBadRequest('Missing or invalid form token. '
+                                             'Do you have cookies enabled?')
+
+                resp = chosen_handler.process_request(req)
+                if resp:
+                    template, content_type = self._post_process_request(req,
+                                                                        *resp)
+                    # Give the session a chance to persist changes
+                    if req.session:
+                        req.session.save()
+                    req.display(template, content_type or 'text/html')
+                else:
+                    self._post_process_request(req)
+            except RequestDone:
+                raise
+            except:
+                err = sys.exc_info()
                 try:
-                    translation.activate(req.locale)
+                    self._post_process_request(req)
+                except Exception, e:
+                    self.log.exception(e)
+                raise err[0], err[1], err[2]
+        except PermissionError, e:
+            raise HTTPForbidden(to_unicode(e))
+        except TracError, e:
+            raise HTTPInternalError(e.message)
 
-                    # Select the component that should handle the request
-                    chosen_handler = None
-                    try:
-                        for handler in self.handlers:
-                            if handler.match_request(req):
-                                chosen_handler = handler
-                                break
-                        if not chosen_handler:
-                            if not req.path_info or req.path_info == '/':
-                                chosen_handler = self.default_handler
-                        # pre-process any incoming request, whether a handler
-                        # was found or not
-                        chosen_handler = self._pre_process_request(req,
-                                                                chosen_handler)
-                    except TracError, e:
-                        raise HTTPInternalError(e)
-                    if not chosen_handler:
-                        raise HTTPNotFound('No handler matched request to %s',
-                                           req.path_info)
-
-                    req.callbacks['chrome'] = partial(chrome.prepare_request,
-                                                      handler=chosen_handler)
-
-                    # Protect against CSRF attacks: we validate the form token
-                    # for all POST requests with a content-type corresponding
-                    # to form submissions
-                    if req.method == 'POST':
-                        ctype = req.get_header('Content-Type')
-                        if ctype:
-                            ctype, options = cgi.parse_header(ctype)
-                        if ctype in ('application/x-www-form-urlencoded',
-                                     'multipart/form-data') and \
-                                req.args.get('__FORM_TOKEN') != req.form_token:
-                            raise HTTPBadRequest('Missing or invalid form '
-                                                 'token. Do you have cookies '
-                                                 'enabled?')
-
-                    # Process the request and render the template
-                    resp = chosen_handler.process_request(req)
-                    if resp:
-                        if len(resp) == 2: # Clearsilver
-                            chrome.populate_hdf(req)
-                            template, content_type = \
-                                      self._post_process_request(req, *resp)
-                            # Give the session a chance to persist changes
-                            if req.session:
-                                req.session.save()
-                            req.display(template, content_type or 'text/html')
-                        else: # Genshi
-                            template, data, content_type = \
-                                      self._post_process_request(req, *resp)
-                            if 'hdfdump' in req.args:
-                                req.perm.require('TRAC_ADMIN')
-                                # debugging helper - no need to render first
-                                from pprint import pprint
-                                out = StringIO()
-                                pprint(data, out)
-                                req.send(out.getvalue(), 'text/plain')
-                            else:
-                                output = chrome.render_template(req, template,
-                                                                data,
-                                                                content_type)
-                                # Give the session a chance to persist changes
-                                if req.session:
-                                    req.session.save()
-
-                                req.send(output, content_type or 'text/html')
-                    else:
-                        self._post_process_request(req)
-                except RequestDone:
-                    raise
-                except:
-                    # post-process the request in case of errors
-                    err = sys.exc_info()
-                    try:
-                        self._post_process_request(req)
-                    except RequestDone:
-                        raise
-                    except Exception, e:
-                        self.log.exception(e)
-                    raise err[0], err[1], err[2]
-            except PermissionError, e:
-                raise HTTPForbidden(to_unicode(e))
-            except ResourceNotFound, e:
-                raise HTTPNotFound(e)
-            except TracError, e:
-                raise HTTPInternalError(e)
-
-        finally:
-            translation.deactivate()
-
-    # Internal methods
-
-    def _get_hdf(self, req):
-        hdf = HDFWrapper(loadpaths=Chrome(self.env).get_all_templates_dirs())
-        populate_hdf(hdf, self.env, req)
-        return hdf
-
-    def _get_perm(self, req):
-        return PermissionCache(self.env, self.authenticate(req))
-
-    def _get_session(self, req):
-        return Session(self.env, req)
-
-    def _get_locale(self, req):
-        global Locale
-        if Locale:
-            available = [locale_id.replace('_', '-') for locale_id in
-                translation.get_available_locales()]
-
-            preferred = req.session.get('language', req.languages)
-            if type(preferred) != type(list()):
-                preferred = [preferred]
-            return Locale.negotiate(preferred, available, sep='-')
-
-    def _get_timezone(self, req):
-        try:
-            return timezone(req.session.get('tz', self.default_timezone
-                                            or 'missing'))
-        except:
-            return localtz
+    def _pre_process_request(self, req, chosen_handler):
+        for f in self.filters:
+            chosen_handler = f.pre_process_request(req, chosen_handler)
+        return chosen_handler
+                
+    def _post_process_request(self, req, template=None, content_type=None):
+        for f in reversed(self.filters):
+            template, content_type = f.post_process_request(req, template,
+                                                            content_type)
+        return template, content_type
 
     def _get_form_token(self, req):
         """Used to protect against CSRF.
@@ -304,27 +286,7 @@ class RequestDispatcher(Component):
             req.outcookie['trac_form_token'] = hex_entropy(24)
             req.outcookie['trac_form_token']['path'] = req.base_path
             return req.outcookie['trac_form_token'].value
-
-    def _pre_process_request(self, req, chosen_handler):
-        for filter_ in self.filters:
-            chosen_handler = filter_.pre_process_request(req, chosen_handler)
-        return chosen_handler
-
-    def _post_process_request(self, req, *args):
-        nbargs = len(args)
-        resp = args
-        for f in reversed(self.filters):
-            # As the arity of `post_process_request` has changed since 
-            # Trac 0.10, only filters with same arity gets passed real values.
-            # Errors will call all filters with None arguments,
-            # and results will not be not saved.
-            extra_arg_count = arity(f.post_process_request) - 2
-            if extra_arg_count == nbargs:
-                resp = f.post_process_request(req, *resp)
-            elif nbargs == 0:
-                f.post_process_request(req, *(None,)*extra_arg_count)
-        return resp
-
+        
 
 def dispatch_request(environ, start_response):
     """Main entry point for the Trac web interface.
@@ -343,21 +305,45 @@ def dispatch_request(environ, start_response):
         elif script_url.endswith(path_info):
             environ['SCRIPT_NAME'] = script_url[:-len(path_info)]
 
-    # If the expected configuration keys aren't found in the WSGI environment,
-    # try looking them up in the process environment variables
-    environ.setdefault('trac.env_path', os.getenv('TRAC_ENV'))
-    environ.setdefault('trac.env_parent_dir',
-                       os.getenv('TRAC_ENV_PARENT_DIR'))
-    environ.setdefault('trac.env_index_template',
-                       os.getenv('TRAC_ENV_INDEX_TEMPLATE'))
-    environ.setdefault('trac.template_vars',
-                       os.getenv('TRAC_TEMPLATE_VARS'))
-    environ.setdefault('trac.locale', '')
-    environ.setdefault('trac.base_url',
-                       os.getenv('TRAC_BASE_URL'))
-    
+    if 'mod_python.options' in environ:
+        options = environ['mod_python.options']
+        environ.setdefault('trac.env_path', options.get('TracEnv'))
+        environ.setdefault('trac.env_parent_dir',
+                           options.get('TracEnvParentDir'))
+        environ.setdefault('trac.env_index_template',
+                           options.get('TracEnvIndexTemplate'))
+        environ.setdefault('trac.template_vars',
+                           options.get('TracTemplateVars'))
+        environ.setdefault('trac.locale', options.get('TracLocale'))
+
+        if 'TracUriRoot' in options:
+            # Special handling of SCRIPT_NAME/PATH_INFO for mod_python, which
+            # tends to get confused for whatever reason
+            root_uri = options['TracUriRoot'].rstrip('/')
+            request_uri = environ['REQUEST_URI'].split('?', 1)[0]
+            if not request_uri.startswith(root_uri):
+                raise ValueError('TracUriRoot set to %s but request URL '
+                                 'is %s' % (root_uri, request_uri))
+            environ['SCRIPT_NAME'] = root_uri
+            environ['PATH_INFO'] = urllib.unquote(request_uri[len(root_uri):])
+
+    else:
+        environ.setdefault('trac.env_path', os.getenv('TRAC_ENV'))
+        environ.setdefault('trac.env_parent_dir',
+                           os.getenv('TRAC_ENV_PARENT_DIR'))
+        environ.setdefault('trac.env_index_template',
+                           os.getenv('TRAC_ENV_INDEX_TEMPLATE'))
+        environ.setdefault('trac.template_vars',
+                           os.getenv('TRAC_TEMPLATE_VARS'))
+        environ.setdefault('trac.locale', '')
 
     locale.setlocale(locale.LC_ALL, environ['trac.locale'])
+
+    # Allow specifying the python eggs cache directory using SetEnv
+    if 'mod_python.subprocess_env' in environ:
+        egg_cache = environ['mod_python.subprocess_env'].get('PYTHON_EGG_CACHE')
+        if egg_cache:
+            os.environ['PYTHON_EGG_CACHE'] = egg_cache
 
     # Determine the environment
     env_path = environ.get('trac.env_path')
@@ -381,7 +367,7 @@ def dispatch_request(environ, start_response):
             # the environment name to the `SCRIPT_NAME` variable, and keep only
             # the remaining path in the `PATH_INFO` variable.
             environ['SCRIPT_NAME'] = Href(environ['SCRIPT_NAME'])(env_name)
-            environ['PATH_INFO'] = '/' + '/'.join(path_info)
+            environ['PATH_INFO'] = '/'.join([''] + path_info)
 
             if env_parent_dir:
                 env_path = os.path.join(env_parent_dir, env_name)
@@ -402,140 +388,78 @@ def dispatch_request(environ, start_response):
 
     env = env_error = None
     try:
-        env = open_environment(env_path, use_cache=not run_once)
+        env = _open_environment(env_path, run_once=run_once)
         if env.base_url_for_redirect:
             environ['trac.base_url'] = env.base_url
-        if not hasattr(env, 'webfrontend'):
-            env.webfrontend = environ.get('trac.web.frontend')
-            if env.webfrontend:
-                env.systeminfo.append((env.webfrontend, 
-                                       environ['trac.web.version']))
     except TracError, e:
         env_error = e
 
     req = Request(environ, start_response)
     try:
-        return _dispatch_request(req, env, env_error)
-    finally:
-        if env and not run_once:
-            env.shutdown(threading._get_ident())
-            # Now it's a good time to do some clean-ups
-            #
-            # Note: enable the '##' lines as soon as there's a suspicion
-            #       of memory leak due to uncollectable objects (typically
-            #       objects with a __del__ method caught in a cycle)
-            ##gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
-            unreachable = gc.collect()
-            env.log.debug("%d unreachable objects found.", unreachable)
-            ##uncollectable = len(gc.garbage)
-            ##if uncollectable:
-            ##    del gc.garbage[:]
-            ##    env.log.warn("%d uncollectable objects found.", uncollectable)
-
-def _dispatch_request(req, env, env_error):
-    resp = []
-
-    # fixup env.abs_href if `[trac] base_url` was not specified
-    if env and not env.abs_href.base:
-        env._abs_href = req.abs_href
-
-    try:
         if not env and env_error:
-            raise HTTPInternalError(env_error)
+            from trac.config import default_dir            
+            req.hdf = HDFWrapper([default_dir('templates')])
+            raise HTTPInternalError(env_error.message)
         try:
-            dispatcher = RequestDispatcher(env)
-            dispatcher.dispatch(req)
-        except RequestDone:
-            pass
-        resp = req._response or []
+            try:
+                dispatcher = RequestDispatcher(env)
+                dispatcher.dispatch(req)
+            except RequestDone:
+                pass
+            return req._response or []
+        finally:
+            if not run_once:
+                env.shutdown(threading._get_ident())
 
     except HTTPException, e:
         if env:
             env.log.warn(e)
-        title = 'Error'
-        if e.reason:
-            if 'error' in e.reason.lower():
-                title = e.reason
-            else:
-                title = 'Error: %s' % e.reason
-        data = {'title': title, 'type': 'TracError', 'message': e.detail,
-                'frames': [], 'traceback': None}
+        if req.hdf:
+            req.hdf['title'] = e.reason or 'Error'
+            req.hdf['error'] = {
+                'title': e.reason or 'Error',
+                'type': 'TracError',
+                'message': e.message
+            }
         try:
-            req.send_error(sys.exc_info(), status=e.code, env=env, data=data)
+            req.send_error(sys.exc_info(), status=e.code)
         except RequestDone:
-            pass
+            return []
 
     except Exception, e:
-        if env:
-            env.log.exception(e)
+        env.log.exception(e)
 
-        exc_info = sys.exc_info()
+        if req.hdf:
+            req.hdf['title'] = to_unicode(e) or 'Error'
+            req.hdf['error'] = {
+                'title': to_unicode(e) or 'Error',
+                'type': 'internal',
+                'traceback': get_last_traceback()
+            }
         try:
-            message = "%s: %s" % (e.__class__.__name__, to_unicode(e))
-            traceback = get_last_traceback()
-
-            frames = []
-            has_admin = False
-            try:
-                has_admin = 'TRAC_ADMIN' in req.perm
-            except Exception, e:
-                pass
-            if has_admin and not isinstance(e, MemoryError):
-                tb = exc_info[2]
-                while tb:
-                    tb_hide = tb.tb_frame.f_locals.get('__traceback_hide__')
-                    if tb_hide in ('before', 'before_and_this'):
-                        del frames[:]
-                        tb_hide = tb_hide[6:]
-                    if not tb_hide:
-                        filename = tb.tb_frame.f_code.co_filename
-                        lineno = tb.tb_lineno - 1
-                        before, line, after = get_lines_from_file(filename,
-                                                                  lineno, 5)
-                        frames += [{'traceback': tb, 'filename': filename,
-                                    'lineno': lineno, 'line': line,
-                                    'lines_before': before, 'lines_after': after,
-                                    'function': tb.tb_frame.f_code.co_name,
-                                    'vars': tb.tb_frame.f_locals}]
-                    tb = tb.tb_next
-
-            data = {'title': 'Internal Error',
-                    'type': 'internal', 'message': message,
-                    'traceback': traceback, 'frames': frames,
-                    'shorten_line': shorten_line}
-
-            try:
-                req.send_error(exc_info, status=500, env=env, data=data)
-            except RequestDone:
-                pass
-
-        finally:
-            del exc_info
-    return resp
+            req.send_error(sys.exc_info(), status=500)
+        except RequestDone:
+            return []
 
 def send_project_index(environ, start_response, parent_dir=None,
                        env_paths=None):
+    from trac.config import default_dir
+
     req = Request(environ, start_response)
 
-    loadpaths = [pkg_resources.resource_filename('trac', 'templates')]
-    use_clearsilver = False
+    loadpaths = [default_dir('templates')]
     if req.environ.get('trac.env_index_template'):
         tmpl_path, template = os.path.split(req.environ['trac.env_index_template'])
         loadpaths.insert(0, tmpl_path)
-        use_clearsilver = template.endswith('.cs') # assume Clearsilver
-        if use_clearsilver:
-            req.hdf = HDFWrapper(loadpaths) # keep that for custom .cs templates
     else:
-        template = 'index.html'
+        template = 'index.cs'
+    req.hdf = HDFWrapper(loadpaths)
 
-    data = {'trac': {'version': TRAC_VERSION, 'time': format_datetime()},
-            'req': req}
+    tmpl_vars = {}
     if req.environ.get('trac.template_vars'):
         for pair in req.environ['trac.template_vars'].split(','):
             key, val = pair.split('=')
-            data[key] = val
-            if use_clearsilver:
-                req.hdf[key] = val
+            req.hdf[key] = val
 
     if parent_dir and not env_paths:
         env_paths = dict([(filename, os.path.join(parent_dir, filename))
@@ -546,8 +470,8 @@ def send_project_index(environ, start_response, parent_dir=None,
         projects = []
         for env_name, env_path in get_environments(environ).items():
             try:
-                env = open_environment(env_path,
-                                       use_cache=not environ['wsgi.run_once'])
+                env = _open_environment(env_path,
+                                        run_once=environ['wsgi.run_once'])
                 proj = {
                     'name': env.project_name,
                     'description': env.project_description,
@@ -558,17 +482,8 @@ def send_project_index(environ, start_response, parent_dir=None,
             projects.append(proj)
         projects.sort(lambda x, y: cmp(x['name'].lower(), y['name'].lower()))
 
-        data['projects'] = projects
-        if use_clearsilver:
-            req.hdf['projects'] = projects
-            req.display(template)
-
-        loader = TemplateLoader(loadpaths, variable_lookup='lenient')
-        tmpl = loader.load(template)
-        stream = tmpl.generate(**data)
-        output = stream.render('xhtml', doctype=DocType.XHTML_STRICT)
-        req.send(output, 'text/html')
-
+        req.hdf['projects'] = projects
+        req.display(template)
     except RequestDone:
         pass
 

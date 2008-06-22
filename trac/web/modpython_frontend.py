@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
-# Copyright (C) 2004-2007 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2004-2005 Edgewall Software
+# Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2005 Matthew Good <trac@matt-good.net>
 # All rights reserved.
 #
@@ -16,17 +16,9 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
-import os
-import pkg_resources
-import urllib
-
 from mod_python import apache
-try:
-    from mod_python import version
-except ImportError:
-    version = "< 3.2"
 
-from trac import __version__ as VERSION
+from trac.web.main import dispatch_request
 from trac.web.wsgi import WSGIGateway, _ErrorsWrapper
 
 
@@ -56,36 +48,8 @@ class ModPythonGateway(WSGIGateway):
     def __init__(self, req, options):
         environ = {}
         environ.update(apache.build_cgi_env(req))
-
-        environ['trac.web.frontend'] = 'mod_python'
-        environ['trac.web.version'] = version
-
-        if 'TracEnv' in options:
-            environ['trac.env_path'] = options['TracEnv']
-        if 'TracEnvParentDir' in options:
-            environ['trac.env_parent_dir'] = options['TracEnvParentDir']
-        if 'TracEnvIndexTemplate' in options:
-            environ['trac.env_index_template'] = options['TracEnvIndexTemplate']
-        if 'TracTemplateVars' in options:
-            environ['trac.template_vars'] = options['TracTemplateVars']
-        if 'TracLocale' in options:
-            environ['trac.locale'] = options['TracLocale']
-
-        if 'TracUriRoot' in options:
-            # Special handling of SCRIPT_NAME/PATH_INFO for mod_python, which
-            # tends to get confused for whatever reason
-            root_uri = options['TracUriRoot'].rstrip('/')
-            request_uri = environ['REQUEST_URI'].split('?', 1)[0]
-            if not request_uri.startswith(root_uri):
-                raise ValueError('TracUriRoot set to %s but request URL '
-                                 'is %s' % (root_uri, request_uri))
-            environ['SCRIPT_NAME'] = root_uri
-            environ['PATH_INFO'] = urllib.unquote(request_uri[len(root_uri):])
-
-        egg_cache = req.subprocess_env.get('PYTHON_EGG_CACHE')
-        if egg_cache:
-            os.environ['PYTHON_EGG_CACHE'] = egg_cache
-
+        environ['mod_python.options'] = options
+        environ['mod_python.subprocess_env'] = req.subprocess_env
         WSGIGateway.__init__(self, environ, InputWrapper(req),
                              _ErrorsWrapper(lambda x: req.log_error(x)))
         self.req = req
@@ -106,11 +70,7 @@ class ModPythonGateway(WSGIGateway):
 
     def _sendfile(self, fileobj):
         self._send_headers()
-        try:
-            self.req.sendfile(fileobj.name)
-        except IOError, e:
-            if 'client closed connection' not in str(e):
-                raise
+        self.req.sendfile(fileobj.name)
 
     def _write(self, data):
         self._send_headers()
@@ -122,8 +82,7 @@ class ModPythonGateway(WSGIGateway):
 
 
 def handler(req):
-    pkg_resources.require('Trac==%s' % VERSION)
-    gateway = ModPythonGateway(req, req.get_options())
-    from trac.web.main import dispatch_request
+    options = req.get_options()
+    gateway = ModPythonGateway(req, options)
     gateway.run(dispatch_request)
     return apache.OK

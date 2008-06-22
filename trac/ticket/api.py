@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
@@ -15,100 +15,19 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import re
-from datetime import datetime
-
-from genshi.builder import tag
 
 from trac.config import *
 from trac.core import *
-from trac.perm import IPermissionRequestor, PermissionSystem, PermissionError
-from trac.resource import IResourceManager
-from trac.util import Ranges
-from trac.util.compat import set, sorted
-from trac.util.datefmt import utc
-from trac.util.text import shorten_line, obfuscate_email_address
-from trac.util.translation import _
-from trac.wiki import IWikiSyntaxProvider, WikiParser
-
-
-class ITicketActionController(Interface):
-    """Extension point interface for components willing to participate
-    in the ticket workflow.
-
-    This is mainly about controlling the changes to the ticket ''status'',
-    though not restricted to it.
-    """
-
-    def get_ticket_actions(req, ticket):
-        """Return an iterable of `(weight, action)` tuples corresponding to
-        the actions that are contributed by this component.
-        That list may vary given the current state of the ticket and the
-        actual request parameter.
-
-        `action` is a key used to identify that particular action.
-        (note that 'history' and 'diff' are reserved and should not be used
-        by plugins)
-        
-        The actions will be presented on the page in descending order of the
-        integer weight. The first action in the list is used as the default
-        action.
-
-        When in doubt, use a weight of 0."""
-
-    def get_all_status():
-        """Returns an iterable of all the possible values for the ''status''
-        field this action controller knows about.
-
-        This will be used to populate the query options and the like.
-        It is assumed that the initial status of a ticket is 'new' and
-        the terminal status of a ticket is 'closed'.
-        """
-
-    def render_ticket_action_control(req, ticket, action):
-        """Return a tuple in the form of `(label, control, hint)`
-
-        `label` is a short text that will be used when listing the action,
-        `control` is the markup for the action control and `hint` should
-        explain what will happen if this action is taken.
-        
-        This method will only be called if the controller claimed to handle
-        the given `action` in the call to `get_ticket_actions`.
-
-        Note that the radio button for the action has an `id` of
-        `"action_%s" % action`.  Any `id`s used in `control` need to be made
-        unique.  The method used in the default ITicketActionController is to
-        use `"action_%s_something" % action`.
-        """
-
-    def get_ticket_changes(req, ticket, action):
-        """Return a dictionary of ticket field changes.
-
-        This method must not have any side-effects because it will also
-        be called in preview mode (`req.args['preview']` will be set, then).
-        See `apply_action_side_effects` for that. If the latter indeed triggers
-        some side-effects, it is advised to emit a warning
-        (`trac.web.chrome.add_warning(req, reason)`) when this method is called
-        in preview mode.
-
-        This method will only be called if the controller claimed to handle
-        the given `action` in the call to `get_ticket_actions`.
-        """
-
-    def apply_action_side_effects(req, ticket, action):
-        """Perform side effects once all changes have been made to the ticket.
-
-        Multiple controllers might be involved, so the apply side-effects
-        offers a chance to trigger a side-effect based on the given `action`
-        after the new state of the ticket has been saved.
-
-        This method will only be called if the controller claimed to handle
-        the given `action` in the call to `get_ticket_actions`.
-        """
+from trac.perm import IPermissionRequestor, PermissionSystem
+from trac.Search import ISearchSource, search_to_sql, shorten_result
+from trac.util.html import html, Markup
+from trac.util.text import shorten_line
+from trac.wiki import IWikiSyntaxProvider, Formatter
 
 
 class ITicketChangeListener(Interface):
-    """Extension point interface for components that require notification
-    when tickets are created, modified, or deleted."""
+    """Extension point interface for components that require notification when
+    tickets are created, modified, or deleted."""
 
     def ticket_created(ticket):
         """Called when a ticket is created."""
@@ -140,48 +59,29 @@ class ITicketManipulator(Interface):
 
 
 class TicketSystem(Component):
-    implements(IPermissionRequestor, IWikiSyntaxProvider, IResourceManager)
+    implements(IPermissionRequestor, IWikiSyntaxProvider, ISearchSource)
 
     change_listeners = ExtensionPoint(ITicketChangeListener)
-    action_controllers = OrderedExtensionsOption('ticket', 'workflow',
-        ITicketActionController, default='ConfigurableTicketWorkflow',
-        include_missing=False,
-        doc="""Ordered list of workflow controllers to use for ticket actions
-            (''since 0.11'').""")
 
     restrict_owner = BoolOption('ticket', 'restrict_owner', 'false',
         """Make the owner field of tickets use a drop-down menu. See
         [TracTickets#Assign-toasDrop-DownList Assign-to as Drop-Down List]
         (''since 0.9'').""")
 
-    def __init__(self):
-        self.log.debug('action controllers for ticket workflow: %r' % 
-                [c.__class__.__name__ for c in self.action_controllers])
-
     # Public API
 
-    def get_available_actions(self, req, ticket):
-        """Returns a sorted list of available actions"""
-        # The list should not have duplicates.
-        actions = {}
-        for controller in self.action_controllers:
-            weighted_actions = controller.get_ticket_actions(req, ticket)
-            for weight, action in weighted_actions:
-                if action in actions:
-                    actions[action] = max(actions[action], weight)
-                else:
-                    actions[action] = weight
-        all_weighted_actions = [(weight, action) for action, weight in
-                                actions.items()]
-        return [x[1] for x in sorted(all_weighted_actions, reverse=True)]
-
-    def get_all_status(self):
-        """Returns a sorted list of all the states all of the action
-        controllers know about."""
-        valid_states = set()
-        for controller in self.action_controllers:
-            valid_states.update(controller.get_all_status())
-        return sorted(valid_states)
+    def get_available_actions(self, ticket, perm_):
+        """Returns the actions that can be performed on the ticket."""
+        actions = {
+            'new':      ['leave', 'resolve', 'reassign', 'accept'],
+            'assigned': ['leave', 'resolve', 'reassign'          ],
+            'reopened': ['leave', 'resolve', 'reassign'          ],
+            'closed':   ['leave',                        'reopen']
+        }
+        perms = {'resolve': 'TICKET_MODIFY', 'reassign': 'TICKET_MODIFY',
+                 'accept': 'TICKET_MODIFY', 'reopen': 'TICKET_CREATE'}
+        return [action for action in actions.get(ticket['status'], ['leave'])
+                if action not in perms or perm_.has_permission(perms[action])]
 
     def get_ticket_fields(self):
         """Returns the list of fields available for tickets."""
@@ -199,9 +99,12 @@ class TicketSystem(Component):
         field = {'name': 'owner', 'label': 'Owner'}
         if self.restrict_owner:
             field['type'] = 'select'
+            users = []
             perm = PermissionSystem(self.env)
-            field['options'] = perm.get_users_with_permission('TICKET_MODIFY')
-            field['options'].sort()
+            for username, name, email in self.env.get_known_users(db):
+                if perm.get_user_permissions(username).get('TICKET_MODIFY'):
+                    users.append(username)
+            field['options'] = users
             field['optional'] = True
         else:
             field['type'] = 'text'
@@ -209,17 +112,13 @@ class TicketSystem(Component):
 
         # Description
         fields.append({'name': 'description', 'type': 'textarea',
-                       'label': _('Description')})
+                       'label': 'Description'})
 
         # Default select and radio fields
-        selects = [('type', model.Type),
-                   ('status', model.Status),
-                   ('priority', model.Priority),
-                   ('milestone', model.Milestone),
-                   ('component', model.Component),
-                   ('version', model.Version),
-                   ('severity', model.Severity),
-                   ('resolution', model.Resolution)]
+        selects = [('type', model.Type), ('status', model.Status),
+                   ('priority', model.Priority), ('milestone', model.Milestone),
+                   ('component', model.Component), ('version', model.Version),
+                   ('severity', model.Severity), ('resolution', model.Resolution)]
         for name, cls in selects:
             options = [val.name for val in cls.select(self.env, db=db)]
             if not options:
@@ -284,11 +183,10 @@ class TicketSystem(Component):
 
     def get_permission_actions(self):
         return ['TICKET_APPEND', 'TICKET_CREATE', 'TICKET_CHGPROP',
-                'TICKET_VIEW', 'TICKET_EDIT_CC', 'TICKET_EDIT_DESCRIPTION',
-                ('TICKET_MODIFY', ['TICKET_APPEND', 'TICKET_CHGPROP']),
-                ('TICKET_ADMIN', ['TICKET_CREATE', 'TICKET_MODIFY',
-                                  'TICKET_VIEW', 'TICKET_EDIT_CC',
-                                  'TICKET_EDIT_DESCRIPTION'])]
+                'TICKET_VIEW',
+                ('TICKET_MODIFY', ['TICKET_APPEND', 'TICKET_CHGPROP']),  
+                ('TICKET_ADMIN', ['TICKET_CREATE', 'TICKET_MODIFY',  
+                                  'TICKET_VIEW'])]
 
     # IWikiSyntaxProvider methods
 
@@ -302,8 +200,7 @@ class TicketSystem(Component):
             # matches #... but not &#... (HTML entity)
             r"!?(?<!&)#"
             # optional intertrac shorthand #T... + digits
-            r"(?P<it_ticket>%s)%s" % (WikiParser.INTERTRAC_SCHEME,
-                                      Ranges.RE_STR),
+            r"(?P<it_ticket>%s)\d+" % Formatter.INTERTRAC_SCHEME,
             lambda x, y, z: self._format_link(x, 'ticket', y[1:], y, z))
 
     def _format_link(self, formatter, ns, target, label, fullmatch=None):
@@ -312,83 +209,69 @@ class TicketSystem(Component):
         if intertrac:
             return intertrac
         try:
-            link, params, fragment = formatter.split_link(target)
-            r = Ranges(link)
-            if len(r) == 1:
-                num = r.a
-                ticket = formatter.resource('ticket', num)
-                from trac.ticket.model import Ticket
-                if Ticket.id_is_valid(num):
-                    # TODO: watch #6436 and when done, attempt to retrieve 
-                    #       ticket directly (try: Ticket(self.env, num) ...)
-                    cursor = formatter.db.cursor() 
-                    cursor.execute("SELECT type,summary,status,resolution "
-                                   "FROM ticket WHERE id=%s", (str(num),)) 
-                    for type, summary, status, resolution in cursor:
-                        title = self.format_summary(summary, status,
-                                                    resolution, type)
-                        href = formatter.href.ticket(num) + params + fragment
-                        return tag.a(label, class_='%s ticket' % status, 
-                                     title=title, href=href)
-                    else:
-                        href = formatter.href.ticket(num)
-                        return tag.a(label, class_='missing ticket', href=href,
-                                     rel="nofollow")
-            else:
-                ranges = str(r)
-                if params:
-                    params = '&' + params[1:]
-                return tag.a(label, title='Tickets '+ranges,
-                             href=formatter.href.query(id=ranges) + params)
+            num = int(target)
+            if 0 < num <= 1L << 31:
+                cursor = formatter.db.cursor()
+                cursor.execute("SELECT summary,status FROM ticket WHERE id=%s",
+                               (str(num),))
+                row = cursor.fetchone()
+                if row:
+                    return html.A(label, class_='%s ticket' % row[1],
+                                  title=(shorten_line(row[0]) + \
+                                         ' (%s)' % row[1]),
+                                  href=formatter.href.ticket(target))
         except ValueError:
             pass
-        return tag.a(label, class_='missing ticket')
+        return html.A(label, class_='missing ticket', rel='nofollow',
+                      href=formatter.href.ticket(target))
 
     def _format_comment_link(self, formatter, ns, target, label):
-        resource = None
+        type, id, cnum = 'ticket', '1', 0
+        href = None
         if ':' in target:
             elts = target.split(':')
             if len(elts) == 3:
-                cnum, realm, id = elts
-                if cnum != 'description' and cnum and not cnum[0].isdigit():
-                    realm, id, cnum = elts # support old comment: style
-                resource = formatter.resource(realm, id)
+                type, id, cnum = elts
+                href = formatter.href(type, id)
         else:
-            resource = formatter.resource
-            cnum = target
-
-        if resource:
-            href = "%s#comment:%s" % (formatter.href.ticket(resource.id), cnum)
-            title = _("Comment %(cnum)s for Ticket #%(id)s", cnum=cnum,
-                      id=resource.id)
-            return tag.a(label, href=href, title=title)
+            # FIXME: the formatter should know which object the text being
+            #        formatted belongs to
+            if formatter.req:
+                path_info = formatter.req.path_info.strip('/').split('/', 2)
+                if len(path_info) == 2:
+                    type, id = path_info[:2]
+                    href = formatter.href(type, id)
+                    cnum = target
+        if href:
+            return html.A(label, href="%s#comment:%s" % (href, cnum),
+                          title="Comment %s for %s:%s" % (cnum, type, id))
         else:
             return label
  
-    # IResourceManager methods
+    # ISearchSource methods
 
-    def get_resource_realms(self):
-        yield 'ticket'
+    def get_search_filters(self, req):
+        if req.perm.has_permission('TICKET_VIEW'):
+            yield ('ticket', 'Tickets')
 
-    def get_resource_description(self, resource, format=None, context=None,
-                                 **kwargs):
-        if format == 'compact':
-            return '#%s' % resource.id
-        elif format == 'summary':
-            from trac.ticket.model import Ticket
-            ticket = Ticket(self.env, resource.id)
-            args = [ticket[f] for f in ('summary', 'status', 'resolution',
-                                        'type')]
-            return self.format_summary(*args)
-        return _("Ticket #%(shortname)s", shortname=resource.id)
-
-    def format_summary(self, summary, status=None, resolution=None, type=None):
-        summary = shorten_line(summary)
-        if type:
-            summary = type + ': ' + summary
-        if status:
-            if status == 'closed' and resolution:
-                status += ': ' + resolution
-            return "%s (%s)" % (summary, status)
-        else:
-            return summary
+    def get_search_results(self, req, terms, filters):
+        if not 'ticket' in filters:
+            return
+        db = self.env.get_db_cnx()
+        sql, args = search_to_sql(db, ['b.newvalue'], terms)
+        sql2, args2 = search_to_sql(db, ['summary', 'keywords', 'description',
+                                         'reporter', 'cc'], terms)
+        cursor = db.cursor()
+        cursor.execute("SELECT DISTINCT a.summary,a.description,a.reporter, "
+                       "a.keywords,a.id,a.time,a.status FROM ticket a "
+                       "LEFT JOIN ticket_change b ON a.id = b.ticket "
+                       "WHERE (b.field='comment' AND %s ) OR %s" % (sql, sql2),
+                       args + args2)
+        for summary, desc, author, keywords, tid, date, status in cursor:
+            ticket = '#%d: ' % tid
+            if status == 'closed':
+                ticket = Markup('<span style="text-decoration: line-through">'
+                                '#%s</span>: ', tid)
+            yield (req.href.ticket(tid),
+                   ticket + shorten_line(summary),
+                   date, author, shorten_result(desc, terms))

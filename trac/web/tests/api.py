@@ -57,12 +57,6 @@ class RequestTestCase(unittest.TestCase):
         req = Request(environ, None)
         self.assertEqual('http://localhost/trac', req.base_url)
 
-    def test_languages(self):
-        environ = self._make_environ()
-        environ['HTTP_ACCEPT_LANGUAGE'] = 'en-us,en;q=0.5'
-        req = Request(environ, None)
-        self.assertEqual(['en-us', 'en'], req.languages)
-
     def test_redirect(self):
         status_sent = []
         headers_sent = {}
@@ -71,7 +65,6 @@ class RequestTestCase(unittest.TestCase):
             headers_sent.update(dict(headers))
         environ = self._make_environ(method='HEAD')
         req = Request(environ, start_response)
-        req.session = None
         self.assertRaises(RequestDone, req.redirect, '/trac/test')
         self.assertEqual('302 Found', status_sent[0])
         self.assertEqual('http://example.org/trac/test',
@@ -84,8 +77,7 @@ class RequestTestCase(unittest.TestCase):
             status_sent.append(status)
             headers_sent.update(dict(headers))
         environ = self._make_environ(method='HEAD')
-        req = Request(environ, start_response,)
-        req.session = None
+        req = Request(environ, start_response)
         self.assertRaises(RequestDone, req.redirect,
                           'http://example.com/trac/test')
         self.assertEqual('302 Found', status_sent[0])

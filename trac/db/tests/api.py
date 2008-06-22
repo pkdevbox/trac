@@ -1,6 +1,5 @@
 from trac.db.api import _parse_db_str
 
-import os
 import unittest
 
 
@@ -26,16 +25,6 @@ class ParseConnectionStringTestCase(unittest.TestCase):
                                      'params': {'timeout': '10000'}}),
                          _parse_db_str('sqlite:db/trac.db?timeout=10000'))
 
-    def test_sqlite_windows_path(self):
-        # In-memory database
-        os_name = os.name
-        try:
-            os.name = 'nt'
-            self.assertEqual(('sqlite', {'path': 'C:/project/db/trac.db'}),
-                             _parse_db_str('sqlite:C|/project/db/trac.db'))
-        finally:
-            os.name = os_name
-
     def test_postgres_simple(self):
         self.assertEqual(('postgres', {'host': 'localhost', 'path': '/trac'}),
                          _parse_db_str('postgres://localhost/trac'))
@@ -50,11 +39,6 @@ class ParseConnectionStringTestCase(unittest.TestCase):
                                        'host': 'localhost', 'port': 9431,
                                        'path': '/trac'}),
                          _parse_db_str('postgres://john:letmein@localhost:9431/trac'))
-
-    def test_postgres_with_quoted_password(self):
-        self.assertEqual(('postgres', {'user': 'john', 'password': ':@/',
-                                       'host': 'localhost', 'path': '/trac'}),
-                         _parse_db_str('postgres://john:%3a%40%2f@localhost/trac'))
 
     def test_mysql_simple(self):
         self.assertEqual(('mysql', {'host': 'localhost', 'path': '/trac'}),

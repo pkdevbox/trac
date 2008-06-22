@@ -1,8 +1,7 @@
 import unittest
 
 from trac.ticket.tests import api, model, query, wikisyntax, notification, \
-                              conversion, report, roadmap
-from trac.ticket.tests.functional import functionalSuite
+                              conversion, report
 
 def suite():
     suite = unittest.TestSuite()
@@ -13,7 +12,6 @@ def suite():
     suite.addTest(notification.suite())
     suite.addTest(conversion.suite())
     suite.addTest(report.suite())
-    suite.addTest(roadmap.suite())
     return suite
 
 if __name__ == '__main__':

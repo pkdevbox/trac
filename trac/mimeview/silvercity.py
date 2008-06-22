@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
 # All rights reserved.
 #
@@ -22,19 +22,9 @@ Get it at: http://silvercity.sourceforge.net/
 import re
 from StringIO import StringIO
 
-from genshi.core import Markup
-
 from trac.core import *
 from trac.config import ListOption
 from trac.mimeview.api import IHTMLPreviewRenderer, Mimeview
-from trac.util import get_pkginfo
-
-try:
-    import SilverCity
-    have_silvercity = True
-except ImportError:
-    have_silvercity = False
-
 
 __all__ = ['SilverCityRenderer']
 
@@ -53,13 +43,13 @@ types = {
     'text/x-chdr':              ('CPP', 3),
     'text/x-csrc':              ('CPP', 3),
     'text/x-perl':              ('Perl', 3),
-    'text/x-php':               ('HyperText', 3, {'asp.default.language': 4}),
-    'application/x-httpd-php':  ('HyperText', 3, {'asp.default.language': 4}),
-    'application/x-httpd-php4': ('HyperText', 3, {'asp.default.language': 4}),
-    'application/x-httpd-php3': ('HyperText', 3, {'asp.default.language': 4}),
+    'text/x-php':               ('HyperText', 3, {'asp.default.language':4}),
+    'application/x-httpd-php':  ('HyperText', 3, {'asp.default.language':4}),
+    'application/x-httpd-php4': ('HyperText', 3, {'asp.default.language':4}),
+    'application/x-httpd-php3': ('HyperText', 3, {'asp.default.language':4}),
     'text/x-java':              ('Java', 3),
     'text/x-javascript':        ('CPP', 3), # Kludgy.
-    'text/x-psp':               ('HyperText', 3, {'asp.default.language': 3}),
+    'text/x-psp':               ('HyperText', 3, {'asp.default.language':3}),
     'text/x-python':            ('Python', 3),
     'text/x-ruby':              ('Ruby', 3),
     'text/x-sql':               ('SQL', 3),
@@ -90,23 +80,12 @@ class SilverCityRenderer(Component):
         (''since 0.10'').""")
 
     expand_tabs = True
-    returns_source = True
 
     def __init__(self):
-        self.log.debug("SilverCity installed? %r", have_silvercity)
-        if have_silvercity:
-            self.env.systeminfo.append(('SilverCity',
-                                        get_pkginfo(SilverCity).get('version',
-                                                                    '?')))
-            # TODO: the above works only if setuptools was used to build
-            # SilverCity, which is not yet the case by default for 0.9.7.
-            # I've not been able to find an alternative way to get version.
         self._types = None
 
     def get_quality_ratio(self, mimetype):
         # Extend default MIME type to mode mappings with configured ones
-        if not have_silvercity:
-            return 0
         if not self._types:
             self._types = {}
             self._types.update(types)
@@ -114,7 +93,8 @@ class SilverCityRenderer(Component):
                 Mimeview(self.env).configured_modes_mapping('silvercity'))
         return self._types.get(mimetype, (None, 0))[1]
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
+        import SilverCity
         try:
             mimetype = mimetype.split(';', 1)[0]
             typelang = self._types[mimetype]
@@ -153,5 +133,4 @@ class SilverCityRenderer(Component):
 
         # SilverCity generates _way_ too many non-breaking spaces...
         # We don't need them anyway, so replace them by normal spaces
-        return [Markup(line)
-                for line in html.replace('&nbsp;', ' ').splitlines()]
+        return html.replace('&nbsp;', ' ').splitlines()

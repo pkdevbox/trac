@@ -15,25 +15,7 @@ ticket:abc
 <p>
 <a class="new ticket" href="/ticket/1" title="This is the summary (new)">ticket:1</a>
 <a class="missing ticket" href="/ticket/12" rel="nofollow">ticket:12</a>
-<a class="missing ticket">ticket:abc</a>
-</p>
-------------------------------
-============================== ticket: link resolver + arguments
-ticket:1?format=csv
-ticket:1#comment:3
-------------------------------
-<p>
-<a class="new ticket" href="/ticket/1?format=csv" title="This is the summary (new)">ticket:1?format=csv</a>
-<a class="new ticket" href="/ticket/1#comment:3" title="This is the summary (new)">ticket:1#comment:3</a>
-</p>
-------------------------------
-============================== ticket: link resolver with ranges
-ticket:12-14,33
-ticket:12,33?order=created
-------------------------------
-<p>
-<a href="/query?id=12-14%2C33" title="Tickets 12-14,33">ticket:12-14,33</a>
-<a href="/query?id=12%2C33&amp;order=created" title="Tickets 12,33">ticket:12,33?order=created</a>
+<a class="missing ticket" href="/ticket/abc" rel="nofollow">ticket:abc</a>
 </p>
 ------------------------------
 ============================== ticket link shorthand form
@@ -60,10 +42,10 @@ trac:ticket:2041
 #trac2041
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/ticket%3A2041" title="ticket:2041 in Trac's Trac"><span class="icon">trac:ticket:2041</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/ticket%3A2041" title="ticket:2041 in Trac's Trac"><span class="icon">Trac #2041</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/ticket%3A2041" title="ticket:2041 in Trac's Trac"><span class="icon">#T2041</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/ticket%3A2041" title="ticket:2041 in Trac's Trac"><span class="icon">#trac2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/ticket/2041" title="ticket:2041 in Trac's Trac"><span class="icon">trac:ticket:2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/ticket/2041" title="ticket:2041 in Trac's Trac"><span class="icon">Trac #2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/ticket/2041" title="ticket:2041 in Trac's Trac"><span class="icon">#T2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/ticket/2041" title="ticket:2041 in Trac's Trac"><span class="icon">#trac2041</span></a>
 </p>
 ------------------------------
 ============================== Ticket InterTrac shorthands
@@ -71,18 +53,19 @@ T:#2041
 trac:#2041
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/%232041" title="#2041 in Trac's Trac"><span class="icon">T:#2041</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/%232041" title="#2041 in Trac's Trac"><span class="icon">trac:#2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/search?q=%232041" title="#2041 in Trac's Trac"><span class="icon">T:#2041</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/search?q=%232041" title="#2041 in Trac's Trac"><span class="icon">trac:#2041</span></a>
 </p>
 ------------------------------
-""" # " 
+"""
 
 def ticket_setup(tc):
     ticket = Ticket(tc.env)
-    ticket.values.update({'reporter': 'santa',
-                          'summary': 'This is the summary',
-                          'status': 'new'})
+    ticket['reporter'] = 'santa'
+    ticket['summary'] = 'This is the summary'
     ticket.insert()
+    ticket['status'] = 'new'
+    ticket.save_changes('claus', 'set status', 0)
 
 
 
@@ -120,14 +103,14 @@ trac:report:1
 {trac 1}
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/report%3A1" title="report:1 in Trac's Trac"><span class="icon">trac:report:1</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/report%3A1" title="report:1 in Trac's Trac"><span class="icon">Trac r1</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/report%3A1" title="report:1 in Trac's Trac"><span class="icon">{T1}</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/report%3A1" title="report:1 in Trac's Trac"><span class="icon">{trac1}</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/report%3A1" title="report:1 in Trac's Trac"><span class="icon">{trac 1}</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/report/1" title="report:1 in Trac's Trac"><span class="icon">trac:report:1</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/report/1" title="report:1 in Trac's Trac"><span class="icon">Trac r1</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/report/1" title="report:1 in Trac's Trac"><span class="icon">{T1}</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/report/1" title="report:1 in Trac's Trac"><span class="icon">{trac1}</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/report/1" title="report:1 in Trac's Trac"><span class="icon">{trac 1}</span></a>
 </p>
 ------------------------------
-""" # '
+"""
 
 def report_setup(tc):
     db = tc.env.get_db_cnx()
@@ -138,37 +121,13 @@ MILESTONE_TEST_CASES="""
 ============================== milestone: link resolver
 milestone:foo
 [milestone:boo Milestone Boo]
-[milestone:roo Milestone Roo]
 ------------------------------
 <p>
-<a class="missing milestone" href="/milestone/foo" rel="nofollow">milestone:foo</a>
+<a class="milestone" href="/milestone/foo">milestone:foo</a>
 <a class="milestone" href="/milestone/boo">Milestone Boo</a>
-<a class="closed milestone" href="/milestone/roo">Milestone Roo</a>
 </p>
 ------------------------------
-============================== milestone: link resolver + arguments
-milestone:?action=new
-[milestone:1.0#KnownIssues Known Issues for 1.0]
-------------------------------
-<p>
-<a class="missing milestone" href="/milestone/?action=new" rel="nofollow">milestone:?action=new</a>
-<a class="missing milestone" href="/milestone/1.0#KnownIssues" rel="nofollow">Known Issues for 1.0</a>
-</p>
-------------------------------
-""" #"
-
-def milestone_setup(tc):
-    from datetime import datetime
-    from trac.util.datefmt import utc
-    boo = Milestone(tc.env)
-    boo.name = 'boo'
-    boo.completed = boo.due = None
-    boo.insert()
-    roo = Milestone(tc.env)
-    roo.name = 'roo'
-    roo.completed = datetime.now(utc)
-    roo.due = None
-    roo.insert()
+"""
 
 
 QUERY_TEST_CASES="""
@@ -206,53 +165,18 @@ query:verbose=1
 <a class="query" href="/query?group=owner&amp;order=priority">query:group=owner</a>
 </p>
 <p>
-<a class="query" href="/query?order=priority&amp;row=description">query:verbose=1</a>
+<a class="query" href="/query?verbose=1&amp;order=priority">query:verbose=1</a>
 </p>
 ------------------------------
 """
 
-COMMENT_TEST_CASES="""
-============================== comment: link resolver (deprecated)
-comment:ticket:123:2 (deprecated)
-[comment:ticket:123:2 see above] (deprecated)
-[comment:ticket:123:description see descr] (deprecated)
-------------------------------
-<p>
-<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">comment:ticket:123:2</a> (deprecated)
-<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">see above</a> (deprecated)
-<a href="/ticket/123#comment:description" title="Comment description for Ticket #123">see descr</a> (deprecated)
-</p>
-------------------------------
-============================== comment: link resolver
-comment:2:ticket:123
-[comment:2:ticket:123 see above]
-[comment:description:ticket:123 see descr]
-------------------------------
-<p>
-<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">comment:2:ticket:123</a>
-<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">see above</a>
-<a href="/ticket/123#comment:description" title="Comment description for Ticket #123">see descr</a>
-</p>
-------------------------------
-""" # "
-
-# NOTE: the following test cases:
-#
-#  comment:2
-#  [comment:2 see above]
-#
-# would trigger an error in the workaround code ../api.py, line 235
-# As it's a problem with a temp workaround, I think there's no need
-# to fix it for now.
 
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(formatter.suite(TICKET_TEST_CASES, ticket_setup, __file__))
     suite.addTest(formatter.suite(REPORT_TEST_CASES, report_setup, __file__))
-    suite.addTest(formatter.suite(MILESTONE_TEST_CASES, milestone_setup,
-                                  __file__))
+    suite.addTest(formatter.suite(MILESTONE_TEST_CASES, file=__file__))
     suite.addTest(formatter.suite(QUERY_TEST_CASES, file=__file__))
-    suite.addTest(formatter.suite(COMMENT_TEST_CASES, file=__file__))
     return suite
 
 if __name__ == '__main__':

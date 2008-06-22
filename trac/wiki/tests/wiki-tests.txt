@@ -125,7 +125,7 @@ __foo__ x
 </p>
 ------------------------------
 <tt>verbatim</tt>
- […]
+ [&hellip;]
 <tt>{{{this is verbatim}}}</tt> and <tt>`that` should also `be` verbatim</tt>
 ============================================================
 
@@ -166,7 +166,6 @@ link:1
 This ticket is the first one
 link:123>
 link:123&
-see link:xü.
 ------------------------------
 <p>
 Add-on to <a class="odd resolver" href="/thing/123">link:123</a>:
@@ -175,7 +174,6 @@ Some change.
 This ticket is the first one
 <a class="odd resolver" href="/thing/123">link:123</a>&gt;
 <a class="odd resolver" href="/thing/123">link:123</a>&amp;
-see <a class="text resolver" href="/stuff/x%C3%BC">link:xü</a>.
 </p>
 ------------------------------
 Add-on to <a class="odd resolver" href="/thing/123">link:123</a>:
@@ -184,16 +182,13 @@ Some change.
 This ticket is the first one
 <a class="odd resolver" href="/thing/123">link:123</a>&gt;
 <a class="odd resolver" href="/thing/123">link:123</a>&amp;
-see <a class="text resolver" href="/stuff/x%C3%BC">link:xü</a>.
 ============================== Link resolver SHREF_TARGET_FIRST
 <bug>http://localhost/bugzilla/show_bug.cgi?id=1284</bug> 804
 __Summary:__
-see link:Überflüssigkeit
 ------------------------------
 <p>
 &lt;bug&gt;<a class="ext-link" href="http://localhost/bugzilla/show_bug.cgi?id=1284"><span class="icon">http://localhost/bugzilla/show_bug.cgi?id=1284</span></a>&lt;/bug&gt; 804
 <span class="underline">Summary:</span>
-see <a class="text resolver" href="/stuff/%C3%9Cberfl%C3%BCssigkeit">link:Überflüssigkeit</a>
 </p>
 ------------------------------
 ============================== Link resolver SHREF_TARGET_MIDDLE
@@ -279,27 +274,21 @@ nolink:&#34;&lt;blink&gt;&#34;
 
 ============================== Relative links
 Relative links are supported:
-[../parent See above] Note: see wikisyntax tests for other parent tests
-[./sibling See next]
-[... nothing to see] [...]
-[//docs See documentation]
-[//images/logo.png Our logo]
-[/] Note: "" is an Href("/") artifact
-[/newticket?component=test new ticket]
+[../parent See above]
+[/docs See documentation]
+[/images/logo.png Our logo]
+[/]
 [#title]
 [#title see Title]
 ------------------------------
 <p>
 Relative links are supported:
-<a href="/wiki/parent">See above</a> Note: see wikisyntax tests for other parent tests
-<a href="/wiki/WikiStart/sibling">See next</a>
-[... nothing to see] [...]
+<a href="../parent">See above</a>
 <a href="/docs">See documentation</a>
 <a href="/images/logo.png">Our logo</a>
-<a href="">/</a> Note: "" is an Href("/") artifact
-<a href="/newticket?component=test">new ticket</a>
-<a href="/wiki/WikiStart#title">#title</a>
-<a href="/wiki/WikiStart#title">see Title</a>
+<a href="/">/</a>
+<a href="#title">#title</a>
+<a href="#title">see Title</a>
 </p>
 ------------------------------
 ==============================  Image links are now regular external links
@@ -315,44 +304,6 @@ http://example.com/img.png?foo=bar
 ------------------------------
 <p>
 <i>RFCs von <a class="ext-link" href="ftp://ftp.rfc-editor.org/in-notes/rfcXXXX.txt"><span class="icon">ftp://ftp.rfc-editor.org/in-notes/rfcXXXX.txt</span></a></i>
-</p>
-------------------------------
-==============================  mailto: links and automatic e-mail detection
-Author: mailto:cboos@neuf.fr, 
-i.e. [mailto:cboos@neuf.fr me]
-
-joe'bar@site.info,
-trac+devel@another-site.fr,
-T_r=a-c1.23@yet_another-site.edu.au
-------------------------------
-<p>
-Author: <a class="mail-link" href="mailto:cboos@neuf.fr"><span class="icon">mailto:cboos@neuf.fr</span></a>, 
-i.e. <a class="mail-link" href="mailto:cboos@neuf.fr"><span class="icon">me</span></a>
-</p>
-<p>
-<a class="mail-link" href="mailto:joe'bar@site.info"><span class="icon">joe'bar@site.info</span></a>,
-<a class="mail-link" href="mailto:trac+devel@another-site.fr"><span class="icon">trac+devel@another-site.fr</span></a>,
-<a class="mail-link" href="mailto:T_r=a-c1.23@yet_another-site.edu.au"><span class="icon">T_r=a-c1.23@yet_another-site.edu.au</span></a>
-</p>
-------------------------------
-============================== Arbitrary protocol Link
-''RFCs von ftp://ftp.rfc-editor.org/in-notes/rfcXXXX.txt''
-------------------------------
-<p>
-<i>RFCs von <a class="ext-link" href="ftp://ftp.rfc-editor.org/in-notes/rfcXXXX.txt"><span class="icon">ftp://ftp.rfc-editor.org/in-notes/rfcXXXX.txt</span></a></i>
-</p>
-------------------------------
-============================== Generic InterTrac links
-th:roadmap
-th:roadmap:
-[th:]
-[th: Trac Hacks]
-------------------------------
-<p>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/roadmap" title="roadmap in Trac Hacks"><span class="icon">th:roadmap</span></a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/roadmap" title="roadmap in Trac Hacks"><span class="icon">th:roadmap</span></a>:
-<a class="ext-link" href="http://trac-hacks.org/intertrac/" title="Trac Hacks"><span class="icon">th</span></a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/" title="Trac Hacks"><span class="icon">Trac Hacks</span></a>
 </p>
 ------------------------------
 ============================== Another arbitrary protocol Link
@@ -407,7 +358,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Code Block 2
 {{{
@@ -420,7 +371,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Embedded code blocks
 {{{
@@ -439,7 +390,7 @@ Inner block.
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Consecutive code blocks
 Block 
@@ -465,9 +416,9 @@ and block
 </p>
 ------------------------------
 Block 
- […]
+ [&hellip;]
 and block
- […]
+ [&hellip;]
 .
 ============================== Unfinished code blocks
 Block 
@@ -490,7 +441,7 @@ number two
  }}
 }}}
 </pre>------------------------------
-Block […]
+Block [&hellip;]
 ============================== Wiki processor
 {{{
 #!default
@@ -503,7 +454,7 @@ Paragraph
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== Wiki processor counter example
 {{{
@@ -518,7 +469,7 @@ echo "foo"
 Paragraph
 </p>
 ------------------------------
- […]
+ [&hellip;]
 Paragraph
 ============================== HTML wiki processor
 {{{
@@ -528,7 +479,7 @@ Paragraph
 ------------------------------
 <p>Hello World</p>
 ------------------------------
- […]
+ [&hellip;]
 ============================== HTML wiki processor, XSS check 1
 {{{
 #!html
@@ -537,7 +488,7 @@ Paragraph
 ------------------------------
 
 ------------------------------
- […]
+ [&hellip;]
 ============================== HTML wiki processor, XSS check 2
 {{{
 #!html
@@ -546,56 +497,7 @@ Paragraph
 ------------------------------
 <div>Click me</div>
 ------------------------------
- […]
-============================== div and span wiki processors
-And now it's [[span('''TIME FOR BED!,class=important)]]. Really.
-{{{
-#!div ; class=important
-Go ahead, edit it freely.
-
-{{{
-#!div; style="border: 2pt solid blue; margin: 1em; padding: .5em"; class=demo
-And now it's [[span('''TIME FOR BED! ''',class=important)]]. Really.
-}}}
-etc.
-}}}
-Done.
-------------------------------
-<p>
-And now it's <span class="important"><strong>TIME FOR BED!</strong></span>. Really.
-</p>
-<div class="important"><p>
-Go ahead, edit it freely.
-</p>
-<div style="border: 2pt solid blue; margin: 1em; padding: .5em" class="demo"><p>
-And now it's <span class="important"><strong>TIME FOR BED! </strong></span>. Really.
-</p>
-</div><p>
-etc.
-</p>
-</div><p>
-Done.
-</p>
-------------------------------
-And now it's [[span(...)]]. Really.
- […]
-Done.
-============================== div and Span wiki processors
-{{{
-#!div ; class="important"
-Go ahead, [[Span(''edit it freely'',class=important)]].
-}}}
-Done.
-------------------------------
-<div class="important"><p>
-Go ahead, <span class="important"><i>edit it freely</i></span>.
-</p>
-</div><p>
-Done.
-</p>
-------------------------------
- […]
-Done.
+ [&hellip;]
 ============================================================
 
         Wiki Macros
@@ -664,14 +566,6 @@ Hello World, args = hej hopp Hello World, args = hej hopp2 # Test non greedy mat
 </p>
 ------------------------------
 [[DivCodeElement(...)]]
-============================== Macro returning a Genshi Stream (no "code" div)
-[[DivCodeStream(hej hopp)]]
-------------------------------
-<p>
-</p><div>Hello World, args = hej hopp</div><p>
-</p>
-------------------------------
-[[DivCodeStream(...)]]
 ============================== Macro returning None
 [[None(hej hopp)]] nada
 ------------------------------
@@ -809,7 +703,7 @@ Paragraph
  * item 2
    item 2 line 2
 Paragraph
-============================== Changelog sample (and e-mail link)
+============================== Changelog sample
 2003-09-18 23:26  Joe Bar <joeb@gloogle.gom>
 
 	* src/code.py: Fix problem with obsolete use of
@@ -820,7 +714,7 @@ Paragraph
 Paragraph
 ------------------------------
 <p>
-2003-09-18 23:26  Joe Bar &lt;<a class="mail-link" href="mailto:joeb@gloogle.gom"><span class="icon">joeb@gloogle.gom</span></a>&gt;
+2003-09-18 23:26  Joe Bar &lt;joeb@gloogle.gom&gt;
 </p>
 <ul><li>src/code.py: Fix problem with obsolete use of
 backslash in symbols.

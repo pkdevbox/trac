@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -17,23 +17,12 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import os
 import unittest
-import sys
-import pkg_resources
-from fnmatch import fnmatch
-
-try:
-    from babel import Locale
-except ImportError:
-    Locale = None
 
 from trac.config import Configuration
 from trac.core import Component, ComponentManager, ExtensionPoint
 from trac.env import Environment
 from trac.db.sqlite_backend import SQLiteConnection
-from trac.ticket.default_workflow import load_workflow_config_snippet
-from trac.util import translation
 
 
 def Mock(bases=(), *initargs, **kw):
@@ -93,50 +82,22 @@ def Mock(bases=(), *initargs, **kw):
     return mock
 
 
-class MockPerm(object):
-    """Fake permission class. Necessary as Mock can not be used with operator
-    overloading."""
-    def has_permission(self, x):
-        return True
-    __contains__ = has_permission
-
-    def __call__(self, *a, **kw):
-        return self
-
-    def require(self, *a, **kw):
-        pass
-    assert_permission = require
-
-
 class TestSetup(unittest.TestSuite):
     """
     Test suite decorator that allows a fixture to be setup for a complete
     suite of test cases.
     """
     def setUp(self):
-        """Sets up the fixture, and sets self.fixture if needed"""
         pass
 
     def tearDown(self):
-        """Tears down the fixture"""
         pass
 
-    def run(self, result):
-        """Setup the fixture (self.setUp), call .setFixture on all the tests,
-        and tear down the fixture (self.tearDown)."""
+    def __call__(self, result):
         self.setUp()
-        if hasattr(self, 'fixture'):
-            for test in self._tests:
-                if hasattr(test, 'setFixture'):
-                    test.setFixture(self.fixture)
-        unittest.TestSuite.run(self, result)
+        unittest.TestSuite.__call__(self, result)
         self.tearDown()
         return result
-
-
-class TestCaseSetup(unittest.TestCase):
-    def setFixture(self, fixture):
-        self.fixture = fixture
 
 
 class InMemoryDatabase(SQLiteConnection):
@@ -157,34 +118,25 @@ class InMemoryDatabase(SQLiteConnection):
         self.cnx.commit()
 
 
+class TestConfiguration(Configuration):
+    def __init__(self, filename):
+        Configuration.__init__(self, filename)
+        # insulate us from "real" global trac.ini (ref. #3700)
+        from ConfigParser import ConfigParser
+        self.site_parser = ConfigParser()
+
+
 class EnvironmentStub(Environment):
     """A stub of the trac.env.Environment object for testing."""
 
-    href = abs_href = None
-
     def __init__(self, default_data=False, enable=None):
-        """Construct a new Environment stub object.
-
-        default_data: If True, populate the database with some defaults.
-        enable: A list of component classes or name globs to activate in the
-                stub environment.
-        """
         ComponentManager.__init__(self)
         Component.__init__(self)
-        self.enabled_components = enable or ['trac.*']
+        self.enabled_components = enable
         self.db = InMemoryDatabase()
-        self.systeminfo = [('Python', sys.version)]
+        self.path = ''
 
-        import trac
-        self.path = os.path.dirname(trac.__file__)
-        if not os.path.isabs(self.path):
-            self.path = os.path.join(os.getcwd(), self.path)
-
-        self.config = Configuration(None)
-        # We have to have a ticket-workflow config for ''lots'' of things to
-        # work.  So insert the basic-workflow config here.  There may be a
-        # better solution than this.
-        load_workflow_config_snippet(self.config, 'basic-workflow.ini')
+        self.config = TestConfiguration(None)
 
         from trac.log import logger_factory
         self.log = logger_factory('test')
@@ -204,19 +156,17 @@ class EnvironmentStub(Environment):
             self.db.commit()
             
         self.known_users = []
-        translation.activate(Locale and Locale('en', 'US'))
 
     def is_component_enabled(self, cls):
-        for component in self.enabled_components:
-            if component is cls:
-                return True
-            if isinstance(component, basestring) and \
-                fnmatch(cls.__module__ + '.' + cls.__name__, component):
-                return True
-        return False
+        if self.enabled_components is None:
+            return True
+        return cls in self.enabled_components
 
     def get_db_cnx(self):
         return self.db
+
+    def get_templates_dir(self):
+        return None
 
     def get_known_users(self, db):
         return self.known_users
@@ -237,13 +187,11 @@ def locate(fn):
     return None
 
 
-INCLUDE_FUNCTIONAL_TESTS = True
-
 def suite():
     import trac.tests
-    import trac.admin.tests
     import trac.db.tests
     import trac.mimeview.tests
+    import trac.scripts.tests
     import trac.ticket.tests
     import trac.util.tests
     import trac.versioncontrol.tests
@@ -252,12 +200,10 @@ def suite():
     import trac.wiki.tests
 
     suite = unittest.TestSuite()
-    suite.addTest(trac.tests.basicSuite())
-    if INCLUDE_FUNCTIONAL_TESTS:
-        suite.addTest(trac.tests.functionalSuite())
-    suite.addTest(trac.admin.tests.suite())
+    suite.addTest(trac.tests.suite())
     suite.addTest(trac.db.tests.suite())
     suite.addTest(trac.mimeview.tests.suite())
+    suite.addTest(trac.scripts.tests.suite())
     suite.addTest(trac.ticket.tests.suite())
     suite.addTest(trac.util.tests.suite())
     suite.addTest(trac.versioncontrol.tests.suite())
@@ -270,8 +216,4 @@ def suite():
 if __name__ == '__main__':
     import doctest, sys
     doctest.testmod(sys.modules[__name__])
-    #FIXME: this is a bit inelegant
-    if '--skip-functional-tests' in sys.argv:
-        sys.argv.remove('--skip-functional-tests')
-        INCLUDE_FUNCTIONAL_TESTS = False
     unittest.main(defaultTest='suite')

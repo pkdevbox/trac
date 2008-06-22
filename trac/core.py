@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -23,23 +23,12 @@ __all__ = ['Component', 'ExtensionPoint', 'implements', 'Interface',
 class TracError(Exception):
     """Exception base class for errors in Trac."""
 
-    title = 'Trac Error'
-    
     def __init__(self, message, title=None, show_traceback=False):
-        """If message is a genshi.builder.tag object, everything up to the
-        first <p> will be displayed in the red box, and everything after will
-        be displayed below the red box.
-        If title is given, it will be displayed as the large header above the
-        error message.
-        """
         Exception.__init__(self, message)
         self.message = message
-        if title:
-            self.title = title
+        self.title = title
         self.show_traceback = show_traceback
 
-    def __unicode__(self):
-        return unicode(self.message)
 
 class Interface(object):
     """Marker base class for extension point interfaces."""
@@ -61,8 +50,7 @@ class ExtensionPoint(property):
 
     def extensions(self, component):
         """Return a list of components that declare to implement the extension
-        point interface.
-        """
+        point interface."""
         extensions = ComponentMeta._registry.get(self.interface, [])
         return filter(None, [component.compmgr[cls] for cls in extensions])
 
@@ -81,6 +69,9 @@ class ComponentMeta(type):
 
     def __new__(cls, name, bases, d):
         """Create the component class."""
+
+        d['_implements'] = _implements[:]
+        del _implements[:]
 
         new_class = type.__new__(cls, name, bases, d)
         if name == 'Component':
@@ -104,11 +95,7 @@ class ComponentMeta(type):
                 if cls not in compmgr.components:
                     compmgr.components[cls] = self
                     if init:
-                        try:
-                            init(self)
-                        except:
-                            del compmgr.components[cls]
-                            raise
+                        init(self)
             maybe_init._original = init
             new_class.__init__ = maybe_init
 
@@ -117,14 +104,22 @@ class ComponentMeta(type):
             return new_class
 
         ComponentMeta._components.append(new_class)
-        registry = ComponentMeta._registry
         for interface in d.get('_implements', []):
-            registry.setdefault(interface, []).append(new_class)
+            ComponentMeta._registry.setdefault(interface, []).append(new_class)
         for base in [base for base in bases if hasattr(base, '_implements')]:
             for interface in base._implements:
-                registry.setdefault(interface, []).append(new_class)
+                ComponentMeta._registry.setdefault(interface, []).append(new_class)
 
         return new_class
+
+
+_implements = []
+
+def implements(*interfaces):
+    """Can be used in the class definiton of `Component` subclasses to declare
+    the extension points that are extended.
+    """
+    _implements.extend(interfaces)
 
 
 class Component(object):
@@ -154,25 +149,6 @@ class Component(object):
             compmgr.component_activated(self)
         return self
 
-    def implements(*interfaces):
-        """Can be used in the class definiton of `Component` subclasses to
-        declare the extension points that are extended.
-        """
-        import sys
-
-        frame = sys._getframe(1)
-        locals_ = frame.f_locals
-
-        # Some sanity checks
-        assert locals_ is not frame.f_globals and '__module__' in locals_, \
-               'implements() can only be used in a class definition'
-
-        locals_.setdefault('_implements', []).extend(interfaces)
-    implements = staticmethod(implements)
-
-
-implements = Component.implements
-
 
 class ComponentManager(object):
     """The component manager keeps a pool of active components."""
@@ -190,8 +166,7 @@ class ComponentManager(object):
 
     def __getitem__(self, cls):
         """Activate the component instance for the given class, or return the
-        existing the instance if the component has already been activated.
-        """
+        existing the instance if the component has already been activated."""
         if cls not in self.enabled:
             self.enabled[cls] = self.is_component_enabled(cls)
         if not self.enabled[cls]:
@@ -199,12 +174,12 @@ class ComponentManager(object):
         component = self.components.get(cls)
         if not component:
             if cls not in ComponentMeta._components:
-                raise TracError('Component "%s" not registered' % cls.__name__)
+                raise TracError, 'Component "%s" not registered' % cls.__name__
             try:
                 component = cls(self)
             except TypeError, e:
-                raise TracError('Unable to instantiate component %r (%s)' %
-                                (cls, e))
+                raise TracError, 'Unable to instantiate component %r (%s)' \
+                                 % (cls, e)
         return component
 
     def component_activated(self, component):

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
+# Copyright (C) 2005-2006 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
-# Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -16,26 +15,45 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Ludvig Strigeus
 
-import os.path
-
 from trac.core import *
-from trac.mimeview.api import content_to_unicode, IHTMLPreviewRenderer, \
-                              Mimeview
+from trac.mimeview.api import content_to_unicode, IHTMLPreviewRenderer, Mimeview
 from trac.util.html import escape, Markup
-from trac.util.text import expandtabs
-from trac.util.translation import _
-from trac.web.chrome import Chrome, add_script, add_stylesheet
+from trac.web.chrome import add_stylesheet
 
 __all__ = ['PatchRenderer']
 
 
 class PatchRenderer(Component):
-    """Structured display of patches in unified diff format.
-
-    This uses the same layout as in the wiki diff view or the changeset view.
+    """Structured display of patches in unified diff format, similar to the
+    layout provided by the changeset view.
     """
 
     implements(IHTMLPreviewRenderer)
+
+    diff_cs = """
+<?cs include:'macros.cs' ?>
+<div class="diff"><ul class="entries"><?cs
+ each:file = diff.files ?><li class="entry">
+  <h2><?cs var:file.filename ?></h2>
+  <table class="inline" summary="Differences" cellspacing="0">
+   <colgroup><col class="lineno" /><col class="lineno" /><col class="content" /></colgroup>
+   <thead><tr>
+    <th><?cs var:file.oldrev ?></th>
+    <th><?cs var:file.newrev ?></th>
+    <th>&nbsp;</th>
+   </tr></thead><?cs
+   each:change = file.diff ?><?cs
+    call:diff_display(change, diff.style) ?><?cs
+    if:name(change) < len(file.diff) - 1 ?>
+     <tbody class="skipped">
+      <tr><th>&hellip;</th><th>&hellip;</th><td>&nbsp;</td></tr>
+     </tbody><?cs
+    /if ?><?cs
+   /each ?>
+  </table>
+ </li><?cs /each ?>
+</ul></div>
+""" # diff_cs
 
     # IHTMLPreviewRenderer methods
 
@@ -44,22 +62,20 @@ class PatchRenderer(Component):
             return 8
         return 0
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
-        req = context.req
-        from trac.web.chrome import Chrome
+    def render(self, req, mimetype, content, filename=None, rev=None):
+        from trac.web.clearsilver import HDFWrapper
 
         content = content_to_unicode(self.env, content, mimetype)
-        changes = self._diff_to_hdf(content.splitlines(),
-                                    Mimeview(self.env).tab_width)
-        if not changes:
-            raise TracError(_('Invalid unified diff content'))
-        data = {'diff': {'style': 'inline'}, 'no_id': True,
-                'changes': changes, 'longcol': 'File', 'shortcol': ''}
+        d = self._diff_to_hdf(content.splitlines(),
+                              Mimeview(self.env).tab_width)
+        if not d:
+            raise TracError, 'Invalid unified diff content'
+        hdf = HDFWrapper(loadpaths=[self.env.get_templates_dir(),
+                                    self.config.get('trac', 'templates_dir')])
+        hdf['diff.files'] = d
 
-        add_script(req, 'common/js/diff.js')
         add_stylesheet(req, 'common/css/diff.css')
-        return Chrome(self.env).render_template(req, 'diff_div.html',
-                                                data, fragment=True)
+        return hdf.render(hdf.parse(self.diff_cs))
 
     # Internal methods
 
@@ -93,88 +109,49 @@ class PatchRenderer(Component):
             div, mod = divmod(len(match.group(0)), 2)
             return div * '&nbsp; ' + mod * '&nbsp;'
 
-        comments = []
-        changes = []
+        output = []
+        filename, groups = None, None
         lines = iter(difflines)
         try:
             line = lines.next()
             while True:
                 if not line.startswith('--- '):
-                    if not line.startswith('Index: ') and line != '='*67:
-                        comments.append(line)
                     line = lines.next()
                     continue
 
-                oldpath = oldrev = newpath = newrev = ''
-
                 # Base filename/version
-                oldinfo = line.split(None, 2)
-                if len(oldinfo) > 1:
-                    oldpath = oldinfo[1]
-                    if len(oldinfo) > 2:
-                        oldrev = oldinfo[2]
+                words = line.split(None, 2)
+                filename, fromrev = words[1], 'old'
+                groups, blocks = None, None
 
                 # Changed filename/version
                 line = lines.next()
                 if not line.startswith('+++ '):
                     return None
 
-                newinfo = line.split(None, 2)
-                if len(newinfo) > 1:
-                    newpath = newinfo[1]
-                    if len(newinfo) > 2:
-                        newrev = newinfo[2]
-
-                shortrev = ('old', 'new')
-                if oldpath or newpath:
-                    sep = re.compile(r'([/.~\\])')
-                    commonprefix = ''.join(os.path.commonprefix(
-                        [sep.split(newpath), sep.split(oldpath)]))
-                    commonsuffix = ''.join(os.path.commonprefix(
-                        [sep.split(newpath)[::-1],
-                         sep.split(oldpath)[::-1]])[::-1])
-                    if len(commonprefix) > len(commonsuffix):
-                        common = commonprefix
-                    elif commonsuffix:
-                        common = commonsuffix.lstrip('/')
-                        a = oldpath[:-len(commonsuffix)]
-                        b = newpath[:-len(commonsuffix)]
-                        if len(a) < 4 and len(b) < 4:
-                            shortrev = (a, b)
-                    else:
-                        common = '(a) %s vs. (b) %s' % (oldpath, newpath)
-                        shortrev = ('a', 'b')
-                else:
-                    common = ''
-
+                words = line.split(None, 2)
+                if len(words[1]) < len(filename):
+                    # Always use the shortest filename for display
+                    filename = words[1]
                 groups = []
-                changes.append({'change': 'edit', 'props': [],
-                                'comments': '\n'.join(comments),
-                                'diffs': groups,
-                                'old': {'path': common,
-                                        'rev': ' '.join(oldinfo[1:]),
-                                        'shortrev': shortrev[0]},
-                                'new': {'path': common,
-                                        'rev': ' '.join(newinfo[1:]),
-                                        'shortrev': shortrev[1]}})
-                comments = []
-                line = lines.next()
-                while line:
-                    # "@@ -333,10 +329,8 @@" or "@@ -1 +1 @@"
-                    r = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@',
-                                 line)
+                output.append({'filename' : filename, 'oldrev' : fromrev,
+                               'newrev' : 'new', 'diff' : groups})
+
+                for line in lines:
+                    # @@ -333,10 +329,8 @@
+                    r = re.match(r'@@ -(\d+),(\d+) \+(\d+),(\d+) @@', line)
                     if not r:
                         break
                     blocks = []
                     groups.append(blocks)
-                    fromline, fromend, toline, toend = [int(x or 1)
-                                                        for x in r.groups()]
-                    last_type = last_change = extra = None
+                    fromline,fromend,toline,toend = map(int, r.groups())
+                    last_type = None
 
                     fromend += fromline
                     toend += toline
-                    line = lines.next()
-                    while fromline < fromend or toline < toend or extra:
+
+                    while fromline < fromend or toline < toend:
+                        line = lines.next()
 
                         # First character is the command
                         command = ' '
@@ -183,47 +160,34 @@ class PatchRenderer(Component):
                         # Make a new block?
                         if (command == ' ') != last_type:
                             last_type = command == ' '
-                            kind = last_type and 'unmod' or 'mod'
-                            block = {'type': kind,
-                                     'base': {'offset': fromline - 1,
-                                              'lines': []},
-                                     'changed': {'offset': toline - 1,
-                                                 'lines': []}}
-                            blocks.append(block)
-                        else:
-                            block = blocks[-1]
+                            blocks.append({'type': last_type and 'unmod' or 'mod',
+                                           'base.offset': fromline - 1,
+                                           'base.lines': [],
+                                           'changed.offset': toline - 1,
+                                           'changed.lines': []})
                         if command == ' ':
-                            sides = ['base', 'changed']
+                            blocks[-1]['changed.lines'].append(line)
+                            blocks[-1]['base.lines'].append(line)
+                            fromline += 1
+                            toline += 1
                         elif command == '+':
-                            last_side = 'changed'
-                            sides = [last_side]
+                            blocks[-1]['changed.lines'].append(line)
+                            toline += 1
                         elif command == '-':
-                            last_side = 'base'
-                            sides = [last_side]
-                        elif command == '\\' and last_side:
-                            meta = block[last_side].setdefault('meta', {})
-                            meta[len(block[last_side]['lines'])] = True
-                            sides = [last_side]
+                            blocks[-1]['base.lines'].append(line)
+                            fromline += 1
                         else:
                             return None
-                        for side in sides:
-                            if side == 'base':
-                                fromline += 1
-                            else:
-                                toline += 1
-                            block[side]['lines'].append(line)
-                        line = lines.next()
-                        extra = line and line[0] == '\\'
+                line = lines.next()
         except StopIteration:
             pass
 
         # Go through all groups/blocks and mark up intraline changes, and
         # convert to html
-        for o in changes:
-            for group in o['diffs']:
+        for o in output:
+            for group in o['diff']:
                 for b in group:
-                    base, changed = b['base'], b['changed']
-                    f, t = base['lines'], changed['lines']
+                    f, t = b['base.lines'], b['changed.lines']
                     if b['type'] == 'mod':
                         if len(f) == 0:
                             b['type'] = 'add'
@@ -232,21 +196,17 @@ class PatchRenderer(Component):
                         elif len(f) == len(t):
                             _markup_intraline_change(f, t)
                     for i in xrange(len(f)):
-                        line = expandtabs(f[i], tabwidth, '\0\1')
-                        line = escape(line, quotes=False)
+                        line = f[i].expandtabs(tabwidth)
+                        line = escape(line)
                         line = '<del>'.join([space_re.sub(htmlify, seg)
                                              for seg in line.split('\0')])
                         line = line.replace('\1', '</del>')
                         f[i] = Markup(line)
-                        if 'meta' in base and i in base['meta']:
-                            f[i] = Markup('<em>%s</em>') % f[i]
                     for i in xrange(len(t)):
-                        line = expandtabs(t[i], tabwidth, '\0\1')
-                        line = escape(line, quotes=False)
+                        line = t[i].expandtabs(tabwidth)
+                        line = escape(line)
                         line = '<ins>'.join([space_re.sub(htmlify, seg)
                                              for seg in line.split('\0')])
                         line = line.replace('\1', '</ins>')
                         t[i] = Markup(line)
-                        if 'meta' in changed and i in changed['meta']:
-                            t[i] = Markup('<em>%s</em>') % t[i]
-        return changes
+        return output

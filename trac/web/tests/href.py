@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
-# Copyright (C) 2005-2007 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2005 Edgewall Software
+# Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -11,16 +11,23 @@
 # This software consists of voluntary contributions made by many
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
-
-import doctest
-import unittest
+#
+# Author: Christopher Lenz <cmlenz@gmx.de>
 
 from trac.web import href
 
+import sys
+import unittest
+
+
 def suite():
-    suite = unittest.TestSuite()
-    suite.addTest(doctest.DocTestSuite(href))
-    return suite
+    try:
+        from doctest import DocTestSuite
+        return DocTestSuite(href)
+    except ImportError:
+        print>>sys.stderr, "DocTestSuite not available, skipping href tests"
+        return unittest.TestSuite()
 
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    runner = unittest.TextTestRunner()
+    runner.run(suite())

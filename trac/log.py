@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2005 Daniel Lundin <daniel@edgewall.com>
 # Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -44,7 +44,7 @@ def logger_factory(logtype='syslog', logfile=None, level='WARNING',
             format = '%(asctime)s ' + format
     datefmt = ''
     if logtype == 'stderr':
-        datefmt = '%X'
+        datefmt = '%X'        
     level = level.upper()
     if level in ('DEBUG', 'ALL'):
         logger.setLevel(logging.DEBUG)
@@ -58,9 +58,6 @@ def logger_factory(logtype='syslog', logfile=None, level='WARNING',
         logger.setLevel(logging.WARNING)
     formatter = logging.Formatter(format, datefmt)
     hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr)
-
-    # Remember our handler so that we can remove it later
-    logger._trac_handler = hdlr 
+    logger.addHandler(hdlr) 
 
     return logger

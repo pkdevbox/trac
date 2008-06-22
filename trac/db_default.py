@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2005 Daniel Lundin <daniel@edgewall.com>
 # All rights reserved.
 #
@@ -17,7 +17,7 @@
 from trac.db import Table, Column, Index
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 21
+db_version = 20
 
 def __mkreports(reports):
     """Utility function used to create report data in same syntax as the
@@ -164,24 +164,26 @@ schema = [
 ##
 
 def get_reports(db):
+    owner = db.concat('owner', "' *'")
     return (
 ('Active Tickets',
 """
  * List all active tickets by priority.
  * Color each row based on priority.
+ * If a ticket has been accepted, a '*' is appended after the owner's name
 """,
 """
 SELECT p.value AS __color__,
    id AS ticket, summary, component, version, milestone, t.type AS type, 
-   owner, status,
+   (CASE status WHEN 'assigned' THEN %s ELSE owner END) AS owner,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed'
-  ORDER BY """ + db.cast('p.value', 'int') + """, milestone, t.type, time
-"""),
+  WHERE status IN ('new', 'assigned', 'reopened') 
+  ORDER BY p.value, milestone, t.type, time
+""" % owner),
 #----------------------------------------------------------------------------
  ('Active Tickets by Version',
 """
@@ -195,16 +197,15 @@ for useful RSS export.
 SELECT p.value AS __color__,
    version AS __group__,
    id AS ticket, summary, component, version, t.type AS type, 
-   owner, status,
+   (CASE status WHEN 'assigned' THEN %s ELSE owner END) AS owner,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed'
-  ORDER BY (version IS NULL),version, """ + db.cast('p.value', 'int') +
-  """, t.type, time
-"""),
+  WHERE status IN ('new', 'assigned', 'reopened') 
+  ORDER BY (version IS NULL),version, p.value, t.type, time
+""" % owner),
 #----------------------------------------------------------------------------
 ('Active Tickets by Milestone',
 """
@@ -218,19 +219,19 @@ for useful RSS export.
 SELECT p.value AS __color__,
    %s AS __group__,
    id AS ticket, summary, component, version, t.type AS type, 
-   owner, status,
+   (CASE status WHEN 'assigned' THEN %s ELSE owner END) AS owner,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed' 
-  ORDER BY (milestone IS NULL),milestone, %s, t.type, time
-""" % (db.concat("'Milestone '", 'milestone'), db.cast('p.value', 'int'))),
+  WHERE status IN ('new', 'assigned', 'reopened') 
+  ORDER BY (milestone IS NULL),milestone, p.value, t.type, time
+""" % (db.concat('milestone', "' Release'"), owner)),
 #----------------------------------------------------------------------------
-('Accepted, Active Tickets by Owner',
+('Assigned, Active Tickets by Owner',
 """
-List accepted tickets, group by ticket owner, sorted by priority.
+List assigned tickets, group by ticket owner, sorted by priority.
 """,
 """
 
@@ -241,13 +242,13 @@ SELECT p.value AS __color__,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status = 'accepted'
-  ORDER BY owner, """ + db.cast('p.value', 'int') + """, t.type, time
+  WHERE status = 'assigned'
+  ORDER BY owner, p.value, t.type, time
 """),
 #----------------------------------------------------------------------------
-('Accepted, Active Tickets by Owner (Full Description)',
+('Assigned, Active Tickets by Owner (Full Description)',
 """
-List tickets accepted, group by ticket owner.
+List tickets assigned, group by ticket owner.
 This report demonstrates the use of full-row display.
 """,
 """
@@ -258,8 +259,8 @@ SELECT p.value AS __color__,
    changetime AS _changetime, reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status = 'accepted'
-  ORDER BY owner, """ + db.cast('p.value', 'int') + """, t.type, time
+  WHERE status = 'assigned'
+  ORDER BY owner, p.value, t.type, time
 """),
 #----------------------------------------------------------------------------
 ('All Tickets By Milestone  (Including closed)',
@@ -281,8 +282,8 @@ SELECT p.value AS __color__,
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
   ORDER BY (milestone IS NULL), milestone DESC, (status = 'closed'), 
-        (CASE status WHEN 'closed' THEN changetime ELSE (-1) * %s END) DESC
-""" % db.cast('p.value', 'int')),
+        (CASE status WHEN 'closed' THEN modified ELSE (-1)*p.value END) DESC
+"""),
 #----------------------------------------------------------------------------
 ('My Tickets',
 """
@@ -292,16 +293,15 @@ logged in user when executed.
 """,
 """
 SELECT p.value AS __color__,
-   (CASE status WHEN 'accepted' THEN 'Accepted' ELSE 'Owned' END) AS __group__,
+   (CASE status WHEN 'assigned' THEN 'Assigned' ELSE 'Owned' END) AS __group__,
    id AS ticket, summary, component, version, milestone,
    t.type AS type, priority, time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE t.status <> 'closed' AND owner = $USER
-  ORDER BY (status = 'accepted') DESC, """ + db.cast('p.value', 'int') + 
-  """, milestone, t.type, time
+  WHERE t.status IN ('new', 'assigned', 'reopened') AND owner = $USER
+  ORDER BY (status = 'assigned') DESC, p.value, milestone, t.type, time
 """),
 #----------------------------------------------------------------------------
 ('Active Tickets, Mine first',
@@ -316,16 +316,15 @@ SELECT p.value AS __color__,
      ELSE 'Active Tickets' 
     END) AS __group__,
    id AS ticket, summary, component, version, milestone, t.type AS type, 
-   owner, status,
+   (CASE status WHEN 'assigned' THEN %s ELSE owner END) AS owner,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed' 
-  ORDER BY (owner = $USER) DESC, """ + db.cast('p.value', 'int') + 
-  """, milestone, t.type, time
-"""))
+  WHERE status IN ('new', 'assigned', 'reopened') 
+  ORDER BY (owner = $USER) DESC, p.value, milestone, t.type, time
+""" % owner))
 
 
 ##
@@ -350,7 +349,11 @@ def get_data(db):
                 ('2.0', 0))),
            ('enum',
              ('type', 'name', 'value'),
-               (('resolution', 'fixed', 1),
+               (('status', 'new', 1),
+                ('status', 'assigned', 2),
+                ('status', 'reopened', 3),
+                ('status', 'closed', 4),
+                ('resolution', 'fixed', 1),
                 ('resolution', 'invalid', 2),
                 ('resolution', 'wontfix', 3),
                 ('resolution', 'duplicate', 4),
@@ -384,8 +387,24 @@ def get_data(db):
            ('system',
              ('name', 'value'),
                (('database_version', str(db_version)),
-                ('initial_database_version', str(db_version)),
                 ('youngest_rev', ''))),
            ('report',
              ('author', 'title', 'query', 'description'),
                __mkreports(get_reports(db))))
+
+
+default_components = ('trac.About', 'trac.attachment',
+                      'trac.db.mysql_backend', 'trac.db.postgres_backend',
+                      'trac.db.sqlite_backend',
+                      'trac.mimeview.enscript', 'trac.mimeview.patch',
+                      'trac.mimeview.php', 'trac.mimeview.rst',
+                      'trac.mimeview.silvercity', 'trac.mimeview.txtl',
+                      'trac.scripts.admin',
+                      'trac.Search', 'trac.Settings',
+                      'trac.ticket.query', 'trac.ticket.report',
+                      'trac.ticket.roadmap', 'trac.ticket.web_ui',
+                      'trac.Timeline',
+                      'trac.versioncontrol.web_ui',
+                      'trac.versioncontrol.svn_fs',
+                      'trac.wiki.macros', 'trac.wiki.web_ui',
+                      'trac.web.auth')

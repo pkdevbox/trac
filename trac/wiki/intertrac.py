@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
+# Copyright (C) 2005-2006 Edgewall Software
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
@@ -16,16 +16,12 @@
 
 import re
 
-from genshi.builder import Element, tag
-
 from trac.core import *
-from trac.mimeview import Context
-from trac.perm import PermissionError
 from trac.util import sorted
-from trac.util.translation import _
+from trac.util.html import Element, html
 from trac.web import IRequestHandler
 from trac.wiki.api import IWikiMacroProvider
-from trac.wiki.formatter import extract_link
+from trac.wiki.formatter import wiki_to_link
 
 
 class InterTracDispatcher(Component):
@@ -44,14 +40,15 @@ class InterTracDispatcher(Component):
 
     def process_request(self, req):
         link = req.args.get('link', '')
-        link_elt = extract_link(self.env, Context.from_request(req), link)
+        if not link:
+            raise TracError('No TracLinks given')
+        link_elt = wiki_to_link(link, self.env, req)
         if isinstance(link_elt, Element):
-            href = link_elt.attrib.get('href')
-            if href is None: # most probably no permissions to view
-                raise PermissionError(_("Can't view %(link)s:", link=link))
-        else:
-            href = req.href(link)
-        req.redirect(href)
+            href = link_elt.attr['href']
+            if href:
+                req.redirect(href)
+        raise TracError('"%s" is not a TracLinks' % link)
+
 
     # IWikiMacroProvider methods
 
@@ -61,7 +58,7 @@ class InterTracDispatcher(Component):
     def get_macro_description(self, name): 
         return "Provide a list of known InterTrac prefixes."
 
-    def expand_macro(self, formatter, name, content):
+    def render_macro(self, req, name, content):
         intertracs = {}
         for key, value in self.config.options('intertrac'):
             idx = key.rfind('.') # rsplit only in 2.4
@@ -75,16 +72,16 @@ class InterTracDispatcher(Component):
         def generate_prefix(prefix):
             intertrac = intertracs[prefix]
             if isinstance(intertrac, basestring):
-                yield tag.tr(tag.td(tag.b(prefix)),
-                             tag.td('Alias for ', tag.b(intertrac)))
+                yield html.TR(html.TD(html.B(prefix)),
+                              html.TD('Alias for ', html.B(intertrac)))
             else:
                 url = intertrac.get('url', '')
                 if url:
                     title = intertrac.get('title', url)
-                    yield tag.tr(tag.td(tag.a(tag.b(prefix),
-                                              href=url + '/timeline')),
-                                 tag.td(tag.a(title, href=url)))
+                    yield html.TR(html.TD(html.A(html.B(prefix),
+                                                 href=url + '/timeline')),
+                                  html.TD(html.A(title, href=url)))
 
-        return tag.table(class_="wiki intertrac")(
-            tag.tr(tag.th(tag.em('Prefix')), tag.th(tag.em('Trac Site'))),
+        return html.TABLE(class_="wiki intertrac")(
+            html.TR(html.TH(html.EM('Prefix')), html.TH(html.EM('Trac Site'))),
             [generate_prefix(p) for p in sorted(intertracs.keys())])

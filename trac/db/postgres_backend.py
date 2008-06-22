@@ -19,7 +19,6 @@ import re
 from trac.core import *
 from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper
-from trac.util import get_pkginfo
 
 psycopg = None
 PgSQL = None
@@ -33,32 +32,12 @@ class PostgreSQLConnector(Component):
 
     implements(IDatabaseConnector)
 
-    def __init__(self):
-        self._version = None
-
     def get_supported_schemes(self):
         return [('postgres', 1)]
 
     def get_connection(self, path, user=None, password=None, host=None,
                        port=None, params={}):
-        global psycopg
-        global PgSQL
-        cnx = PostgreSQLConnection(path, user, password, host, port, params)
-        if not self._version:
-            if psycopg:
-                self._version = get_pkginfo(psycopg).get('version',
-                                                         psycopg.__version__)
-                name = 'psycopg2'
-            elif PgSQL:
-                import pyPgSQL
-                self._version = get_pkginfo(pyPgSQL).get('version',
-                                                         pyPgSQL.__version__)
-                name = 'pyPgSQL'
-            else:
-                name = 'unknown postgreSQL driver'
-                self._version = '?'
-            self.env.systeminfo.append((name, self._version))
-        return cnx
+        return PostgreSQLConnection(path, user, password, host, port, params)
 
     def init_db(self, path, user=None, password=None, host=None, port=None,
                 params={}):
@@ -89,8 +68,7 @@ class PostgreSQLConnector(Component):
         sql.append(',\n'.join(coldefs) + '\n)')
         yield '\n'.join(sql)
         for index in table.indices:
-            unique = index.unique and 'UNIQUE' or ''
-            yield "CREATE %s INDEX %s_%s_idx ON %s (%s)" % (unique, table.name, 
+            yield "CREATE INDEX %s_%s_idx ON %s (%s)" % (table.name, 
                    '_'.join(index.columns), table.name, ','.join(index.columns))
 
 

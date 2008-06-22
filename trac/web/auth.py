@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
@@ -29,14 +29,12 @@ import sys
 import time
 import urllib2
 
-from genshi.builder import tag
-
 from trac.config import BoolOption
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
 from trac.util import hex_entropy, md5crypt
-from trac.util.translation import _
+from trac.util.html import escape, html
 
 
 class LoginModule(Component):
@@ -59,8 +57,7 @@ class LoginModule(Component):
          authentication (''since 0.9'').""")
 
     ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
-        """Whether login names should be converted to lower case
-        (''since 0.9'').""")
+        """Whether case should be ignored for login names (''since 0.9'').""")
 
     # IAuthenticator methods
 
@@ -86,13 +83,12 @@ class LoginModule(Component):
 
     def get_navigation_items(self, req):
         if req.authname and req.authname != 'anonymous':
-            yield ('metanav', 'login', _('logged in as %(user)s',
-                                         user=req.authname))
+            yield ('metanav', 'login', 'logged in as %s' % req.authname)
             yield ('metanav', 'logout',
-                   tag.a(_('Logout'), href=req.href.logout()))
+                   html.A('Logout', href=req.href.logout()))
         else:
             yield ('metanav', 'login',
-                   tag.a(_('Login'), href=req.href.login()))
+                   html.A('Login', href=req.href.login()))
 
     # IRequestHandler methods
 
@@ -123,18 +119,18 @@ class LoginModule(Component):
         case sensitive regarding user names and domain names
         """
         if not req.remote_user:
-            raise TracError(tag("Authentication information not available. "
-                                "Please refer to the ",
-                                tag.a('installation documentation',
-                                      title="Configuring Authentication",
-                                      href=req.href.wiki('TracInstall') +
-                                      "#ConfiguringAuthentication"), "."))
+            raise TracError(html("Authentication information not available. "
+                                 "Please refer to the ",
+                                 html.a('installation documentation',
+                                        title="Configuring Authentication",
+                                        href=req.href.wiki('TracInstall') +
+                                        "#ConfiguringAuthentication"), "."))
         remote_user = req.remote_user
         if self.ignore_case:
             remote_user = remote_user.lower()
 
         assert req.authname in ('anonymous', remote_user), \
-               _('Already logged in as %(user)s.', user=req.authname)
+               'Already logged in as %s.' % req.authname
 
         cookie = hex_entropy()
         db = self.env.get_db_cnx()
@@ -165,11 +161,6 @@ class LoginModule(Component):
                        (req.authname, int(time.time()) - 86400 * 10))
         db.commit()
         self._expire_cookie(req)
-        custom_redirect = self.config['metanav'].get('logout.redirect')
-        if custom_redirect:
-            if not re.match(r'https?:|/', custom_redirect):
-                custom_redirect = req.href(custom_redirect)
-            req.redirect(custom_redirect)
 
     def _expire_cookie(self, req):
         """Instruct the user agent to drop the auth cookie by setting the
@@ -201,8 +192,7 @@ class LoginModule(Component):
     def _redirect_back(self, req):
         """Redirect the user back to the URL she came from."""
         referer = req.get_header('Referer')
-        if referer and not (referer == req.base_url or \
-                referer.startswith(req.base_url.rstrip('/')+'/')):
+        if referer and not referer.startswith(req.base_url):
             # only redirect to referer if it is from the same site
             referer = None
         req.redirect(referer or req.abs_href())
@@ -239,11 +229,7 @@ class BasicAuthentication(PasswordFileAuthentication):
             import crypt
             self.crypt = crypt.crypt
         except ImportError:
-            try:
-                import fcrypt
-                self.crypt = fcrypt.crypt
-            except ImportError:
-                self.crypt = None
+            self.crypt = None
         PasswordFileAuthentication.__init__(self, htpasswd)
 
     def load(self, filename):

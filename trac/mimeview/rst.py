@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004 Oliver Rutherfurd
 # All rights reserved.
 #
@@ -26,22 +26,13 @@ __docformat__ = 'reStructuredText'
 
 from distutils.version import StrictVersion
 import re
-try:
-    from docutils import nodes
-    from docutils.core import publish_parts
-    from docutils.parsers import rst
-    from docutils import __version__
-    has_docutils = True
-except ImportError:
-    has_docutils = False
 
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
 from trac.util.html import Element, Markup
-from trac.util.translation import _
 from trac.web.href import Href
-from trac.wiki.api import WikiSystem
-from trac.wiki.formatter import WikiProcessor, Formatter, extract_link
+from trac.wiki.formatter import WikiProcessor
+from trac.wiki import WikiSystem, wiki_to_link
 
 class ReStructuredTextRenderer(Component):
     """
@@ -54,18 +45,21 @@ class ReStructuredTextRenderer(Component):
             return 8
         return 0
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
-        global has_docutils
-        if not has_docutils:
-            raise TracError(_('Docutils not found'))
+    def render(self, req, mimetype, content, filename=None, rev=None):
+        try:
+            from docutils import nodes
+            from docutils.core import publish_parts
+            from docutils.parsers import rst
+            from docutils import __version__
+        except ImportError:
+            raise TracError, 'Docutils not found'
         if StrictVersion(__version__) < StrictVersion('0.3.9'):
-            raise TracError(_('Docutils version >= %(version)s required, '
-                              '%(found)s found', version='0.3.9',
-                              found=__version__))
+            raise TracError, 'Docutils version >= %s required, %s found' \
+                             % ('0.3.9', __version__)
 
         def trac_get_reference(rawtext, target, text):
             fulltext = text and target+' '+text or target
-            link = extract_link(self.env, context, fulltext)
+            link = wiki_to_link(fulltext, self.env, req)
             uri = None
             missing = False
             if isinstance(link, Element):
@@ -75,10 +69,10 @@ class ReStructuredTextRenderer(Component):
                 #  - space eventually introduced due to split_page_names option
                 if linktext.rstrip('?').replace(' ', '') != target:
                     text = linktext
-                uri = link.attrib.get('href', '')
-                missing = 'missing' in link.attrib.get('class', '')
+                uri = link.attr.get('href', '')
+                missing = 'missing' in link.attr.get('class_', '')
             else:
-                uri = context.href.wiki(target)
+                uri = req.href.wiki(target)
                 missing = not WikiSystem(self.env).has_page(target)
             if uri:                    
                 reference = nodes.reference(rawtext, text or target)
@@ -148,8 +142,8 @@ class ReStructuredTextRenderer(Component):
 
         # The code_block could is taken from the leo plugin rst2
         def code_formatter(language, text):
-            processor = WikiProcessor(Formatter(self.env, context), language)
-            html = processor.process(text)
+            processor = WikiProcessor(self.env, language)
+            html = processor.process(req, text)
             raw = nodes.raw('', html, format='html')
             return raw
         

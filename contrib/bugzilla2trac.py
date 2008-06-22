@@ -14,7 +14,7 @@ Copyright 2004, Dmitry Yusupov <dmitry_yus@yahoo.com>
 
 Many enhancements, Bill Soudan <bill@soudan.net>
 Other enhancements, Florent Guillaume <fg@nuxeo.com>
-Reworked, Jeroen Ruigrok van der Werven <asmodai@in-nomine.org>
+Reworked, Jeroen Ruigrok van der Werven <asmodai@tendra.org>
 
 $Id$
 """
@@ -28,11 +28,11 @@ import re
 # Bugzilla version.  You can find this in Bugzilla's globals.pl file.
 #
 # Currently, the following bugzilla versions are known to work:
-#   2.11 (2110), 2.16.5 (2165), 2.18.3 (2183), 2.19.1 (2191), 2.23.3 (2233)
+#   2.11 (2110), 2.16.5 (2165), 2.18.3 (2183), 2.19.1 (2191)
 #
 # If you run this script on a version not listed here and it is successful,
-# please file a ticket at http://trac.edgewall.org/ and assign it to
-# jruigrok.
+# please report it to the Trac mailing list and drop a note to
+# asmodai@tendra.org so we can update the list.
 BZ_VERSION = 2180
 
 # MySQL connection parameters for the Bugzilla database.  These can also
@@ -338,8 +338,8 @@ class TracDatabase(object):
                                          keywords)
                                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
                                          %s, %s, %s, %s, %s, %s, %s, %s)""",
-                  (id, type.encode('utf-8'), datetime2epoch(time),
-                   datetime2epoch(changetime), component.encode('utf-8'),
+                  (id, type.encode('utf-8'), time.strftime('%s'),
+                   changetime.strftime('%s'), component.encode('utf-8'),
                    severity.encode('utf-8'), priority.encode('utf-8'), owner,
                    reporter, cc, version, milestone.encode('utf-8'),
                    status.lower(), resolution, summary.encode('utf-8'), desc,
@@ -362,7 +362,7 @@ class TracDatabase(object):
         c.execute("""INSERT INTO ticket_change (ticket, time, author, field,
                                                 oldvalue, newvalue)
                                         VALUES (%s, %s, %s, %s, %s, %s)""",
-                  (ticket, datetime2epoch(time), author, 'comment', '', comment))
+                  (ticket, time.strftime('%s'), author, 'comment', '', comment))
         self.db().commit()
 
     def addTicketChange(self, ticket, time, author, field, oldvalue, newvalue):
@@ -387,7 +387,7 @@ class TracDatabase(object):
         c.execute("""INSERT INTO ticket_change (ticket, time, author, field,
                                                 oldvalue, newvalue)
                                         VALUES (%s, %s, %s, %s, %s, %s)""",
-                  (ticket, datetime2epoch(time), author, field,
+                  (ticket, time.strftime('%s'), author, field,
                    oldvalue.encode('utf-8'), newvalue.encode('utf-8')))
         self.db().commit()
 
@@ -404,7 +404,7 @@ class TracDatabase(object):
         attachment = Attachment(self.env, 'ticket', id)
         attachment.author = author
         attachment.description = description
-        attachment.insert(filename, filedata, filesize, datetime2epoch(time))
+        attachment.insert(filename, filedata, filesize, time.strftime('%s'))
         del attachment
 
     def getLoginName(self, cursor, userid):
@@ -427,14 +427,8 @@ class TracDatabase(object):
 
     def getFieldName(self, cursor, fieldid):
         if fieldid not in self.fieldNameCache:
-            # fielddefs.fieldid got changed to fielddefs.id in Bugzilla
-            # 2.23.3.
-            if BZ_VERSION >= 2233:
-                cursor.execute("SELECT * FROM fielddefs WHERE id = %s",
-                               (fieldid))
-            else:
-                cursor.execute("SELECT * FROM fielddefs WHERE fieldid = %s",
-                               (fieldid))
+            cursor.execute("SELECT * FROM fielddefs WHERE fieldid = %s",
+                           (fieldid))
             fieldName = cursor.fetchall()
 
             if fieldName:
@@ -455,8 +449,7 @@ def makeWhereClause(fieldName, values, negative=False):
         connector, op = ' AND ', '!='
     else:
         connector, op = ' OR ', '='
-    clause = connector.join(["%s %s '%s'" % (fieldName, op, value) 
-                             for value in values])
+    clause = connector.join(["%s %s '%s'" % (fieldName, op, value) for value in values])
     return ' ' + clause
 
 def convert(_db, _host, _user, _password, _env, _force):
@@ -542,16 +535,13 @@ def convert(_db, _host, _user, _password, _env, _force):
         trac.setComponentList(components, 'name')
     else:
         if BZ_VERSION >= 2180:
-            sql = ("SELECT p.name AS product, c.name AS comp, "
-                   " c.initialowner AS owner "
-                   "FROM components c, products p "
-                   "WHERE c.product_id = p.id and " + 
-                   makeWhereClause('p.name', PRODUCTS))
+            sql = """SELECT p.name AS product, c.name AS comp, c.initialowner AS owner
+                   FROM components c, products p"""
+            sql += " WHERE c.product_id = p.id and " + makeWhereClause('p.name', PRODUCTS)
         else:
-            sql = ("SELECT program AS product, value AS comp, "
-                   " initialowner AS owner "
-                   "FROM components WHERE" + 
-                   makeWhereClause('program', PRODUCTS))
+            sql = """SELECT program AS product, value AS comp, initialowner AS owner
+                   FROM components"""
+            sql += " WHERE" + makeWhereClause('program', PRODUCTS)
         mysql_cur.execute(sql)
         lines = mysql_cur.fetchall()
         all_components = {} # product -> components
@@ -822,13 +812,10 @@ def convert(_db, _host, _user, _password, _env, _force):
         ticketid = trac.addTicket(**ticket)
 
         if BZ_VERSION >= 2180:
-            mysql_cur.execute("SELECT attachments.*, attach_data.thedata "
-                              "FROM attachments, attach_data "
-                              "WHERE attachments.bug_id = %s AND "
-                              "attachments.attach_id = attach_data.id" % bugid)
+            mysql_cur.execute("SELECT attachments.*, attach_data.thedata FROM attachments, attach_data
+                    WHERE attachments.bug_id = %s AND attachments.attach_id = attach_data.id" % bugid)
         else:
-            mysql_cur.execute("SELECT * FROM attachments WHERE bug_id = %s" % 
-                              bugid)
+            mysql_cur.execute("SELECT * FROM attachments WHERE bug_id = %s" % bugid)
         attachments = mysql_cur.fetchall()
         for a in attachments:
             author = trac.getLoginName(mysql_cur, a['submitter_id'])
@@ -853,10 +840,6 @@ def convert(_db, _host, _user, _password, _env, _force):
 
 def log(msg):
     print "DEBUG: %s" % (msg)
-
-def datetime2epoch(dt) :
-    import time
-    return time.mktime(dt.timetuple())
 
 def usage():
     print """bugzilla2trac - Imports a bug database from Bugzilla into Trac.

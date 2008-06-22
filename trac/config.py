@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
-# Copyright (C) 2005-2007 Christopher Lenz <cmlenz@gmx.de>
+# Copyright (C) 2005-2006 Edgewall Software
+# Copyright (C) 2005-2006 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -11,19 +11,26 @@
 # This software consists of voluntary contributions made by many
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
+#
+# Author: Christopher Lenz <cmlenz@gmx.de>
 
 from ConfigParser import ConfigParser
 import os
+try:
+    set
+except NameError:
+    from sets import Set as set
+import sys
 
 from trac.core import ExtensionPoint, TracError
-from trac.util.compat import set, sorted
+from trac.util import sorted
 from trac.util.text import to_unicode, CRLF
 
 __all__ = ['Configuration', 'Option', 'BoolOption', 'IntOption', 'ListOption',
-           'PathOption', 'ExtensionOption', 'OrderedExtensionsOption',
-           'ConfigurationError']
+           'ExtensionOption', 'OrderedExtensionsOption', 'ConfigurationError',
+           'default_dir']
 
-_TRUE_VALUES = ('yes', 'true', 'enabled', 'on', 'aye', '1', 1, True)
+_TRUE_VALUES = ('yes', 'true', 'on', 'aye', '1', 1, True)
 
 
 class ConfigurationError(TracError):
@@ -38,18 +45,20 @@ class Configuration(object):
     when the file has changed.
     """
     def __init__(self, filename):
+        self._sections = {}
         self.filename = filename
         self.parser = ConfigParser()
-        self.parent = None
         self._lastmtime = 0
-        self._sections = {}
+        self.site_filename = os.path.join(default_dir('conf'), 'trac.ini')
+        self.site_parser = ConfigParser()
+        self._lastsitemtime = 0
         self.parse_if_needed()
 
     def __contains__(self, name):
         """Return whether the configuration contains a section of the given
         name.
         """
-        return name in self.sections()
+        return self.parser.has_section(name)
 
     def __getitem__(self, name):
         """Return the configuration section with the specified name."""
@@ -57,49 +66,37 @@ class Configuration(object):
             self._sections[name] = Section(self, name)
         return self._sections[name]
 
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.filename)
-
-    def get(self, section, name, default=''):
-        """Return the value of the specified option.
-        
-        Valid default input is a string. Returns a string.
-        """
+    def get(self, section, name, default=None):
+        """Return the value of the specified option."""
         return self[section].get(name, default)
 
-    def getbool(self, section, name, default=''):
+    def getbool(self, section, name, default=None):
         """Return the specified option as boolean value.
         
-        If the value of the option is one of "yes", "true", "enabled", "on",
-        or "1", this method wll return `True`, otherwise `False`.
+        If the value of the option is one of "yes", "true",  "on", or "1", this
+        method wll return `True`, otherwise `False`.
         
-        Valid default input is a string or a bool. Returns a bool.
-        
-        (since Trac 0.9.3, "enabled" added in 0.11)
+        (since Trac 0.9.3)
         """
         return self[section].getbool(name, default)
 
-    def getint(self, section, name, default=''):
+    def getint(self, section, name, default=None):
         """Return the value of the specified option as integer.
         
         If the specified option can not be converted to an integer, a
         `ConfigurationError` exception is raised.
         
-        Valid default input is a string or an int. Returns an int.
-        
         (since Trac 0.10)
         """
         return self[section].getint(name, default)
 
-    def getlist(self, section, name, default='', sep=',', keep_empty=False):
+    def getlist(self, section, name, default=None, sep=',', keep_empty=False):
         """Return a list of values that have been specified as a single
         comma-separated option.
         
         A different separator can be specified using the `sep` parameter. If
         the `keep_empty` parameter is set to `True`, empty elements are
         included in the list.
-        
-        Valid default input is a string or a list. Returns a string.
         
         (since Trac 0.10)
         """
@@ -138,33 +135,7 @@ class Configuration(object):
 
     def sections(self):
         """Return a list of section names."""
-        sections = set(self.parser.sections())
-        parent = self.parent
-        while parent:
-            sections |= set(parent.parser.sections())
-            parent = parent.parent
-        return sorted(sections)
-
-    def has_option(self, section, option):
-        """Returns True if option exists in section in either project or
-        parent trac.ini, or available through the Option registry.
-        
-        (since Trac 0.11)
-        """
-        # Check project trac.ini
-        for file_option, val in self.options(section):
-            if file_option == option:
-                return True
-        # Check parent trac.ini
-        if self.parent:
-            for parent_option, val in self.parent.options(section):
-                if parent_option == option:
-                    return True
-        # Check the registry
-        if (section, option) in Option.registry:
-            return True
-        # Not found
-        return False
+        return sorted(set(self.site_parser.sections() + self.parser.sections()))
 
     def save(self):
         """Write the configuration options to the primary file."""
@@ -176,63 +147,49 @@ class Configuration(object):
         for section in self.sections():
             options = []
             for option in self[section]:
-                default = None
-                if self.parent:
-                    default = self.parent.get(section, option)
+                default = self.site_parser.has_option(section, option) and \
+                          self.site_parser.get(section, option)
                 current = self.parser.has_option(section, option) and \
-                          to_unicode(self.parser.get(section, option))
+                          self.parser.get(section, option)
                 if current is not False and current != default:
                     options.append((option, current))
             if options:
                 sections.append((section, sorted(options)))
 
-        fileobj = open(self.filename, 'w')
+        fileobj = file(self.filename, 'w')
         try:
-            fileobj.write('# -*- coding: utf-8 -*-\n\n')
+            print>>fileobj, '# -*- coding: utf-8 -*-'
+            print>>fileobj
             for section, options in sections:
-                fileobj.write('[%s]\n' % section)
+                print>>fileobj, '[%s]' % section
                 for key, val in options:
                     if key in self[section].overridden:
-                        fileobj.write('# %s = <inherited>\n' % key)
+                        print>>fileobj, '# %s = <set in global trac.ini>' % key
                     else:
                         val = val.replace(CRLF, '\n').replace('\n', '\n ')
-                        fileobj.write('%s = %s\n' % (key, val.encode('utf-8')))
-                fileobj.write('\n')
+                        print>>fileobj, '%s = %s' % \
+                                        (key, to_unicode(val).encode('utf-8'))
+                print>>fileobj
         finally:
             fileobj.close()
 
     def parse_if_needed(self):
-        if not self.filename or not os.path.isfile(self.filename):
-            return False
+        # Load global configuration
+        if os.path.isfile(self.site_filename):
+            modtime = os.path.getmtime(self.site_filename)
+            if modtime > self._lastsitemtime:
+                self.site_parser.read(self.site_filename)
+                self._lastsitemtime = modtime
 
-        changed = False
+        if not self.filename or not os.path.isfile(self.filename):
+            return
         modtime = os.path.getmtime(self.filename)
         if modtime > self._lastmtime:
-            self.parser._sections = {}
             self.parser.read(self.filename)
             self._lastmtime = modtime
-            changed = True
 
-        if self.parser.has_option('inherit', 'file'):
-            filename = self.parser.get('inherit', 'file')
-            if not os.path.isabs(filename):
-                filename = os.path.join(os.path.dirname(self.filename),
-                                        filename)
-            if not self.parent or self.parent.filename != filename:
-                self.parent = Configuration(filename)
-                changed = True
-            else:
-                changed |= self.parent.parse_if_needed()
-        elif self.parent:
-            changed = True
-            self.parent = None
-
-        return changed
-
-    def touch(self):
-        if self.filename and os.path.isfile(self.filename) \
-           and os.access(self.filename, os.W_OK):
-            os.utime(self.filename, None)
+    def has_site_option(self, section, name):
+        return self.site_parser.has_option(section, name)
 
 
 class Section(object):
@@ -248,90 +205,73 @@ class Section(object):
         self.overridden = {}
 
     def __contains__(self, name):
-        if self.config.parser.has_option(self.name, name):
-            return True
-        if self.config.parent:
-            return name in self.config.parent[self.name]
-        return False
+        return self.config.parser.has_option(self.name, name) or \
+               self.config.site_parser.has_option(self.name, name) 
 
     def __iter__(self):
-        options = set()
+        options = []
         if self.config.parser.has_section(self.name):
             for option in self.config.parser.options(self.name):
-                options.add(option.lower())
+                options.append(option.lower())
                 yield option
-        if self.config.parent:
-            for option in self.config.parent[self.name]:
+        if self.config.site_parser.has_section(self.name):
+            for option in self.config.site_parser.options(self.name):
                 if option.lower() not in options:
                     yield option
 
     def __repr__(self):
         return '<Section [%s]>' % (self.name)
 
-    def get(self, name, default=''):
-        """Return the value of the specified option.
-        
-        Valid default input is a string. Returns a string.
-        """
+    def get(self, name, default=None):
+        """Return the value of the specified option."""
         if self.config.parser.has_option(self.name, name):
             value = self.config.parser.get(self.name, name)
-        elif self.config.parent:
-            value = self.config.parent[self.name].get(name, default)
+        elif self.config.site_parser.has_option(self.name, name):
+            value = self.config.site_parser.get(self.name, name)
         else:
             option = Option.registry.get((self.name, name))
             if option:
                 value = option.default or default
             else:
                 value = default
-        if not value:
-            return u''
-        elif isinstance(value, basestring):
-            return to_unicode(value)
-        else:
-            return value
+        if value is None:
+            return ''
+        return to_unicode(value)
 
-    def getbool(self, name, default=''):
+    def getbool(self, name, default=None):
         """Return the value of the specified option as boolean.
         
         This method returns `True` if the option value is one of "yes", "true",
-        "enabled", "on", or "1", ignoring case. Otherwise `False` is returned.
-
-        Valid default input is a string or a bool. Returns a bool.
+        "on", or "1", ignoring case. Otherwise `False` is returned.
         """
         value = self.get(name, default)
         if isinstance(value, basestring):
             value = value.lower() in _TRUE_VALUES
         return bool(value)
 
-    def getint(self, name, default=''):
+    def getint(self, name, default=None):
         """Return the value of the specified option as integer.
         
         If the specified option can not be converted to an integer, a
         `ConfigurationError` exception is raised.
-        
-        Valid default input is a string or an int. Returns an int.
         """
         value = self.get(name, default)
-        if not value:
-            return 0
+        if value == '':
+            return default
         try:
             return int(value)
         except ValueError:
             raise ConfigurationError('expected integer, got %s' % repr(value))
 
-    def getlist(self, name, default='', sep=',', keep_empty=True):
+    def getlist(self, name, default=None, sep=',', keep_empty=True):
         """Return a list of values that have been specified as a single
         comma-separated option.
         
         A different separator can be specified using the `sep` parameter. If
-        the `keep_empty` parameter is set to `False`, empty elements are omitted
+        the `skip_empty` parameter is set to `True`, empty elements are omitted
         from the list.
-        
-        Valid default input is a string or a list. Returns a list.
         """
         value = self.get(name, default)
-        if not value:
-            return []
         if isinstance(value, basestring):
             items = [item.strip() for item in value.split(sep)]
         else:
@@ -339,25 +279,6 @@ class Section(object):
         if not keep_empty:
             items = filter(None, items)
         return items
-
-    def getpath(self, name, default=''):
-        """Return the value of the specified option as a path name, relative to
-        the location of the configuration file the option is defined in.
-
-        Valid default input is a string. Returns a string with normalised path.
-        """
-        if self.config.parser.has_option(self.name, name):
-            path = self.config.parser.get(self.name, name)
-            if not path:
-                return default
-            if not os.path.isabs(path):
-                path = os.path.join(os.path.dirname(self.config.filename),
-                                    path)
-            return os.path.normcase(os.path.realpath(path))
-        elif self.config.parent:
-            return self.config.parent[self.name].getpath(name, default)
-        else:
-            return default
 
     def options(self):
         """Return `(name, value)` tuples for every option in the section."""
@@ -441,10 +362,6 @@ class ListOption(Option):
     def accessor(self, section, name, default):
         return section.getlist(name, default, self.sep, self.keep_empty)
 
-class PathOption(Option):
-    """Descriptor for file system path configuration options."""
-    accessor = Section.getpath
-
 
 class ExtensionOption(Option):
 
@@ -497,3 +414,25 @@ class OrderedExtensionsOption(ListOption):
             return cmp(order.index(x), order.index(y))
         components.sort(compare)
         return components
+
+
+def default_dir(name):
+    try:
+        from trac import siteconfig
+        return getattr(siteconfig, '__default_%s_dir__' % name)
+    except ImportError:
+        # This is not a regular install with a generated siteconfig.py file,
+        # so try to figure out the directory based on common setups
+        special_dirs = {'wiki': 'wiki-default', 'macros': 'wiki-macros'}
+        dirname = special_dirs.get(name, name)
+
+        # First assume we're being executing directly form the source directory
+        import trac
+        path = os.path.join(os.path.split(os.path.dirname(trac.__file__))[0],
+                            dirname)
+        if not os.path.isdir(path):
+            # Not being executed from the source directory, so assume the
+            # default installation prefix
+            path = os.path.join(sys.prefix, 'share', 'trac', dirname)
+
+        return path

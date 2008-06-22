@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2008 Edgewall Software
+# Copyright (C) 2005-2006 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -15,11 +15,8 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 import posixpath
-from datetime import datetime
 
 from trac.core import TracError
-from trac.util.datefmt import utc, to_timestamp
-from trac.util.translation import _
 from trac.versioncontrol import Changeset, Node, Repository, Authorizer, \
                                 NoSuchChangeset
 
@@ -37,8 +34,6 @@ CACHE_METADATA_KEYS = (CACHE_REPOSITORY_DIR, CACHE_YOUNGEST_REV)
 
 class CachedRepository(Repository):
 
-    has_linear_changesets = False
-
     def __init__(self, db, repos, authz, log):
         Repository.__init__(self, repos.name, authz, log)
         self.db = db
@@ -46,10 +41,6 @@ class CachedRepository(Repository):
 
     def close(self):
         self.repos.close()
-
-    def get_quickjump_entries(self, rev):
-        for category, name, path, rev in self.repos.get_quickjump_entries(rev):
-            yield category, name, path, rev
 
     def get_changeset(self, rev):
         return CachedChangeset(self.repos, self.repos.normalize_rev(rev),
@@ -59,8 +50,7 @@ class CachedRepository(Repository):
         cursor = self.db.cursor()
         cursor.execute("SELECT rev FROM revision "
                        "WHERE time >= %s AND time < %s "
-                       "ORDER BY time DESC, rev DESC",
-                       (to_timestamp(start), to_timestamp(stop)))
+                       "ORDER BY time", (start, stop))
         for rev, in cursor:
             try:
                 if self.authz.has_permission_for_changeset(rev):
@@ -72,8 +62,7 @@ class CachedRepository(Repository):
         cset = self.repos.get_changeset(rev)
         cursor = self.db.cursor()
         cursor.execute("UPDATE revision SET time=%s, author=%s, message=%s "
-                       "WHERE rev=%s", (to_timestamp(cset.date),
-                                        cset.author, cset.message,
+                       "WHERE rev=%s", (cset.date, cset.author, cset.message,
                                         (str(cset.rev))))
         self.db.commit()
         
@@ -92,8 +81,8 @@ class CachedRepository(Repository):
             if repository_dir != self.name:
                 self.log.info("'repository_dir' has changed from %r to %r"
                               % (repository_dir, self.name))
-                raise TracError(_("The 'repository_dir' has changed, a "
-                                  "'trac-admin resync' operation is needed."))
+                raise TracError("The 'repository_dir' has changed, "
+                                "a 'trac-admin resync' operation is needed.")
         elif repository_dir is None: # 
             self.log.info('Storing initial "repository_dir": %s' % self.name)
             cursor.execute("INSERT INTO system (name,value) VALUES (%s,%s)",
@@ -111,7 +100,7 @@ class CachedRepository(Repository):
 
         # -- retrieve the youngest revision cached so far
         if CACHE_YOUNGEST_REV not in metadata:
-            raise TracError(_('Missing "youngest_rev" in cache metadata'))
+            raise TracError('Missing "youngest_rev" in cache metadata')
         
         self.youngest = metadata[CACHE_YOUNGEST_REV]
 
@@ -135,12 +124,6 @@ class CachedRepository(Repository):
                 next_youngest = None
                 try:
                     next_youngest = self.repos.oldest_rev
-                    # Ugly hack needed because doing that everytime in 
-                    # oldest_rev suffers from horrendeous performance (#5213)
-                    if hasattr(self.repos, 'scope'):
-                        if self.repos.scope != '/':
-                            next_youngest = self.repos.next_rev(next_youngest, 
-                                    find_initial_rev=True)
                     next_youngest = self.repos.normalize_rev(next_youngest)
                 except TracError:
                     return # can't normalize oldest_rev: repository was empty
@@ -177,8 +160,7 @@ class CachedRepository(Repository):
                         cursor.execute("INSERT INTO revision "
                                        " (rev,time,author,message) "
                                        "VALUES (%s,%s,%s,%s)",
-                                       (str(next_youngest),
-                                        to_timestamp(cset.date),
+                                       (str(next_youngest), cset.date,
                                         cset.author, cset.message))
                     except Exception, e: # *another* 1.1. resync attempt won 
                         self.log.warning('Revision %s already cached: %s' %
@@ -209,8 +191,7 @@ class CachedRepository(Repository):
                     self.youngest = next_youngest                    
                     next_youngest = self.repos.next_rev(next_youngest)
 
-                    # 1.4. update 'youngest_rev' metadata 
-                    #      (minimize possibility of failures at point 0.)
+                    # 1.4. update 'youngest_rev' metadata (minimize failures at 0.)
                     cursor.execute("UPDATE system SET value=%s WHERE name=%s",
                                    (str(self.youngest), CACHE_YOUNGEST_REV))
                     self.db.commit()
@@ -236,42 +217,11 @@ class CachedRepository(Repository):
             self.sync()
         return self.youngest
 
-    def previous_rev(self, rev, path=''):
-        if not self.has_linear_changesets:
-            return self.repos.previous_rev(rev, path)
-        else:
-            return self._next_prev_rev('<', rev, path)
+    def previous_rev(self, rev):
+        return self.repos.previous_rev(rev)
 
     def next_rev(self, rev, path=''):
-        if not self.has_linear_changesets:
-            return self.repos.next_rev(rev, path)
-        else:
-            return self._next_prev_rev('>', rev, path)
-
-    def _next_prev_rev(self, direction, rev, path=''):
-        # the changeset revs are sequence of ints:
-        sql = "SELECT rev FROM node_change WHERE " + \
-              self.db.cast('rev', 'int') + " " + direction + " %s"
-        args = [rev]
-
-        if path:
-            # Child changes
-            sql += " AND (path %s OR " % self.db.like()
-            args.append(self.db.like_escape(path.lstrip('/')) + '%')
-            # Parent deletion
-            components = path.lstrip('/').split('/')
-            for i in range(1, len(components)+1):
-                args.append('/'.join(components[:i]))
-            parent_insert = ','.join(('%s',) * len(components))
-            sql += " (path in (" + parent_insert + ") and change_type='D') )"
-
-        sql += " ORDER BY " + self.db.cast('rev', 'int') + \
-                (direction == '<' and " DESC" or "") + " LIMIT 1"
-        
-        cursor = self.db.cursor()
-        cursor.execute(sql, args)
-        for rev, in cursor:
-            return rev
+        return self.repos.next_rev(rev, path)
 
     def rev_older_than(self, rev1, rev2):
         return self.repos.rev_older_than(rev1, rev2)
@@ -285,16 +235,13 @@ class CachedRepository(Repository):
     def normalize_rev(self, rev):
         return self.repos.normalize_rev(rev)
 
-    def get_changes(self, old_path, old_rev, new_path, new_rev, 
-            ignore_ancestry=1):
-        return self.repos.get_changes(old_path, old_rev, new_path, new_rev, 
-                ignore_ancestry)
+    def get_changes(self, old_path, old_rev, new_path, new_rev, ignore_ancestry=1):
+        return self.repos.get_changes(old_path, old_rev, new_path, new_rev, ignore_ancestry)
 
 
 class CachedChangeset(Changeset):
 
     def __init__(self, repos, rev, db, authz):
-        self.repos = repos
         self.db = db
         self.authz = authz
         cursor = self.db.cursor()
@@ -302,9 +249,8 @@ class CachedChangeset(Changeset):
                        "WHERE rev=%s", (str(rev),))
         row = cursor.fetchone()
         if row:
-            _date, author, message = row
-            date = datetime.fromtimestamp(_date, utc)
-            Changeset.__init__(self, rev, message, author, date)
+            date, author, message = row
+            Changeset.__init__(self, rev, message, author, int(date))
         else:
             raise NoSuchChangeset(rev)
         self.scope = getattr(repos, 'scope', '')
@@ -324,4 +270,4 @@ class CachedChangeset(Changeset):
             yield path, kind, change, base_path, base_rev
 
     def get_properties(self):
-        return self.repos.get_changeset(self.rev).get_properties()
+        return []

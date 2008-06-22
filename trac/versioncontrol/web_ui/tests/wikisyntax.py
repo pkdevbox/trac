@@ -5,30 +5,6 @@ from trac.wiki.tests import formatter
 from trac.versioncontrol import NoSuchChangeset
 from trac.versioncontrol.web_ui import *
 
-
-def _get_changeset(rev):
-    if rev == '1':
-        return Mock(message="start")
-    else:
-        raise NoSuchChangeset(rev)
-
-def _normalize_rev(rev):
-    try:
-        return int(rev)
-    except ValueError:
-        if rev == 'head':
-            return '200'
-        else:
-            raise NoSuchChangeset(rev)
-    
-def _get_repository(authname=None):
-    return Mock(get_changeset=_get_changeset, youngest_rev='200',
-                normalize_rev=_normalize_rev)
-
-def repository_setup(tc):
-    setattr(tc.env, 'get_repository', _get_repository)
-
-
 CHANGESET_TEST_CASES="""
 ============================== changeset: link resolver
 changeset:1
@@ -37,19 +13,10 @@ changeset:abc
 changeset:1, changeset:1/README.txt
 ------------------------------
 <p>
-<a class="changeset" href="/changeset/1" title="start">changeset:1</a>
-<a class="missing changeset" href="/changeset/12" rel="nofollow" title="No changeset 12 in the repository">changeset:12</a>
-<a class="missing changeset" href="/changeset/abc" rel="nofollow" title="No changeset abc in the repository">changeset:abc</a>
-<a class="changeset" href="/changeset/1" title="start">changeset:1</a>, <a class="changeset" href="/changeset/1/README.txt" title="start">changeset:1/README.txt</a>
-</p>
-------------------------------
-============================== changeset: link resolver + query and fragment
-changeset:1?format=diff
-changeset:1#file0
-------------------------------
-<p>
-<a class="changeset" href="/changeset/1?format=diff" title="start">changeset:1?format=diff</a>
-<a class="changeset" href="/changeset/1#file0" title="start">changeset:1#file0</a>
+<a class="missing changeset" href="/changeset/1" rel="nofollow">changeset:1</a>
+<a class="missing changeset" href="/changeset/12" rel="nofollow">changeset:12</a>
+<a class="missing changeset" href="/changeset/abc" rel="nofollow">changeset:abc</a>
+<a class="missing changeset" href="/changeset/1" rel="nofollow">changeset:1</a>, <a class="missing changeset" href="/changeset/1/README.txt" rel="nofollow">changeset:1/README.txt</a>
 </p>
 ------------------------------
 ============================== changeset shorthand syntax
@@ -58,22 +25,9 @@ changeset:1#file0
 [1/README.txt]
 ------------------------------
 <p>
-<a class="changeset" href="/changeset/1" title="start">[1]</a>, <a class="changeset" href="/changeset/1" title="start">r1</a>
-<a class="missing changeset" href="/changeset/12" rel="nofollow" title="No changeset 12 in the repository">[12]</a>, <a class="missing changeset" href="/changeset/12" rel="nofollow" title="No changeset 12 in the repository">r12</a>, rABC
-<a class="changeset" href="/changeset/1/README.txt" title="start">[1/README.txt]</a>
-</p>
-------------------------------
-============================== changeset shorthand syntax + query and fragment
-[1?format=diff]
-[1#file0]
-[1/README.txt?format=diff]
-[1/README.txt#file0]
-------------------------------
-<p>
-<a class="changeset" href="/changeset/1?format=diff" title="start">[1?format=diff]</a>
-<a class="changeset" href="/changeset/1#file0" title="start">[1#file0]</a>
-<a class="changeset" href="/changeset/1/README.txt?format=diff" title="start">[1/README.txt?format=diff]</a>
-<a class="changeset" href="/changeset/1/README.txt#file0" title="start">[1/README.txt#file0]</a>
+<a class="missing changeset" href="/changeset/1" rel="nofollow">[1]</a>, <a class="missing changeset" href="/changeset/1" rel="nofollow">r1</a>
+<a class="missing changeset" href="/changeset/12" rel="nofollow">[12]</a>, <a class="missing changeset" href="/changeset/12" rel="nofollow">r12</a>, rABC
+<a class="missing changeset" href="/changeset/1/README.txt" rel="nofollow">[1/README.txt]</a>
 </p>
 ------------------------------
 ============================== escaping the above
@@ -87,25 +41,25 @@ changeset:1#file0
 ============================== Link resolver counter examples
 Change:[10] There should be a link to changeset [10]
 
-rfc and rfc:4180 should not be changeset links, neither should rfc4180
+rfc and rfc:4180 should not be changeset links
 ------------------------------
 <p>
-Change:<a class="missing changeset" href="/changeset/10" rel="nofollow" title="No changeset 10 in the repository">[10]</a> There should be a link to changeset <a class="missing changeset" href="/changeset/10" rel="nofollow" title="No changeset 10 in the repository">[10]</a>
+Change:<a class="missing changeset" href="/changeset/10" rel="nofollow">[10]</a> There should be a link to changeset <a class="missing changeset" href="/changeset/10" rel="nofollow">[10]</a>
 </p>
 <p>
-rfc and rfc:4180 should not be changeset links, neither should rfc4180
+rfc and rfc:4180 should not be changeset links
 </p>
 ------------------------------
-Change:<a class="missing changeset" href="/changeset/10" rel="nofollow" title="No changeset 10 in the repository">[10]</a> There should be a link to changeset <a class="missing changeset" href="/changeset/10" rel="nofollow" title="No changeset 10 in the repository">[10]</a>
+Change:<a class="missing changeset" href="/changeset/10" rel="nofollow">[10]</a> There should be a link to changeset <a class="missing changeset" href="/changeset/10" rel="nofollow">[10]</a>
 
-rfc and rfc:4180 should not be changeset links, neither should rfc4180
+rfc and rfc:4180 should not be changeset links
 ============================== InterTrac for changesets
 trac:changeset:2081
 [trac:changeset:2081 Trac r2081]
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/changeset%3A2081" title="changeset:2081 in Trac's Trac"><span class="icon">trac:changeset:2081</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/changeset%3A2081" title="changeset:2081 in Trac's Trac"><span class="icon">Trac r2081</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/changeset/2081" title="changeset:2081 in Trac's Trac"><span class="icon">trac:changeset:2081</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/changeset/2081" title="changeset:2081 in Trac's Trac"><span class="icon">Trac r2081</span></a>
 </p>
 ------------------------------
 ============================== Changeset InterTrac shorthands
@@ -115,13 +69,22 @@ trac:changeset:2081
 T:r2081
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/changeset%3A2081" title="changeset:2081 in Trac's Trac"><span class="icon">[T2081]</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/changeset%3A2081" title="changeset:2081 in Trac's Trac"><span class="icon">[trac 2081]</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/changeset%3A2081/trunk" title="changeset:2081/trunk in Trac\'s Trac"><span class="icon">[trac 2081/trunk]</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/r2081" title="r2081 in Trac's Trac"><span class="icon">T:r2081</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/changeset/2081" title="changeset:2081 in Trac's Trac"><span class="icon">[T2081]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/changeset/2081" title="changeset:2081 in Trac's Trac"><span class="icon">[trac 2081]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/changeset/2081/trunk" title="changeset:2081/trunk in Trac\'s Trac"><span class="icon">[trac 2081/trunk]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/search?q=r2081" title="r2081 in Trac's Trac"><span class="icon">T:r2081</span></a>
 </p>
 ------------------------------
-""" #"
+""" #'
+
+def _get_changeset(rev):
+    raise NoSuchChangeset(rev)
+
+def _get_repository():
+    return Mock(get_changeset=_get_changeset)
+
+def changeset_setup(tc):
+    setattr(tc.env, 'get_repository', _get_repository)
 
 
 LOG_TEST_CASES="""
@@ -130,8 +93,8 @@ LOG_TEST_CASES="""
 [1:2/trunk]
 ------------------------------
 <p>
-<a class="source" href="/log/?revs=1-2">[1:2]</a>, <a class="source" href="/log/?revs=1-2">r1:2</a>, <a class="source" href="/log/?revs=12-23">[12:23]</a>, <a class="source" href="/log/?revs=12-23">r12:23</a>
-<a class="source" href="/log/trunk?revs=1-2">[1:2/trunk]</a>
+<a class="source" href="/log/?rev=2&amp;stop_rev=1">[1:2]</a>, <a class="source" href="/log/?rev=2&amp;stop_rev=1">r1:2</a>, <a class="source" href="/log/?rev=23&amp;stop_rev=12">[12:23]</a>, <a class="source" href="/log/?rev=23&amp;stop_rev=12">r12:23</a>
+<a class="source" href="/log/trunk?rev=2&amp;stop_rev=1">[1:2/trunk]</a>
 </p>
 ------------------------------
 ============================== Escaping Log range TracLinks
@@ -150,47 +113,15 @@ log:trunk@12:23
 log:trunk@12-23
 log:trunk:12:23
 log:trunk:12-23
-log:trunk:12-head
-log:trunk:12@23 (bad, but shouldn't error out)
 ------------------------------
 <p>
-<a class="source" href="/log/?revs=12">log:@12</a>
+<a class="source" href="/log/?rev=12">log:@12</a>
 <a class="source" href="/log/trunk">log:trunk</a>
-<a class="source" href="/log/trunk?revs=12">log:trunk@12</a>
-<a class="source" href="/log/trunk?revs=12-23">log:trunk@12:23</a>
-<a class="source" href="/log/trunk?revs=12-23">log:trunk@12-23</a>
-<a class="source" href="/log/trunk?revs=12-23">log:trunk:12:23</a>
-<a class="source" href="/log/trunk?revs=12-23">log:trunk:12-23</a>
-<a class="source" href="/log/trunk?revs=12-200">log:trunk:12-head</a>
-<a class="source" href="/log/trunk">log:trunk:12@23</a> (bad, but shouldn't error out)
-</p>
-------------------------------
-============================== log: link resolver + query
-log:?limit=10
-log:@12?limit=10
-log:trunk?limit=10
-log:trunk@12?limit=10
-[10:20?verbose=yes&format=changelog]
-[10:20/trunk?verbose=yes&format=changelog]
-------------------------------
-<p>
-<a class="source" href="/log/?limit=10">log:?limit=10</a>
-<a class="source" href="/log/?revs=12&amp;limit=10">log:@12?limit=10</a>
-<a class="source" href="/log/trunk?limit=10">log:trunk?limit=10</a>
-<a class="source" href="/log/trunk?revs=12&amp;limit=10">log:trunk@12?limit=10</a>
-<a class="source" href="/log/?revs=10-20&amp;verbose=yes&amp;format=changelog">[10:20?verbose=yes&amp;format=changelog]</a>
-<a class="source" href="/log/trunk?revs=10-20&amp;verbose=yes&amp;format=changelog">[10:20/trunk?verbose=yes&amp;format=changelog]</a>
-</p>
-------------------------------
-============================== Multiple Log ranges
-r12:20,25,35:56,68,69,100-120
-[12:20,25,35:56,68,69,100-120]
-[12:20,25,88:head,68,69] (not supported)
-------------------------------
-<p>
-<a class="source" href="/log/?revs=12-20%2C25%2C35-56%2C68-69%2C100-120">r12:20,25,35:56,68,69,100-120</a>
-<a class="source" href="/log/?revs=12-20%2C25%2C35-56%2C68-69%2C100-120">[12:20,25,35:56,68,69,100-120]</a>
-[12:20,25,88:head,68,69] (not supported)
+<a class="source" href="/log/trunk?rev=12">log:trunk@12</a>
+<a class="source" href="/log/trunk?rev=23&amp;stop_rev=12">log:trunk@12:23</a>
+<a class="source" href="/log/trunk?rev=23&amp;stop_rev=12">log:trunk@12-23</a>
+<a class="source" href="/log/trunk?rev=23&amp;stop_rev=12">log:trunk:12:23</a>
+<a class="source" href="/log/trunk?rev=23&amp;stop_rev=12">log:trunk:12-23</a>
 </p>
 ------------------------------
 ============================== Link resolver counter examples
@@ -206,9 +137,9 @@ rfc:4180 should not be a log link
 [trac 3317:3318/trunk]
 ------------------------------
 <p>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/log%3A/%403317%3A3318" title="log:/@3317:3318 in Trac\'s Trac"><span class="icon">[T3317:3318]</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/log%3A/%403317%3A3318" title="log:/@3317:3318 in Trac\'s Trac"><span class="icon">[trac 3317:3318]</span></a>
-<a class="ext-link" href="http://trac.edgewall.org/intertrac/log%3A/trunk%403317%3A3318" title="log:/trunk@3317:3318 in Trac\'s Trac"><span class="icon">[trac 3317:3318/trunk]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/log//@3317:3318" title="log:/@3317:3318 in Trac\'s Trac"><span class="icon">[T3317:3318]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/log//@3317:3318" title="log:/@3317:3318 in Trac\'s Trac"><span class="icon">[trac 3317:3318]</span></a>
+<a class="ext-link" href="http://trac.edgewall.org/log//trunk@3317:3318" title="log:/trunk@3317:3318 in Trac\'s Trac"><span class="icon">[trac 3317:3318/trunk]</span></a>
 </p>
 ------------------------------
 """
@@ -228,31 +159,19 @@ diff:@12:23
 <a class="changeset" href="/changeset?new=23&amp;old=12" title="Diff r12:23 for /">diff:@12:23</a>
 </p>
 ------------------------------
-============================== diff: link resolver + query
-diff:trunk//branch?format=diff
-------------------------------
-<p>
-<a class="changeset" href="/changeset?new_path=branch&amp;old_path=trunk&amp;format=diff" title="Diff from trunk@latest to branch@latest">diff:trunk//branch?format=diff</a>
-</p>
-------------------------------
-============================== diff: link, empty diff
-diff://
-------------------------------
-<p>
-<a class="changeset" title="Diff rlatest:latest for /">diff://</a>
-</p>
-------------------------------
 """
 
 
 SOURCE_TEST_CASES="""
 ============================== source: link resolver
 source:/foo/bar
-source:/foo/bar#42   # no long works as rev spec
-source:/foo/bar#head #
+source:/foo/bar#42
+source:/foo/bar#head
 source:/foo/bar@42
 source:/foo/bar@head
 source:/foo%20bar/baz%2Bquux
+source:/foo%2520bar/baz%252Bquux#42
+source:#42
 source:@42
 source:/foo/bar@42#L20
 source:/foo/bar@head#L20
@@ -260,24 +179,17 @@ source:/foo/bar@#L20
 ------------------------------
 <p>
 <a class="source" href="/browser/foo/bar">source:/foo/bar</a>
-<a class="source" href="/browser/foo/bar#42">source:/foo/bar#42</a>   # no long works as rev spec
-<a class="source" href="/browser/foo/bar#head">source:/foo/bar#head</a> #
+<a class="source" href="/browser/foo/bar?rev=42">source:/foo/bar#42</a>
+<a class="source" href="/browser/foo/bar?rev=head">source:/foo/bar#head</a>
 <a class="source" href="/browser/foo/bar?rev=42">source:/foo/bar@42</a>
 <a class="source" href="/browser/foo/bar?rev=head">source:/foo/bar@head</a>
-<a class="source" href="/browser/foo%2520bar/baz%252Bquux">source:/foo%20bar/baz%2Bquux</a>
+<a class="source" href="/browser/foo%20bar/baz%2Bquux">source:/foo%20bar/baz%2Bquux</a>
+<a class="source" href="/browser/foo%2520bar/baz%252Bquux?rev=42">source:/foo%2520bar/baz%252Bquux#42</a>
+<a class="source" href="/browser/?rev=42">source:#42</a>
 <a class="source" href="/browser/?rev=42">source:@42</a>
 <a class="source" href="/browser/foo/bar?rev=42#L20">source:/foo/bar@42#L20</a>
 <a class="source" href="/browser/foo/bar?rev=head#L20">source:/foo/bar@head#L20</a>
 <a class="source" href="/browser/foo/bar#L20">source:/foo/bar@#L20</a>
-</p>
-------------------------------
-============================== source: link resolver + query 
-source:/foo?order=size&desc=1
-source:/foo/bar?format=raw
-------------------------------
-<p>
-<a class="source" href="/browser/foo?order=size&amp;desc=1">source:/foo?order=size&amp;desc=1</a>
-<a class="source" href="/browser/foo/bar?format=raw">source:/foo/bar?format=raw</a>
 </p>
 ------------------------------
 ============================== source: provider, with quoting
@@ -293,37 +205,17 @@ source:"even with whitespaces"
 <a class="source" href="/browser/even%20with%20whitespaces">Path with spaces</a>
 </p>
 ------------------------------
-============================== export: link resolver
-export:/foo/bar.html
-export:123:/foo/pict.gif
-export:/foo/pict.gif@123
-------------------------------
-<p>
-<a class="source" href="/export/200/foo/bar.html">export:/foo/bar.html</a>
-<a class="source" href="/export/123/foo/pict.gif">export:123:/foo/pict.gif</a>
-<a class="source" href="/export/123/foo/pict.gif">export:/foo/pict.gif@123</a>
-</p>
-------------------------------
-============================== export: link resolver + fragment
-export:/foo/bar.html#header
-------------------------------
-<p>
-<a class="source" href="/export/200/foo/bar.html#header">export:/foo/bar.html#header</a>
-</p>
-------------------------------
 """ # " (be Emacs friendly...)
 
 
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(formatter.suite(CHANGESET_TEST_CASES, repository_setup,
+    suite.addTest(formatter.suite(CHANGESET_TEST_CASES, changeset_setup,
                                   __file__))
-    suite.addTest(formatter.suite(LOG_TEST_CASES, repository_setup,
-                                  file=__file__))
+    suite.addTest(formatter.suite(LOG_TEST_CASES, file=__file__))
     suite.addTest(formatter.suite(DIFF_TEST_CASES, file=__file__))
-    suite.addTest(formatter.suite(SOURCE_TEST_CASES, repository_setup,
-                                  file=__file__))
+    suite.addTest(formatter.suite(SOURCE_TEST_CASES, file=__file__))
     return suite
 
 if __name__ == '__main__':

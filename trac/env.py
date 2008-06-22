@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
-# Copyright (C) 2003-2007 Jonas Borgström <jonas@edgewall.com>
+# Copyright (C) 2003-2005 Edgewall Software
+# Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -15,23 +15,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 import os
-try:
-    import threading
-except ImportError:
-    import dummy_threading as threading
-import setuptools
-import sys
-from urlparse import urlsplit
 
-from trac import db_default
+from trac import db_default, util
 from trac.config import *
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
 from trac.db import DatabaseManager
-from trac.util import get_pkginfo
-from trac.util.translation import _
 from trac.versioncontrol import RepositoryManager
-from trac.web.href import Href
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
 
@@ -67,19 +57,10 @@ class Environment(Component, ComponentManager):
     things:
      * a configuration file.
      * an SQLite database (stores tickets, wiki pages...)
-     * Project specific templates and plugins.
+     * Project specific templates and wiki macros.
      * wiki and ticket attachments.
     """   
     setup_participants = ExtensionPoint(IEnvironmentSetupParticipant)
-
-    shared_plugins_dir = PathOption('inherit', 'plugins_dir', '',
-        """Path of the directory containing additional plugins.
-        
-        Plugins in that directory are loaded in addition to those in the
-        directory of the environment `plugins`, with this one taking 
-        precedence.
-        
-        (''since 0.11'')""")
 
     base_url = Option('trac', 'base_url', '',
         """Reference URL for the Trac deployment.
@@ -106,12 +87,8 @@ class Environment(Component, ComponentManager):
     project_description = Option('project', 'descr', 'My example project',
         """Short description of the project.""")
 
-    project_url = Option('project', 'url', '',
-        """URL of the main project web site, usually the website in which
-        the `base_url` resides.""")
-
-    project_admin = Option('project', 'admin', '',
-        """E-Mail address of the project's administrator.""")
+    project_url = Option('project', 'url', 'http://example.org/',
+        """URL of the main project web site.""")
 
     project_footer = Option('project', 'footer',
                             'Visit the Trac open source project at<br />'
@@ -172,17 +149,8 @@ class Environment(Component, ComponentManager):
         self.setup_config(load_defaults=create)
         self.setup_log()
 
-        from trac import core, __version__ as VERSION
-        self.systeminfo = [
-            ('Trac', get_pkginfo(core).get('version', VERSION)),
-            ('Python', sys.version),
-            ('setuptools', setuptools.__version__),
-            ]
-        self._href = self._abs_href = None
-
         from trac.loader import load_components
-        plugins_dir = self.config.get('inherit', 'plugins_dir')
-        load_components(self, plugins_dir and (plugins_dir,))
+        load_components(self)
 
         if create:
             self.create(options)
@@ -222,17 +190,6 @@ class Environment(Component, ComponentManager):
         for pattern, enabled in rules:
             if component_name == pattern or pattern.endswith('*') \
                     and component_name.startswith(pattern[:-1]):
-                # Disable the pre-0.11 WebAdmin plugin
-                # Please note that there's no recommendation to uninstall the
-                # plugin because doing so would obviously break the backwards
-                # compatibility that the new integration administration
-                # interface tries to provide for old WebAdmin extensions
-                if component_name.startswith('webadmin.'):
-                    self.log.info('The legacy TracWebAdmin plugin has been '
-                                  'automatically disabled, and the integrated '
-                                  'administration interface will be used '
-                                  'instead.')
-                    return False
                 return enabled
 
         # versioncontrol components are enabled if the repository is configured
@@ -271,15 +228,10 @@ class Environment(Component, ComponentManager):
 
     def create(self, options=[]):
         """Create the basic directory structure of the environment, initialize
-        the database and populate the configuration file with default values.
-
-        If options contains ('inherit', 'file'), default values will not be
-        loaded; they are expected to be provided by that file or other options.
-        """
+        the database and populate the configuration file with default values."""
         def _create_file(fname, data=None):
             fd = open(fname, 'w')
-            if data:
-                fd.write(data)
+            if data: fd.write(data)
             fd.close()
 
         # Create the directory structure
@@ -288,6 +240,7 @@ class Environment(Component, ComponentManager):
         os.mkdir(self.get_log_dir())
         os.mkdir(self.get_htdocs_dir())
         os.mkdir(os.path.join(self.path, 'plugins'))
+        os.mkdir(os.path.join(self.path, 'wiki-macros'))
 
         # Create a few files
         _create_file(os.path.join(self.path, 'VERSION'),
@@ -299,33 +252,20 @@ class Environment(Component, ComponentManager):
         # Setup the default configuration
         os.mkdir(os.path.join(self.path, 'conf'))
         _create_file(os.path.join(self.path, 'conf', 'trac.ini'))
-        skip_defaults = options and ('inherit', 'file') in [(section, option) \
-                for (section, option, value) in options]
-        self.setup_config(load_defaults=not skip_defaults)
+        self.setup_config(load_defaults=True)
         for section, name, value in options:
             self.config.set(section, name, value)
         self.config.save()
-        self.config.parse_if_needed() # Full reload to get 'inherit' working
 
         # Create the database
         DatabaseManager(self).init_db()
 
-    def get_version(self, db=None, initial=False):
-        """Return the current version of the database.
-        If the optional argument `initial` is set to `True`, the version
-        of the database used at the time of creation will be returned.
-
-        In practice, for database created before 0.11, this will return `False`
-        which is "older" than any db version number.
-
-        :since 0.11:
-        """
+    def get_version(self, db=None):
+        """Return the current version of the database."""
         if not db:
             db = self.get_db_cnx()
         cursor = db.cursor()
-        cursor.execute("SELECT value FROM system "
-                       "WHERE name='%sdatabase_version'" %
-                       (initial and 'initial_' or ''))
+        cursor.execute("SELECT value FROM system WHERE name='database_version'")
         row = cursor.fetchone()
         return row and int(row[0])
 
@@ -333,9 +273,9 @@ class Environment(Component, ComponentManager):
         """Load the configuration file."""
         self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'))
         if load_defaults:
-            for section, default_options in self.config.defaults().items():
-                for name, value in default_options.items():
-                    if self.config.parent and name in self.config.parent[section]:
+            for section, default_options in self.config.defaults().iteritems():
+                for name, value in default_options.iteritems():
+                    if self.config.has_site_option(section, name):
                         value = None
                     self.config.set(section, name, value)
 
@@ -401,7 +341,7 @@ class Environment(Component, ComponentManager):
 
         db_str = self.config.get('trac', 'database')
         if not db_str.startswith('sqlite:'):
-            raise TracError(_('Can only backup sqlite databases'))
+            raise EnvironmentError('Can only backup sqlite databases')
         db_name = os.path.join(self.path, db_str[7:])
         if not dest:
             dest = '%s.%i.bak' % (db_name, self.get_version())
@@ -447,23 +387,6 @@ class Environment(Component, ComponentManager):
 
         return True
 
-    def _get_href(self):
-        if not self._href:
-            self._href = Href(urlsplit(self.abs_href.base)[2])
-        return self._href
-    href = property(_get_href, 'The application root path')
-
-    def _get_abs_href(self):
-        if not self._abs_href:
-            if not self.base_url:
-                self.log.warn('base_url option not set in configuration, '
-                              'generated links may be incorrect')
-                self._abs_href = Href('')
-            else:
-                self._abs_href = Href(self.base_url)
-        return self._abs_href
-    abs_href = property(_get_abs_href, 'The application URL')
-
 
 class EnvironmentSetup(Component):
     implements(IEnvironmentSetupParticipant)
@@ -486,7 +409,7 @@ class EnvironmentSetup(Component):
         if dbver == db_default.db_version:
             return False
         elif dbver > db_default.db_version:
-            raise TracError(_('Database newer than Trac version'))
+            raise TracError, 'Database newer than Trac version'
         return True
 
     def upgrade_environment(self, db):
@@ -498,8 +421,8 @@ class EnvironmentSetup(Component):
                 upgrades = __import__('upgrades', globals(), locals(), [name])
                 script = getattr(upgrades, name)
             except AttributeError:
-                raise TracError(_('No upgrade module for version %(num)i '
-                                  '(%(version)s.py)', num=i, version=name))
+                err = 'No upgrade module for version %i (%s.py)' % (i, name)
+                raise TracError, err
             script.do_upgrade(self.env, i, cursor)
         cursor.execute("UPDATE system SET value=%s WHERE "
                        "name='database_version'", (db_default.db_version,))
@@ -525,58 +448,23 @@ class EnvironmentSetup(Component):
                           exc_info=True)
 
 
-env_cache = {}
-env_cache_lock = threading.Lock()
-
-def open_environment(env_path=None, use_cache=False):
+def open_environment(env_path=None):
     """Open an existing environment object, and verify that the database is up
     to date.
 
-    @param env_path: absolute path to the environment directory; if ommitted,
-                     the value of the `TRAC_ENV` environment variable is used
-    @param use_cache: whether the environment should be cached for subsequent
-                      invocations of this function
+    @param: env_path absolute path to the environment directory; if ommitted,
+            the value of the `TRAC_ENV` environment variable is used
     @return: the `Environment` object
     """
-    global env_cache, env_cache_lock
-
     if not env_path:
         env_path = os.getenv('TRAC_ENV')
     if not env_path:
-        raise TracError(_('Missing environment variable "TRAC_ENV". '
-                          'Trac requires this variable to point to a valid '
-                          'Trac environment.'))
+        raise TracError, 'Missing environment variable "TRAC_ENV". Trac ' \
+                         'requires this variable to point to a valid Trac ' \
+                         'environment.'
 
-    if use_cache:
-        env_cache_lock.acquire()
-        try:
-            env = env_cache.get(env_path)
-            if env and env.config.parse_if_needed():
-                # The environment configuration has changed, so shut it down
-                # and remove it from the cache so that it gets reinitialized
-                env.log.info('Reloading environment due to configuration '
-                             'change')
-                env.shutdown()
-                if hasattr(env.log, '_trac_handler'):
-                    hdlr = env.log._trac_handler
-                    env.log.removeHandler(hdlr)
-                    hdlr.close()
-                del env_cache[env_path]
-                env = None
-            if env is None:
-                env = env_cache.setdefault(env_path, open_environment(env_path))
-        finally:
-            env_cache_lock.release()
-    else:
-        env = Environment(env_path)
-        needs_upgrade = False
-        try:
-            needs_upgrade = env.needs_upgrade()
-        except Exception, e: # e.g. no database connection
-            env.log.exception(e)
-        if needs_upgrade:
-            raise TracError(_('The Trac Environment needs to be upgraded.\n\n'
-                              'Run "trac-admin %(path)s upgrade"',
-                              path=env_path))
-
+    env = Environment(env_path)
+    if env.needs_upgrade():
+        raise TracError, 'The Trac Environment needs to be upgraded. Run ' \
+                         'trac-admin %s upgrade"' % env_path
     return env

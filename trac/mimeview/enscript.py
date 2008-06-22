@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -14,8 +14,6 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
-
-from genshi.core import Markup
 
 from trac.config import Option, ListOption
 from trac.core import *
@@ -100,7 +98,6 @@ class EnscriptRenderer(Component):
     implements(IHTMLPreviewRenderer)
 
     expand_tabs = True
-    returns_source = True
 
     path = Option('mimeviewer', 'enscript_path', 'enscript',
         """Path to the Enscript executable.""")
@@ -131,7 +128,7 @@ class EnscriptRenderer(Component):
                 Mimeview(self.env).configured_modes_mapping('enscript'))
         return self._types.get(mimetype, (None, 0))[1]
 
-    def render(self, context, mimetype, content, filename=None, rev=None):
+    def render(self, req, mimetype, content, filename=None, rev=None):
         cmdline = self.path
         mimetype = mimetype.split(';', 1)[0] # strip off charset
         mode = self._types[mimetype][0]
@@ -152,4 +149,4 @@ class EnscriptRenderer(Component):
         end = i > 0 and i or len(odata)
 
         odata = EnscriptDeuglifier().format(odata[beg:end].decode('utf-8'))
-        return [Markup(line) for line in odata.splitlines()]
+        return odata.splitlines()

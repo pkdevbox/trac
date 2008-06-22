@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2006 Edgewall Software
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
-# Copyright (C) 2006-2007 Christian Boos <cboos@neuf.fr>
+# Copyright (C) 2006 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -15,244 +15,22 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from datetime import datetime
 import re
 from time import localtime, strftime, time
 
-from genshi.builder import tag
-
 from trac import __version__
-from trac.attachment import AttachmentModule
-from trac.config import ExtensionOption
 from trac.core import *
-from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
-from trac.resource import *
-from trac.util.compat import set, sorted
-from trac.util.datefmt import parse_date, utc, to_timestamp, to_datetime, \
-                              get_date_format_hint, get_datetime_format_hint, \
-                              format_date, format_datetime
+from trac.util.datefmt import format_date, format_datetime, parse_date, \
+                               pretty_timedelta
+from trac.util.html import html, unescape, Markup
 from trac.util.text import shorten_line, CRLF, to_unicode
-from trac.util.translation import _
 from trac.ticket import Milestone, Ticket, TicketSystem
-from trac.ticket.query import Query
-from trac.timeline.api import ITimelineEventProvider
+from trac.Timeline import ITimelineEventProvider
 from trac.web import IRequestHandler
-from trac.web.chrome import add_link, add_stylesheet, add_warning, \
-                            INavigationContributor
-from trac.wiki.api import IWikiSyntaxProvider
-from trac.wiki.formatter import format_to_html
+from trac.web.chrome import add_link, add_stylesheet, INavigationContributor
+from trac.wiki import wiki_to_html, wiki_to_oneliner, IWikiSyntaxProvider
 
-class ITicketGroupStatsProvider(Interface):
-    def get_ticket_group_stats(ticket_ids):
-        """ Gather statistics on a group of tickets.
-
-        This method returns a valid TicketGroupStats object.
-        """
-
-class TicketGroupStats(object):
-    """Encapsulates statistics on a group of tickets."""
-
-    def __init__(self, title, unit):
-        """Creates a new TicketGroupStats object.
-        
-        `title` is the display name of this group of stats (e.g.
-          'ticket status').
-        `unit` is the display name of the units for these stats (e.g. 'hour').
-        """
-        self.title = title
-        self.unit = unit
-        self.count = 0
-        self.qry_args = {}
-        self.intervals = []
-        self.done_percent = 0
-        self.done_count = 0
-
-    def add_interval(self, title, count, qry_args, css_class,
-                     overall_completion=None, countsToProg=0):
-        """Adds a division to this stats' group's progress bar.
-
-        `title` is the display name (eg 'closed', 'spent effort') of this
-        interval that will be displayed in front of the unit name.
-        `count` is the number of units in the interval.
-        `qry_args` is a dict of extra params that will yield the subset of
-          tickets in this interval on a query.
-        `css_class` is the css class that will be used to display the division.
-        `overall_completion` can be set to true to make this interval count
-          towards overall completion of this group of tickets.
-          
-        (Warning: `countsToProg` argument will be removed in 0.12, use
-        `overall_completion` instead)
-        """
-        if overall_completion is None:
-            overall_completion = countsToProg
-        self.intervals.append({
-            'title': title,
-            'count': count,
-            'qry_args': qry_args,
-            'css_class': css_class,
-            'percent': None,
-            'countsToProg': overall_completion,
-            'overall_completion': overall_completion,
-        })
-        self.count = self.count + count
-
-    def refresh_calcs(self):
-        if self.count < 1:
-            return
-        total_percent = 0
-        self.done_percent = 0
-        self.done_count = 0
-        for interval in self.intervals:
-            interval['percent'] = round(float(interval['count'] / 
-                                        float(self.count) * 100))
-            total_percent = total_percent + interval['percent']
-            if interval['overall_completion']:
-                self.done_percent += interval['percent']
-                self.done_count += interval['count']
-
-        # We want the percentages to add up to 100%.  To do that, we fudge the
-        # first interval that counts as "completed".  That interval is adjusted
-        # by enough to make the intervals sum to 100%.
-        if self.done_count and total_percent != 100:
-            fudge_int = [i for i in self.intervals
-                         if i['overall_completion']][0]
-            fudge_amt = 100 - total_percent
-            fudge_int['percent'] += fudge_amt
-            self.done_percent += fudge_amt
-
-
-class DefaultTicketGroupStatsProvider(Component):
-    """Configurable ticket group statistics provider.
-
-    Example configuration (which is also the default):
-    {{{
-    [milestone-groups]
-
-    # Definition of a 'closed' group:
-    
-    closed = closed
-
-    # The definition consists in a comma-separated list of accepted status.
-    # Also, '*' means any status and could be used to associate all remaining
-    # states to one catch-all group.
-
-    # Qualifiers for the above group (the group must have been defined first):
-    
-    closed.order = 0                     # sequence number in the progress bar
-    closed.query_args = group=resolution # optional extra param for the query
-    closed.overall_completion = true     # count for overall completion
-
-    # Definition of an 'active' group:
-
-    active = *                           # one catch-all group is allowed
-    active.order = 1
-    active.css_class = open              # CSS class for this interval
-    active.label = in progress           # Displayed name for the group,
-                                         #  needed for non-ascii group names
-
-    # The CSS class can be one of: new (yellow), open (no color) or
-    # closed (green). New styles can easily be added using the following
-    # selector:  `table.progress td.<class>`
-    }}}
-    """
-
-    implements(ITicketGroupStatsProvider)
-
-    default_milestone_groups =  [
-        {'name': 'closed', 'status': 'closed',
-         'query_args': 'group=resolution', 'overall_completion': 'true'},
-        {'name': 'active', 'status': '*', 'css_class': 'open'}
-        ]
-
-    def _get_ticket_groups(self):
-        """Returns a list of dict describing the ticket groups
-        in the expected order of appearance in the milestone progress bars.
-        """
-        if 'milestone-groups' in self.config:
-            groups = {}
-            order = 0
-            for groupname, value in self.config.options('milestone-groups'):
-                qualifier = 'status'
-                if '.' in groupname:
-                    groupname, qualifier = groupname.split('.', 1)
-                group = groups.setdefault(groupname, {'name': groupname,
-                                                      'order': order})
-                group[qualifier] = value
-                order = max(order, int(group['order'])) + 1
-            return [group for group in sorted(groups.values(),
-                                              key=lambda g: int(g['order']))]
-        else:
-            return self.default_milestone_groups
-
-    def get_ticket_group_stats(self, ticket_ids):
-        total_cnt = len(ticket_ids)
-        all_statuses = set(TicketSystem(self.env).get_all_status())
-        status_cnt = {}
-        for s in all_statuses:
-            status_cnt[s] = 0
-        if total_cnt:
-            cursor = self.env.get_db_cnx().cursor()
-            str_ids = [str(x) for x in sorted(ticket_ids)]
-            cursor.execute("SELECT status, count(status) FROM ticket "
-                           "WHERE id IN (%s) GROUP BY status" %
-                           ",".join(str_ids))
-            for s, cnt in cursor:
-                status_cnt[s] = cnt
-
-        stat = TicketGroupStats('ticket status', 'ticket')
-        remaining_statuses = set(all_statuses)
-        groups =  self._get_ticket_groups()
-        catch_all_group = None
-        # we need to go through the groups twice, so that the catch up group
-        # doesn't need to be the last one in the sequence
-        for group in groups:
-            status_str = group['status'].strip()
-            if status_str == '*':
-                if catch_all_group:
-                    raise TracError(_(
-                        "'%(group1)s' and '%(group2)s' milestone groups "
-                        "both are declared to be \"catch-all\" groups. "
-                        "Please check your configuration.",
-                        group1=group['name'], group2=catch_all_group['name']))
-                catch_all_group = group
-            else:
-                group_statuses = set([s.strip()
-                                      for s in status_str.split(',')]) \
-                                      & all_statuses
-                if group_statuses - remaining_statuses:
-                    raise TracError(_(
-                        "'%(groupname)s' milestone group reused status "
-                        "'%(status)s' already taken by other groups. "
-                        "Please check your configuration.",
-                        groupname=group['name'],
-                        status=', '.join(group_statuses - remaining_statuses)))
-                else:
-                    remaining_statuses -= group_statuses
-                group['statuses'] = group_statuses
-        if catch_all_group:
-            catch_all_group['statuses'] = remaining_statuses
-        for group in groups:
-            group_cnt = 0
-            query_args = {}
-            for s, cnt in status_cnt.iteritems():
-                if s in group['statuses']:
-                    group_cnt += cnt
-                    query_args.setdefault('status', []).append(s)
-            for arg in [kv for kv in group.get('query_args', '').split(',')
-                        if '=' in kv]:
-                k, v = [a.strip() for a in arg.split('=', 1)]
-                query_args[k] = v
-            stat.add_interval(group.get('label', group['name']), 
-                              group_cnt, query_args,
-                              group.get('css_class', group['name']),
-                              bool(group.get('overall_completion')))
-        stat.refresh_calcs()
-        return stat
-
-
-def get_ticket_stats(provider, tickets):
-    return provider.get_ticket_group_stats([t['id'] for t in tickets])
 
 def get_tickets_for_milestone(env, db, milestone, field='component'):
     cursor = db.cursor()
@@ -269,33 +47,78 @@ def get_tickets_for_milestone(env, db, milestone, field='component'):
         tickets.append({'id': tkt_id, 'status': status, field: fieldval})
     return tickets
 
-def apply_ticket_permissions(env, req, tickets):
-    """Apply permissions to a set of milestone tickets as returned by
-    get_tickets_for_milestone()."""
-    return [t for t in tickets
-            if 'TICKET_VIEW' in req.perm('ticket', t['id'])]
+def get_query_links(req, milestone, grouped_by='component', group=None):
+    q = {}
+    if not group:
+        q['all_tickets'] = req.href.query(milestone=milestone)
+        q['active_tickets'] = req.href.query(
+            milestone=milestone, status=('new', 'assigned', 'reopened'))
+        q['closed_tickets'] = req.href.query(
+            milestone=milestone, status='closed')
+    else:
+        q['all_tickets'] = req.href.query(
+            {grouped_by: group}, milestone=milestone)
+        q['active_tickets'] = req.href.query(
+            {grouped_by: group}, milestone=milestone,
+            status=('new', 'assigned', 'reopened'))
+        q['closed_tickets'] = req.href.query(
+            {grouped_by: group}, milestone=milestone, status='closed')
+    return q
 
-def milestone_stats_data(req, stat, name, grouped_by='component', group=None):
-    def query_href(extra_args):
-        args = {'milestone': name, grouped_by: group, 'group': 'status'}
-        args.update(extra_args)
-        return req.href.query(args)
-    return {'stats': stat,
-            'stats_href': query_href(stat.qry_args),
-            'interval_hrefs': [query_href(interval['qry_args'])
-                               for interval in stat.intervals]}
+def calc_ticket_stats(tickets):
+    total_cnt = len(tickets)
+    active = [ticket for ticket in tickets if ticket['status'] != 'closed']
+    active_cnt = len(active)
+    closed_cnt = total_cnt - active_cnt
 
+    percent_active, percent_closed = 0, 0
+    if total_cnt > 0:
+        percent_active = round(float(active_cnt) / float(total_cnt) * 100)
+        percent_closed = round(float(closed_cnt) / float(total_cnt) * 100)
+        if percent_active + percent_closed > 100:
+            percent_closed -= 1
+
+    return {
+        'total_tickets': total_cnt,
+        'active_tickets': active_cnt,
+        'percent_active': percent_active,
+        'closed_tickets': closed_cnt,
+        'percent_closed': percent_closed
+    }
+
+def milestone_to_hdf(env, db, req, milestone):
+    hdf = {'name': milestone.name,
+           'href': req.href.milestone(milestone.name)}
+    if milestone.description:
+        hdf['description_source'] = milestone.description
+        hdf['description'] = wiki_to_html(milestone.description, env, req, db)
+    if milestone.due:
+        hdf['due'] = milestone.due
+        hdf['due_date'] = format_date(milestone.due)
+        hdf['due_delta'] = pretty_timedelta(milestone.due + 86400)
+        hdf['late'] = milestone.is_late
+    if milestone.completed:
+        hdf['completed'] = milestone.completed
+        hdf['completed_date'] = format_datetime(milestone.completed)
+        hdf['completed_delta'] = pretty_timedelta(milestone.completed)
+    return hdf
+
+def _get_groups(env, db, by='component'):
+    for field in TicketSystem(env).get_ticket_fields():
+        if field['name'] == by:
+            if field.has_key('options'):
+                return field['options']
+            else:
+                cursor = db.cursor()
+                cursor.execute("SELECT DISTINCT %s FROM ticket ORDER BY %s"
+                               % (by, by))
+                return [row[0] for row in cursor]
+    return []
 
 
 class RoadmapModule(Component):
 
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler)
-    stats_provider = ExtensionOption('roadmap', 'stats_provider',
-                                     ITicketGroupStatsProvider,
-                                     'DefaultTicketGroupStatsProvider',
-        """Name of the component implementing `ITicketGroupStatsProvider`, 
-        which is used to collect statistics on groups of tickets for display
-        in the roadmap views.""")
 
     # INavigationContributor methods
 
@@ -303,9 +126,10 @@ class RoadmapModule(Component):
         return 'roadmap'
 
     def get_navigation_items(self, req):
-        if 'ROADMAP_VIEW' in req.perm:
-            yield ('mainnav', 'roadmap',
-                   tag.a(_('Roadmap'), href=req.href.roadmap(), accesskey=3))
+        if not req.perm.has_permission('ROADMAP_VIEW'):
+            return
+        yield ('mainnav', 'roadmap',
+               html.a('Roadmap', href=req.href.roadmap(), accesskey=3))
 
     # IPermissionRequestor methods
 
@@ -318,45 +142,42 @@ class RoadmapModule(Component):
         return re.match(r'/roadmap/?', req.path_info) is not None
 
     def process_request(self, req):
-        milestone_realm = Resource('milestone')
-        req.perm.require('MILESTONE_VIEW')
+        req.perm.assert_permission('ROADMAP_VIEW')
+        req.hdf['title'] = 'Roadmap'
 
         showall = req.args.get('show') == 'all'
+        req.hdf['roadmap.showall'] = showall
 
         db = self.env.get_db_cnx()
-        milestones = [m for m in Milestone.select(self.env, showall, db)
-                      if 'MILESTONE_VIEW' in req.perm(m.resource)]
-        stats = []
-        queries = []
+        milestones = [milestone_to_hdf(self.env, db, req, m)
+                      for m in Milestone.select(self.env, showall, db)]
+        req.hdf['roadmap.milestones'] = milestones        
 
-        for milestone in milestones:
-            tickets = get_tickets_for_milestone(self.env, db, milestone.name,
+        for idx, milestone in enumerate(milestones):
+            milestone_name = unescape(milestone['name']) # Kludge
+            prefix = 'roadmap.milestones.%d.' % idx
+            tickets = get_tickets_for_milestone(self.env, db, milestone_name,
                                                 'owner')
-            tickets = apply_ticket_permissions(self.env, req, tickets)
-            stat = get_ticket_stats(self.stats_provider, tickets)
-            stats.append(milestone_stats_data(req, stat, milestone.name))
-            #milestone['tickets'] = tickets # for the iCalendar view
+            req.hdf[prefix + 'stats'] = calc_ticket_stats(tickets)
+            for k, v in get_query_links(req, milestone_name).items():
+                req.hdf[prefix + 'queries.' + k] = v
+            milestone['tickets'] = tickets # for the iCalendar view
 
         if req.args.get('format') == 'ics':
             self.render_ics(req, db, milestones)
             return
 
+        add_stylesheet(req, 'common/css/roadmap.css')
+
         # FIXME should use the 'webcal:' scheme, probably
         username = None
         if req.authname and req.authname != 'anonymous':
             username = req.authname
-        icshref = req.href.roadmap(show=req.args.get('show'), user=username,
-                                   format='ics')
-        add_link(req, 'alternate', icshref, _('iCalendar'), 'text/calendar',
-                 'ics')
+        icshref = req.href.roadmap(show=req.args.get('show'),
+                                        user=username, format='ics')
+        add_link(req, 'alternate', icshref, 'iCalendar', 'text/calendar', 'ics')
 
-        data = {
-            'milestones': milestones,
-            'milestone_stats': stats,
-            'queries': queries,
-            'showall': showall,
-        }
-        return 'roadmap.html', data, None
+        return 'roadmap.cs', None
 
     # Internal methods
 
@@ -401,11 +222,10 @@ class RoadmapModule(Component):
 
         def write_date(name, value, params={}):
             params['VALUE'] = 'DATE'
-            write_prop(name, format_date(value, '%Y%m%d', req.tz), params)
+            write_prop(name, strftime('%Y%m%d', value), params)
 
         def write_utctime(name, value, params={}):
-            write_prop(name, format_datetime(value, '%Y%m%dT%H%M%SZ', utc),
-                       params)
+            write_prop(name, strftime('%Y%m%dT%H%M%SZ', value), params)
 
         host = req.base_url[req.base_url.find('://') + 3:]
         user = req.args.get('user', 'anonymous')
@@ -416,37 +236,32 @@ class RoadmapModule(Component):
                    % __version__)
         write_prop('METHOD', 'PUBLISH')
         write_prop('X-WR-CALNAME',
-                   self.config.get('project', 'name') + ' - ' + _('Roadmap'))
+                   self.config.get('project', 'name') + ' - Roadmap')
         for milestone in milestones:
-            uid = '<%s/milestone/%s@%s>' % (req.base_path, milestone.name,
+            uid = '<%s/milestone/%s@%s>' % (req.base_path, milestone['name'],
                                             host)
-            if milestone.due:
+            if milestone.has_key('due'):
                 write_prop('BEGIN', 'VEVENT')
                 write_prop('UID', uid)
-                write_utctime('DTSTAMP', milestone.due)
-                write_date('DTSTART', milestone.due)
-                write_prop('SUMMARY', _('Milestone %(name)s',
-                                        name=milestone.name))
+                write_utctime('DTSTAMP', localtime(milestone['due']))
+                write_date('DTSTART', localtime(milestone['due']))
+                write_prop('SUMMARY', 'Milestone %s' % milestone['name'])
                 write_prop('URL', req.base_url + '/milestone/' +
-                           milestone.name)
-                if milestone.description:
-                    write_prop('DESCRIPTION', milestone.description)
+                           milestone['name'])
+                if milestone.has_key('description_source'):
+                    write_prop('DESCRIPTION', milestone['description_source'])
                 write_prop('END', 'VEVENT')
-            tickets = get_tickets_for_milestone(self.env, db, milestone.name,
-                                                field='owner')
-            tickets = apply_ticket_permissions(self.env, req, tickets)
-            for tkt_id in [ticket['id'] for ticket in tickets
+            for tkt_id in [ticket['id'] for ticket in milestone['tickets']
                            if ticket['owner'] == user]:
                 ticket = Ticket(self.env, tkt_id)
                 write_prop('BEGIN', 'VTODO')
                 write_prop('UID', '<%s/ticket/%s@%s>' % (req.base_path,
                                                          tkt_id, host))
-                if milestone.due:
+                if milestone.has_key('due'):
                     write_prop('RELATED-TO', uid)
-                    write_date('DUE', milestone.due)
-                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s',
-                                        num=ticket.id,
-                                        summary=ticket['summary']))
+                    write_date('DUE', localtime(milestone['due']))
+                write_prop('SUMMARY', 'Ticket #%i: %s' % (ticket.id,
+                                                          ticket['summary']))
                 write_prop('URL', req.abs_href.ticket(ticket.id))
                 write_prop('DESCRIPTION', ticket['description'])
                 priority = get_priority(ticket)
@@ -461,24 +276,15 @@ class RoadmapModule(Component):
                                    (ticket.id,))
                     row = cursor.fetchone()
                     if row:
-                        write_utctime('COMPLETED', to_datetime(row[0], utc))
+                        write_utctime('COMPLETED', localtime(row[0]))
                 write_prop('END', 'VTODO')
         write_prop('END', 'VCALENDAR')
-
 
 
 class MilestoneModule(Component):
 
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler,
-               ITimelineEventProvider, IWikiSyntaxProvider, IResourceManager)
- 
-    stats_provider = ExtensionOption('milestone', 'stats_provider',
-                                     ITicketGroupStatsProvider,
-                                     'DefaultTicketGroupStatsProvider',
-        """Name of the component implementing `ITicketGroupStatsProvider`, 
-        which is used to collect statistics on groups of tickets for display
-        in the milestone views.""")
-    
+               ITimelineEventProvider, IWikiSyntaxProvider)
 
     # INavigationContributor methods
 
@@ -499,38 +305,28 @@ class MilestoneModule(Component):
     # ITimelineEventProvider methods
 
     def get_timeline_filters(self, req):
-        if 'MILESTONE_VIEW' in req.perm:
-            yield ('milestone', _('Milestones'))
+        if req.perm.has_permission('MILESTONE_VIEW'):
+            yield ('milestone', 'Milestones')
 
     def get_timeline_events(self, req, start, stop, filters):
         if 'milestone' in filters:
-            milestone_realm = Resource('milestone')
+            format = req.args.get('format')
             db = self.env.get_db_cnx()
             cursor = db.cursor()
-            # TODO: creation and (later) modifications should also be reported
             cursor.execute("SELECT completed,name,description FROM milestone "
                            "WHERE completed>=%s AND completed<=%s",
-                           (to_timestamp(start), to_timestamp(stop)))
+                           (start, stop,))
             for completed, name, description in cursor:
-                milestone = milestone_realm(id=name)
-                if 'MILESTONE_VIEW' in req.perm(milestone):
-                    yield('milestone', datetime.fromtimestamp(completed, utc),
-                          '', (milestone, description)) # FIXME: author?
-
-            # Attachments
-            for event in AttachmentModule(self.env).get_timeline_events(
-                req, milestone_realm, start, stop):
-                yield event
-                
-    def render_timeline_event(self, context, field, event):
-        milestone, description = event[3]
-        if field == 'url':
-            return context.href.milestone(milestone.id)
-        elif field == 'title':
-            return tag('Milestone ', tag.em(milestone.id), ' completed')
-        elif field == 'description':
-            return format_to_html(self.env, context(resource=milestone),
-                                  shorten_line(description))
+                title = Markup('Milestone <em>%s</em> completed', name)
+                if format == 'rss':
+                    href = req.abs_href.milestone(name)
+                    message = wiki_to_html(description, self.env, req, db,
+                                           absurls=True)
+                else:
+                    href = req.href.milestone(name)
+                    message = wiki_to_oneliner(description, self.env, db,
+                                               shorten=True)
+                yield 'milestone', href, title, completed, None, message or '--'
 
     # IRequestHandler methods
 
@@ -544,11 +340,12 @@ class MilestoneModule(Component):
 
     def process_request(self, req):
         milestone_id = req.args.get('id')
-        req.perm('milestone', milestone_id).require('MILESTONE_VIEW')
-        
-        add_link(req, 'up', req.href.roadmap(), _('Roadmap'))
+            
+        req.perm.assert_permission('MILESTONE_VIEW')
 
-        db = self.env.get_db_cnx() # TODO: db can be removed
+        add_link(req, 'up', req.href.roadmap(), 'Roadmap')
+
+        db = self.env.get_db_cnx()
         milestone = Milestone(self.env, milestone_id, db)
         action = req.args.get('action', 'view')
 
@@ -559,23 +356,26 @@ class MilestoneModule(Component):
                 else:
                     req.redirect(req.href.roadmap())
             elif action == 'edit':
-                return self._do_save(req, db, milestone)
+                self._do_save(req, db, milestone)
             elif action == 'delete':
                 self._do_delete(req, db, milestone)
         elif action in ('new', 'edit'):
-            return self._render_editor(req, db, milestone)
+            self._render_editor(req, db, milestone)
         elif action == 'delete':
-            return self._render_confirm(req, db, milestone)
+            self._render_confirm(req, db, milestone)
+        else:
+            self._render_view(req, db, milestone)
 
-        if not milestone.name:
+        if not milestone_id and action != 'new':
             req.redirect(req.href.roadmap())
 
-        return self._render_view(req, db, milestone)
+        add_stylesheet(req, 'common/css/roadmap.css')
+        return 'milestone.cs', None
 
     # Internal methods
 
     def _do_delete(self, req, db, milestone):
-        req.perm(milestone.resource).require('MILESTONE_DELETE')
+        req.perm.assert_permission('MILESTONE_DELETE')
 
         retarget_to = None
         if req.args.has_key('retarget'):
@@ -586,68 +386,46 @@ class MilestoneModule(Component):
 
     def _do_save(self, req, db, milestone):
         if milestone.exists:
-            req.perm(milestone.resource).require('MILESTONE_MODIFY')
+            req.perm.assert_permission('MILESTONE_MODIFY')
         else:
-            req.perm(milestone.resource).require('MILESTONE_CREATE')
+            req.perm.assert_permission('MILESTONE_CREATE')
 
-        old_name = milestone.name
-        new_name = req.args.get('name')
-        
-        milestone.name = new_name
-        milestone.description = req.args.get('description', '')
+        if not req.args.has_key('name'):
+            raise TracError('You must provide a name for the milestone.',
+                            'Required Field Missing')
 
         due = req.args.get('duedate', '')
-        milestone.due = due and parse_date(due, tzinfo=req.tz) or 0
-
-        completed = req.args.get('completeddate', '')
-        retarget_to = req.args.get('target')
-
-        # Instead of raising one single error, check all the constraints and
-        # let the user fix them by going back to edit mode showing the warnings
-        warnings = []
-        def warn(msg):
-            add_warning(req, msg)
-            warnings.append(msg)
-
-        # -- check the name
-        if new_name:
-            # check that the milestone doesn't already exists
-            # FIXME: the whole .exists business needs to be clarified (#4130)
-            #        and should behave like a WikiPage does in this respect.
+        try:
+            milestone.due = due and parse_date(due) or 0
+        except ValueError, e:
+            raise TracError(to_unicode(e), 'Invalid Date Format')
+        if req.args.has_key('completed'):
+            completed = req.args.get('completeddate', '')
             try:
-                test_milestone = Milestone(self.env, new_name, db)
-                if not test_milestone.exists:
-                    # then an exception should have been raised
-                    warn(_('Milestone "%(name)s" already exists, please '
-                           'choose another name', name=new_name))
-            except TracError:
-                pass
-        else:
-            warn(_('You must provide a name for the milestone.'))
-
-        # -- check completed date
-        if 'completed' in req.args:
-            completed = completed and parse_date(completed, req.tz) or None
-            if completed and completed > datetime.now(utc):
-                warn(_('Completion date may not be in the future'))
-        else:
-            completed = None
-        milestone.completed = completed
-
-        if warnings:
-            return self._render_editor(req, db, milestone)
-        
-        # -- actually save changes
-        if milestone.exists:
-            milestone.update()
-            # eventually retarget opened tickets associated with the milestone
-            if 'retarget' in req.args:
+                milestone.completed = completed and parse_date(completed) or 0
+            except ValueError, e:
+                raise TracError(to_unicode(e), 'Invalid Date Format')
+            if milestone.completed > time():
+                raise TracError('Completion date may not be in the future',
+                                'Invalid Completion Date')
+            retarget_to = req.args.get('target')
+            if req.args.has_key('retarget'):
                 cursor = db.cursor()
                 cursor.execute("UPDATE ticket SET milestone=%s WHERE "
                                "milestone=%s and status != 'closed'",
-                                (retarget_to, old_name))
+                                (retarget_to, milestone.name))
                 self.env.log.info('Tickets associated with milestone %s '
-                                  'retargeted to %s' % (old_name, retarget_to))
+                                  'retargeted to %s' % 
+                                  (milestone.name, retarget_to))
+        else:
+            milestone.completed = 0
+
+        # don't update the milestone name until after retargetting open tickets
+        milestone.name = req.args.get('name')
+        milestone.description = req.args.get('description', '')
+
+        if milestone.exists:
+            milestone.update()
         else:
             milestone.insert()
         db.commit()
@@ -655,109 +433,88 @@ class MilestoneModule(Component):
         req.redirect(req.href.milestone(milestone.name))
 
     def _render_confirm(self, req, db, milestone):
-        req.perm(milestone.resource).require('MILESTONE_DELETE')
+        req.perm.assert_permission('MILESTONE_DELETE')
 
-        data = {
-            'milestone': milestone,
-            'milestones': Milestone.select(self.env, False, db)
-        }
-        return 'milestone_delete.html', data, None
+        req.hdf['title'] = 'Milestone %s' % milestone.name
+        req.hdf['milestone'] = milestone_to_hdf(self.env, db, req, milestone)
+        req.hdf['milestone.mode'] = 'delete'
+
+        for idx,other in enumerate(Milestone.select(self.env, False, db)):
+            if other.name == milestone.name:
+                continue
+            req.hdf['milestones.%d' % idx] = other.name
 
     def _render_editor(self, req, db, milestone):
-        data = {
-            'milestone': milestone,
-            'date_hint': get_date_format_hint(),
-            'datetime_hint': get_datetime_format_hint(),
-            'milestones': [],
-        }
-
         if milestone.exists:
-            req.perm(milestone.resource).require('MILESTONE_MODIFY')
-            data['milestones'] = [m for m in
-                                  Milestone.select(self.env, False, db)
-                                  if m.name != milestone.name]
+            req.perm.assert_permission('MILESTONE_MODIFY')
+            req.hdf['title'] = 'Milestone %s' % milestone.name
+            req.hdf['milestone.mode'] = 'edit'
+            req.hdf['milestones'] = [m.name for m in
+                                     Milestone.select(self.env)
+                                     if m.name != milestone.name]
         else:
-            req.perm(milestone.resource).require('MILESTONE_CREATE')
+            req.perm.assert_permission('MILESTONE_CREATE')
+            req.hdf['title'] = 'New Milestone'
+            req.hdf['milestone.mode'] = 'new'
 
-        return 'milestone_edit.html', data, None
+        from trac.util.datefmt import get_date_format_hint, \
+                                       get_datetime_format_hint
+        req.hdf['milestone'] = milestone_to_hdf(self.env, db, req, milestone)
+        req.hdf['milestone.date_hint'] = get_date_format_hint()
+        req.hdf['milestone.datetime_hint'] = get_datetime_format_hint()
+        req.hdf['milestone.datetime_now'] = format_datetime()
 
     def _render_view(self, req, db, milestone):
-        milestone_groups = []
+        req.hdf['title'] = 'Milestone %s' % milestone.name
+        req.hdf['milestone.mode'] = 'view'
+
+        req.hdf['milestone'] = milestone_to_hdf(self.env, db, req, milestone)
+
         available_groups = []
         component_group_available = False
-        ticket_fields = TicketSystem(self.env).get_ticket_fields()
-
-        # collect fields that can be used for grouping
-        for field in ticket_fields:
+        for field in TicketSystem(self.env).get_ticket_fields():
             if field['type'] == 'select' and field['name'] != 'milestone' \
-                    or field['name'] in ('owner', 'reporter'):
+                    or field['name'] == 'owner':
                 available_groups.append({'name': field['name'],
                                          'label': field['label']})
                 if field['name'] == 'component':
                     component_group_available = True
+        req.hdf['milestone.stats.available_groups'] = available_groups
 
-        # determine the field currently used for grouping
-        by = None
         if component_group_available:
-            by = 'component'
-        elif available_groups:
-            by = available_groups[0]['name']
-        by = req.args.get('by', by)
+            by = req.args.get('by', 'component')
+        else:
+            by = req.args.get('by', available_groups[0]['name'])
+        req.hdf['milestone.stats.grouped_by'] = by
 
         tickets = get_tickets_for_milestone(self.env, db, milestone.name, by)
-        tickets = apply_ticket_permissions(self.env, req, tickets)
-        stat = get_ticket_stats(self.stats_provider, tickets)
+        stats = calc_ticket_stats(tickets)
+        req.hdf['milestone.stats'] = stats
+        for key, value in get_query_links(req, milestone.name).items():
+            req.hdf['milestone.queries.' + key] = value
 
-        context = Context.from_request(req, milestone.resource)
-        data = {
-            'context': context,
-            'milestone': milestone,
-            'attachments': AttachmentModule(self.env).attachment_data(context),
-            'available_groups': available_groups, 
-            'grouped_by': by,
-            'groups': milestone_groups
-            }
-        data.update(milestone_stats_data(req, stat, milestone.name))
-
-        if by:
-            groups = []
-            for field in ticket_fields:
-                if field['name'] == by:
-                    if field.has_key('options'):
-                        groups = field['options']
-                    else:
-                        cursor = db.cursor()
-                        cursor.execute("SELECT DISTINCT %s FROM ticket "
-                                       "ORDER BY %s" % (by, by))
-                        groups = [row[0] for row in cursor]
-
-            max_count = 0
-            group_stats = []
-
-            for group in groups:
-                group_tickets = [t for t in tickets if t[by] == group]
-                if not group_tickets:
-                    continue
-
-                gstat = get_ticket_stats(self.stats_provider, group_tickets)
-                if gstat.count > max_count:
-                    max_count = gstat.count
-
-                group_stats.append(gstat) 
-
-                gs_dict = {'name': group}
-                gs_dict.update(milestone_stats_data(req, gstat, milestone.name,
-                                                    by, group))
-                milestone_groups.append(gs_dict)
-
-            for idx, gstat in enumerate(group_stats):
-                gs_dict = milestone_groups[idx]
-                percent = 1.0
-                if max_count:
-                    percent = float(gstat.count) / float(max_count) * 100
-                gs_dict['percent_of_max_total'] = percent
-
-        return 'milestone_view.html', data, None
+        groups = _get_groups(self.env, db, by)
+        group_no = 0
+        max_percent_total = 0
+        for group in groups:
+            group_tickets = [t for t in tickets if t[by] == group]
+            if not group_tickets:
+                continue
+            prefix = 'milestone.stats.groups.%s' % group_no
+            req.hdf['%s.name' % prefix] = group
+            percent_total = 0
+            if len(tickets) > 0:
+                percent_total = float(len(group_tickets)) / float(len(tickets))
+                if percent_total > max_percent_total:
+                    max_percent_total = percent_total
+            req.hdf['%s.percent_total' % prefix] = percent_total * 100
+            stats = calc_ticket_stats(group_tickets)
+            req.hdf[prefix] = stats
+            for key, value in \
+                    get_query_links(req, milestone.name, by, group).items():
+                req.hdf['%s.queries.%s' % (prefix, key)] = value
+            group_no += 1
+        req.hdf['milestone.stats.max_percent_total'] = max_percent_total * 100
 
     # IWikiSyntaxProvider methods
 
@@ -768,38 +525,5 @@ class MilestoneModule(Component):
         yield ('milestone', self._format_link)
 
     def _format_link(self, formatter, ns, name, label):
-        name, query, fragment = formatter.split_link(name)
-        return self._render_link(formatter.context, name, label,
-                                 query + fragment)
-
-    def _render_link(self, context, name, label, extra=''):
-        try:
-            milestone = Milestone(self.env, name)
-        except TracError:
-            milestone = None
-        # Note: the above should really not be needed, `Milestone.exists`
-        # should simply be false if the milestone doesn't exist in the db
-        # (related to #4130)
-        href = context.href.milestone(name)
-        if milestone and milestone.exists and \
-           'MILESTONE_VIEW' in context.perm(milestone.resource):
-            closed = milestone.is_completed and 'closed ' or ''
-            return tag.a(label, class_='%smilestone' % closed, href=href+extra)
-        else: 
-            return tag.a(label, class_='missing milestone', href=href+extra,
-                         rel="nofollow")
-        
-    # IResourceManager methods
-
-    def get_resource_realms(self):
-        yield 'milestone'
-
-    def get_resource_description(self, resource, format=None, context=None,
-                                 **kwargs):
-        desc = resource.id
-        if format != 'compact':
-            desc =  _('Milestone %(name)s', name=resource.id)
-        if context:
-            return self._render_link(context, resource.id, desc)
-        else:
-            return desc
+        return html.A(label, href=formatter.href.milestone(name),
+                      class_='milestone')

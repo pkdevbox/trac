@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2006 Edgewall Software
 # Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2006 Matthew Good <trac@matt-good.net>
 # Copyright (C) 2005-2006 Christian Boos <cboos@neuf.fr>
@@ -21,7 +21,7 @@
 import locale
 import os
 import sys
-from urllib import quote, quote_plus, unquote, urlencode
+from urllib import quote, unquote, urlencode
 
 
 CRLF = '\r\n'
@@ -67,10 +67,6 @@ def unicode_quote(value, safe='/'):
     """A unicode aware version of urllib.quote"""
     return quote(value.encode('utf-8'), safe)
 
-def unicode_quote_plus(value):
-    """A unicode aware version of urllib.quote"""
-    return quote_plus(value.encode('utf-8'))
-
 def unicode_unquote(value):
     """A unicode aware version of urllib.unquote.
     
@@ -113,44 +109,6 @@ class unicode_passwd(unicode):
 
 # -- Plain text formatting
 
-def print_table(data, headers=None, sep='  ', out=None):
-    if out is None:
-        out = sys.stdout
-    charset = getattr(out, 'encoding', None) or 'utf-8'
-    data = list(data)
-    if headers:
-        data.insert(0, headers)
-    elif not data:
-        return
-
-    num_cols = len(data[0]) # assumes all rows are of equal length
-    col_width = []
-    for idx in range(num_cols):
-        col_width.append(max([len(unicode(d[idx] or '')) for d in data]))
-
-    out.write('\n')
-    for ridx, row in enumerate(data):
-        for cidx, cell in enumerate(row):
-            if headers and ridx == 0:
-                sp = ('%%%ds' % len(sep)) % ' '  # No separator in header
-            else:
-                sp = sep
-            if cidx + 1 == num_cols:
-                sp = '' # No separator after last column
-
-            line = (u'%%-%ds%s' % (col_width[cidx], sp)) % (cell or '')
-            if isinstance(line, unicode):
-                line = line.encode(charset, 'replace')
-            out.write(line)
-
-        out.write('\n')
-        if ridx == 0 and headers:
-            out.write(''.join(['-' for x in xrange(0, len(sep) * cidx +
-                                                      sum(col_width))]))
-            out.write('\n')
-
-    out.write('\n')
-
 def shorten_line(text, maxlen=75):
     if len(text or '') < maxlen:
         return text
@@ -176,17 +134,10 @@ def wrap(t, cols=75, initial_indent='', subsequent_indent='',
     except ImportError:
         return t
 
-def obfuscate_email_address(address):
-    if address:
-        at = address.find('@')
-        if at != -1:
-            return address[:at] + u'@\u2026' + \
-                   (address[-1] == '>' and '>' or '')
-    return address
 
 # -- Conversion
 
-def pretty_size(size, format='%.1f'):
+def pretty_size(size):
     if size is None:
         return ''
 
@@ -200,29 +151,4 @@ def pretty_size(size, format='%.1f'):
         i += 1
         size /= 1024.
 
-    return (format + ' %s') % (size, units[i - 1])
-
-def expandtabs(s, tabstop=8, ignoring=None):
-    if '\t' not in s: return s
-    if ignoring is None: return s.expandtabs(tabstop)
-
-    outlines = []
-    for line in s.split('\n'):
-        if '\t' not in line:
-            outlines.append(line)
-            continue
-        p = 0
-        s = []
-        for c in line:
-            if c == '\t':
-                n = tabstop-p%tabstop
-                s.append(' '*n)
-                p+=n
-            elif not ignoring or c not in ignoring:
-                p += 1
-                s.append(c)
-            else:
-                s.append(c)
-        outlines.append(''.join(s))
-    return '\n'.join(outlines)
-
+    return '%.1f %s' % (size, units[i - 1])

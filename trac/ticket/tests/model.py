@@ -1,12 +1,9 @@
 from trac import core
 from trac.core import TracError, implements
-from trac.resource import ResourceNotFound
-from trac.ticket.model import Ticket, Component, Milestone, Priority, Type, Version
+from trac.ticket.model import Ticket, Component, Milestone, Priority, Type
 from trac.ticket.api import ITicketChangeListener
 from trac.test import EnvironmentStub
-from trac.util.datefmt import utc, to_timestamp
 
-from datetime import datetime
 import unittest
 
 class TestTicketChangeListener(core.Component):
@@ -50,15 +47,6 @@ class TicketTestCase(unittest.TestCase):
         ticket['summary'] = 'Foo'
         ticket['foo'] = 'This is a custom field'
         return ticket
-
-    def test_invalid_ticket_id(self):
-        self.assertEqual(Ticket.id_is_valid(-1), False)
-        self.assertEqual(Ticket.id_is_valid(0), False)
-        self.assertEqual(Ticket.id_is_valid(1), True)
-        self.assertEqual(Ticket.id_is_valid(1L << 31), True)
-        self.assertEqual(Ticket.id_is_valid(1L << 32), False)
-        self.assertRaises(ResourceNotFound, Ticket, self.env, -1)
-        self.assertRaises(ResourceNotFound, Ticket, self.env, 1L << 32)
 
     def test_create_ticket_1(self):
         ticket = self._create_a_ticket()
@@ -155,15 +143,6 @@ class TicketTestCase(unittest.TestCase):
         self.assertEqual('foo', ticket['component'])
         self.assertEqual('  bar  ', ticket['description'])
 
-    def test_set_field_multi(self):
-        """
-        Ticket fields can't yet be multi-valued
-        """
-        ticket = Ticket(self.env)
-        def set_multi_valued():
-            ticket['component'] = ['  foo  ',  '  bar  ']
-        self.assertRaises(TracError, set_multi_valued)
-
     def test_owner_from_component(self):
         """
         Verify that the owner of a new ticket is set to the owner of the
@@ -220,7 +199,7 @@ class TicketTestCase(unittest.TestCase):
         self.assertEqual('john', ticket['reporter'])
 
         # An unknown field
-        assert ticket['bar'] is None
+        self.assertRaises(KeyError, ticket.__getitem__, 'bar')
 
         # Custom field
         self.assertEqual('bar', ticket['foo'])
@@ -235,10 +214,9 @@ class TicketTestCase(unittest.TestCase):
         ticket = Ticket(self.env, tkt_id)
         ticket['component'] = 'bar'
         ticket['milestone'] = 'foo'
-        now = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        ticket.save_changes('jane', 'Testing', now)
+        ticket.save_changes('jane', 'Testing', when=42)
         for t, author, field, old, new, permanent in ticket.get_changelog():
-            self.assertEqual((now, 'jane', True), (t, author, permanent))
+            self.assertEqual((42, 'jane', True), (t, author, permanent))
             if field == 'component':
                 self.assertEqual(('foo', 'bar'), (old, new))
             elif field == 'milestone':
@@ -254,10 +232,9 @@ class TicketTestCase(unittest.TestCase):
         ticket = Ticket(self.env, tkt_id)
         ticket['component'] = 'bar'
         ticket['component'] = 'foo'
-        now = datetime(2001, 1, 1,  1, 1, 1, 0, utc)
-        ticket.save_changes('jane', 'Testing', now)
+        ticket.save_changes('jane', 'Testing', when=42)
         for t, author, field, old, new, permanent in ticket.get_changelog():
-            self.assertEqual((now, 'jane', True), (t, author, permanent))
+            self.assertEqual((42, 'jane', True), (t, author, permanent))
             if field == 'comment':
                 self.assertEqual(('', 'Testing'), (old, new))
             else:
@@ -330,12 +307,9 @@ class EnumTestCase(unittest.TestCase):
 
     def test_priority_delete(self):
         prio = Priority(self.env, 'major')
-        self.assertEqual('3', prio.value)
         prio.delete()
         self.assertEqual(False, prio.exists)
         self.assertRaises(TracError, Priority, self.env, 'major')
-        prio = Priority(self.env, 'minor')
-        self.assertEqual('3', prio.value)
 
     def test_ticket_type_update(self):
         tkttype = Type(self.env, 'task')
@@ -356,8 +330,8 @@ class MilestoneTestCase(unittest.TestCase):
         milestone = Milestone(self.env)
         self.assertEqual(False, milestone.exists)
         self.assertEqual(None, milestone.name)
-        self.assertEqual(None, milestone.due)
-        self.assertEqual(None, milestone.completed)
+        self.assertEqual(0, milestone.due)
+        self.assertEqual(0, milestone.completed)
         self.assertEqual('', milestone.description)
 
     def test_new_milestone_empty_name(self):
@@ -368,8 +342,8 @@ class MilestoneTestCase(unittest.TestCase):
         milestone = Milestone(self.env, '')
         self.assertEqual(False, milestone.exists)
         self.assertEqual(None, milestone.name)
-        self.assertEqual(None, milestone.due)
-        self.assertEqual(None, milestone.completed)
+        self.assertEqual(0, milestone.due)
+        self.assertEqual(0, milestone.completed)
         self.assertEqual('', milestone.description)
 
     def test_existing_milestone(self):
@@ -380,8 +354,8 @@ class MilestoneTestCase(unittest.TestCase):
         milestone = Milestone(self.env, 'Test')
         self.assertEqual(True, milestone.exists)
         self.assertEqual('Test', milestone.name)
-        self.assertEqual(None, milestone.due)
-        self.assertEqual(None, milestone.completed)
+        self.assertEqual(0, milestone.due)
+        self.assertEqual(0, milestone.completed)
         self.assertEqual('', milestone.description)
 
     def test_create_milestone(self):
@@ -434,17 +408,14 @@ class MilestoneTestCase(unittest.TestCase):
         cursor.close()
 
         milestone = Milestone(self.env, 'Test')
-        t1 = datetime(2001,01,01, tzinfo=utc)
-        t2 = datetime(2002,02,02, tzinfo=utc)
-        milestone.due = t1
-        milestone.completed = t2
+        milestone.due = 42
+        milestone.completed = 43
         milestone.description = 'Foo bar'
         milestone.update()
 
         cursor = self.db.cursor()
         cursor.execute("SELECT * FROM milestone WHERE name='Test'")
-        self.assertEqual(('Test', to_timestamp(t1), to_timestamp(t2), 'Foo bar'),
-                         cursor.fetchone())
+        self.assertEqual(('Test', 42, 43, 'Foo bar'), cursor.fetchone())
 
     def test_update_milestone_without_name(self):
         cursor = self.db.cursor()
@@ -487,47 +458,11 @@ class MilestoneTestCase(unittest.TestCase):
         assert milestones[1].exists
 
 
-class ComponentTestCase(unittest.TestCase):
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True)
-
-    def test_exists_negative(self):
-        def get_fake_component():
-            return Component(self.env, "Shrubbery")
-        self.assertRaises(TracError, get_fake_component)
-
-    def test_exists(self):
-        """
-        http://trac.edgewall.org/ticket/4247
-        """
-        for c in Component.select(self.env):
-            self.assertEqual(c.exists, True)
-
-
-class VersionTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True)
-
-    def test_exists_negative(self):
-        def get_fake_version():
-            return Version(self.env, "-1")
-        self.assertRaises(TracError, get_fake_version)
-
-    def test_exists(self):
-        """
-        http://trac.edgewall.org/ticket/4247
-        """
-        for v in Version.select(self.env):
-            self.assertEqual(v.exists, True)
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TicketTestCase, 'test'))
     suite.addTest(unittest.makeSuite(EnumTestCase, 'test'))
     suite.addTest(unittest.makeSuite(MilestoneTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(ComponentTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(VersionTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

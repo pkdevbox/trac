@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2008 Edgewall Software
+# Copyright (C) 2004-2005 Edgewall Software
 # Copyright (C) 2004 Francois Harvey <fharvey@securiweb.net>
 # Copyright (C) 2005 Matthew Good <trac@matt-good.net>
 # All rights reserved.
@@ -64,12 +64,6 @@ def parent_iter(path):
 
 
 class RealSubversionAuthorizer(Authorizer):
-    """FIXME: this should become a IPermissionPolicy, of course.
-
-    `check_permission(username, action, resource)` should be able to
-    replace `has_permission(path)` when resource is a `('source', path)`
-    and `has_permission_for_changeset` when resource is a `('changeset', rev)`.
-    """
 
     auth_name = ''
     module_name = ''

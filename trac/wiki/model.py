@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2008 Edgewall Software
+# Copyright (C) 2003-2005 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -17,27 +17,16 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 
 import time
-from datetime import datetime
 
 from trac.core import *
-from trac.resource import Resource
-from trac.util.datefmt import utc, to_timestamp
-from trac.util.translation import _
 from trac.wiki.api import WikiSystem
 
 
 class WikiPage(object):
     """Represents a wiki page (new or existing)."""
 
-    realm = 'wiki'
-
     def __init__(self, env, name=None, version=None, db=None):
         self.env = env
-        if isinstance(name, Resource):
-            self.resource = name
-            name = self.resource.id
-        else:
-            self.resource = Resource('wiki', name, version)
         self.name = name
         if name:
             self._fetch(name, version, db)
@@ -67,15 +56,14 @@ class WikiPage(object):
             version,time,author,text,comment,readonly = row
             self.version = int(version)
             self.author = author
-            self.time = datetime.fromtimestamp(time, utc)
+            self.time = time
             self.text = text
             self.comment = comment
             self.readonly = readonly and int(readonly) or 0
         else:
             self.version = 0
             self.text = self.comment = self.author = ''
-            self.time = None
-            self.readonly = 0
+            self.time = self.readonly = 0
 
     exists = property(fget=lambda self: self.version > 0)
 
@@ -87,6 +75,7 @@ class WikiPage(object):
         else:
             handle_ta = False
 
+        page_deleted = False
         cursor = db.cursor()
         if version is None:
             # Delete a wiki page completely
@@ -128,22 +117,21 @@ class WikiPage(object):
             handle_ta = False
 
         if t is None:
-            t = datetime.now(utc)
+            t = time.time()
 
         if self.text != self.old_text:
             cursor = db.cursor()
             cursor.execute("INSERT INTO wiki (name,version,time,author,ipnr,"
                            "text,comment,readonly) VALUES (%s,%s,%s,%s,%s,%s,"
-                           "%s,%s)", (self.name, self.version + 1,
-                                      to_timestamp(t), author, remote_addr,
-                                      self.text, comment, self.readonly))
+                           "%s,%s)", (self.name, self.version + 1, t, author,
+                           remote_addr, self.text, comment, self.readonly))
             self.version += 1
         elif self.readonly != self.old_readonly:
             cursor = db.cursor()
             cursor.execute("UPDATE wiki SET readonly=%s WHERE name=%s",
                            (self.readonly, self.name))
         else:
-            raise TracError(_('Page not modified'))
+            raise TracError('Page not modified')
 
         if handle_ta:
             db.commit()
@@ -165,6 +153,5 @@ class WikiPage(object):
         cursor.execute("SELECT version,time,author,comment,ipnr FROM wiki "
                        "WHERE name=%s AND version<=%s "
                        "ORDER BY version DESC", (self.name, self.version))
-        for version,ts,author,comment,ipnr in cursor:
-            time = datetime.fromtimestamp(ts, utc)
+        for version,time,author,comment,ipnr in cursor:
             yield version,time,author,comment,ipnr

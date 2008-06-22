@@ -11,19 +11,12 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-import doctest
 import unittest
-from StringIO import StringIO
 
 from trac.core import *
 from trac.test import EnvironmentStub
-from trac.mimeview import api
-from trac.mimeview.api import get_mimetype, IContentConverter, Mimeview, \
-                              _group_lines
-from genshi import Stream, Namespace
-from genshi.core import Attrs, TEXT, START, END, START_NS, END_NS
-from genshi.input import HTMLParser
-
+from trac.mimeview.api import get_mimetype, _html_splitlines, \
+                              Mimeview, IContentConverter
 
 class GetMimeTypeTestCase(unittest.TestCase):
 
@@ -32,18 +25,13 @@ class GetMimeTypeTestCase(unittest.TestCase):
         self.assertEqual('text/plain', get_mimetype('README.txt', None))
         
     def test_from_suffix_using_mimetypes(self):
-        self.assertEqual('image/png',
-                         get_mimetype('doc/trac_logo.png', None))
+        self.assertEqual('application/x-python-code',
+                         get_mimetype('test.pyc', None))
         
     def test_from_content_using_CONTENT_RE(self):
         self.assertEqual('text/x-python',
                          get_mimetype('xxx', """
 #!/usr/bin/python
-# This is a python script
-"""))
-        self.assertEqual('text/x-python',
-                         get_mimetype('xxx', """
-#!/usr/bin/env python
 # This is a python script
 """))
         self.assertEqual('text/x-ksh',
@@ -61,161 +49,69 @@ class GetMimeTypeTestCase(unittest.TestCase):
 # -*- mode: ruby -*-
 # This is a ruby script
 """))
-        self.assertEqual('text/x-python',
-                         get_mimetype('xxx', ' ' * 2000 + '# vim: ft=python'))
 
     def test_from_content_using_is_binary(self):
         self.assertEqual('application/octet-stream',
                          get_mimetype('xxx', "abc\0xyz"))
+        
 
+class Converter0(Component):
+    implements(IContentConverter)
+    def get_supported_conversions(self):
+        yield ('key0', 'Format 0', 'c0', 'text/x-sample', 'text/html', 8)
+
+class Converter2(Component):
+    implements(IContentConverter)
+    def get_supported_conversions(self):
+        yield ('key2', 'Format 2', 'c2', 'text/x-sample', 'text/html', 2)
+
+class Converter1(Component):
+    implements(IContentConverter)
+    def get_supported_conversions(self):
+        yield ('key1', 'Format 1', 'c1', 'text/x-sample', 'text/html', 4)
 
 class MimeviewTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
 
-        # Make sure we have no external components hanging around in the
-        # component registry
-        from trac.core import ComponentMeta
-        self.old_registry = ComponentMeta._registry
-        ComponentMeta._registry = {}
+    def test_html_splitlines_without_markup(self):
+        lines = ['line 1', 'line 2']
+        self.assertEqual(lines, list(_html_splitlines(lines)))
 
-    def tearDown(self):
-        # Restore the original component registry
-        from trac.core import ComponentMeta
-        ComponentMeta._registry = self.old_registry
+    def test_html_splitlines_with_markup(self):
+        lines = ['<p><b>Hi', 'How are you</b></p>']
+        result = list(_html_splitlines(lines))
+        self.assertEqual('<p><b>Hi</b></p>', result[0])
+        self.assertEqual('<p><b>How are you</b></p>', result[1])
+
+    def test_html_splitlines_with_multiline(self):
+        """
+        Regression test for http://trac.edgewall.org/ticket/2655
+        """
+        lines = ['<span class="p_tripledouble">"""',
+                'a <a href="http://google.com">http://google.com</a>/',
+                'Test', 'Test', '"""</span>']
+        result = list(_html_splitlines(lines))
+        self.assertEqual('<span class="p_tripledouble">"""</span>', result[0])
+        self.assertEqual('<span class="p_tripledouble">a '
+                         '<a href="http://google.com">http://google.com</a>/'
+                         '</span>', result[1])
+        self.assertEqual('<span class="p_tripledouble">Test</span>', result[2])
+        self.assertEqual('<span class="p_tripledouble">Test</span>', result[3])
+        self.assertEqual('<span class="p_tripledouble">"""</span>', result[4])
 
     def test_get_supported_conversions(self):
-        class Converter0(Component):
-            implements(IContentConverter)
-            def get_supported_conversions(self):
-                yield 'key0', 'Format 0', 'c0', 'text/x-sample', 'text/html', 8
-
-        class Converter2(Component):
-            implements(IContentConverter)
-            def get_supported_conversions(self):
-                yield 'key2', 'Format 2', 'c2', 'text/x-sample', 'text/html', 2
-
-        class Converter1(Component):
-            implements(IContentConverter)
-            def get_supported_conversions(self):
-                yield 'key1', 'Format 1', 'c1', 'text/x-sample', 'text/html', 4
-
         mimeview = Mimeview(self.env)
         conversions = mimeview.get_supported_conversions('text/x-sample')
         self.assertEqual(Converter0(self.env), conversions[0][-1])
         self.assertEqual(Converter1(self.env), conversions[1][-1])
         self.assertEqual(Converter2(self.env), conversions[2][-1])
 
-class GroupLinesTestCase(unittest.TestCase):
-
-    def test_empty_stream(self):
-        # FIXME: this currently fails
-        lines = list(_group_lines([]))
-        self.assertEqual(len(lines), 0)
-
-    def test_text_only_stream(self):
-        input = [(TEXT, "test", (None, -1, -1))]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 1)
-        self.assertTrue(isinstance(lines[0], Stream))
-        self.assertEquals(lines[0].events, input)
-
-    def test_text_only_stream2(self):
-        input = [(TEXT, "test\n", (None, -1, -1))]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 1)
-        self.assertTrue(isinstance(lines[0], Stream))
-        self.assertEquals(lines[0].events, [(TEXT, "test", (None, -1, -1))])
-
-    def test_simplespan(self):
-        input = HTMLParser(StringIO("<span>test</span>"))
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 1)
-        self.assertTrue(isinstance(lines[0], Stream))
-        for (a, b) in zip(lines[0], input):
-            self.assertEqual(a, b)
-
-    def test_empty_text_stream(self):
-        """
-        http://trac.edgewall.org/ticket/4336
-        """
-        input = [(TEXT, "", (None, -1, -1))]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 0)
-
-    def test_newline_stream(self):
-        input = [(TEXT, "\n", (None, -1, -1))]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 1)
-
-    def test_newline_stream2(self):
-        input = [(TEXT, "\n\n\n", (None, -1, -1))]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), 3)
-
-    def test_empty_text_in_span(self):
-        """
-        http://trac.edgewall.org/ticket/4336
-        """
-        ns = Namespace('http://www.w3.org/1999/xhtml')
-        input = [(START, (ns.span, Attrs([])), (None, -1, -1)),
-                 (TEXT, "", (None, -1, -1)),
-                 (END, ns.span, (None, -1, -1)),
-                ]
-        lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 0)
-                 
-    def test_newline(self):
-        """
-        If the text element does not end with a newline, it's not properly
-        closed.
-        """
-        input = HTMLParser(StringIO('<span class="c">a\nb</span>'))
-        expected = ['<span class="c">a</span>',
-                    '<span class="c">b</span>',
-                   ]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), len(expected))
-        for a, b in zip(lines, expected):
-            self.assertEquals(a.render('html'), b)
-
-    def test_newline2(self):
-        """
-        Same as test_newline above, but make sure it behaves properly wrt
-        the trailing \\n, especially given it's inside an element.
-        """
-        input = HTMLParser(StringIO('<span class="c">a\nb\n</span>'))
-        expected = ['<span class="c">a</span>',
-                    '<span class="c">b</span>',
-                   ]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), len(expected))
-        for a, b in zip(lines, expected):
-            self.assertEquals(a.render('html'), b)
-
-    def test_multinewline(self):
-        """
-        ditto.
-        """
-        input = HTMLParser(StringIO('<span class="c">\n\n\na</span>'))
-        expected = ['<span class="c"></span>',
-                    '<span class="c"></span>',
-                    '<span class="c"></span>',
-                    '<span class="c">a</span>',
-                   ]
-        lines = list(_group_lines(input))
-        self.assertEquals(len(lines), len(expected))
-        for a, b in zip(lines, expected):
-            self.assertEquals(a.render('html'), b)
-
-
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(doctest.DocTestSuite(api))
     suite.addTest(unittest.makeSuite(GetMimeTypeTestCase, 'test'))
     suite.addTest(unittest.makeSuite(MimeviewTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(GroupLinesTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':
