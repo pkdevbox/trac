@@ -36,7 +36,6 @@ from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
 from trac.util import hex_entropy, md5crypt
-from trac.util.translation import _
 
 
 class LoginModule(Component):
@@ -86,13 +85,12 @@ class LoginModule(Component):
 
     def get_navigation_items(self, req):
         if req.authname and req.authname != 'anonymous':
-            yield ('metanav', 'login', _('logged in as %(user)s',
-                                         user=req.authname))
+            yield ('metanav', 'login', 'logged in as %s' % req.authname)
             yield ('metanav', 'logout',
-                   tag.a(_('Logout'), href=req.href.logout()))
+                   tag.a('Logout', href=req.href.logout()))
         else:
             yield ('metanav', 'login',
-                   tag.a(_('Login'), href=req.href.login()))
+                   tag.a('Login', href=req.href.login()))
 
     # IRequestHandler methods
 
@@ -134,7 +132,7 @@ class LoginModule(Component):
             remote_user = remote_user.lower()
 
         assert req.authname in ('anonymous', remote_user), \
-               _('Already logged in as %(user)s.', user=req.authname)
+               'Already logged in as %s.' % req.authname
 
         cookie = hex_entropy()
         db = self.env.get_db_cnx()

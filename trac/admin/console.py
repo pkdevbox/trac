@@ -32,7 +32,7 @@ from trac.core import TracError
 from trac.env import Environment
 from trac.perm import PermissionSystem
 from trac.ticket.model import *
-from trac.util import arity, translation
+from trac.util import arity
 from trac.util.datefmt import parse_date, format_date, format_datetime, utc
 from trac.util.html import html
 from trac.util.text import to_unicode, wrap, unicode_quote, unicode_unquote, \
@@ -42,31 +42,17 @@ from trac.wiki import WikiPage
 from trac.wiki.api import WikiSystem
 from trac.wiki.macros import WikiMacroBase
 
-import babel
-
 TRAC_VERSION = pkg_resources.get_distribution('Trac').version
 
-
-def makedirs(path, overwrite=False):
-    if overwrite and os.path.exists(path):
-        return
-    os.makedirs(path)
-
-
-def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
+def copytree(src, dst, symlinks=False, skip=[]):
     """Recursively copy a directory tree using copy2() (from shutil.copytree.)
 
     Added a `skip` parameter consisting of absolute paths
     which we don't want to copy.
     """
     names = os.listdir(src)
-    makedirs(dst, overwrite=overwrite)
+    os.mkdir(dst)
     errors = []
-
-    def remove_if_overwriting(path):
-        if overwrite and os.path.exists(path):
-            os.unlink(path)
-
     for name in names:
         srcname = os.path.join(src, name)
         if srcname in skip:
@@ -74,16 +60,14 @@ def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
         dstname = os.path.join(dst, name)
         try:
             if symlinks and os.path.islink(srcname):
-                remove_if_overwriting(dstname)
                 linkto = os.readlink(srcname)
                 os.symlink(linkto, dstname)
             elif os.path.isdir(srcname):
-                copytree(srcname, dstname, symlinks, skip, overwrite)
+                copytree(srcname, dstname, symlinks, skip)
             else:
-                remove_if_overwriting(dstname)
                 shutil.copy2(srcname, dstname)
             # XXX What about devices, sockets etc.?
-        except EnvironmentError, why:
+        except (IOError, os.error), why:
             errors.append((srcname, dstname, why))
     if errors:
         raise shutil.Error, errors
@@ -1172,17 +1156,19 @@ Congratulations!
 
     def do_deploy(self, line):
         argv = self.arg_tokenize(line)
-        if not argv[0] or len(argv) != 1:
+        if not argv[0]:
             self.do_help('deploy')
             return
 
         target = os.path.normpath(argv[0])
+        if os.path.exists(target):
+            raise TracError('Destination already exists. Remove and retry.')
         chrome_target = os.path.join(target, 'htdocs')
         script_target = os.path.join(target, 'cgi-bin')
 
         # Copy static content
-        makedirs(target, overwrite=True)
-        makedirs(chrome_target, overwrite=True)
+        os.makedirs(target)
+        os.makedirs(chrome_target)
         from trac.web.chrome import Chrome
         print 'Copying resources from:'
         for provider in Chrome(self.env_open()).template_providers:
@@ -1195,10 +1181,10 @@ Congratulations!
                 print '   ', source
                 if os.path.exists(source):
                     dest = os.path.join(chrome_target, key)
-                    copytree(source, dest, overwrite=True)
-
+                    copytree(source, dest)
+        
         # Create and copy scripts
-        makedirs(script_target, overwrite=True)
+        os.makedirs(script_target)
         print 'Creating scripts.'
         data = {'env': self.env_open()}
         for script in ('cgi', 'fcgi', 'wsgi'):
@@ -1249,11 +1235,6 @@ def run(args=None):
     """Main entry point."""
     if args is None:
         args = sys.argv[1:]
-    try:
-        locale = babel.Locale.default()
-    except babel.UnknownLocaleError:
-        locale = None
-    translation.activate(locale)
     admin = TracAdmin()
     if len(args) > 0:
         if args[0] in ('-h', '--help', 'help'):
