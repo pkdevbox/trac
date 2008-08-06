@@ -24,16 +24,8 @@ try:
 except ImportError: 
     cStringIO = StringIO 
 
-try:
-    from babel.support import Translations
-except ImportError:
-    Translations = None
 from genshi import Markup
 from genshi.builder import tag, Element
-if Translations:
-    from genshi.filters import Translator
-else:
-    Translator = None
 from genshi.input import HTML, ParseError
 from genshi.core import Attrs, START
 from genshi.output import DocType
@@ -290,9 +282,10 @@ class Chrome(Component):
 
     # A dictionary of default context data for templates
     _default_context_data = {
-        '_': translation.gettext,
+        '_': translation._,
         'all': compat.all,
         'any': compat.any,
+        'attrgetter': compat.attrgetter,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
@@ -303,6 +296,7 @@ class Chrome(Component):
         'groupby': compat.py_groupby,
         'http_date': http_date,
         'istext': presentation.istext,
+        'itemgetter': compat.itemgetter,
         'ngettext': translation.ngettext,
         'paginate': presentation.paginate,
         'partial': partial,
@@ -516,6 +510,7 @@ class Chrome(Component):
 
         return chrome
 
+
     def get_icon_data(self, req):
         icon = {}
         icon_src = icon_abs_src = self.env.project_icon
@@ -632,7 +627,6 @@ class Chrome(Component):
             'href': href,
             'perm': req and req.perm,
             'authname': req and req.authname or '<trac>',
-            'locale': req and req.locale,
             'show_email_addresses': show_email_addresses,
             'format_author': partial(self.format_author, req),
             'format_emails': self.format_emails,
@@ -662,16 +656,9 @@ class Chrome(Component):
         TextTemplate instance will be created instead of a MarkupTemplate.
         """
         if not self.templates:
-            _template_loaded = None
-            global Translator
-            if Translator:
-                def _template_loaded(template):
-                    template.filters.insert(0, Translator(translation.gettext))
-
             self.templates = TemplateLoader(self.get_all_templates_dirs(),
                                             auto_reload=self.auto_reload,
-                                            variable_lookup='lenient',
-                                            callback=_template_loaded)
+                                            variable_lookup='lenient')
         if method == 'text':
             cls = TextTemplate
         else:

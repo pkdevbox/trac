@@ -91,8 +91,8 @@ class RepositoryManager(Component):
                           
         return handler
 
-    def post_process_request(self, req, template, data, content_type):
-        return (template, data, content_type)
+    def post_process_request(self, req, template, content_type):
+        return (template, content_type)
 
     # IResourceManager methods
 

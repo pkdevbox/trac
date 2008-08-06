@@ -854,8 +854,6 @@ class Formatter(object):
             if not line.startswith(' '):
                 self._tabstops = []
 
-            if escape_newlines:
-                line += ' [[BR]]'
             self.in_list_item = False
             self.in_quote = False
             # Throw a bunch of regexps on the problem
@@ -870,13 +868,16 @@ class Formatter(object):
             if self.in_def_list and not line.startswith(' '):
                 self.close_def_list()
 
-            if self.in_table and line.strip()[0:2] != '||':
+            if self.in_table and not line.lstrip().startswith('||'):
                 self.close_table()
 
-            if len(result) and not self.in_list_item and not self.in_def_list \
-                    and not self.in_table:
-                self.open_paragraph()
-            self.out.write(result + os.linesep)
+            sep = os.linesep
+            if not(self.in_list_item or self.in_def_list or self.in_table):
+                if len(result):
+                    self.open_paragraph()
+                if escape_newlines and not result.rstrip().endswith('<br />'):
+                    sep = '<br />' + sep
+            self.out.write(result + sep)
             self.close_table_row()
 
         self.close_table()
@@ -982,7 +983,6 @@ class OutlineFormatter(Formatter):
             self.in_code_block -= 1
 
     def format(self, text, out, max_depth=6, min_depth=1):
-        whitespace_indent = '  '
         self.outline = []
         Formatter.format(self, text)
 
@@ -992,30 +992,19 @@ class OutlineFormatter(Formatter):
         min_depth = max(1, min_depth)
 
         curr_depth = min_depth - 1
-        out.write('\n')
         for depth, anchor, text in self.outline:
             if depth < min_depth or depth > max_depth:
                 continue
-            if depth > curr_depth: # Deeper indent
-                for i in range(curr_depth, depth):
-                    out.write(whitespace_indent * (2*i) + '<ol>\n' +
-                              whitespace_indent * (2*i+1) + '<li>\n')
-            elif depth < curr_depth: # Shallower indent
-                for i in range(curr_depth-1, depth-1, -1):
-                    out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                              whitespace_indent * (2*i) + '</ol>\n')
-                out.write(whitespace_indent * (2*depth-1) + '</li>\n' +
-                          whitespace_indent * (2*depth-1) + '<li>\n')
-            else: # Same indent
-                out.write( whitespace_indent * (2*depth-1) + '</li>\n' +
-                           whitespace_indent * (2*depth-1) + '<li>\n')
+            if depth < curr_depth:
+                out.write('</li></ol>' * (curr_depth - depth))
+                out.write("</li><li>\n")
+            elif depth > curr_depth:
+                out.write('<ol><li>' * (depth - curr_depth))
+            else:
+                out.write("</li><li>\n")
             curr_depth = depth
-            out.write(whitespace_indent * (2*depth) +
-                      '<a href="#%s">%s</a>\n' % (anchor, text))
-        # Close out all indentation
-        for i in range(curr_depth-1, min_depth-2, -1):
-            out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                      whitespace_indent * (2*i) + '</ol>\n')
+            out.write('<a href="#%s">%s</a>' % (anchor, text))
+        out.write('</li></ol>' * curr_depth)
 
     def _heading_formatter(self, match, fullmatch):
         depth, heading, anchor = self._parse_heading(match, fullmatch, True)

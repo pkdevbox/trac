@@ -152,7 +152,6 @@ class Request(object):
 
         self.callbacks = {
             'args': Request._parse_args,
-            'languages': Request._parse_languages,
             'incookie': Request._parse_cookies,
             '_inheaders': Request._parse_headers
         }
@@ -336,15 +335,8 @@ class Request(object):
             if template.endswith('.html'):
                 if env:
                     from trac.web.chrome import Chrome
-                    from trac.util import translation
-                    if hasattr(self, 'locale'):
-                        translation.activate(self.locale)
-                    try:
-                        data = Chrome(env).render_template(self, template,
-                                                           data, 'text/html')
-                    finally:
-                        if hasattr(self, 'locale'):
-                            translation.deactivate()
+                    data = Chrome(env).render_template(self, template, data,
+                                                       'text/html')
                 else:
                     content_type = 'text/plain'
                     data = '%s\n\n%s: %s' % (data.get('title'),
@@ -483,24 +475,6 @@ class Request(object):
         if 'CONTENT_TYPE' in self.environ:
             headers.append(('content-type', self.environ['CONTENT_TYPE']))
         return headers
-
-    def _parse_languages(self):
-        """The list of languages preferred by the remote user, taken from the
-        ``Accept-Language`` header.
-        """
-        header = self.get_header('Accept-Language') or 'en-us'
-        langs = []
-        for lang in header.split(','):
-            code, params = cgi.parse_header(lang)
-            q = 1
-            if 'q' in params:
-                try:
-                    q = float(params['q'])
-                except ValueError:
-                    q = 0
-            langs.append((-q, code))
-        langs.sort()
-        return [code for q, code in langs]
 
     def _reconstruct_url(self):
         """Reconstruct the absolute base URL of the application."""

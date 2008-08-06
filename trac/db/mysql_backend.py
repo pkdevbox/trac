@@ -20,7 +20,6 @@ from trac.core import *
 from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper
 from trac.util import get_pkginfo
-from trac.util.translation import _
 
 _like_escape_re = re.compile(r'([/_%])')
 

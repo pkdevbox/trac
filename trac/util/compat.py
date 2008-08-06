@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2006-2008 Edgewall Software
+# Copyright (C) 2006 Edgewall Software
 # Copyright (C) 2006 Matthew Good <trac@matt-good.net>
 # Copyright (C) 2006 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -14,7 +14,7 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 """Various classes and functions to provide some backwards-compatibility with
-previous versions of Python from 2.3 onward.
+previous of Python prior to 2.4.
 """
 
 try:
@@ -52,6 +52,19 @@ except NameError:
         if reverse:
             lst = reversed(lst)
         return [i[-1] for i in lst]
+
+# Note: not used, suggest to remove in 0.12
+try:
+    from operator import attrgetter, itemgetter
+except ImportError:
+    def attrgetter(name):
+        def _getattr(obj):
+            return getattr(obj, name)
+        return _getattr
+    def itemgetter(name):
+        def _getitem(obj):
+            return obj[name]
+        return _getitem
 
 class py_groupby(object):
     def __init__(self, iterable, key=None):
