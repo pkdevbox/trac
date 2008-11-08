@@ -26,7 +26,6 @@ except ImportError:
 
 from genshi import Markup
 from genshi.builder import tag, Element
-from genshi.filters import Translator
 from genshi.input import HTML, ParseError
 from genshi.core import Attrs, START
 from genshi.output import DocType
@@ -40,7 +39,7 @@ from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
                       get_module_path, translation, arity
-from trac.util.compat import partial
+from trac.util.compat import partial, set
 from trac.util.html import plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode
@@ -287,9 +286,10 @@ class Chrome(Component):
 
     # A dictionary of default context data for templates
     _default_context_data = {
-        '_': translation.gettext,
+        '_': translation._,
         'all': compat.all,
         'any': compat.any,
+        'attrgetter': compat.attrgetter,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
@@ -297,9 +297,10 @@ class Chrome(Component):
         'get_reporter_id': get_reporter_id,
         'gettext': translation.gettext,
         'group': presentation.group,
-        'groupby': compat.py_groupby, # http://bugs.python.org/issue2246
+        'groupby': compat.py_groupby,
         'http_date': http_date,
         'istext': presentation.istext,
+        'itemgetter': compat.itemgetter,
         'ngettext': translation.ngettext,
         'paginate': presentation.paginate,
         'partial': partial,
@@ -308,10 +309,10 @@ class Chrome(Component):
         'pretty_size': pretty_size,
         'pretty_timedelta': pretty_timedelta,
         'quote_plus': unicode_quote_plus,
-        'reversed': reversed,
+        'reversed': compat.reversed,
         'separated': presentation.separated,
         'shorten_line': shorten_line,
-        'sorted': sorted,
+        'sorted': compat.sorted,
         'time': datetime.time,
         'timedelta': datetime.timedelta,
         'to_unicode': to_unicode,
@@ -513,6 +514,7 @@ class Chrome(Component):
 
         return chrome
 
+
     def get_icon_data(self, req):
         icon = {}
         icon_src = icon_abs_src = self.env.project_icon
@@ -629,7 +631,6 @@ class Chrome(Component):
             'href': href,
             'perm': req and req.perm,
             'authname': req and req.authname or '<trac>',
-            'locale': req and req.locale,
             'show_email_addresses': show_email_addresses,
             'format_author': partial(self.format_author, req),
             'format_emails': self.format_emails,
@@ -659,13 +660,9 @@ class Chrome(Component):
         TextTemplate instance will be created instead of a MarkupTemplate.
         """
         if not self.templates:
-            def _template_loaded(template):
-                template.filters.insert(0, Translator(translation.gettext))
-
             self.templates = TemplateLoader(self.get_all_templates_dirs(),
                                             auto_reload=self.auto_reload,
-                                            variable_lookup='lenient',
-                                            callback=_template_loaded)
+                                            variable_lookup='lenient')
         if method == 'text':
             cls = TextTemplate
         else:

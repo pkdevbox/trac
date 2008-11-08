@@ -17,6 +17,7 @@
 #         Alec Thomas <alec@swapoff.org>
 
 from trac.core import *
+from trac.util.compat import reversed
 from trac.util.translation import _
 
 
@@ -312,18 +313,18 @@ def get_resource_description(env, resource, format='default', **kwargs):
     >>> env = EnvironmentStub()
     >>> main = Resource('generic', 'Main')
     >>> get_resource_description(env, main)
-    u'generic:Main'
+    'generic:Main'
     
     >>> get_resource_description(env, main(version=3))
-    u'generic:Main'
+    'generic:Main'
 
     >>> get_resource_description(env, main(version=3), format='summary')
-    u'generic:Main at version 3'
+    'generic:Main at version 3'
     
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if not manager or not hasattr(manager, 'get_resource_description'):
-        name = u'%s:%s' % (resource.realm, resource.id)
+        name = '%s:%s' % (resource.realm, resource.id)
         if format == 'summary':
             name += _(' at version %(version)s', version=resource.version)
         return name

@@ -18,6 +18,10 @@
      xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="macros.html" />
   
+  <py:def function="num_matches(v)">
+    <span class="numrows">(${v or 'No'} match${v != 1 and 'es' or ''})</span>
+  </py:def>
+  
   <h2 class="report-result" py:if="paginator.has_more_pages">
     Results <span class="numresults">(${paginator.displayed_items()})</span>
   </h2>
@@ -26,7 +30,7 @@
     <h2 class="report-result" py:if="groupname">
       ${fields[query.group].label}:
       ${query.group in ['owner', 'reporter'] and authorinfo(groupname) or groupname}
-      <span class="numrows">(${ngettext('%(num)s match', '%(num)s matches', len(results))})</span>
+      ${num_matches(len(results))}
     </h2>
     <table class="listing tickets">
       <thead>
@@ -62,7 +66,6 @@
                       <py:when test="name == 'reporter'">${authorinfo(value)}</py:when>
                       <py:when test="name == 'cc'">${format_emails(ticket_context, value)}</py:when>
                       <py:when test="name == 'owner' and value">${authorinfo(value)}</py:when>
-                      <py:when test="header.wikify">${wiki_to_oneliner(ticket_context, value)}</py:when>
                       <py:otherwise>$value</py:otherwise>
                     </td>
                   </py:with>

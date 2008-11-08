@@ -32,7 +32,7 @@ from trac.core import TracError
 from trac.env import Environment
 from trac.perm import PermissionSystem
 from trac.ticket.model import *
-from trac.util import arity, translation
+from trac.util import arity
 from trac.util.datefmt import parse_date, format_date, format_datetime, utc
 from trac.util.html import html
 from trac.util.text import to_unicode, wrap, unicode_quote, unicode_unquote, \
@@ -50,14 +50,7 @@ def printout(*args):
 def printerr(*args):
     console_print(sys.stderr, *args)
 
-
-def makedirs(path, overwrite=False):
-    if overwrite and os.path.exists(path):
-        return
-    os.makedirs(path)
-
-
-def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
+def copytree(src, dst, symlinks=False, skip=[]):
     """Recursively copy a directory tree using copy2() (from shutil.copytree.)
 
     Added a `skip` parameter consisting of absolute paths
@@ -68,15 +61,10 @@ def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
             path = path.encode(sys.getfilesystemencoding() or
                                locale.getpreferredencoding())
         return path
-
-    def remove_if_overwriting(path):
-        if overwrite and os.path.exists(path):
-            os.unlink(path)
-
     skip = [str_path(f) for f in skip]
     def copytree_rec(src, dst):
         names = os.listdir(src)
-        makedirs(dst, overwrite=overwrite)
+        os.mkdir(dst)
         errors = []
         for name in names:
             srcname = os.path.join(src, name)
@@ -85,16 +73,14 @@ def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
             dstname = os.path.join(dst, name)
             try:
                 if symlinks and os.path.islink(srcname):
-                    remove_if_overwriting(dstname)
                     linkto = os.readlink(srcname)
                     os.symlink(linkto, dstname)
                 elif os.path.isdir(srcname):
                     copytree_rec(srcname, dstname)
                 else:
-                    remove_if_overwriting(dstname)
                     shutil.copy2(srcname, dstname)
                 # XXX What about devices, sockets etc.?
-            except EnvironmentError, why:
+            except (IOError, os.error), why:
                 errors.append((srcname, dstname, why))
         if errors:
             raise shutil.Error, errors
@@ -115,12 +101,6 @@ class TracAdmin(cmd.Cmd):
 
     def __init__(self, envdir=None):
         cmd.Cmd.__init__(self)
-        try:
-            import readline
-            readline.set_completer_delims(
-                readline.get_completer_delims().replace('-', ''))
-        except ImportError:
-            pass
         self.interactive = False
         if envdir:
             self.env_set(os.path.abspath(envdir))
@@ -226,9 +206,8 @@ Type:  '?' or 'help' for help on commands.
                 for token in shlex.split(argstr.encode('utf-8'))] or ['']
 
     def word_complete (self, text, words):
-        return [a for a in words if a.startswith(text)]
+        return [a for a in words if a.startswith (text)]
 
-    @classmethod
     def print_doc(cls, docs, stream=None):
         if stream is None:
             stream = sys.stdout
@@ -236,6 +215,7 @@ Type:  '?' or 'help' for help on commands.
         for cmd, doc in docs:
             console_print(stream, cmd)
             console_print(stream, '\t-- %s\n' % doc)
+    print_doc = classmethod(print_doc)
 
     def get_component_list(self):
         rows = self.db_query("SELECT name FROM component")
@@ -292,16 +272,15 @@ Type:  '?' or 'help' for help on commands.
     ## Help
     _help_help = [('help', 'Show documentation')]
 
-    @classmethod
     def all_docs(cls):
         return (cls._help_help + cls._help_initenv + cls._help_hotcopy +
                 cls._help_resync + cls._help_upgrade + cls._help_deploy +
-                cls._help_config +
                 cls._help_permission + cls._help_wiki +
                 cls._help_ticket + cls._help_ticket_type + 
                 cls._help_priority + cls._help_severity +
                 cls._help_component + cls._help_version +
                 cls._help_milestone + cls._help_resolution)
+    all_docs = classmethod(all_docs)
 
     def do_help(self, line=None):
         arg = self.arg_tokenize(line)
@@ -337,60 +316,6 @@ Type:  '?' or 'help' for help on commands.
     do_EOF = do_quit # Alias
 
 
-    ## Trac.ini editing
-    _help_config = [('config get <section> <option>',
-                     'Get the value of the given option in "trac.ini"'),
-                    ('config set <section> <option> <value>',
-                     'Set the value for the given option in "trac.ini"'),
-                    ('config remove <section> <option>',
-                     'Remove the specified option from "trac.ini"')]
-    
-    def complete_config(self, text, line, begidx, endidx):
-        argv = self.arg_tokenize(line)
-        argc = len(argv)
-        if line[-1] == ' ': # Space starts new argument
-            argc += 1
-        if argc == 2:
-            comp = ['get', 'set', 'remove']
-        elif argc == 3:
-            comp = self.env_open().config.sections()
-        elif argc == 4:
-            comp = [name for (name, value) in 
-                    self.env_open().config[argv[2]].options()]
-        else:
-            comp = []
-        return self.word_complete(text, comp)
-
-    def do_config(self, line):
-        arg = self.arg_tokenize(line)
-        if arg[0] == 'get' and len(arg) == 3:
-            self._do_config_get(arg[1], arg[2])
-        elif arg[0] == 'set' and len(arg) == 4:
-            self._do_config_set(arg[1], arg[2], arg[3])
-        elif arg[0] == 'remove' and len(arg) == 3:
-            self._do_config_remove(arg[1], arg[2])
-        else:
-            self.do_help('config')
-
-    def _do_config_get(self, section, option):
-        env = self.env_open()
-        printout(env.config.get(section, option))
-        
-    def _do_config_set(self, section, option, value):
-        env = self.env_open()
-        env.config.set(section, option, value)
-        env.config.save()
-        if section == 'inherit' and option == 'file':
-            env.config.parse_if_needed()    # Full reload
-
-    def _do_config_remove(self, section, option):
-        env = self.env_open()
-        env.config.remove(section, option)
-        env.config.save()
-        if section == 'inherit' and option == 'file':
-            env.config.parse_if_needed()    # Full reload
-
-  
     # Component
     _help_component = [('component list', 'Show available components'),
                        ('component add <name> <owner>', 'Add a new component'),
@@ -1268,17 +1193,19 @@ Congratulations!
 
     def do_deploy(self, line):
         argv = self.arg_tokenize(line)
-        if not argv[0] or len(argv) != 1:
+        if not argv[0]:
             self.do_help('deploy')
             return
 
         target = os.path.normpath(argv[0])
+        if os.path.exists(target):
+            raise TracError('Destination already exists. Remove and retry.')
         chrome_target = os.path.join(target, 'htdocs')
         script_target = os.path.join(target, 'cgi-bin')
 
         # Copy static content
-        makedirs(target, overwrite=True)
-        makedirs(chrome_target, overwrite=True)
+        os.makedirs(target)
+        os.makedirs(chrome_target)
         from trac.web.chrome import Chrome
         printout(_("Copying resources from:"))
         for provider in Chrome(self.env_open()).template_providers:
@@ -1292,10 +1219,10 @@ Congratulations!
                 printout('   ', source)
                 if os.path.exists(source):
                     dest = os.path.join(chrome_target, key)
-                    copytree(source, dest, overwrite=True)
-
+                    copytree(source, dest)
+        
         # Create and copy scripts
-        makedirs(script_target, overwrite=True)
+        os.makedirs(script_target)
         printout(_("Creating scripts."))
         data = {'env': self.env_open(), 'executable': sys.executable}
         for script in ('cgi', 'fcgi', 'wsgi'):
@@ -1346,16 +1273,6 @@ def run(args=None):
     """Main entry point."""
     if args is None:
         args = sys.argv[1:]
-    locale = None
-    try:
-        import babel
-        try:
-            locale = babel.Locale.default()
-        except babel.UnknownLocaleError:
-            pass
-    except ImportError:
-        pass
-    translation.activate(locale)
     admin = TracAdmin()
     if len(args) > 0:
         if args[0] in ('-h', '--help', 'help'):

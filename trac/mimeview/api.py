@@ -67,7 +67,7 @@ from genshi.input import HTMLParser
 from trac.config import IntOption, ListOption, Option
 from trac.core import *
 from trac.resource import Resource
-from trac.util import Ranges
+from trac.util import reversed, sorted, Ranges
 from trac.util.text import to_utf8, to_unicode
 from trac.util.translation import _
 
@@ -126,7 +126,6 @@ class Context(object):
         self.perm = resource and perm and perm(resource) or perm
         self._hints = None
 
-    @classmethod
     def from_request(cls, req, resource=None, id=False, version=False,
                      absurls=False):
         """Create a rendering context from a request.
@@ -162,6 +161,7 @@ class Context(object):
                    perm=perm)
         self.req = req
         return self
+    from_request = classmethod(from_request)
 
     def __repr__(self):
         path = []

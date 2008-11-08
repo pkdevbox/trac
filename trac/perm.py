@@ -22,6 +22,7 @@ from time import time
 from trac.config import ExtensionOption, OrderedExtensionsOption
 from trac.core import *
 from trac.resource import Resource, get_resource_name
+from trac.util.compat import set
 from trac.util.translation import _
 
 __all__ = ['IPermissionRequestor', 'IPermissionStore',
