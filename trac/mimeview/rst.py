@@ -84,7 +84,7 @@ class ReStructuredTextRenderer(Component):
                 reference = nodes.reference(rawtext, text or target)
                 reference['refuri']= uri
                 if missing:
-                    reference['classes'].append('missing')
+                    reference.set_class('missing')
                 return reference
             return None
 

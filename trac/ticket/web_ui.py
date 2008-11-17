@@ -26,7 +26,7 @@ from genshi.core import Markup
 from genshi.builder import tag
 
 from trac.attachment import AttachmentModule
-from trac.config import BoolOption, Option, IntOption, ListOption, _TRUE_VALUES
+from trac.config import BoolOption, Option, IntOption, _TRUE_VALUES
 from trac.core import *
 from trac.mimeview.api import Mimeview, IContentConverter, Context
 from trac.resource import Resource, get_resource_url, \
@@ -39,16 +39,16 @@ from trac.ticket.notification import TicketNotifyEmail
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import get_reporter_id, partition
 from trac.util.compat import any
-from trac.util.datefmt import format_datetime, to_timestamp, utc
+from trac.util.datefmt import to_timestamp, utc
 from trac.util.text import CRLF, shorten_line, obfuscate_email_address
 from trac.util.presentation import separated
-from trac.util.translation import _, tag_, N_, gettext
+from trac.util.translation import _
 from trac.versioncontrol.diff import get_diff_options, diff_blocks
-from trac.web import parse_query_string, IRequestHandler
+from trac.web import IRequestHandler
 from trac.web.chrome import add_link, add_script, add_stylesheet, \
                             add_warning, add_ctxtnav, prevnext_nav, Chrome, \
                             INavigationContributor, ITemplateProvider
-from trac.wiki.formatter import format_to, format_to_html, format_to_oneliner
+from trac.wiki.formatter import format_to
 
 class InvalidTicket(TracError):
     """Exception raised when a ticket fails validation."""
@@ -124,14 +124,6 @@ class TicketModule(Component):
         If set to 'default', this is equivalent to 'yes' for new environments
         but keeps the old behavior for upgraded environments (i.e. 'no').
         (''since 0.11'').""")
-
-    ticketlink_query = Option('query', 'ticketlink_query',
-        default='?status=!closed', 
-        doc="""The base query to be used when linkifying values of ticket
-            fields. The query is a URL query
-            string starting with `?` as used in `query:`
-            [TracQuery#UsingTracLinks Trac links].
-            (''since 0.12'')""")
 
     def _must_preserve_newlines(self):
         preserve_newlines = self.preserve_newlines
@@ -251,10 +243,10 @@ class TicketModule(Component):
         ts_start = to_timestamp(start)
         ts_stop = to_timestamp(stop)
 
-        status_map = {'new': ('newticket', N_('created')),
-                      'reopened': ('reopenedticket', N_('reopened')),
-                      'closed': ('closedticket', N_('closed')),
-                      'edit': ('editedticket', N_('updated'))}
+        status_map = {'new': ('newticket', 'created'),
+                      'reopened': ('reopenedticket', 'reopened'),
+                      'closed': ('closedticket', 'closed'),
+                      'edit': ('editedticket', 'updated')}
 
         ticket_realm = Resource('ticket')
 
@@ -348,9 +340,8 @@ class TicketModule(Component):
         elif field == 'title':
             title = TicketSystem(self.env).format_summary(summary, status,
                                                           resolution, type)
-            return tag_('Ticket %(ticketref)s (%(summary)s) %(verb)s', 
-                        ticketref=tag.em('#', ticket.id, title=title),
-                        summary=shorten_line(summary), verb=gettext(verb))
+            return tag('Ticket ', tag.em('#', ticket.id, title=title),
+                       ' (', shorten_line(summary), ') ', verb)
         elif field == 'description':
             descr = message = ''
             if status == 'new':
@@ -533,7 +524,7 @@ class TicketModule(Component):
                          'reassign_owner': req.authname,
                          'resolve_resolution': None,
                          # Store a timestamp for detecting "mid air collisions"
-                         'timestamp': str(ticket['changetime'])})
+                         'timestamp': str(ticket.time_changed)})
 
         self._insert_ticket_data(req, ticket, data,
                                  get_reporter_id(req, 'author'), field_changes)
@@ -662,7 +653,7 @@ class TicketModule(Component):
         history = [c for c in history if any([f in text_fields
                                               for f in c['fields']])]
         history.append({'version': 0, 'comment': "''Initial version''",
-                        'date': ticket['time'],
+                        'date': ticket.time_created,
                         'author': ticket['reporter'] # not 100% accurate...
                         })
         data.update({'title': _('Ticket History'),
@@ -834,21 +825,17 @@ class TicketModule(Component):
     def export_csv(self, req, ticket, sep=',', mimetype='text/plain'):
         # FIXME: consider dumping history of changes here as well
         #        as one row of output doesn't seem to be terribly useful...
-        fields = [f for f in ticket.fields 
-                  if f['name'] not in ('time', 'changetime')]
         content = StringIO()
         writer = csv.writer(content, delimiter=sep, quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(['id'] + [unicode(f['name']) for f in fields])
+        writer.writerow(['id'] + [unicode(f['name']) for f in ticket.fields])
 
         context = Context.from_request(req, ticket.resource)
         cols = [unicode(ticket.id)]
-        for f in fields:
+        for f in ticket.fields:
             name = f['name']
             value = ticket.values.get(name, '')
             if name in ('cc', 'reporter'):
                 value = Chrome(self.env).format_emails(context, value, ' ')
-            elif name in ticket.time_fields:
-                value = format_datetime(value, tzinfo=req.tz)
             cols.append(value.encode('utf-8'))
         writer.writerow(cols)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
@@ -914,7 +901,7 @@ class TicketModule(Component):
 
         # Mid air collision?
         if ticket.exists and (ticket._old or comment):
-            if req.args.get('ts') != str(ticket['changetime']):
+            if req.args.get('ts') != str(ticket.time_changed):
                 add_warning(req, _("Sorry, can not save your changes. "
                               "This ticket has been modified by someone else "
                               "since you started"))
@@ -983,6 +970,7 @@ class TicketModule(Component):
 
     def _do_create(self, req, ticket):
         ticket.insert()
+        req.perm(ticket.resource).require('TICKET_VIEW')
 
         # Notify
         try:
@@ -996,8 +984,6 @@ class TicketModule(Component):
         if 'attachment' in req.args:
             req.redirect(req.href.attachment('ticket', ticket.id,
                                              action='new'))
-        if 'TICKET_VIEW' not in req.perm('ticket', ticket.id):
-            req.redirect(req.href.newticket())
         req.redirect(req.href.ticket(ticket.id))
 
     def _do_save(self, req, ticket, action):
@@ -1044,7 +1030,7 @@ class TicketModule(Component):
         for field, value in ticket._old.iteritems():
             field_changes[field] = {'old': value,
                                     'new': ticket[field],
-                                    'by': 'user'}
+                                    'by':'user'}
 
         # Apply controller changes corresponding to the selected action
         problems = []
@@ -1078,31 +1064,6 @@ class TicketModule(Component):
         for key in field_changes:
             ticket[key] = field_changes[key]['new']
 
-    def _query_link(self, req, name, value, text=None):
-        """Return a link to /query with the appropriate name and value"""
-        default_query = self.ticketlink_query.startswith('?') and \
-                        self.ticketlink_query[1:] or self.ticketlink_query
-        args = parse_query_string(default_query)
-        args[name] = value
-        return tag.a(text or value, href=req.href.query(**args))
-
-    def _query_link_words(self, req, name, value):
-        """Splits a list of words and makes a query link to each separately"""
-        if not isinstance(value, basestring): # None or other non-splitable
-            return value
-        default_query = self.ticketlink_query.startswith('?') and \
-                        self.ticketlink_query[1:] or self.ticketlink_query
-        args = parse_query_string(default_query)
-        items = []
-        for (i, word) in enumerate(re.split(r'(\s*(?:\s|[,;])\s*)', value)):
-            if i % 2:
-                items.append(word)
-            elif word:
-                word_args = args.copy()
-                word_args[name] = '~' + word
-                items.append(tag.a(word, href=req.href.query(**word_args)))
-        return tag(items)
-
     def _prepare_fields(self, req, ticket):
         context = Context.from_request(req, ticket.resource)
         fields = []
@@ -1111,20 +1072,16 @@ class TicketModule(Component):
             name = field['name']
             type_ = field['type']
  
-            # enable a link to custom query for all choice fields
-            if type_ not in ['text', 'textarea']:
-                field['rendered'] = self._query_link(req, name, ticket[name])
-
             # per field settings
             if name in ('summary', 'reporter', 'description', 'status',
-                        'resolution', 'time', 'changetime'):
+                        'resolution'):
                 field['skip'] = True
             elif name == 'owner':
                 TicketSystem(self.env).eventually_restrict_owner(field, ticket)
                 type_ = field['type']
                 field['skip'] = True
                 if not ticket.exists:
-                    field['label'] = _('Assign to')
+                    field['label'] = 'Assign to'
                     if 'TICKET_MODIFY' in req.perm(ticket.resource):
                         field['skip'] = False
                         owner_field = field
@@ -1152,13 +1109,9 @@ class TicketModule(Component):
                 milestone = Resource('milestone', ticket[name])
                 field['rendered'] = render_resource_link(self.env, context,
                                                          milestone, 'compact')
-            elif name == 'keywords':
-                field['rendered'] = self._query_link_words(
-                                                req, name, ticket[name])
             elif name == 'cc':
                 emails = Chrome(self.env).format_emails(context, ticket[name])
-                field['rendered'] = emails == ticket[name] and \
-                        self._query_link_words(req, name, emails) or emails
+                field['rendered'] = emails
                 if ticket.exists and \
                         'TICKET_EDIT_CC' not in req.perm(ticket.resource):
                     cc = ticket._old.get('cc', ticket['cc'])
@@ -1187,18 +1140,8 @@ class TicketModule(Component):
             elif type_ == 'checkbox':
                 value = ticket.values.get(name)
                 if value in ('1', '0'):
-                    field['rendered'] = self._query_link(req, name, value,
-                                value == '1' and _('yes') or _('no'))
-            elif type_ == 'text':
-                if field.get('format') == 'wiki':
-                    field['rendered'] = format_to_oneliner(self.env, context,
-                                                           ticket[name])
-            elif type_ == 'textarea':
-                if field.get('format') == 'wiki':
-                    field['rendered'] = \
-                        format_to_html(self.env, context, ticket[name],
-                                escape_newlines=self.must_preserve_newlines)
-            
+                    field['rendered'] = value == '1' and _('yes') or _('no')
+                  
             # ensure sane defaults
             field.setdefault('optional', False)
             field.setdefault('options', [])
@@ -1324,14 +1267,6 @@ class TicketModule(Component):
             ticket.values.update(values)
 
         context = Context.from_request(req, ticket.resource)
-
-        # Display the owner and reporter links when not obfuscated
-        chrome = Chrome(self.env)
-        for user in 'reporter', 'owner':
-            if chrome.format_author(req, ticket[user]) == ticket[user]:
-                data['%s_link' % user] = self._query_link(req, user,
-                                                            ticket[user])
-
         data.update({
             'context': context,
             'fields': fields, 'changes': changes,
@@ -1339,7 +1274,7 @@ class TicketModule(Component):
             'attachments': AttachmentModule(self.env).attachment_data(context),
             'action_controls': action_controls,
             'action': selected_action,
-            'change_preview': change_preview,
+            'change_preview': change_preview
         })
 
     def rendered_changelog_entries(self, req, ticket, when=None):

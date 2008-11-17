@@ -30,6 +30,7 @@ from trac.core import *
 from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.timeline.api import ITimelineEventProvider
+from trac.util.compat import sorted
 from trac.util.datefmt import format_date, format_datetime, parse_date, \
                               to_timestamp, utc, pretty_timedelta
 from trac.util.text import to_unicode
@@ -117,12 +118,8 @@ class TimelineModule(Component):
         daysback = max(0, daysback)
         if self.max_daysback >= 0:
             daysback = min(self.max_daysback, daysback)
-        author = req.args.get('author',
-                              req.session.get('timeline.author', ''))
-        author = author.strip()
 
         data = {'fromdate': fromdate, 'daysback': daysback,
-                'author': author,
                 'today': format_date(today),
                 'yesterday': format_date(today - timedelta(days=1)),
                 'precisedate': precisedate, 'precision': precision,
@@ -161,9 +158,7 @@ class TimelineModule(Component):
             try:
                 for event in provider.get_timeline_events(req, start, stop,
                                                           filters):
-                    author_index = len(event) < 6 and 2 or 4    # 0.10 events
-                    if not author or event[author_index] == author:
-                        events.append(self._event_data(provider, event))
+                    events.append(self._event_data(provider, event))
             except Exception, e: # cope with a failure of that provider
                 self._provider_failure(e, req, provider, filters,
                                        [f[0] for f in available_filters])
@@ -190,7 +185,6 @@ class TimelineModule(Component):
             return 'timeline.rss', data, 'application/rss+xml'
         else:
             req.session['timeline.daysback'] = daysback
-            req.session['timeline.author'] = author
             html_context = Context.from_request(req, absurls=True)
             html_context.set_hints(wiki_flavor='oneliner', 
                                    shorten_lines=self.abbreviated_messages)
@@ -198,8 +192,7 @@ class TimelineModule(Component):
 
         add_stylesheet(req, 'common/css/timeline.css')
         rss_href = req.href.timeline([(f, 'on') for f in filters],
-                                     daysback=90, max=50, author=author,
-                                     format='rss')
+                                     daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
 

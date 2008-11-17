@@ -18,18 +18,17 @@
 #         Matthew Good <trac@matt-good.net>
 
 import locale
-import os.path
+import os
 import re
-import shutil
 import sys
 import time
 import tempfile
 from urllib import quote, unquote, urlencode
-from itertools import izip, tee
+from itertools import izip
 
 # Imports for backward compatibility
 from trac.core import TracError
-from trac.util.compat import md5, reversed, sorted
+from trac.util.compat import reversed, sorted, tee, md5
 from trac.util.html import escape, unescape, Markup, Deuglifier
 from trac.util.text import CRLF, to_utf8, to_unicode, shorten_line, \
                            wrap, pretty_size
@@ -126,65 +125,6 @@ class NaivePopen:
                 os.remove(infile)
             if capturestderr and os.path.isfile(errfile):
                 os.remove(errfile)
-
-
-def makedirs(path, overwrite=False):
-    if overwrite and os.path.exists(path):
-        return
-    os.makedirs(path)
-
-
-def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
-    """Recursively copy a directory tree using copy2() (from shutil.copytree.)
-
-    Added a `skip` parameter consisting of absolute paths
-    which we don't want to copy.
-    """
-    def str_path(path):
-        if isinstance(path, unicode):
-            path = path.encode(sys.getfilesystemencoding() or
-                               locale.getpreferredencoding())
-        return path
-
-    def remove_if_overwriting(path):
-        if overwrite and os.path.exists(path):
-            os.unlink(path)
-
-    skip = [str_path(f) for f in skip]
-    def copytree_rec(src, dst):
-        names = os.listdir(src)
-        makedirs(dst, overwrite=overwrite)
-        errors = []
-        for name in names:
-            srcname = os.path.join(src, name)
-            if srcname in skip:
-                continue
-            dstname = os.path.join(dst, name)
-            try:
-                if symlinks and os.path.islink(srcname):
-                    remove_if_overwriting(dstname)
-                    linkto = os.readlink(srcname)
-                    os.symlink(linkto, dstname)
-                elif os.path.isdir(srcname):
-                    copytree_rec(srcname, dstname)
-                else:
-                    remove_if_overwriting(dstname)
-                    shutil.copy2(srcname, dstname)
-                # XXX What about devices, sockets etc.?
-            except (IOError, OSError), why:
-                errors.append((srcname, dstname, str(why)))
-            # catch the Error from the recursive copytree so that we can
-            # continue with other files
-            except shutil.Error, err:
-                errors.extend(err.args[0])
-        try:
-            shutil.copystat(src, dst)
-        except OSError, why:
-            errors.append((src, dst, str(why)))
-        if errors:
-            raise shutil.Error(errors)
-    copytree_rec(str_path(src), str_path(dst))
-
 
 # -- sys utils
 
@@ -545,9 +485,7 @@ def content_disposition(type, filename=None):
     return type + '; filename=' + quote(filename, safe='')
 
 def pairwise(iterable):
-    """
-    >>> list(pairwise([0, 1, 2, 3]))
-    [(0, 1), (1, 2), (2, 3)]
+    """s -> (s0,s1), (s1,s2), (s2, s3), ...
 
     :deprecated: since 0.11 (if this really needs to be used, rewrite it
                              without izip)
@@ -560,12 +498,6 @@ def pairwise(iterable):
     return izip(a, b)
 
 def partition(iterable, order=None):
-    """
-    >>> partition([(1,"a"),(2, "b"),(3, "a")])
-    {'a': [1, 3], 'b': [2]}
-    >>> partition([(1,"a"),(2, "b"),(3, "a")], "ab")
-    [[1, 3], [2]]
-    """
     result = {}
     if order is not None:
         for key in order:

@@ -246,7 +246,6 @@ class Attachment(object):
         finally:
             targetfile.close()
 
-    @classmethod
     def select(cls, env, parent_realm, parent_id, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -265,7 +264,6 @@ class Attachment(object):
             attachment.ipnr = ipnr
             yield attachment
 
-    @classmethod
     def delete_all(cls, env, parent_realm, parent_id, db):
         """Delete all attachments of a given resource.
 
@@ -283,6 +281,9 @@ class Attachment(object):
                 env.log.error("Can't delete attachment directory %s",
                               attachment_dir, exc_info=True)
             
+    select = classmethod(select)
+    delete_all = classmethod(delete_all)
+
     def open(self):
         self.env.log.debug('Trying to open attachment at %s', self.path)
         try:

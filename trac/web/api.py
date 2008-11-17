@@ -47,8 +47,6 @@ class HTTPException(Exception):
             self.detail = self.detail % args
         Exception.__init__(self, '%s %s (%s)' % (self.code, self.reason,
                                                  self.detail))
-
-    @classmethod
     def subclass(cls, name, code):
         """Create a new Exception class representing a HTTP status code."""
         reason = HTTP_STATUS.get(code, 'Unknown')
@@ -58,6 +56,7 @@ class HTTPException(Exception):
         new_class.code = code
         new_class.reason = reason
         return new_class
+    subclass = classmethod(subclass)
 
 
 for code in [code for code in HTTP_STATUS if code >= 400]:
@@ -103,8 +102,6 @@ class _RequestArgs(dict):
 def parse_query_string(query_string):
     """Parse a query string into a _RequestArgs."""
     args = _RequestArgs()
-    if not query_string:
-        return args
     for arg in query_string.split('&'):
         nv = arg.split('=', 1)
         if len(nv) == 2:
@@ -180,7 +177,6 @@ class Request(object):
 
         self.callbacks = {
             'args': Request._parse_args,
-            'languages': Request._parse_languages,
             'incookie': Request._parse_cookies,
             '_inheaders': Request._parse_headers
         }
@@ -367,15 +363,8 @@ class Request(object):
             if template.endswith('.html'):
                 if env:
                     from trac.web.chrome import Chrome
-                    from trac.util import translation
-                    if hasattr(self, 'locale'):
-                        translation.activate(self.locale)
-                    try:
-                        data = Chrome(env).render_template(self, template,
-                                                           data, 'text/html')
-                    finally:
-                        if hasattr(self, 'locale'):
-                            translation.deactivate()
+                    data = Chrome(env).render_template(self, template, data,
+                                                       'text/html')
                 else:
                     content_type = 'text/plain'
                     data = '%s\n\n%s: %s' % (data.get('title'),
@@ -514,24 +503,6 @@ class Request(object):
         if 'CONTENT_TYPE' in self.environ:
             headers.append(('content-type', self.environ['CONTENT_TYPE']))
         return headers
-
-    def _parse_languages(self):
-        """The list of languages preferred by the remote user, taken from the
-        ``Accept-Language`` header.
-        """
-        header = self.get_header('Accept-Language') or 'en-us'
-        langs = []
-        for lang in header.split(','):
-            code, params = cgi.parse_header(lang)
-            q = 1
-            if 'q' in params:
-                try:
-                    q = float(params['q'])
-                except ValueError:
-                    q = 0
-            langs.append((-q, code))
-        langs.sort()
-        return [code for q, code in langs]
 
     def _reconstruct_url(self):
         """Reconstruct the absolute base URL of the application."""
