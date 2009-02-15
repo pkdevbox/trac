@@ -91,9 +91,9 @@ class TracadminTestCase(unittest.TestCase):
     .../trac/tests.py.
     """
 
-    expected_results = load_expected_results(
-            os.path.join(os.path.split(__file__)[0], 'console-tests.txt'),
-            '===== (test_[^ ]+) =====')
+    expected_results = load_expected_results(os.path.join(os.path.split(__file__)[0],
+                                            'console-tests.txt'),
+                                            '===== (test_[^ ]+) =====')
 
     def setUp(self):
         self.env = InMemoryEnvironment('', create=True)
@@ -137,20 +137,6 @@ class TracadminTestCase(unittest.TestCase):
                 return -1, message
             raise
 
-    def assertEqual(self, expected_results, output):
-        if not (isinstance(expected_results, basestring) and \
-                isinstance(output, basestring)):
-            return unittest.TestCase.assertEqual(self, expected_results, output)
-        # Create a useful delta between the output and the expected output
-        output_lines = ['%s\n' % x for x in output.split('\n')]
-        expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
-        output_diff = ''.join(list(
-            difflib.unified_diff(expected_lines, output_lines,
-                                 'expected', 'actual')
-        ))
-        unittest.TestCase.assertEqual(self, expected_results, output, 
-                                      "%r != %r\n%s" %
-                                      (expected_results, output, output_diff))
     # Help test
 
     def test_help_ok(self):
@@ -167,45 +153,14 @@ class TracadminTestCase(unittest.TestCase):
         expected_results = self.expected_results[test_name] % d
         rv, output = self._execute('help')
         self.assertEqual(0, rv)
-        self.assertEqual(expected_results, output)
-
-    # Config tests
-    
-    def test_config_get(self):
-        """
-        Tests the 'config get' command in trac-admin.  This particular
-        test gets the project name from the config.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self.env.config.set('project', 'name', 'Test project')
-        rv, output = self._execute('config get project name')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_config_set(self):
-        """
-        Tests the 'config set' command in trac-admin.  This particular
-        test sets the project name using an option value containing a space.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('config set project name "Test project"')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-        self.assertEqual('Test project',
-                         self.env.config.get('project', 'name'))
-
-    def test_config_remove(self):
-        """
-        Tests the 'config remove' command in trac-admin.  This particular
-        test removes the project name from the config, therefore reverting
-        the option to the default value.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self.env.config.set('project', 'name', 'Test project')
-        rv, output = self._execute('config remove project name')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-        self.assertEqual('My Project', self.env.config.get('project', 'name'))
+        # Create a useful delta between the output and the expected output
+        output_lines = ['%s\n' % x for x in output.split('\n')]
+        expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
+        output_diff = ''.join(list(
+            difflib.unified_diff(expected_lines, output_lines)
+        ))
+        failure_message = "%r != %r\n" % (output, expected_results) + output_diff
+        self.assertEqual(expected_results, output, failure_message)
 
     # Permission tests
 

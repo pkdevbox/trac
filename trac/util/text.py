@@ -73,6 +73,8 @@ def exception_to_unicode(e, traceback=""):
 
 def javascript_quote(text):
     """Quote strings for inclusion in javascript"""
+    if not text:
+        return ''
     return text.replace('\\', '\\\\').replace('\r', '\\r') \
                .replace('\n', '\\n').replace('"', '\\"') \
                .replace("'", "\\'")
@@ -131,12 +133,6 @@ def console_print(out, *args):
         cons_charset = 'utf-8'
     out.write(' '.join([to_unicode(a).encode(cons_charset, 'replace') 
                         for a in args])+ '\n')
-
-def printout(*args):
-    console_print(sys.stdout, *args)
-
-def printerr(*args):
-    console_print(sys.stderr, *args)
 
 # -- Plain text formatting
 

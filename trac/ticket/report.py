@@ -28,14 +28,13 @@ from trac.db import get_column_names
 from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import Resource, ResourceNotFound
-from trac.util import as_int
+from trac.util import sorted
 from trac.util.datefmt import format_datetime, format_time
 from trac.util.presentation import Paginator
 from trac.util.text import to_unicode, unicode_urlencode
 from trac.util.translation import _
 from trac.web.api import IRequestHandler, RequestDone
-from trac.web.chrome import add_ctxtnav, add_link, add_script, \
-                            add_stylesheet, add_warning, \
+from trac.web.chrome import add_ctxtnav, add_link, add_stylesheet, \
                             INavigationContributor, Chrome
 from trac.wiki import IWikiSyntaxProvider, WikiParser
 
@@ -220,6 +219,11 @@ class ReportModule(Component):
 
     def _render_view(self, req, db, id):
         """Retrieve the report results and pre-process them for rendering."""
+        try:
+            args = self.get_var_args(req)
+        except ValueError,e:
+            raise TracError(_('Report failed: %(error)s', error=e))
+
         if id == -1:
             # If no particular report was requested, display
             # a list of available reports instead
@@ -237,11 +241,6 @@ class ReportModule(Component):
                 raise ResourceNotFound(
                     _('Report %(num)s does not exist.', num=id),
                     _('Invalid Report Number'))
-
-        try:
-            args = self.get_var_args(req)
-        except ValueError,e:
-            raise TracError(_('Report failed: %(error)s', error=e))
 
         # If this is a saved custom query. redirect to the query module
         #
@@ -282,25 +281,21 @@ class ReportModule(Component):
 
         report_resource = Resource('report', id)
         context = Context.from_request(req, report_resource)
-
-        page = int(req.args.get('page', '1'))
-        max = as_int(req.args.get('max'), self.items_per_page, min=0)
-        limit = {'rss': self.items_per_page_rss,
-                 'csv': 0, 'tab': 0}.get(format, max)
-        offset = (page - 1) * limit
-        user = req.args.get('USER', None)
-
         data = {'action': 'view', 'title': title,
                 'report': {'id': id, 'resource': report_resource},
                 'context': context,
                 'title': title, 'description': description,
-                'max': limit, 'args': args, 'show_args_form': False,
-                'message': None, 'paginator':None}
+                'args': args, 'message': None, 'paginator':None}
+
+        page = int(req.args.get('page', '1'))
+        limit = {'rss': self.items_per_page_rss,
+                 'csv': 0, 'tab': 0}.get(format, self.items_per_page)
+        offset = (page - 1) * limit
+        user = req.args.get('USER', None)
 
         try:
-            cols, results, num_items, missing_args = \
-                self.execute_paginated_report(req, db, id, sql, args, limit,
-                                              offset)
+            cols, results, num_items = self.execute_paginated_report(
+                    req, db, id, sql, args, limit, offset)
             results = [list(row) for row in results]
             numrows = len(results)
 
@@ -317,18 +312,18 @@ class ReportModule(Component):
             data['paginator'] = paginator
             if paginator.has_next_page:
                 next_href = req.href.report(id, asc=asc, sort=sort_col,
-                                            max=limit, page=page + 1, **args)
+                                            page=page + 1, **args)
                 add_link(req, 'next', next_href, _('Next Page'))
             if paginator.has_previous_page:
                 prev_href = req.href.report(id, asc=asc, sort=sort_col,
-                                            max=limit, page=page - 1, **args)
+                                            page=page - 1, **args)
                 add_link(req, 'prev', prev_href, _('Previous Page'))
 
             pagedata = []
             shown_pages = paginator.get_shown_pages(21)
             for p in shown_pages:
                 pagedata.append([req.href.report(id, asc=asc, sort=sort_col, 
-                                                 max=limit, page=p, **args),
+                                                 page=p, **args),
                                  None, str(p), _('Page %(num)d', num=p)])          
             fields = ['href', 'class', 'string', 'title']
             paginator.shown_pages = [dict(zip(fields, p)) for p in pagedata]
@@ -494,7 +489,7 @@ class ReportModule(Component):
                     req.session['query_href'] = \
                         req.href.report(id, asc=req.args.get('asc', None),
                                         sort=req.args.get('sort', None),
-                                        max=limit, page=page, **args)
+                                        page=page, **args)
                     # Kludge: we have to clear the other query session
                     # variables, but only if the above succeeded 
                     for var in ('query_constraints', 'query_time'):
@@ -502,13 +497,6 @@ class ReportModule(Component):
                             del req.session[var]
                 except (ValueError, KeyError):
                     pass
-                if set(data['args']) - set(['USER']):
-                    data['show_args_form'] = True
-                    add_script(req, 'common/js/folding.js')
-            if missing_args:
-                add_warning(req, _(
-                    'The following arguments are missing: %(args)s',
-                    args=", ".join(missing_args)))
             return 'report_view.html', data, None
 
     def add_alternate_links(self, req, args):
@@ -539,7 +527,7 @@ class ReportModule(Component):
 
     def execute_paginated_report(self, req, db, id, sql, args, 
                                  limit=0, offset=0):
-        sql, args, missing_args = self.sql_sub_vars(sql, args, db)
+        sql, args = self.sql_sub_vars(sql, args, db)
         if not sql:
             raise TracError(_('Report %(num)s has no SQL query.', num=id))
         self.log.debug('Executing report with SQL "%s"' % sql)
@@ -591,7 +579,7 @@ class ReportModule(Component):
 
         db.rollback()
 
-        return cols, info, num_items, missing_args
+        return cols, info, num_items
 
     def get_var_args(self, req):
         report_args = {}
@@ -609,19 +597,16 @@ class ReportModule(Component):
     def sql_sub_vars(self, sql, args, db=None):
         if db is None:
             db = self.env.get_db_cnx()
-        names = set()
         values = []
-        missing_args = []
         def add_value(aname):
-            names.add(aname)
             try:
                 arg = args[aname]
             except KeyError:
-                arg = args[str(aname)] = ''
-                missing_args.append(aname)
+                raise TracError(_("Dynamic variable '%(name)s' not defined.",
+                                  name='$%s' % aname))
             values.append(arg)
 
-        var_re = re.compile("[$]([A-Z_][A-Z0-9_]*)")
+        var_re = re.compile("[$]([A-Z]+)")
 
         # simple parameter substitution outside literal
         def repl(match):
@@ -649,11 +634,7 @@ class ReportModule(Component):
                 sql_io.write(repl_literal(expr))
             else:
                 sql_io.write(var_re.sub(repl, expr))
-        
-        # Remove arguments that don't appear in the SQL query
-        for name in set(args) - names:
-            del args[name]
-        return sql_io.getvalue(), values, missing_args
+        return sql_io.getvalue(), values
 
     def _send_csv(self, req, cols, rows, sep=',', mimetype='text/plain',
                   filename=None):

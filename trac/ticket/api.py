@@ -28,6 +28,7 @@ from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionCache, PermissionSystem
 from trac.resource import IResourceManager
 from trac.util import Ranges
+from trac.util.compat import set, sorted
 from trac.util.datefmt import utc
 from trac.util.text import shorten_line, obfuscate_email_address
 from trac.util.translation import _
@@ -230,7 +231,7 @@ class TicketSystem(Component):
 
         # Description
         fields.append({'name': 'description', 'type': 'textarea',
-                       'label': _('Description')})
+                       'label': 'Description'})
 
         # Default select and radio fields
         selects = [('type', model.Type),
@@ -261,12 +262,6 @@ class TicketSystem(Component):
         for name in ('keywords', 'cc', ):
             field = {'name': name, 'type': 'text', 'label': name.title()}
             fields.append(field)
-
-        # Date/time fields
-        fields.append({'name': 'time', 'type': 'time',
-                       'label': _('Created')})
-        fields.append({'name': 'changetime', 'type': 'time',
-                       'label': _('Modified')})
 
         for field in self.get_custom_fields():
             if field['name'] in [f['name'] for f in fields]:
@@ -326,11 +321,6 @@ class TicketSystem(Component):
 
         fields.sort(lambda x, y: cmp(x['order'], y['order']))
         return fields
-
-    def get_field_synonyms(self):
-        """Return a mapping from field name synonyms to field names.
-        The synonyms are supposed to be more intuitive for custom queries."""
-        return {'created': 'time', 'modified': 'changetime'}
 
     def eventually_restrict_owner(self, field, ticket=None):
         """Restrict given owner field to be a list of users having

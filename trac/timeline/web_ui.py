@@ -30,6 +30,7 @@ from trac.core import *
 from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.timeline.api import ITimelineEventProvider
+from trac.util.compat import sorted
 from trac.util.datefmt import format_date, format_datetime, parse_date, \
                               to_timestamp, utc, pretty_timedelta
 from trac.util.text import exception_to_unicode, to_unicode
@@ -63,8 +64,6 @@ class TimelineModule(Component):
         This only affects the default rendering, and can be overriden by
         specific event providers, see their own documentation.
         (''Since 0.11'')""")
-
-    _authors_pattern = re.compile(r'(-)?(?:"([^"]*)"|\'([^\']*)\'|([^\s]+))')
 
     # INavigationContributor methods
 
@@ -119,12 +118,8 @@ class TimelineModule(Component):
         daysback = max(0, daysback)
         if self.max_daysback >= 0:
             daysback = min(self.max_daysback, daysback)
-        authors = req.args.get('authors',
-                               req.session.get('timeline.authors', ''))
-        authors = authors.strip()
 
         data = {'fromdate': fromdate, 'daysback': daysback,
-                'authors': authors,
                 'today': format_date(today),
                 'yesterday': format_date(today - timedelta(days=1)),
                 'precisedate': precisedate, 'precision': precision,
@@ -157,26 +152,13 @@ class TimelineModule(Component):
         stop = fromdate
         start = stop - timedelta(days=daysback + 1)
 
-        # create author include and exclude sets
-        include = set()
-        exclude = set()
-        for match in self._authors_pattern.finditer(authors):
-            name = match.group(2) or match.group(3) or match.group(4)
-            if match.group(1):
-                exclude.add(name)
-            else:
-                include.add(name)
-        
         # gather all events for the given period of time
         events = []
         for provider in self.event_providers:
             try:
                 for event in provider.get_timeline_events(req, start, stop,
                                                           filters):
-                    author = event[len(event) < 6 and 2 or 4]   # 0.10 events
-                    if (not include or author in include) \
-                       and not author in exclude:
-                        events.append(self._event_data(provider, event))
+                    events.append(self._event_data(provider, event))
             except Exception, e: # cope with a failure of that provider
                 self._provider_failure(e, req, provider, filters,
                                        [f[0] for f in available_filters])
@@ -203,7 +185,6 @@ class TimelineModule(Component):
             return 'timeline.rss', data, 'application/rss+xml'
         else:
             req.session['timeline.daysback'] = daysback
-            req.session['timeline.authors'] = authors
             html_context = Context.from_request(req)
             html_context.set_hints(wiki_flavor='oneliner', 
                                    shorten_lines=self.abbreviated_messages)
@@ -211,8 +192,7 @@ class TimelineModule(Component):
 
         add_stylesheet(req, 'common/css/timeline.css')
         rss_href = req.href.timeline([(f, 'on') for f in filters],
-                                     daysback=90, max=50, authors=authors,
-                                     format='rss')
+                                     daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
 
@@ -224,14 +204,12 @@ class TimelineModule(Component):
         previous_start = format_date(fromdate - timedelta(days=daysback+1),
                                      format='%Y-%m-%d', tzinfo=req.tz)
         add_link(req, 'prev', req.href.timeline(from_=previous_start,
-                                                authors=authors,
                                                 daysback=daysback),
                  _('Previous period'))
         if today - fromdate > timedelta(days=0):
             next_start = format_date(fromdate + timedelta(days=daysback+1),
                                      format='%Y-%m-%d', tzinfo=req.tz)
             add_link(req, 'next', req.href.timeline(from_=next_start,
-                                                    authors=authors,
                                                     daysback=daysback),
                      _('Next period'))
         prevnext_nav(req, 'Period')

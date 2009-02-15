@@ -12,24 +12,21 @@
 # history and logs, available at http://trac.edgewall.org/.
 
 from datetime import datetime
-import getpass
 
-from trac.admin import *
+from trac.admin import IAdminPanelProvider
 from trac.core import *
 from trac.perm import PermissionSystem
 from trac.resource import ResourceNotFound
 from trac.ticket import model
 from trac.util.datefmt import utc, parse_date, get_date_format_hint, \
-                              get_datetime_format_hint, format_date, \
-                              format_datetime
-from trac.util.text import print_table, printout
+                              get_datetime_format_hint
 from trac.util.translation import _
 from trac.web.chrome import add_link, add_script
 
 
 class TicketAdminPanel(Component):
 
-    implements(IAdminPanelProvider, IAdminCommandProvider)
+    implements(IAdminPanelProvider)
 
     abstract = True
 
@@ -87,8 +84,7 @@ class ComponentAdminPanel(TicketAdminPanel):
                         comp.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Component %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Component %s already exists.') % name)
 
                 # Remove components
                 elif req.args.get('remove'):
@@ -131,80 +127,6 @@ class ComponentAdminPanel(TicketAdminPanel):
             data['owners'] = None
 
         return 'admin_components.html', data
-
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        label = tuple(each.lower() for each in self._label)
-        yield ('component list', '',
-               'Show available components',
-               None, self._do_list)
-        yield ('component add', '<name> <owner>',
-               'Add a new component',
-               self._complete_add, self._do_add)
-        yield ('component rename', '<name> <newname>',
-               'Rename a component',
-               self._complete_remove_rename, self._do_rename)
-        yield ('component remove', '<name>',
-               'Remove/uninstall a component',
-               self._complete_remove_rename, self._do_remove)
-        yield ('component chown', '<name> <owner>',
-               'Change component ownership',
-               self._complete_chown, self._do_chown)
-    
-    def get_component_list(self):
-        return [c.name for c in model.Component.select(self.env)]
-    
-    def get_user_list(self):
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("SELECT DISTINCT username FROM permission")
-        return [row[0] for row in cursor]
-    
-    def _complete_add(self, args):
-        if len(args) == 2:
-            return self.get_user_list()
-    
-    def _complete_remove_rename(self, args):
-        if len(args) == 1:
-            return self.get_component_list()
-    
-    def _complete_chown(self, args):
-        if len(args) == 1:
-            return self.get_component_list()
-        elif len(args) == 2:
-            return self.get_user_list()
-    
-    def _do_list(self):
-        print_table([(c.name, c.owner)
-                     for c in model.Component.select(self.env)],
-                    [_('Name'), _('Owner')])
-    
-    def _do_add(self, name, owner):
-        component = model.Component(self.env)
-        component.name = name
-        component.owner = owner
-        component.insert()
-    
-    def _do_rename(self, name, newname):
-        db = self.env.get_db_cnx()
-        component = model.Component(self.env, name, db=db)
-        component.name = newname
-        component.update(db=db)
-        db.commit()
-    
-    def _do_remove(self, name):
-        db = self.env.get_db_cnx()
-        component = model.Component(self.env, name, db=db)
-        component.delete(db=db)
-        db.commit()
-    
-    def _do_chown(self, name, owner):
-        db = self.env.get_db_cnx()
-        component = model.Component(self.env, name, db=db)
-        component.owner = owner
-        component.update(db=db)
-        db.commit()
 
 
 class MilestoneAdminPanel(TicketAdminPanel):
@@ -259,8 +181,7 @@ class MilestoneAdminPanel(TicketAdminPanel):
                         mil.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Milestone %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Milestone %s already exists.') % name)
 
                 # Remove milestone
                 elif req.args.get('remove'):
@@ -306,89 +227,6 @@ class MilestoneAdminPanel(TicketAdminPanel):
         })
         return 'admin_milestones.html', data
 
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('milestone list', '',
-               'Show milestones',
-               None, self._do_list)
-        yield ('milestone add', '<name> [due]',
-               'Add milestone',
-               None, self._do_add)
-        yield ('milestone rename', '<name> <newname>',
-               'Rename milestone',
-               self._complete_name, self._do_rename)
-        yield ('milestone due', '<name> <due>',
-               """Set milestone due date
-               
-               The <due> date must be specified in the "%s" format.
-               Alternatively, "now" can be used to set the due date to the
-               current time. To remove the due date from a milestone, specify
-               an empty string ("").
-               """ % console_date_format_hint,
-               self._complete_name, self._do_due)
-        yield ('milestone completed', '<name> <completed>',
-               """Set milestone complete date
-               
-               The <completed> date must be specified in the "%s" format.
-               Alternatively, "now" can be used to set the completion date to
-               the current time. To remove the completion date from a
-               milestone, specify an empty string ("").
-               """ % console_date_format_hint,
-               self._complete_name, self._do_completed)
-        yield ('milestone remove', '<name>',
-               'Remove milestone',
-               self._complete_name, self._do_remove)
-    
-    def get_milestone_list(self):
-        return [m.name for m in model.Milestone.select(self.env)]
-    
-    def _complete_name(self, args):
-        if len(args) == 1:
-            return self.get_milestone_list()
-    
-    def _do_list(self):
-        print_table([(m.name, m.due and
-                        format_date(m.due, console_date_format),
-                      m.completed and
-                        format_datetime(m.completed, console_datetime_format))
-                     for m in model.Milestone.select(self.env)],
-                    [_('Name'), _('Due'), _('Completed')])
-    
-    def _do_add(self, name, due=None):
-        milestone = model.Milestone(self.env)
-        milestone.name = name
-        if due is not None:
-            milestone.due = parse_date(due)
-        milestone.insert()
-    
-    def _do_rename(self, name, newname):
-        db = self.env.get_db_cnx()
-        milestone = model.Milestone(self.env, name, db=db)
-        milestone.name = newname
-        milestone.update(db=db)
-        db.commit()
-    
-    def _do_due(self, name, due):
-        db = self.env.get_db_cnx()
-        milestone = model.Milestone(self.env, name, db=db)
-        milestone.due = due and parse_date(due)
-        milestone.update(db=db)
-        db.commit()
-    
-    def _do_completed(self, name, completed):
-        db = self.env.get_db_cnx()
-        milestone = model.Milestone(self.env, name, db=db)
-        milestone.completed = completed and parse_date(completed)
-        milestone.update(db=db)
-        db.commit()
-    
-    def _do_remove(self, name):
-        db = self.env.get_db_cnx()
-        milestone = model.Milestone(self.env, name, db=db)
-        milestone.delete(author=getpass.getuser(), db=db)
-        db.commit()
-
 
 class VersionAdminPanel(TicketAdminPanel):
 
@@ -433,8 +271,7 @@ class VersionAdminPanel(TicketAdminPanel):
                         ver.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('Version %(name)s already exists.',
-                                          name=name))
+                        raise TracError(_('Version %s already exists.') % name)
                          
                 # Remove versions
                 elif req.args.get('remove'):
@@ -470,74 +307,9 @@ class VersionAdminPanel(TicketAdminPanel):
         })
         return 'admin_versions.html', data
 
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('version list', '',
-               'Show versions',
-               None, self._do_list)
-        yield ('version add', '<name> [time]',
-               'Add version',
-               None, self._do_add)
-        yield ('version rename', '<name> <newname>',
-               'Rename version',
-               self._complete_name, self._do_rename)
-        yield ('version time', '<name> <time>',
-               """Set version date
-               
-               The <time> must be specified in the "%s" format. Alternatively,
-               "now" can be used to set the version date to the current time.
-               To remove the date from a version, specify an empty string
-               ("").
-               """ % console_date_format_hint,
-               self._complete_name, self._do_time)
-        yield ('version remove', '<name>',
-               'Remove version',
-               self._complete_name, self._do_remove)
-    
-    def get_version_list(self):
-        return [v.name for v in model.Version.select(self.env)]
-    
-    def _complete_name(self, args):
-        if len(args) == 1:
-            return self.get_version_list()
-    
-    def _do_list(self):
-        print_table([(v.name,
-                      v.time and format_date(v.time, console_date_format))
-                     for v in model.Version.select(self.env)],
-                    [_('Name'), _('Time')])
-    
-    def _do_add(self, name, time=None):
-        version = model.Version(self.env)
-        version.name = name
-        if time is not None:
-            version.time = time and parse_date(time)
-        version.insert()
-    
-    def _do_rename(self, name, newname):
-        db = self.env.get_db_cnx()
-        version = model.Version(self.env, name, db=db)
-        version.name = newname
-        version.update(db=db)
-        db.commit()
-    
-    def _do_time(self, name, time):
-        db = self.env.get_db_cnx()
-        version = model.Version(self.env, name, db=db)
-        version.time = time and parse_date(time)
-        version.update(db=db)
-        db.commit()
-    
-    def _do_remove(self, name):
-        db = self.env.get_db_cnx()
-        version = model.Version(self.env, name, db=db)
-        version.delete(db=db)
-        db.commit()
-
 
 class AbstractEnumAdminPanel(TicketAdminPanel):
-    implements(IAdminPanelProvider, IAdminCommandProvider)
+    implements(IAdminPanelProvider)
     abstract = True
 
     _type = 'unknown'
@@ -578,8 +350,7 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                         enum.insert()
                         req.redirect(req.href.admin(cat, page))
                     else:
-                        raise TracError(_('%(type)s %(name)s already exists',
-                                          type=self._type.title(), name=name))
+                        raise TracError(_('%s %s already exists') % (self._type.title(), name))
                          
                 # Remove enums
                 elif req.args.get('remove'):
@@ -629,88 +400,6 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                              default=default, view='list'))
         return 'admin_enums.html', data
 
-    # IAdminCommandProvider methods
-    
-    _command_help = {
-        'list': 'Show possible ticket %s',
-        'add': 'Add a %s value option',
-        'change': 'Change a %s value',
-        'remove': 'Remove a %s value',
-        'order': 'Move a %s value up or down in the list',
-    }
-    
-    def get_admin_commands(self):
-        enum_type = getattr(self, '_command_type', self._type)
-        label = tuple(each.lower() for each in self._label)
-        yield ('%s list' % enum_type, '',
-               self._command_help['list'] % label[1],
-               None, self._do_list)
-        yield ('%s add' % enum_type, '<value>',
-               self._command_help['add'] % label[0],
-               None, self._do_add)
-        yield ('%s change' % enum_type, '<value> <newvalue>',
-               self._command_help['change'] % label[0],
-               self._complete_change_remove, self._do_change)
-        yield ('%s remove' % enum_type, '<value>',
-               self._command_help['remove'] % label[0],
-               self._complete_change_remove, self._do_remove)
-        yield ('%s order' % enum_type, '<value> up|down',
-               self._command_help['order'] % label[0],
-               self._complete_order, self._do_order)
-    
-    def get_enum_list(self):
-        return [e.name for e in self._enum_cls.select(self.env)]
-    
-    def _complete_change_remove(self, args):
-        if len(args) == 1:
-            return self.get_enum_list()
-    
-    def _complete_order(self, args):
-        if len(args) == 1:
-            return self.get_enum_list()
-        elif len(args) == 2:
-            return ['up', 'down']
-    
-    def _do_list(self):
-        print_table([(e.name,) for e in self._enum_cls.select(self.env)],
-                    [_('Possible Values')])
-    
-    def _do_add(self, name):
-        enum = self._enum_cls(self.env)
-        enum.name = name
-        enum.insert()
-    
-    def _do_change(self, name, newname):
-        db = self.env.get_db_cnx()
-        enum = self._enum_cls(self.env, name, db=db)
-        enum.name = newname
-        enum.update(db=db)
-        db.commit()
-    
-    def _do_remove(self, value):
-        db = self.env.get_db_cnx()
-        enum = self._enum_cls(self.env, value, db=db)
-        enum.delete(db=db)
-        db.commit()
-    
-    def _do_order(self, name, up_down):
-        if up_down not in ('up', 'down'):
-            raise AdminCommandError(_("Invalid up/down value: %(value)s",
-                                      value=up_down))
-        direction = up_down == 'up' and -1 or 1
-        db = self.env.get_db_cnx()
-        enum1 = self._enum_cls(self.env, name, db=db)
-        enum1.value = int(float(enum1.value) + direction)
-        for enum2 in self._enum_cls.select(self.env, db=db):
-            if int(float(enum2.value)) == enum1.value:
-                enum2.value = int(float(enum2.value) - direction)
-                break
-        else:
-            return
-        enum1.update(db=db)
-        enum2.update(db=db)
-        db.commit()
-
 
 class PriorityAdminPanel(AbstractEnumAdminPanel):
     _type = 'priority'
@@ -734,37 +423,3 @@ class TicketTypeAdminPanel(AbstractEnumAdminPanel):
     _type = 'type'
     _enum_cls = model.Type
     _label = ('Ticket Type', 'Ticket Types')
-
-    _command_type = 'ticket_type'
-    _command_help = {
-        'list': 'Show possible %s',
-        'add': 'Add a %s',
-        'change': 'Change a %s',
-        'remove': 'Remove a %s',
-        'order': 'Move a %s up or down in the list',
-    }
-
-
-class TicketAdmin(Component):
-    """Ticket administration component."""
-
-    implements(IAdminCommandProvider)
-
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('ticket remove', '<number>',
-               'Remove ticket',
-               None, self._do_remove)
-    
-    def _do_remove(self, number):
-        try:
-            number = int(number)
-        except ValueError:
-            raise AdminCommandError(_('<number> must be a number'))
-        db = self.env.get_db_cnx()
-        ticket = model.Ticket(self.env, number, db=db)
-        ticket.delete(db=db)
-        db.commit()
-        printout(_('Ticket %(num)s and all associated data removed.',
-                   num=number))
