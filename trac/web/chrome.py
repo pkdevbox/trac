@@ -26,26 +26,6 @@ except ImportError:
 
 from genshi import Markup
 from genshi.builder import tag, Element
-
-# FIXME Genshi's advanced-i18n is now required if one wants to use 0.12 + i18n
-#       Genshi 0.5.1 can still be used with Trac 0.12 without i18n support.
-#
-# Once advanced-i18n is in the required Genshi version (0.6?), uncomment the
-# following:
-#
-# from genshi.filters import Translator
-#
-# and remove the rest:
-from genshi.filters import Translator
-try:
-    from genshi.filters import setup_i18n
-except ImportError:
-    def setup_i18n(template, translator):
-        # another compatibility hack for Genshi trunk, we need a FunctionType
-        def gettext(*args,**kwargs):
-            return translation.gettext(*args, **kwargs)
-        template.filters.insert(0, Translator(gettext))
-
 from genshi.input import HTML, ParseError
 from genshi.core import Attrs, START
 from genshi.output import DocType
@@ -59,7 +39,7 @@ from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
                       get_module_path, translation
-from trac.util.compat import partial
+from trac.util.compat import partial, set
 from trac.util.html import plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode, \
@@ -317,21 +297,21 @@ class Chrome(Component):
 
     # A dictionary of default context data for templates
     _default_context_data = {
-        '_': translation.gettext,
+        '_': translation._,
         'all': compat.all,
         'any': compat.any,
+        'attrgetter': compat.attrgetter,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
-        'dgettext': translation.dgettext,
-        'dngettext': translation.dngettext,
         'first_last': presentation.first_last,
         'get_reporter_id': get_reporter_id,
         'gettext': translation.gettext,
         'group': presentation.group,
-        'groupby': compat.py_groupby, # http://bugs.python.org/issue2246
+        'groupby': compat.py_groupby,
         'http_date': http_date,
         'istext': presentation.istext,
+        'itemgetter': compat.itemgetter,
         'javascript_quote': javascript_quote,
         'ngettext': translation.ngettext,
         'paginate': presentation.paginate,
@@ -341,10 +321,10 @@ class Chrome(Component):
         'pretty_size': pretty_size,
         'pretty_timedelta': pretty_timedelta,
         'quote_plus': unicode_quote_plus,
-        'reversed': reversed,
+        'reversed': compat.reversed,
         'separated': presentation.separated,
         'shorten_line': shorten_line,
-        'sorted': sorted,
+        'sorted': compat.sorted,
         'time': datetime.time,
         'timedelta': datetime.timedelta,
         'to_unicode': to_unicode,
@@ -353,14 +333,8 @@ class Chrome(Component):
 
     def __init__(self):
         import genshi
-        genshi_version = get_pkginfo(genshi).get('version')
-        self.env.systeminfo.append(('Genshi', genshi_version))
-        try:
-            import babel
-            babel_version = get_pkginfo(babel).get('version')
-            self.env.systeminfo.append(('Babel', babel_version))
-        except ImportError:
-            pass
+        self.env.systeminfo.append(('Genshi',
+                                    get_pkginfo(genshi).get('version')))
 
     # IEnvironmentSetupParticipant methods
 
@@ -676,7 +650,6 @@ class Chrome(Component):
             'href': href,
             'perm': req and req.perm,
             'authname': req and req.authname or '<trac>',
-            'locale': req and req.locale,
             'show_email_addresses': show_email_addresses,
             'show_ip_addresses': self.show_ip_addresses,
             'format_author': partial(self.format_author, req),
@@ -707,17 +680,9 @@ class Chrome(Component):
         TextTemplate instance will be created instead of a MarkupTemplate.
         """
         if not self.templates:
-            def _template_loaded(template):
-                translator = Translator(translation.get_translations())
-                if hasattr(translator, 'setup'):
-                    translator.setup(template)
-                else: # pre-[G1003], remove once advanced-i18n hits trunk
-                    setup_i18n(template, translator)
-
             self.templates = TemplateLoader(self.get_all_templates_dirs(),
                                             auto_reload=self.auto_reload,
-                                            variable_lookup='lenient',
-                                            callback=_template_loaded)
+                                            variable_lookup='lenient')
         if method == 'text':
             cls = TextTemplate
         else:

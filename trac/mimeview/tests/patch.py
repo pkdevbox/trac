@@ -27,11 +27,14 @@ from trac.web.href import Href
 
 
 class PatchRendererTestCase(unittest.TestCase):
+    
+    if not hasattr(unittest.TestCase, "assertTrue"):
+        assertTrue = unittest.TestCase.failUnless   # Python 2.3 compatibility
 
     def setUp(self):
         env = EnvironmentStub(enable=[Chrome, PatchRenderer])
         req = Mock(base_path='',chrome={}, args={},
-                   abs_href=Href('/'), href=Href('/'), locale='',
+                   abs_href=Href('/'), href=Href('/'),
                    perm=MockPerm(), authname=None, tz=None)
         self.context = Context.from_request(req)
         self.patch = Mimeview(env).renderers[0]

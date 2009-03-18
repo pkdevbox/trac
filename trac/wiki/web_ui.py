@@ -220,8 +220,7 @@ class WikiModule(Component):
                             ignore_space_changes='-b' in diff_options)
         def version_info(v, last=0):
             return {'path': get_resource_name(self.env, page.resource),
-                    # TRANSLATOR: wiki page
-                    'rev': v or _('currently edited'), 
+                    'rev': v or 'currently edited', 
                     'shortrev': v or last + 1,
                     'href': v and req.href.wiki(page.name, version=v) or None}
         changes = [{'diffs': diffs, 'props': [],
@@ -598,8 +597,7 @@ class WikiModule(Component):
             return context.href.wiki(wiki_page.id, version=wiki_page.version)
         elif field == 'title':
             return tag(tag.em(get_resource_name(self.env, wiki_page)),
-                       # TRANSLATOR: wiki page
-                       wiki_page.version > 1 and _(' edited') or _(' created'))
+                       wiki_page.version > 1 and ' edited' or ' created')
         elif field == 'description':
             markup = format_to(self.env, None, context(resource=wiki_page),
                                comment)

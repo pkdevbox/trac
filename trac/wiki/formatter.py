@@ -32,6 +32,7 @@ from genshi.util import plaintext
 from trac.core import *
 from trac.mimeview import *
 from trac.resource import get_relative_resource, get_resource_url
+from trac.util.compat import set
 from trac.wiki.api import WikiSystem, parse_args
 from trac.wiki.parser import WikiParser
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode, \
@@ -81,7 +82,6 @@ class WikiProcessor(object):
         self.macro_provider = None
 
         builtin_processors = {'html': self._html_processor,
-                              'htmlcomment': self._htmlcomment_processor,
                               'default': self._default_processor,
                               'comment': self._comment_processor,
                               'div': self._div_processor,
@@ -105,19 +105,13 @@ class WikiProcessor(object):
         if not self.processor:
             # Find a matching mimeview renderer
             from trac.mimeview.api import Mimeview
-            mimeview = Mimeview(formatter.env)
-            for renderer in mimeview.renderers:
-                if renderer.get_quality_ratio(self.name) > 1:
-                    self.processor = self._mimeview_processor
-                    break
-            if not self.processor:
-                mimetype = mimeview.get_mimetype(self.name)
-                if mimetype:
-                    self.name = mimetype
-                    self.processor = self._mimeview_processor
-        if not self.processor:
-            self.processor = self._default_processor
-            self.error = "No macro or processor named '%s' found" % name
+            mimetype = Mimeview(formatter.env).get_mimetype(self.name)
+            if mimetype:
+                self.name = mimetype
+                self.processor = self._mimeview_processor
+            else:
+                self.processor = self._default_processor
+                self.error = "No macro or processor named '%s' found" % name
 
     # builtin processors
 
@@ -138,12 +132,6 @@ class WikiProcessor(object):
             line = unicode(text).splitlines()[e.lineno - 1].strip()
             return system_message(_('HTML parsing error: %(message)s',
                                     message=escape(e.msg)), line)
-        
-    def _htmlcomment_processor(self, text):
-        if "--" in text:
-            return system_message(_('Error: Forbidden character sequence '
-                                    '"--" in htmlcomment wiki code block'))
-        return Markup('<!--\n%s-->\n' % text)
         
     def _elt_processor(self, eltname, format_to, text, args):
         elt = getattr(tag, eltname)(**args)
@@ -389,8 +377,6 @@ class Formatter(object):
                         else:
                             query = path[idx:]
                     target = unicode(resource.id) + query + fragment
-                    if resource.realm == 'wiki':
-                        target = '/' + target   # Avoid wiki page scoping
                     return self._make_link(resource.realm, target, match,
                                            label or rel, fullmatch)
                 if '?' in path and query:
@@ -1011,7 +997,6 @@ class OutlineFormatter(Formatter):
             self.in_code_block -= 1
 
     def format(self, text, out, max_depth=6, min_depth=1):
-        whitespace_indent = '  '
         self.outline = []
         Formatter.format(self, text)
 
@@ -1021,30 +1006,19 @@ class OutlineFormatter(Formatter):
         min_depth = max(1, min_depth)
 
         curr_depth = min_depth - 1
-        out.write('\n')
         for depth, anchor, text in self.outline:
             if depth < min_depth or depth > max_depth:
                 continue
-            if depth > curr_depth: # Deeper indent
-                for i in range(curr_depth, depth):
-                    out.write(whitespace_indent * (2*i) + '<ol>\n' +
-                              whitespace_indent * (2*i+1) + '<li>\n')
-            elif depth < curr_depth: # Shallower indent
-                for i in range(curr_depth-1, depth-1, -1):
-                    out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                              whitespace_indent * (2*i) + '</ol>\n')
-                out.write(whitespace_indent * (2*depth-1) + '</li>\n' +
-                          whitespace_indent * (2*depth-1) + '<li>\n')
-            else: # Same indent
-                out.write( whitespace_indent * (2*depth-1) + '</li>\n' +
-                           whitespace_indent * (2*depth-1) + '<li>\n')
+            if depth < curr_depth:
+                out.write('</li></ol>' * (curr_depth - depth))
+                out.write("</li><li>\n")
+            elif depth > curr_depth:
+                out.write('<ol><li>' * (depth - curr_depth))
+            else:
+                out.write("</li><li>\n")
             curr_depth = depth
-            out.write(whitespace_indent * (2*depth) +
-                      '<a href="#%s">%s</a>\n' % (anchor, text))
-        # Close out all indentation
-        for i in range(curr_depth-1, min_depth-2, -1):
-            out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                      whitespace_indent * (2*i) + '</ol>\n')
+            out.write('<a href="#%s">%s</a>' % (anchor, text))
+        out.write('</li></ol>' * curr_depth)
 
     def _heading_formatter(self, match, fullmatch):
         depth, heading, anchor = self._parse_heading(match, fullmatch, True)

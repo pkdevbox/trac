@@ -67,8 +67,8 @@ from genshi.input import HTMLParser
 from trac.config import IntOption, ListOption, Option
 from trac.core import *
 from trac.resource import Resource
-from trac.util import Ranges
-from trac.util.text import exception_to_unicode, to_utf8, to_unicode
+from trac.util import reversed, sorted, Ranges
+from trac.util.text import to_utf8, to_unicode
 from trac.util.translation import _
 
 
@@ -126,7 +126,6 @@ class Context(object):
         self.perm = resource and perm and perm(resource) or perm
         self._hints = None
 
-    @classmethod
     def from_request(cls, req, resource=None, id=False, version=False,
                      absurls=False):
         """Create a rendering context from a request.
@@ -162,6 +161,7 @@ class Context(object):
                    perm=perm)
         self.req = req
         return self
+    from_request = classmethod(from_request)
 
     def __repr__(self):
         path = []
@@ -692,6 +692,7 @@ class Mimeview(Component):
         # First candidate which renders successfully wins.
         # Also, we don't want to expand tabs more than once.
         expanded_content = None
+        errors = []
         for qr, renderer in candidates:
             if force_source and not getattr(renderer, 'returns_source', False):
                 continue # skip non-source renderers in force_source mode
@@ -738,14 +739,10 @@ class Mimeview(Component):
                     return tag.div(class_='code')(tag.pre(result)).generate()
 
             except Exception, e:
-                if context.req:
-                    from trac.web.chrome import add_warning
-                    add_warning(context.req,
-                        _("HTML preview using %(renderer)s failed (%(err)s)",
-                          renderer=renderer.__class__.__name__,
-                          err=exception_to_unicode(e)))
-                self.log.warning('HTML preview using %s failed (%s)',
-                        renderer, exception_to_unicode(e,traceback=True))
+                self.log.warning('HTML preview using %s failed (%s)' %
+                                 (renderer, e), exc_info=True)
+                errors.append((renderer, e))
+        return errors
 
     def _render_source(self, context, stream, annotations, marks=None):
         from trac.web.chrome import add_warning
@@ -902,7 +899,10 @@ class Mimeview(Component):
         else:
             result = self.render(context, mimetype, content, filename, url,
                                  annotations, force_source=force_source)
-            data['rendered'] = result
+            if isinstance(result, list):
+                data['errors'] = result
+            else:
+                data['rendered'] = result
         return data
 
     def send_converted(self, req, in_type, content, selector, filename='file'):
