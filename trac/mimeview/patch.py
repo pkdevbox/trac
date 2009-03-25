@@ -99,50 +99,32 @@ class PatchRenderer(Component):
         try:
             line = lines.next()
             while True:
-                oldpath = oldrev = newpath = newrev = ''
-                oldinfo = newinfo = []
-                binary = False
-
-                # consume preample, storing free lines in comments
-                # (also detect the special case of git binary patches)
                 if not line.startswith('--- '):
                     if not line.startswith('Index: ') and line != '='*67:
                         comments.append(line)
-                    if line == "GIT binary patch":
-                        binary = True
-                        line = lines.next()
-                        while line and line != '':
-                            line = lines.next()
-                            comments.append(line)
-                        diffcmd_line = comments[0] # diff --git a/... b/,,,
-                        oldpath, newpath = diffcmd_line.split()[-2:]
-                        index_line = comments[1] # index 8f****78..1e****5c
-                        oldrev, newrev = index_line.split()[-1].split('..')
-                        oldinfo = ['', oldpath, oldrev]
-                        newinfo = ['', newpath, newrev]
-                    else:
-                        line = lines.next()
-                        continue
-
-                if not oldinfo and not newinfo:
-                    # Base filename/version from '--- <file> [rev]'
-                    oldinfo = line.split(None, 2)
-                    if len(oldinfo) > 1:
-                        oldpath = oldinfo[1]
-                        if len(oldinfo) > 2:
-                            oldrev = oldinfo[2]
-
-                    # Changed filename/version from '+++ <file> [rev]'
                     line = lines.next()
-                    if not line.startswith('+++ '):
-                        self.log.debug('expected +++ after ---, got '+line)
-                        return None
+                    continue
 
-                    newinfo = line.split(None, 2)
-                    if len(newinfo) > 1:
-                        newpath = newinfo[1]
-                        if len(newinfo) > 2:
-                            newrev = newinfo[2]
+                oldpath = oldrev = newpath = newrev = ''
+
+                # Base filename/version
+                oldinfo = line.split(None, 2)
+                if len(oldinfo) > 1:
+                    oldpath = oldinfo[1]
+                    if len(oldinfo) > 2:
+                        oldrev = oldinfo[2]
+
+                # Changed filename/version
+                line = lines.next()
+                if not line.startswith('+++ '):
+                    self.log.debug('expected +++ after ---, got '+line)
+                    return None
+
+                newinfo = line.split(None, 2)
+                if len(newinfo) > 1:
+                    newpath = newinfo[1]
+                    if len(newinfo) > 2:
+                        newrev = newinfo[2]
 
                 shortrev = ('old', 'new')
                 if oldpath or newpath:
@@ -160,14 +142,6 @@ class PatchRenderer(Component):
                         b = newpath[:-len(commonsuffix)]
                         if len(a) < 4 and len(b) < 4:
                             shortrev = (a, b)
-                    elif oldpath == '/dev/null':
-                        common = _("new file %(new)s",
-                                   new=newpath.lstrip('b/'))
-                        shortrev = ('-', '+')
-                    elif newpath == '/dev/null':
-                        common = _("deleted file %(deleted)s", 
-                                   deleted=oldpath.lstrip('a/'))
-                        shortrev = ('+', '-')
                     else:
                         common = '(a) %s vs. (b) %s' % (oldpath, newpath)
                         shortrev = ('a', 'b')
@@ -175,12 +149,9 @@ class PatchRenderer(Component):
                     common = ''
 
                 groups = []
-                groups_title = []
                 changes.append({'change': 'edit', 'props': [],
                                 'comments': '\n'.join(comments),
-                                'binary': binary,
-                                'diffs': groups, 
-                                'diffs_title': groups_title,
+                                'diffs': groups,
                                 'old': {'path': common,
                                         'rev': ' '.join(oldinfo[1:]),
                                         'shortrev': shortrev[0]},
@@ -190,16 +161,15 @@ class PatchRenderer(Component):
                 comments = []
                 line = lines.next()
                 while line:
-                    # "@@ -333,10 +329,8 @@" or "@@ -1 +1 @@ [... title ...]"
-                    r = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@'
-                                  '(.*)', line)
+                    # "@@ -333,10 +329,8 @@" or "@@ -1 +1 @@"
+                    r = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@',
+                                 line)
                     if not r:
                         break
                     blocks = []
                     groups.append(blocks)
-                    fromline, fromend, toline, toend = \
-                            [int(x or 1) for x in r.groups()[:4]]
-                    groups_title.append(r.group(5))
+                    fromline, fromend, toline, toend = [int(x or 1)
+                                                        for x in r.groups()]
                     last_type = last_change = extra = None
 
                     fromend += fromline
@@ -235,12 +205,6 @@ class PatchRenderer(Component):
                             meta = block[last_side].setdefault('meta', {})
                             meta[len(block[last_side]['lines'])] = True
                             sides = [last_side]
-                        elif command == '@': # ill-formed patch
-                            groups_title[-1] = "%s (%s)" % (
-                                groups_title[-1],
-                                _("this hunk was shorter than expected"))
-                            line = '@'+line
-                            break
                         else:
                             self.log.debug('expected +, - or \\, got '+command)
                             return None

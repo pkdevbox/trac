@@ -14,25 +14,9 @@
 
 from setuptools import setup, find_packages
 
-extra = {}
-
-try:
-    import babel
-    extra['message_extractors'] = {
-        'trac': [
-            ('**.py',                'python', None),
-            ('**/templates/**.html', 'genshi', None),
-            ('**/templates/**.txt',  'genshi', {
-                'template_class': 'genshi.template:TextTemplate'
-            })
-        ],
-    }
-except ImportError:
-    pass
-
 setup(
     name = 'Trac',
-    version = '0.12',
+    version = '0.11.4',
     description = 'Integrated SCM, wiki, issue tracker and project environment',
     long_description = """
 Trac is a minimalistic web-based software project management and bug/issue
@@ -60,7 +44,7 @@ facilities.
     package_data = {
         '': ['templates/*'],
         'trac': ['htdocs/*.*', 'htdocs/README', 'htdocs/js/*', 'htdocs/css/*',
-                 'htdocs/guide/*', 'locale/*.*', 'locale/*/LC_MESSAGES/*.*'],
+                 'htdocs/guide/*'],
         'trac.wiki': ['default-pages/*'],
         'trac.ticket': ['workflows/*.ini'],
     },
@@ -70,10 +54,9 @@ facilities.
 
     install_requires = [
         'setuptools>=0.6b1',
-        'Genshi>=0.6dev-r960'
+        'Genshi>=0.5'
     ],
     extras_require = {
-        'Babel': ['Babel>=0.9.4'],
         'Pygments': ['Pygments>=0.6'],
         'reST': ['docutils>=0.3'],
         'SilverCity': ['SilverCity>=0.9.4'],
@@ -108,14 +91,10 @@ facilities.
         trac.ticket.roadmap = trac.ticket.roadmap
         trac.ticket.web_ui = trac.ticket.web_ui
         trac.timeline = trac.timeline.web_ui
-        trac.versioncontrol.admin = trac.versioncontrol.admin
         trac.versioncontrol.svn_fs = trac.versioncontrol.svn_fs
         trac.versioncontrol.web_ui = trac.versioncontrol.web_ui
         trac.web.auth = trac.web.auth
-        trac.wiki.admin = trac.wiki.admin
         trac.wiki.macros = trac.wiki.macros
         trac.wiki.web_ui = trac.wiki.web_ui
     """,
-
-    **extra
 )

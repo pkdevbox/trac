@@ -56,7 +56,7 @@ def load_expected_results(file, pattern):
 
 class InMemoryEnvironment(Environment):
     """
-    A subclass of Environment that keeps its DB in memory.
+    A subclass of Environment that keeps its' DB in memory.
     """
 
     def get_db_cnx(self):
@@ -91,9 +91,9 @@ class TracadminTestCase(unittest.TestCase):
     .../trac/tests.py.
     """
 
-    expected_results = load_expected_results(
-            os.path.join(os.path.split(__file__)[0], 'console-tests.txt'),
-            '===== (test_[^ ]+) =====')
+    expected_results = load_expected_results(os.path.join(os.path.split(__file__)[0],
+                                            'console-tests.txt'),
+                                            '===== (test_[^ ]+) =====')
 
     def setUp(self):
         self.env = InMemoryEnvironment('', create=True)
@@ -108,7 +108,7 @@ class TracadminTestCase(unittest.TestCase):
     def tearDown(self):
         self.env = None
 
-    def _execute(self, cmd, strip_trailing_space=True):
+    def _execute(self, cmd, strip_trailing_space=True, expect_exception=False):
         _err = sys.stderr
         _out = sys.stdout
         try:
@@ -119,6 +119,8 @@ class TracadminTestCase(unittest.TestCase):
                 retval = self._admin.onecmd(cmd)
             except SystemExit, e:
                 pass
+            sys.stderr = _err
+            sys.stdout = _out
             value = out.getvalue()
             if isinstance(value, str): # reverse what print_listing did
                 value = value.decode('utf-8')
@@ -126,24 +128,15 @@ class TracadminTestCase(unittest.TestCase):
                 return retval, STRIP_TRAILING_SPACE.sub('', value)
             else:
                 return retval, value
-        finally:
+        except Exception, e:
             sys.stderr = _err
             sys.stdout = _out
+            if expect_exception:
+                tb = ''.join(traceback.format_exception(*sys.exc_info()))
+                message = tb.splitlines()[-1] + '\n'
+                return -1, message
+            raise
 
-    def assertEqual(self, expected_results, output):
-        if not (isinstance(expected_results, basestring) and \
-                isinstance(output, basestring)):
-            return unittest.TestCase.assertEqual(self, expected_results, output)
-        # Create a useful delta between the output and the expected output
-        output_lines = ['%s\n' % x for x in output.split('\n')]
-        expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
-        output_diff = ''.join(list(
-            difflib.unified_diff(expected_lines, output_lines,
-                                 'expected', 'actual')
-        ))
-        unittest.TestCase.assertEqual(self, expected_results, output, 
-                                      "%r != %r\n%s" %
-                                      (expected_results, output, output_diff))
     # Help test
 
     def test_help_ok(self):
@@ -160,61 +153,14 @@ class TracadminTestCase(unittest.TestCase):
         expected_results = self.expected_results[test_name] % d
         rv, output = self._execute('help')
         self.assertEqual(0, rv)
-        self.assertEqual(expected_results, output)
-
-    # Attachment tests
-    
-    def test_attachment_list_empty(self):
-        """
-        Tests the 'attachment list' command in trac-admin, on a wiki page that
-        doesn't have any attachments.
-        """
-        # FIXME: Additional tests should be written for the other 'attachment'
-        #        commands. This requires being able to control the current
-        #        time, which in turn would require centralizing the time
-        #        provider, for example in the environment object.
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('attachment list wiki:WikiStart')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-    
-    # Config tests
-    
-    def test_config_get(self):
-        """
-        Tests the 'config get' command in trac-admin.  This particular
-        test gets the project name from the config.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self.env.config.set('project', 'name', 'Test project')
-        rv, output = self._execute('config get project name')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_config_set(self):
-        """
-        Tests the 'config set' command in trac-admin.  This particular
-        test sets the project name using an option value containing a space.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('config set project name "Test project"')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-        self.assertEqual('Test project',
-                         self.env.config.get('project', 'name'))
-
-    def test_config_remove(self):
-        """
-        Tests the 'config remove' command in trac-admin.  This particular
-        test removes the project name from the config, therefore reverting
-        the option to the default value.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self.env.config.set('project', 'name', 'Test project')
-        rv, output = self._execute('config remove project name')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-        self.assertEqual('My Project', self.env.config.get('project', 'name'))
+        # Create a useful delta between the output and the expected output
+        output_lines = ['%s\n' % x for x in output.split('\n')]
+        expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
+        output_diff = ''.join(list(
+            difflib.unified_diff(expected_lines, output_lines)
+        ))
+        failure_message = "%r != %r\n" % (output, expected_results) + output_diff
+        self.assertEqual(expected_results, output, failure_message)
 
     # Permission tests
 
@@ -308,8 +254,9 @@ class TracadminTestCase(unittest.TestCase):
         error message.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('component add component1 new_user')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('component add component1 new_user',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_component_rename_ok(self):
@@ -339,8 +286,9 @@ class TracadminTestCase(unittest.TestCase):
         test tries to rename a component to a name that already exists.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('component rename component1 component2')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('component rename component1 component2',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_component_chown_ok(self):
@@ -420,8 +368,9 @@ class TracadminTestCase(unittest.TestCase):
         message.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('ticket_type add defect')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('ticket_type add defect',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_ticket_type_change_ok(self):
@@ -451,8 +400,9 @@ class TracadminTestCase(unittest.TestCase):
         test tries to change a ticket type to another type that already exists.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('ticket_type change defect task')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('ticket_type change defect task',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_ticket_type_remove_ok(self):
@@ -551,8 +501,9 @@ class TracadminTestCase(unittest.TestCase):
         error message.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('priority add blocker')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('priority add blocker',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_priority_change_ok(self):
@@ -582,8 +533,9 @@ class TracadminTestCase(unittest.TestCase):
         test tries to change a priority to a name that already exists.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('priority change major minor')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('priority change major minor',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_priority_remove_ok(self):
@@ -671,8 +623,9 @@ class TracadminTestCase(unittest.TestCase):
         """
         test_name = sys._getframe().f_code.co_name
         self._execute('severity add blocker')
-        rv, output = self._execute('severity add blocker')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('severity add blocker',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_severity_change_ok(self):
@@ -705,8 +658,9 @@ class TracadminTestCase(unittest.TestCase):
         test_name = sys._getframe().f_code.co_name
         self._execute('severity add major')
         self._execute('severity add critical')
-        rv, output = self._execute('severity change critical major')
-        self.assertEqual(2, rv)
+        rv, output = self._execute('severity change critical major',
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_severity_remove_ok(self):
@@ -797,8 +751,9 @@ class TracadminTestCase(unittest.TestCase):
         error message.
         """
         test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('version add 1.0 "%s"' % self._test_date)
-        self.assertEqual(2, rv)
+        rv, output = self._execute('version add 1.0 "%s"' % self._test_date,
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_version_rename_ok(self):
@@ -898,7 +853,7 @@ class TracadminTestCase(unittest.TestCase):
         test_name = sys._getframe().f_code.co_name
         self._execute('milestone add new_milestone "%s"' % self._test_date)
         rv, output = self._execute('milestone list')
-        self.assertEqual(0, rv)
+        #self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_milestone_add_utf8_ok(self):
@@ -921,8 +876,9 @@ class TracadminTestCase(unittest.TestCase):
         """
         test_name = sys._getframe().f_code.co_name
         rv, output = self._execute('milestone add milestone1 "%s"'
-                                   % self._test_date)
-        self.assertEqual(2, rv)
+                                   % self._test_date,
+                                   expect_exception=True)
+        self.assertEqual(-1, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_milestone_rename_ok(self):

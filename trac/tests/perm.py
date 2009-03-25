@@ -1,6 +1,7 @@
 from trac import perm
 from trac.core import *
 from trac.test import EnvironmentStub
+from trac.util.compat import sorted, set
 
 import unittest
 
