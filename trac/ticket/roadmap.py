@@ -29,6 +29,7 @@ from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import *
 from trac.search import ISearchSource, search_to_sql, shorten_result
+from trac.util.compat import set, sorted
 from trac.util.datefmt import parse_date, utc, to_timestamp, to_datetime, \
                               get_date_format_hint, get_datetime_format_hint, \
                               format_date, format_datetime
@@ -427,8 +428,9 @@ class RoadmapModule(Component):
                 write_prop('UID', uid)
                 write_utctime('DTSTAMP', milestone.due)
                 write_date('DTSTART', milestone.due)
-                write_prop('SUMMARY', _('Milestone %(name)s',
-                                        name=milestone.name))
+                write_prop('SUMMARY', _('Milestone %(name)s') % {
+                    'name': milestone.name
+                })
                 write_prop('URL', req.base_url + '/milestone/' +
                            milestone.name)
                 if milestone.description:
@@ -446,9 +448,9 @@ class RoadmapModule(Component):
                 if milestone.due:
                     write_prop('RELATED-TO', uid)
                     write_date('DUE', milestone.due)
-                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s',
-                                        num=ticket.id,
-                                        summary=ticket['summary']))
+                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s') % {
+                    'num': ticket.id, 'summary': ticket['summary']
+                })
                 write_prop('URL', req.abs_href.ticket(ticket.id))
                 write_prop('DESCRIPTION', ticket['description'])
                 priority = get_priority(ticket)
@@ -502,7 +504,7 @@ class MilestoneModule(Component):
 
     def get_timeline_filters(self, req):
         if 'MILESTONE_VIEW' in req.perm:
-            yield ('milestone', _('Milestones reached'))
+            yield ('milestone', _('Milestones'))
 
     def get_timeline_events(self, req, start, stop, filters):
         if 'milestone' in filters:
@@ -550,15 +552,8 @@ class MilestoneModule(Component):
         add_link(req, 'up', req.href.roadmap(), _('Roadmap'))
 
         db = self.env.get_db_cnx() # TODO: db can be removed
+        milestone = Milestone(self.env, milestone_id, db)
         action = req.args.get('action', 'view')
-        try:
-            milestone = Milestone(self.env, milestone_id, db)
-        except ResourceNotFound:
-            if 'MILESTONE_CREATE' not in req.perm('milestone', milestone_id):
-                raise
-            milestone = Milestone(self.env, None, db)
-            milestone.name = milestone_id
-            action = 'edit' # rather than 'new' so that it works for POST/save
 
         if req.method == 'POST':
             if req.args.has_key('cancel'):

@@ -7,78 +7,36 @@
   <xi:include href="layout.html" />
   <head>
     <title>$title</title>
-    <script type="text/javascript" py:if="show_args_form">
-      jQuery(document).ready(function($) {
-        $("fieldset legend").enableFolding(false);
-      });
-    </script>
   </head>
 
   <body>
     <div id="content" class="report">
+
       <h1>$title
         <span py:if="numrows and report.id != -1" class="numrows">($numrows matches)</span>
       </h1>
 
-      <form method="get" action="">
-        <div id="prefs" py:if="report.id != -1">
-          <div>
-            <label>
-              Max items per page
-              <input type="text" name="max" size="10" value="${max}" />
-            </label>
-          </div>
-          <div class="buttons">
-            <input type="submit" value="${_('Update')}" />
-          </div>
-        </div>
-
-        <div py:if="description" id="description" xml:space="preserve">
-          ${wiki_to_html(context, description)}
-        </div>
-
-        <fieldset id="filters" py:if="show_args_form">
-          <legend class="foldable">Arguments</legend>
-          <table summary="Report arguments">
-            <tbody>
-              <tr style="height: 1px"><td colspan="2"></td></tr>
-            </tbody>
-            <tbody py:for="(name, value) in sorted(args.items())" py:if="name != 'USER'">
-              <tr>
-                <th scope="row"><label>${name}</label></th>
-                <td class="filter">
-                  <input type="text" name="${name}" value="${value or None}" size="42" />
-                </td>
-              </tr>
-            </tbody>
-            <tbody>
-              <tr class="actions">
-                <td class="actions" colspan="2" style="text-align: right">
-                  <input type="submit" value="Update" />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </fieldset>
-      </form>
+      <div py:if="description" id="description" xml:space="preserve">
+        ${wiki_to_html(context, description)}
+      </div>
 
       <div py:if="report.id != -1" class="buttons">
         <form py:if="'REPORT_MODIFY' in perm(report.resource)" action="" method="get">
           <div>
             <input type="hidden" name="action" value="edit" />
-            <input type="submit" value="${_('Edit report')}" accesskey="e" />
+            <input type="submit" value="Edit report" accesskey="e" />
           </div>
         </form>
         <form py:if="'REPORT_CREATE' in perm(report.resource)" action="" method="get">
           <div>
             <input type="hidden" name="action" value="copy" />
-            <input type="submit" value="${_('Copy report')}" />
+            <input type="submit" value="Copy report" />
           </div>
         </form>
         <form py:if="'REPORT_DELETE' in perm(report.resource)" action="" method="get">
           <div>
             <input type="hidden" name="action" value="delete" />
-            <input type="submit" value="${_('Delete report')}" />
+            <input type="submit" value="Delete report" />
           </div>
         </form>
       </div>
@@ -206,7 +164,7 @@
         <form action="" method="get" id="create_report">
           <div>
             <input type="hidden" name="action" value="new" />
-            <input type="submit" value="${_('Create new report')}" />
+            <input type="submit" value="Create new report" />
           </div>
         </form>
       </div>

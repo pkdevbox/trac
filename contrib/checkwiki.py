@@ -70,7 +70,7 @@ wiki_pages = [
  "WikiRestructuredTextLinks"
  ]
 
-def get_page_from_file(prefix, pname):
+def get_page_from_file (pname):
     d = ''
     try:
         f = open(pname ,'r')
@@ -80,24 +80,23 @@ def get_page_from_file(prefix, pname):
         print "Missing page: %s" % pname
     return d
 
-def get_page_from_web(prefix, pname):
+def get_page_from_web (pname):
     host = "trac.edgewall.org"
-    rfile = "/wiki/%s%s?format=txt" % (prefix, pname)
+    rfile = "/wiki/%s?format=txt" % pname
     c = httplib.HTTPConnection(host)
     c.request("GET", rfile)
-    print "Getting", rfile
     r = c.getresponse()
     d = r.read()
-    if r.status == 200 and d:
-        f = open(pname, 'w+')
-        f.write(d)
-        f.close()
-    else:
-        print "Missing or empty page"
+    if r.status != 200 or d == ("describe %s here\n" % pname):
+        c.close()
+        print "Missing page: %s" % pname
     c.close()
+    f = open(pname, 'w+')
+    f.write(d)
+    f.close()
     return d
 
-def check_links(data):
+def check_links (data):
     def get_refs(t, refs=[]):
         r = "(?P<wikilink>(^|(?<=[^A-Za-z]))[!]?[A-Z][a-z/]+(?:[A-Z][a-z/]+)+)"
         m = re.search (r, t)
@@ -120,27 +119,18 @@ def check_links(data):
 
 if __name__ == '__main__':
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "dCp:")
+        opts, args = getopt.getopt(sys.argv[1:], "d")
     except getopt.GetoptError:
         # print help information and exit:
-        print "%s [-d] [-C] [-p prefix] [PAGE ...]" % sys.argv[0]
-        print "\t-d        -- Download pages from the main project wiki."
-        print "\t-C        -- Don't try to check links (it's broken anyway)"
-        print "\t-p prefix -- When downloading, prepend 'prefix/' to the page."
+        print "%s [-d] [PAGE ...]" % sys.argv[0]
+        print "\t-d  -- Download pages from the main project wiki."
         sys.exit()
     get_page = get_page_from_file
-    prefix = None
-    check = True
     for o,a in opts:
         if o == '-d':
             get_page = get_page_from_web
-        elif o == '-p':
-            prefix = a+'/'
-        elif o == '-C':
-            check = False
     data = {}
     for p in args or wiki_pages:
-        data[p] = get_page(prefix, p)
-    if check:
-        check_links(data)
+        data[p] = get_page (p)
+    check_links(data)
 

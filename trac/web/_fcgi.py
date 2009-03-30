@@ -450,7 +450,6 @@ class Record(object):
         self.paddingLength = 0
         self.contentData = ''
 
-    @staticmethod
     def _recvall(sock, length):
         """
         Attempts to receive length bytes from a socket, blocking if necessary.
@@ -474,6 +473,7 @@ class Record(object):
             recvLen += dataLen
             length -= dataLen
         return ''.join(dataList), recvLen
+    _recvall = staticmethod(_recvall)
 
     def read(self, sock):
         """Read and decode a Record from a socket."""
@@ -509,7 +509,6 @@ class Record(object):
             except:
                 raise EOFError
 
-    @staticmethod
     def _sendall(sock, data):
         """
         Writes data to a socket and does not return until all the data is sent.
@@ -526,6 +525,7 @@ class Record(object):
                     raise
             data = data[sent:]
             length -= sent
+    _sendall = staticmethod(_sendall)
 
     def write(self, sock):
         """Encode and write a Record to a socket."""
