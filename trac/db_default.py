@@ -17,7 +17,7 @@
 from trac.db import Table, Column, Index
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 22
+db_version = 21
 
 def __mkreports(reports):
     """Utility function used to create report data in same syntax as the
@@ -57,9 +57,6 @@ schema = [
         Column('authenticated', type='int'),
         Column('name'),
         Column('value')],
-    Table('cache', key='id')[
-        Column('id'),
-        Column('generation', type='int')],
 
     # Attachments
     Table('attachment', key=('type', 'id', 'filename'))[

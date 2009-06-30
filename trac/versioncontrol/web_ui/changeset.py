@@ -19,7 +19,6 @@
 #         Christian Boos <cboos@neuf.fr>
 
 from datetime import datetime
-from itertools import groupby
 import os
 import posixpath
 import re
@@ -36,7 +35,7 @@ from trac.resource import Resource, ResourceNotFound
 from trac.search import ISearchSource, search_to_sql, shorten_result
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import embedded_numbers, content_disposition
-from trac.util.compat import any
+from trac.util.compat import any, sorted, groupby
 from trac.util.datefmt import pretty_timedelta, utc
 from trac.util.text import exception_to_unicode, unicode_urlencode, \
                            shorten_line, CRLF
@@ -765,7 +764,8 @@ class ChangesetModule(Component):
             quality = renderer.match_property_diff(name)
             if quality > 0:
                 candidates.append((quality, renderer))
-        candidates.sort(reverse=True)
+        candidates.sort()
+        candidates.reverse()
         for (quality, renderer) in candidates:
             try:
                 return renderer.render_property_diff(name, old_node, old_props,
@@ -1023,14 +1023,16 @@ class AnyDiffModule(Component):
                     return embedded_numbers(entry.name)
                 return entry.isfile, name_order(entry)
 
-            html = tag.ul(
+            elem = tag.ul(
                 [tag.li(is_dir and tag.b(path) or path)
                  for e in sorted(node.get_entries(), key=kind_order)
                  for is_dir, path in [(e.isdir, '/' + e.path.lstrip('/'))]
                  if e.name.lower().startswith(prefix)]
             )
 
-            req.write(html.generate().render('xhtml'))
+            xhtml = elem.generate().render('xhtml')
+            req.send_header('Content-Length', len(xhtml))
+            req.write(xhtml)
             return
 
         # -- retrieve arguments

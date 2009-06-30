@@ -27,42 +27,22 @@ class ReportTestCase(unittest.TestCase):
         return environ
 
     def test_sub_var_no_quotes(self):
-        sql, values, missing_args = self.report_module.sql_sub_vars(
-            "$VAR", {'VAR': 'value'})
+        sql, args = self.report_module.sql_sub_vars("$VAR", {'VAR': 'value'})
         self.assertEqual("%s", sql)
-        self.assertEqual(['value'], values)
-        self.assertEqual([], missing_args)
+        self.assertEqual(['value'], args)
 
-    def test_sub_var_digits_underscore(self):
-        sql, values, missing_args = self.report_module.sql_sub_vars(
-            "$_VAR, $VAR2, $2VAR", {'_VAR': 'value1', 'VAR2': 'value2'})
-        self.assertEqual("%s, %s, $2VAR", sql)
-        self.assertEqual(['value1', 'value2'], values)
-        self.assertEqual([], missing_args)
-        
     def test_sub_var_quotes(self):
-        sql, values, missing_args = self.report_module.sql_sub_vars(
-            "'$VAR'", {'VAR': 'value'})
+        sql, args = self.report_module.sql_sub_vars("'$VAR'", {'VAR': 'value'})
         self.assertEqual(self.env.get_db_cnx().concat("''", '%s', "''"), sql)
-        self.assertEqual(['value'], values)
-        self.assertEqual([], missing_args)
+        self.assertEqual(['value'], args)
 
     # Probably not needed anymore
     def test_sub_var_mysql(self):
         env = EnvironmentStub()
         env.db = MockMySQLConnection() # ditto
-        sql, values, missing_args = ReportModule(env).sql_sub_vars(
-            "'$VAR'", {'VAR': 'value'})
+        sql, args = ReportModule(env).sql_sub_vars("'$VAR'", {'VAR': 'value'})
         self.assertEqual("concat('', %s, '')", sql)
-        self.assertEqual(['value'], values)
-        self.assertEqual([], missing_args)
-
-    def test_sub_var_missing_args(self):
-        sql, values, missing_args = self.report_module.sql_sub_vars(
-            "$VAR, $PARAM, $MISSING", {'VAR': 'value'})
-        self.assertEqual("%s, %s, %s", sql)
-        self.assertEqual(['value', '', ''], values)
-        self.assertEqual(['PARAM', 'MISSING'], missing_args)
+        self.assertEqual(['value'], args)
 
     def test_csv_escape(self):
         buf = StringIO()

@@ -553,66 +553,6 @@ Paragraph
 <div>Click me</div>
 ------------------------------
  […]
-============================== HTML comment wiki processor
-Before
-{{{
-#!htmlcomment
-This is a comment <em>with embedded tags &amp; entities</em>
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This is a comment <em>with embedded tags &amp; entities</em>
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment ends with "-"
-Before
-{{{
-#!htmlcomment
-This comment ends with -
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This comment ends with -
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment contains "--"
-Before
-{{{
-#!htmlcomment
-The character sequence -- is not allowed in comments
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<div class="system-message"><strong>Error: Forbidden character sequence "--" in htmlcomment wiki code block</strong></div><p>
-After
-</p>
-------------------------------
-Before
- […]
-After
 ============================== div and span wiki processors
 And now it's [[span('''TIME FOR BED!,class=important)]]. Really.
 {{{
@@ -1076,28 +1016,28 @@ Paragraph
 ============================== Simple definition list
  term:: definition
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition
+<dl><dt>term</dt><dd>definition
 </dd></dl>
 ------------------------------
 term:: definition
 ============================== Tricky definition list
  term:: definition:: text
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition:: text
+<dl><dt>term</dt><dd>definition:: text
 </dd></dl>
 ------------------------------
 term:: definition:: text
 ============================== Verbatim term in definition list
  `term`:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
 ============================== Another verbatim term in definition list
  {{{term}}}:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
@@ -1106,7 +1046,7 @@ term:: definition:: text
                  ''formatted''
                  definition
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <i>formatted</i>
 definition
 </dd></dl>
@@ -1138,7 +1078,7 @@ term::definition
  complex topic:: multiline
                  `not:: a dl`
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------
@@ -1148,7 +1088,7 @@ complex topic:: multiline
  complex topic:: multiline
                  {{{not:: a dl}}}
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------

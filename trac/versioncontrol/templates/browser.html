@@ -3,15 +3,13 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
     xmlns:py="http://genshi.edgewall.org/"
-    xmlns:xi="http://www.w3.org/2001/XInclude"
-    xmlns:i18n="http://genshi.edgewall.org/i18n">
+    xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <xi:include href="macros.html" />
   <head>
     <title>$path</title>
     <meta py:if="file and file.annotate" name="ROBOTS" content="NOINDEX, NOFOLLOW" />
     <meta py:if="dir" name="ROBOTS" content="NOINDEX" />
-    <script type="text/javascript" src="${chrome.htdocs_location}js/folding.js"></script>
     <script type="text/javascript">
       jQuery(document).ready(function($) {
         $(".trac-toggledeleted").show().click(function() {
@@ -33,11 +31,8 @@
                 range_max_secs: '$dir.range_max_secs'
             });
         </py:if>
-        <py:if test="file">
-          <py:if test="file.annotate">
-            enableBlame("${href.changeset()}/", "${path}");
-          </py:if>
-          $('#preview table.code').enableCollapsibleColumns($('#preview table.code thead th.content')); 
+        <py:if test="file and file.annotate">
+          enableBlame("${href.changeset()}/", "${path}");
         </py:if>
       });
     </script>
@@ -69,7 +64,7 @@
                 <option py:for="_, name, path, rev in locations" value="${href.browser(path, rev=rev)}">$name</option>
               </optgroup>
             </select>
-            <input type="submit" value="${_('Go!')}" title="${_('Jump to the chosen preselected path')}" />
+            <input type="submit" value="Go!" title="Jump to the chosen preselected path" />
           </div>
         </form>
       </div>
@@ -113,7 +108,7 @@
 
       <table py:if="properties or file" id="info" summary="Revision info">
         <tr py:if="file">
-          <th scope="col" i18n:msg="rev, size, author, date">
+          <th scope="col">
             Revision <a href="${href.changeset(rev)}">$rev</a>, ${sizeinfo(file.size)}
             (checked in by ${authorinfo(file.changeset.author)}, ${dateinfo(file.changeset.date)} ago)
           </th>
@@ -152,7 +147,7 @@
         ${preview_file(file.preview)}
       </div>
 
-      <div id="help" i18n:msg="">
+      <div id="help">
         <strong>Note:</strong> See <a href="${href.wiki('TracBrowser')}">TracBrowser</a>
         for help on using the browser.
       </div>
@@ -162,9 +157,9 @@
           <div class="buttons">
             <input type="hidden" name="new_path" value="$path" />
             <input type="hidden" name="old_path" value="$path" />
-            <input type="hidden" name="new_rev" value="$rev" />
-            <input type="hidden" name="old_rev" value="$rev" />
-            <input type="submit" value="${_('View changes...')}" title="${_('Select paths and revs for Diff')}" />
+            <input type="hidden" name="new_rev" value="$stickyrev" />
+            <input type="hidden" name="old_rev" value="$stickyrev" />
+            <input type="submit" value="View changes..." title="Select paths and revs for Diff" />
           </div>
         </form>
       </div>

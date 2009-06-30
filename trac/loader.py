@@ -22,6 +22,7 @@ from pkg_resources import working_set, DistributionNotFound, VersionConflict, \
 import os
 import sys
 
+from trac.util.compat import set
 from trac.util.text import exception_to_unicode
 
 __all__ = ['load_components']

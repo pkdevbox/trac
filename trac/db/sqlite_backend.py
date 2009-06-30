@@ -22,7 +22,6 @@ from trac.core import *
 from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper
 from trac.util import get_pkginfo, getuser
-from trac.util.translation import _
 
 _like_escape_re = re.compile(r'([/_%])')
 
@@ -130,8 +129,7 @@ class SQLiteConnector(Component):
         if path != ':memory:':
             # make the directory to hold the database
             if os.path.exists(path):
-                raise TracError(_('Database already exists at %(path)s',
-                                  path=path))
+                raise TracError('Database already exists at %s' % path)
             os.makedirs(os.path.split(path)[0])
         if isinstance(path, unicode): # needed with 2.4.0
             path = path.encode('utf-8')
@@ -170,15 +168,15 @@ class SQLiteConnection(ConnectionWrapper):
         self.cnx = None
         if path != ':memory:':
             if not os.access(path, os.F_OK):
-                raise TracError(_('Database "%(path)s" not found.', path=path))
+                raise TracError('Database "%s" not found.' % path)
 
             dbdir = os.path.dirname(path)
             if not os.access(path, os.R_OK + os.W_OK) or \
                    not os.access(dbdir, os.R_OK + os.W_OK):
-                raise TracError(_('The user %(user)s requires read _and_ write '
-                                  'permissions to the database file %(path)s '
-                                  'and the directory it is located in.',
-                                  user=getuser(), path=path))
+                raise TracError('The user %s requires read _and_ write ' \
+                                'permissions to the database file %s and the ' \
+                                'directory it is located in.' \
+                                % (getuser(), path))
 
         if have_pysqlite == 2:
             self._active_cursors = weakref.WeakKeyDictionary()

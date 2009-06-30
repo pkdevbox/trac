@@ -3,7 +3,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <xi:include href="macros.html" />
@@ -51,7 +50,7 @@
                       value="${group.name}" py:content="group.label"
                       selected="${grouped_by == group.name or None}" />
             </select>
-            <input type="submit" value="${_('Update')}" class="noscript" />
+            <input type="submit" value="Update" class="noscript" />
             <script type="text/javascript">
               jQuery(document).ready(function ($) { $(".noscript").attr("style", "display: none"); });
             </script>
@@ -91,19 +90,19 @@
         <form py:if="'MILESTONE_MODIFY' in perm(milestone.resource)" method="get" action="" id="editmilestone">
           <div>
             <input type="hidden" name="action" value="edit" />
-            <input type="submit" value="${_('Edit milestone')}" />
+            <input type="submit" value="Edit milestone" />
           </div>
         </form>
         <form py:if="'MILESTONE_DELETE' in perm(milestone.resource)" method="get" action="" id="deletemilestone">
           <div>
             <input type="hidden" name="action" value="delete" />
-            <input type="submit" value="${_('Delete milestone')}" />
+            <input type="submit" value="Delete milestone" />
           </div>
         </form>
         ${attach_file_form(attachments)}
       </div>
 
-      <div id="help" i18n:msg=""><strong>Note:</strong> See
+      <div id="help"><strong>Note:</strong> See
         <a href="${href.wiki('TracRoadmap')}">TracRoadmap</a> for help on using
         the roadmap.
       </div>
