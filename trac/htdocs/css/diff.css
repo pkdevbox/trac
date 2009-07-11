@@ -91,7 +91,7 @@
 .diff h2 .switch span.active { color: #333; cursor: default; }
 
 /* Styles for the actual diff tables (side-by-side and inline) */
-.diff table.trac-diff {
+.diff table {
  border: 1px solid #ddd;
  border-spacing: 0;
  border-top: 0;
@@ -103,13 +103,13 @@
  table-layout: fixed;
  width: 100%;
 }
-.diff table.trac-diff col.lineno { width: 4em }
-.diff table.trac-diff th {
+.diff table col.lineno { width: 4em }
+.diff table th {
  border-right: 1px solid #d7d7d7;
  border-bottom: 1px solid #998;
  font-size: 11px;
 }
-.diff table.trac-diff thead th {
+.diff table thead th {
  background: #eee;
  border-top: 1px solid #d7d7d7;
  color: #999;
@@ -117,7 +117,7 @@
  text-align: center;
  white-space: nowrap;
 }
-.diff table.trac-diff tbody th {
+.diff table tbody th {
  background: #eed;
  color: #886;
  font-weight: normal;
@@ -125,22 +125,20 @@
  text-align: right;
  vertical-align: top;
 }
-.diff table.trac-diff td {
+.diff table tbody td {
  background: #fff;
  font: normal 11px monospace;
  overflow: visible;
  padding: 1px 2px;
  vertical-align: top;
 }
-.diff table.trac-diff tbody.skipped td, .diff table.trac-diff thead td {
+.diff table tbody.skipped td {
  background: #f7f7f7;
  border: 1px solid #d7d7d7;
 }
 .diff td ins, .diff td del {text-decoration: none;}
 
 /* Styles for the inline diff */
-pre.diff .rem { background: #fdd; }
-pre.diff .add { background: #dfd; }
 .diff table.inline tbody.mod td.l, .diff table.inline tbody.rem td.l {
  background: #fdd;
  border-color: #c00;
@@ -188,4 +186,15 @@ pre.diff .add { background: #dfd; }
 }
 
 /* Styles for the property diffs */
-.diff table.props td { padding: 2px 0.5em }
+/* WARNING: This is a compatibility hack. 0.12 has a cleaner but non-compatible solution. */
+.diff table.props {
+ border: 0;
+ font-size: 13px;
+ margin: inherit;
+ width: inherit;
+}
+.diff table.props td {
+ padding: 2px 0.5em;
+ background: inherit;
+ font: inherit;
+}

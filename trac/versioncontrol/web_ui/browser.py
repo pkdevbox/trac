@@ -29,7 +29,7 @@ from trac.mimeview.api import Mimeview, is_binary, get_mimetype, \
                               IHTMLPreviewAnnotator, Context
 from trac.perm import IPermissionRequestor
 from trac.resource import ResourceNotFound, Resource
-from trac.util import embedded_numbers
+from trac.util import sorted, embedded_numbers
 from trac.util.datefmt import http_date, utc
 from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
@@ -554,7 +554,8 @@ class BrowserModule(Component):
             quality = renderer.match_property(name, mode)
             if quality > 0:
                 candidates.append((quality, renderer))
-        candidates.sort(reverse=True)
+        candidates.sort()
+        candidates.reverse()
         for (quality, renderer) in candidates:
             try:
                 rendered = renderer.render_property(name, mode, context, props)

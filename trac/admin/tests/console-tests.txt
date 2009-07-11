@@ -4,76 +4,171 @@ trac-admin - The Trac Administration Console %(version)s
 Usage: trac-admin </path/to/projenv> [command [subcommand] [option ...]]
 
 Invoking trac-admin without command starts interactive mode.
+help
+	-- Show documentation
 
-help                 Show documentation
-initenv              Create and initialize a new environment
-attachment add       Attach a file to a resource
-attachment export    Export an attachment from a resource to a file or stdout
-attachment list      List attachments of a resource
-attachment remove    Remove an attachment from a resource
-component add        Add a new component
-component chown      Change component ownership
-component list       Show available components
-component remove     Remove/uninstall a component
-component rename     Rename a component
-config get           Get the value of the given option in "trac.ini"
-config remove        Remove the specified option from "trac.ini"
-config set           Set the value for the given option in "trac.ini"
-deploy               Extract static resources from Trac and all plugins
-hotcopy              Make a hot backup copy of an environment
-milestone add        Add milestone
-milestone completed  Set milestone complete date
-milestone due        Set milestone due date
-milestone list       Show milestones
-milestone remove     Remove milestone
-milestone rename     Rename milestone
-permission add       Add a new permission rule
-permission list      List permission rules
-permission remove    Remove a permission rule
-priority add         Add a priority value option
-priority change      Change a priority value
-priority list        Show possible ticket priorities
-priority order       Move a priority value up or down in the list
-priority remove      Remove a priority value
-resolution add       Add a resolution value option
-resolution change    Change a resolution value
-resolution list      Show possible ticket resolutions
-resolution order     Move a resolution value up or down in the list
-resolution remove    Remove a resolution value
-resync               Re-synchronize trac with the repository
-severity add         Add a severity value option
-severity change      Change a severity value
-severity list        Show possible ticket severities
-severity order       Move a severity value up or down in the list
-severity remove      Remove a severity value
-ticket remove        Remove ticket
-ticket_type add      Add a ticket type
-ticket_type change   Change a ticket type
-ticket_type list     Show possible ticket types
-ticket_type order    Move a ticket type up or down in the list
-ticket_type remove   Remove a ticket type
-upgrade              Upgrade database to current version
-version add          Add version
-version list         Show versions
-version remove       Remove version
-version rename       Rename version
-version time         Set version date
-wiki dump            Export all wiki pages to files named by title
-wiki export          Export wiki page to file or stdout
-wiki import          Import wiki page from file or stdin
-wiki list            List wiki pages
-wiki load            Import all wiki pages from directory
-wiki remove          Remove wiki page
-wiki upgrade         Upgrade default wiki pages to current version
-===== test_attachment_list_empty =====
+initenv
+	-- Create and initialize a new environment interactively
 
-Name  Size  Author  Date  Description
--------------------------------------
+initenv <projectname> <db> <repostype> <repospath>
+	-- Create and initialize a new environment from arguments
 
-===== test_config_get =====
-Test project
-===== test_config_set =====
-===== test_config_remove =====
+hotcopy <backupdir>
+	-- Make a hot backup copy of an environment
+
+resync
+	-- Re-synchronize trac with the repository
+
+resync <rev>
+	-- Re-synchronize only the given <rev>
+
+upgrade
+	-- Upgrade database to current version
+
+deploy <directory>
+	-- Extract static resources from Trac and all plugins.
+
+permission list [user]
+	-- List permission rules
+
+permission add <user> <action> [action] [...]
+	-- Add a new permission rule
+
+permission remove <user> <action> [action] [...]
+	-- Remove permission rule
+
+wiki list
+	-- List wiki pages
+
+wiki remove <page>
+	-- Remove wiki page
+
+wiki export <page> [file]
+	-- Export wiki page to file or stdout
+
+wiki import <page> [file]
+	-- Import wiki page from file or stdin
+
+wiki dump <directory>
+	-- Export all wiki pages to files named by title
+
+wiki load <directory>
+	-- Import all wiki pages from directory
+
+wiki upgrade
+	-- Upgrade default wiki pages to current version
+
+ticket remove <number>
+	-- Remove ticket
+
+ticket_type list
+	-- Show possible ticket types
+
+ticket_type add <value>
+	-- Add a ticket type
+
+ticket_type change <value> <newvalue>
+	-- Change a ticket type
+
+ticket_type remove <value>
+	-- Remove a ticket type
+
+ticket_type order <value> up|down
+	-- Move a ticket type up or down in the list
+
+priority list
+	-- Show possible ticket priorities
+
+priority add <value>
+	-- Add a priority value option
+
+priority change <value> <newvalue>
+	-- Change a priority value
+
+priority remove <value>
+	-- Remove priority value
+
+priority order <value> up|down
+	-- Move a priority value up or down in the list
+
+severity list
+	-- Show possible ticket severities
+
+severity add <value>
+	-- Add a severity value option
+
+severity change <value> <newvalue>
+	-- Change a severity value
+
+severity remove <value>
+	-- Remove severity value
+
+severity order <value> up|down
+	-- Move a severity value up or down in the list
+
+component list
+	-- Show available components
+
+component add <name> <owner>
+	-- Add a new component
+
+component rename <name> <newname>
+	-- Rename a component
+
+component remove <name>
+	-- Remove/uninstall component
+
+component chown <name> <owner>
+	-- Change component ownership
+
+version list
+	-- Show versions
+
+version add <name> [time]
+	-- Add version
+
+version rename <name> <newname>
+	-- Rename version
+
+version time <name> <time>
+	-- Set version date (Format: "YYYY-MM-DD", "now" or "")
+
+version remove <name>
+	-- Remove version
+
+milestone list
+	-- Show milestones
+
+milestone add <name> [due]
+	-- Add milestone
+
+milestone rename <name> <newname>
+	-- Rename milestone
+
+milestone due <name> <due>
+	-- Set milestone due date (Format: "YYYY-MM-DD", "now" or "")
+
+milestone completed <name> <completed>
+	-- Set milestone completed date (Format: "YYYY-MM-DD", "now" or "")
+
+milestone remove <name>
+	-- Remove milestone
+
+resolution list
+	-- Show possible ticket resolutions
+
+resolution add <value>
+	-- Add a resolution value option
+
+resolution change <value> <newvalue>
+	-- Change a resolution value
+
+resolution remove <value>
+	-- Remove resolution value
+
+resolution order <value> up|down
+	-- Move a resolution value up or down in the list
+
 ===== test_permission_list_ok =====
 
 User           Action
@@ -267,7 +362,7 @@ changed_name  somebody
 component2    somebody
 
 ===== test_component_rename_error_bad_component =====
-ResourceNotFound: Component bad_component does not exist.
+Command failed: Component bad_component does not exist.
 ===== test_component_rename_error_bad_new_name =====
 IntegrityError: column name is not unique
 ===== test_component_chown_ok =====
@@ -278,7 +373,7 @@ component1  somebody
 component2  changed_owner
 
 ===== test_component_chown_error_bad_component =====
-ResourceNotFound: Component bad_component does not exist.
+Command failed: Component bad_component does not exist.
 ===== test_component_remove_ok =====
 
 Name        Owner   
@@ -286,7 +381,7 @@ Name        Owner
 component2  somebody
 
 ===== test_component_remove_error_bad_component =====
-ResourceNotFound: Component bad_component does not exist.
+Command failed: Component bad_component does not exist.
 ===== test_ticket_type_list_ok =====
 
 Possible Values
@@ -315,7 +410,7 @@ enhancement
 task
 
 ===== test_ticket_type_change_error_bad_type =====
-ResourceNotFound: ticket_type bad_type does not exist.
+Command failed: ticket_type bad_type does not exist.
 ===== test_ticket_type_change_error_bad_new_name =====
 IntegrityError: columns type, name are not unique
 ===== test_ticket_type_remove_ok =====
@@ -326,7 +421,7 @@ defect
 enhancement
 
 ===== test_ticket_type_remove_error_bad_type =====
-ResourceNotFound: ticket_type bad_type does not exist.
+Command failed: ticket_type bad_type does not exist.
 ===== test_ticket_type_order_down_ok =====
 
 Possible Values
@@ -344,7 +439,7 @@ defect
 task
 
 ===== test_ticket_type_order_error_bad_type =====
-ResourceNotFound: ticket_type bad_type does not exist.
+Command failed: ticket_type bad_type does not exist.
 ===== test_priority_list_ok =====
 
 Possible Values
@@ -400,7 +495,7 @@ minor
 trivial    
 
 ===== test_priority_change_error_bad_priority =====
-ResourceNotFound: priority bad_priority does not exist.
+Command failed: priority bad_priority does not exist.
 ===== test_priority_change_error_bad_new_name =====
 IntegrityError: columns type, name are not unique
 ===== test_priority_remove_ok =====
@@ -413,7 +508,7 @@ minor
 trivial    
 
 ===== test_priority_remove_error_bad_priority =====
-ResourceNotFound: priority bad_priority does not exist.
+Command failed: priority bad_priority does not exist.
 ===== test_priority_order_down_ok =====
 
 Possible Values
@@ -435,7 +530,7 @@ minor
 trivial
 
 ===== test_priority_order_error_bad_priority =====
-ResourceNotFound: priority bad_priority does not exist.
+Command failed: priority bad_priority does not exist.
 ===== test_severity_list_ok =====
 
 Possible Values
@@ -456,7 +551,7 @@ Possible Values
 end-of-the-world
 
 ===== test_severity_change_error_bad_severity =====
-ResourceNotFound: severity bad_severity does not exist.
+Command failed: severity bad_severity does not exist.
 ===== test_severity_change_error_bad_new_name =====
 IntegrityError: columns type, name are not unique
 ===== test_severity_remove_ok =====
@@ -465,7 +560,7 @@ Possible Values
 ---------------
 
 ===== test_severity_remove_error_bad_severity =====
-ResourceNotFound: severity bad_severity does not exist.
+Command failed: severity bad_severity does not exist.
 ===== test_severity_order_down_ok =====
 
 Possible Values
@@ -481,7 +576,7 @@ bar
 foo
 
 ===== test_severity_order_error_bad_severity =====
-ResourceNotFound: severity bad_severity does not exist.
+Command failed: severity bad_severity does not exist.
 ===== test_version_list_ok =====
 
 Name  Time
@@ -507,7 +602,7 @@ Name  Time
 2.0       
 
 ===== test_version_rename_error_bad_version =====
-ResourceNotFound: Version bad_version does not exist.
+Command failed: Version bad_version does not exist.
 ===== test_version_time_ok =====
 
 Name  Time                    
@@ -523,7 +618,7 @@ Name  Time
 1.0                           
 
 ===== test_version_time_error_bad_version =====
-ResourceNotFound: Version bad_version does not exist.
+Command failed: Version bad_version does not exist.
 ===== test_version_remove_ok =====
 
 Name  Time
@@ -531,7 +626,7 @@ Name  Time
 2.0       
 
 ===== test_version_remove_error_bad_version =====
-ResourceNotFound: Version bad_version does not exist.
+Command failed: Version bad_version does not exist.
 ===== test_milestone_list_ok =====
 
 Name        Due  Completed
@@ -573,7 +668,7 @@ milestone3
 milestone4
 
 ===== test_milestone_rename_error_bad_milestone =====
-ResourceNotFound: Milestone bad_milestone does not exist.
+Command failed: Milestone bad_milestone does not exist.
 ===== test_milestone_due_ok =====
 
 Name        Due         Completed
@@ -593,7 +688,7 @@ milestone3
 milestone4
 
 ===== test_milestone_due_error_bad_milestone =====
-ResourceNotFound: Milestone bad_milestone does not exist.
+Command failed: Milestone bad_milestone does not exist.
 ===== test_milestone_completed_ok =====
 
 Name        Due  Completed
@@ -604,7 +699,7 @@ milestone3
 milestone4
 
 ===== test_milestone_completed_error_bad_milestone =====
-ResourceNotFound: Milestone bad_milestone does not exist.
+Command failed: Milestone bad_milestone does not exist.
 ===== test_milestone_remove_ok =====
 
 Name        Due  Completed
@@ -614,7 +709,7 @@ milestone2
 milestone4
 
 ===== test_milestone_remove_error_bad_milestone =====
-ResourceNotFound: Milestone bad_milestone does not exist.
+Command failed: Milestone bad_milestone does not exist.
 ===== test_backslash_use_ok =====
 
 Name  Time

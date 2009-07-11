@@ -25,6 +25,7 @@ from trac.perm import PermissionSystem
 from trac.env import IEnvironmentSetupParticipant
 from trac.config import Configuration
 from trac.ticket.api import ITicketActionController, TicketSystem
+from trac.util.compat import set
 from trac.util.translation import _
 
 # -- Utilities for the ConfigurableTicketWorkflow
@@ -274,8 +275,8 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                                   "please contact your Trac admin)."))
             if len(resolutions) == 1:
                 control.append(tag('as %s' % resolutions[0]))
-                hints.append(_("The resolution will be set to %(name)s",
-                               name=resolutions[0]))
+                hints.append(_("The resolution will be set to %s") %
+                             resolutions[0])
             else:
                 id = 'action_%s_resolve_resolution' % action
                 selected_option = req.args.get(id,
@@ -290,7 +291,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                                                       ticket['status']))
         else:
             if status != '*':
-                hints.append(_("Next status will be '%(name)s'", name=status))
+                hints.append(_("Next status will be '%s'") % status)
         return (this_action['name'], tag(*control), '. '.join(hints))
 
     def get_ticket_changes(self, req, ticket, action):
