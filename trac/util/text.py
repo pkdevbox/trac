@@ -137,14 +137,8 @@ def console_print(out, *args, **kwargs):
     if kwargs.get('newline', True):
         out.write('\n')
 
-def printout(*args, **kwargs):
-    console_print(sys.stdout, *args, **kwargs)
-
-def printerr(*args, **kwargs):
-    console_print(sys.stderr, *args, **kwargs)
-
 def raw_input(prompt):
-    printout(prompt, newline=False)
+    console_print(sys.stdout, prompt, newline=False)
     return to_unicode(__builtin__.raw_input(), sys.stdin.encoding)
 
 # -- Plain text formatting

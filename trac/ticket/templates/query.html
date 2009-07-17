@@ -3,7 +3,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <head>
@@ -25,8 +24,12 @@
   </head>
 
   <body>
+    <py:def function="num_matches(v)">
+      <span class="numrows">(${v or 'No'} match${v != 1 and 'es' or ''})</span>
+    </py:def>
+
     <div id="content" class="query">
-      <h1>$title <span class="numrows">(${ngettext('%(num)s match', '%(num)s matches', query.num_items)})</span></h1>
+      <h1>$title ${num_matches(query.num_items)}</h1>
 
       <div py:if="description" id="description" xml:space="preserve">
         ${wiki_to_html(context(report_resource), description)}
@@ -44,13 +47,13 @@
             <py:for each="field_name in field_names" py:with="field = fields[field_name]">
               <py:for each="constraint_name, constraint in constraints.items()">
                 <tbody py:if="field_name == constraint_name"
-                  py:with="multiline = field.type in ('select', 'text', 'textarea', 'time')">
+                  py:with="multiline = field.type in ('select', 'text', 'textarea')">
                   <py:for each="constraint_idx, constraint_value in enumerate(constraint['values'])">
                     <tr class="${field_name}" py:if="multiline or constraint_idx == 0">
                       <py:choose test="constraint_idx">
                         <py:when test="0">
-                          <th scope="row"><label id="label_${field_name}">$field.label</label></th>
-                          <td py:if="field.type not in ('radio', 'checkbox', 'time')" class="mode">
+                          <th scope="row"><label>$field.label</label></th>
+                          <td py:if="field.type not in ('radio', 'checkbox')" class="mode">
                             <select name="${field_name}_mode">
                               <option py:for="mode in modes[field.type]" value="$mode.value"
                                 selected="${mode.value == constraint.mode and 'selected' or None}">$mode.name
@@ -59,11 +62,11 @@
                           </td>
                         </py:when>
                         <py:otherwise><!--! not the first line of a multiline constraint -->
-                          <th colspan="${field.type == 'time' and 1 or 2}"><label>or</label></th>
+                          <th colspan="2"><label>or</label></th>
                         </py:otherwise>
                       </py:choose>
 
-                      <td class="filter" colspan="${field.type in ('radio', 'checkbox', 'time') and 2 or None}"
+                      <td class="filter" colspan="${field.type in ('radio', 'checkbox') and 2 or None}"
                           py:choose="">
 
                         <py:when test="field.type == 'select'">
@@ -81,30 +84,21 @@
                               value="$option"
                               checked="${any([(value == option) == (constraint.mode == '')
                                               for value in constraint['values']]) and 'checked' or None}" />
-                            <label for="${field_name}_$option" class="control">${option or 'none'}</label>
+                            <label for="${field_name}_$option">${option or 'none'}</label>
                           </py:for>
                         </py:when>
 
                         <py:when test="field.type == 'checkbox'">
                           <input type="radio" id="${field_name}_on" name="$field_name" value="1"
                                  checked="${constraint.mode != '!' or constraint_value == '1' or None}" />
-                          <label for="${field_name}_on" class="control">yes</label>
+                          <label for="${field_name}_on">yes</label>
                           <input type="radio" id="${field_name}_off" name="$field_name" value="0"
                                  checked="${constraint.mode == '!' or constraint_value != '1' or None}" />
-                          <label for="${field_name}_off" class="control">no</label>
+                          <label for="${field_name}_off">no</label>
                         </py:when>
 
                         <py:when test="field.type in ('text', 'textarea')">
                           <input type="text" name="${field_name}" value="$constraint_value" size="42" />
-                        </py:when>
-                        
-                        <py:when test="'time'" py:with="(start, end) = ';' in constraint_value 
-                                                        and constraint_value.split(';', 1)
-                                                        or (constraint_value, '')">
-                          <label>between</label>
-                          <input type="text" name="${field_name}" value="$start" size="14" />
-                          <label>and</label>
-                          <input type="text" name="${field_name}_end" value="$end" size="14" />
                         </py:when>
 
                       </td>
@@ -188,7 +182,7 @@
           <input py:if="report_resource" type="hidden" name="report" value="$report_resource.id" />
           <input type="hidden" name="order" value="$query.order" />
           <input py:if="query.desc" type="hidden" name="desc" value="1" />
-          <input type="submit" name="update" value="${_('Update')}" />
+          <input type="submit" name="update" value="Update" />
         </div>
         <hr />
       </form>
@@ -224,14 +218,14 @@
           <div>
             <input type="hidden" name="action" value="edit" />
             <input type="submit" title="Edit report {$report_resource.id} corresponding to this query"
-            value="${_('Edit query')}" />
+                   value="Edit query" />
           </div>
         </form>
         <form py:if="new or edit" method="get" action="${edit and url_of(report_resource) or href.report()}">
           <div>
             <input type="hidden" name="action" value="${edit and 'edit' or 'new'}" />
             <input type="hidden" name="query" value="${query.to_string()}" />
-            <input type="submit" value="${_('Save query')}"
+            <input type="submit" value="Save query"
                    title="${edit and _('Save updated query in report {%(id)s}',
                                        id=report_resource.id) or
                             _('Create new report from current query')}" />
@@ -241,12 +235,12 @@
           <div>
             <input type="hidden" name="action" value="delete" />
             <input type="submit" title="Delete report {$report_resource.id} corresponding to this query"
-            value="${_('Delete query')}" />
+                   value="Delete query" />
           </div>
         </form>
       </div>
 
-      <div id="help" i18n:msg="">
+      <div id="help">
         <strong>Note:</strong> See <a href="${href.wiki('TracQuery')}">TracQuery</a>
         for help on using queries.
       </div>

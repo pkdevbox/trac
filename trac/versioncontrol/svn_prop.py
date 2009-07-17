@@ -26,7 +26,8 @@ from trac.versioncontrol.svn_fs import _path_within_scope
 from trac.versioncontrol.web_ui.browser import IPropertyRenderer
 from trac.versioncontrol.web_ui.changeset import IPropertyDiffRenderer
 from trac.util import Ranges, to_ranges
-from trac.util.translation import _, tag_
+from trac.util.compat import set
+from trac.util.translation import _
 
 
 class SubversionPropertyRenderer(Component):
@@ -307,5 +308,5 @@ class SubversionMergePropertyDiffRenderer(Component):
                  for spath, src in removed_sources]), class_='props')
         else:
             changes = tag.em(_(' (with no actual effect on merging)'))
-        return tag.li(tag_('Property %(prop)s changed', prop=tag.strong(name)),
+        return tag.li(tag('Property ', tag.strong(name), ' changed'),
                       changes)

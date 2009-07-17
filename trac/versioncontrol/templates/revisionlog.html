@@ -3,7 +3,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <xi:include href="macros.html" />
@@ -62,7 +61,7 @@
           </label>
         </div>
         <div class="buttons">
-          <input type="submit" value="${_('Update')}" />
+          <input type="submit" value="Update" />
         </div>
       </form>
 
@@ -82,8 +81,8 @@
 
       <form  class="printableform" action="${href.changeset()}" method="get">
         <div class="buttons">
-          <input type="submit" value="${_('View changes')}"
-            title="${_('Diff from Old Revision to New Revision (select them below)')}" />
+          <input type="submit" value="View changes"
+            title="Diff from Old Revision to New Revision (select them below)" />
         </div>
         <table id="chglist" class="listing">
           <thead>
@@ -168,12 +167,12 @@
         </table>
 
         <div py:if="len(items) &gt; 10" class="buttons">
-          <input type="submit" value="${_('View changes')}"
-            title="${_('Diff from Old Revision to New Revision (select them above)')}" />
+          <input type="submit" value="View changes"
+            title="Diff from Old Revision to New Revision (select them above)" />
         </div>
       </form>
 
-      <div id="help" i18n:msg="">
+      <div id="help">
         <strong>Note:</strong> See <a href="${href.wiki('TracRevisionLog')}">TracRevisionLog</a>
         for help on using the revision log.
       </div>

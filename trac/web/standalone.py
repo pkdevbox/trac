@@ -167,8 +167,8 @@ def main():
                       help='the host name or IP address to bind to')
     parser.add_option('--protocol', action='callback', type="string",
                       dest='protocol', callback=_validate_callback,
-                      callback_args=(('http', 'scgi', 'ajp', 'fcgi'),),
-                      help='http|scgi|ajp|fcgi')
+                      callback_args=(('http', 'scgi', 'ajp'),),
+                      help='http|scgi|ajp')
     parser.add_option('-q', '--unquote', action='store_true',
                       dest='unquote',
                       help='unquote PATH_INFO (may be needed when using ajp)')
@@ -226,7 +226,6 @@ def main():
             'http': 80,
             'scgi': 4000,
             'ajp': 8009,
-            'fcgi': 8000,
         }[options.protocol]
     server_address = (options.hostname, options.port)
 
@@ -266,7 +265,7 @@ def main():
             if options.http11:
                 print 'Using HTTP/1.1 protocol version'
             httpd.serve_forever()
-    elif options.protocol in ('scgi', 'ajp', 'fcgi'):
+    elif options.protocol in ('scgi', 'ajp'):
         def serve():
             server_cls = __import__('flup.server.%s' % options.protocol,
                                     None, None, ['']).WSGIServer

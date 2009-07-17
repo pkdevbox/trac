@@ -616,8 +616,7 @@ class NotificationTestCase(unittest.TestCase):
                 # note project title / URL are not validated yet
 
         # ticket properties which are not expected in the banner
-        xlist = ['summary', 'description', 'link', 'comment', 'new',
-                 'time', 'changetime']
+        xlist = ['summary', 'description', 'link', 'comment', 'new']
         # check banner content (field exists, msg value matches ticket value)
         for p in [prop for prop in ticket.values.keys() if prop not in xlist]:
             self.failIf(not props.has_key(p))

@@ -16,15 +16,19 @@
 
 import re
 from datetime import datetime
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
 
 from genshi.builder import tag
 
-from trac.cache import cached, cached_value
 from trac.config import *
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionCache, PermissionSystem
 from trac.resource import IResourceManager
 from trac.util import Ranges
+from trac.util.compat import set, sorted
 from trac.util.datefmt import utc
 from trac.util.text import shorten_line, obfuscate_email_address
 from trac.util.translation import _
@@ -154,9 +158,13 @@ class TicketSystem(Component):
         [TracTickets#Assign-toasDrop-DownList Assign-to as Drop-Down List]
         (''since 0.9'').""")
 
+    _fields = None
+    _custom_fields = None
+
     def __init__(self):
         self.log.debug('action controllers for ticket workflow: %r' % 
                 [c.__class__.__name__ for c in self.action_controllers])
+        self._fields_lock = threading.RLock()
 
     # Public API
 
@@ -185,17 +193,29 @@ class TicketSystem(Component):
 
     def get_ticket_fields(self):
         """Returns the list of fields available for tickets."""
-        return [f.copy() for f in self.fields.get()]
+        # This is now cached - as it makes quite a number of things faster,
+        # e.g. #6436
+        if self._fields is None:
+            self._fields_lock.acquire()
+            try:
+                if self._fields is None: # double-check (race after 1st check)
+                    self._fields = self._get_ticket_fields()
+            finally:
+                self._fields_lock.release()
+        return [f.copy() for f in self._fields]
 
-    def reset_ticket_fields(self, db=None):
-        """Invalidate ticket field cache."""
-        self.fields.invalidate(db)
+    def reset_ticket_fields(self):
+        self._fields_lock.acquire()
+        try:
+            self._fields = None
+            self.config.touch() # brute force approach for now
+        finally:
+            self._fields_lock.release()
 
-    @cached
-    def fields(self, db):
-        """Return the list of fields available for tickets."""
+    def _get_ticket_fields(self):
         from trac.ticket import model
 
+        db = self.env.get_db_cnx()
         fields = []
 
         # Basic text fields
@@ -211,7 +231,7 @@ class TicketSystem(Component):
 
         # Description
         fields.append({'name': 'description', 'type': 'textarea',
-                       'label': _('Description')})
+                       'label': 'Description'})
 
         # Default select and radio fields
         selects = [('type', model.Type),
@@ -243,12 +263,6 @@ class TicketSystem(Component):
             field = {'name': name, 'type': 'text', 'label': name.title()}
             fields.append(field)
 
-        # Date/time fields
-        fields.append({'name': 'time', 'type': 'time',
-                       'label': _('Created')})
-        fields.append({'name': 'changetime', 'type': 'time',
-                       'label': _('Modified')})
-
         for field in self.get_custom_fields():
             if field['name'] in [f['name'] for f in fields]:
                 self.log.warning('Duplicate field name "%s" (ignoring)',
@@ -272,11 +286,16 @@ class TicketSystem(Component):
                             'comment']
 
     def get_custom_fields(self):
-        return [f.copy() for f in self.custom_fields]
+        if self._custom_fields is None:
+            self._fields_lock.acquire()
+            try:
+                if self._custom_fields is None: # double-check
+                    self._custom_fields = self._get_custom_fields()
+            finally:
+                self._fields_lock.release()
+        return [f.copy() for f in self._custom_fields]
 
-    @cached_value
-    def custom_fields(self, db):
-        """Return the list of custom ticket fields available for tickets."""
+    def _get_custom_fields(self):
         fields = []
         config = self.config['ticket-custom']
         for name in [option for option, value in config.options()
@@ -303,11 +322,6 @@ class TicketSystem(Component):
 
         fields.sort(lambda x, y: cmp(x['order'], y['order']))
         return fields
-
-    def get_field_synonyms(self):
-        """Return a mapping from field name synonyms to field names.
-        The synonyms are supposed to be more intuitive for custom queries."""
-        return {'created': 'time', 'modified': 'changetime'}
 
     def eventually_restrict_owner(self, field, ticket=None):
         """Restrict given owner field to be a list of users having

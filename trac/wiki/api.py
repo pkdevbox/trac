@@ -16,16 +16,21 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
+import time
 import urllib
 import re
 from StringIO import StringIO
 
 from genshi.builder import tag
 
-from trac.cache import cached
 from trac.config import BoolOption
 from trac.core import *
 from trac.resource import IResourceManager
+from trac.util import reversed
 from trac.util.html import html
 from trac.util.translation import _
 from trac.wiki.parser import WikiParser
@@ -154,11 +159,13 @@ def parse_args(args, strict=True):
 class WikiSystem(Component):
     """Represents the wiki system."""
 
-    implements(IWikiSyntaxProvider, IResourceManager)
+    implements(IWikiChangeListener, IWikiSyntaxProvider, IResourceManager)
 
     change_listeners = ExtensionPoint(IWikiChangeListener)
     macro_providers = ExtensionPoint(IWikiMacroProvider)
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
+
+    INDEX_UPDATE_INTERVAL = 5 # seconds
 
     ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
         """Enable/disable highlighting CamelCase links to missing pages
@@ -176,12 +183,26 @@ class WikiSystem(Component):
         For public sites where anonymous users can edit the wiki it is
         recommended to leave this option disabled (which is the default).""")
 
-    @cached
-    def pages(self, db):
-        """Return the names of all existing wiki pages."""
-        cursor = db.cursor()
-        cursor.execute("SELECT DISTINCT name FROM wiki")
-        return [name for (name,) in cursor]
+    def __init__(self):
+        self._index = None
+        self._last_index_update = 0
+        self._index_lock = threading.RLock()
+
+    def _update_index(self):
+        self._index_lock.acquire()
+        try:
+            now = time.time()
+            if now > self._last_index_update + WikiSystem.INDEX_UPDATE_INTERVAL:
+                self.log.debug('Updating wiki page index')
+                db = self.env.get_db_cnx()
+                cursor = db.cursor()
+                cursor.execute("SELECT DISTINCT name FROM wiki")
+                self._index = {}
+                for (name,) in cursor:
+                    self._index[name] = True
+                self._last_index_update = now
+        finally:
+            self._index_lock.release()
 
     # Public API
 
@@ -191,13 +212,35 @@ class WikiSystem(Component):
         If the `prefix` parameter is given, only names that start with that
         prefix are included.
         """
-        for page in self.pages.get():
+        self._update_index()
+        # Note: use of keys() is intentional since iterkeys() is prone to
+        # errors with concurrent modification
+        for page in self._index.keys():
             if not prefix or page.startswith(prefix):
                 yield page
 
     def has_page(self, pagename):
         """Whether a page with the specified name exists."""
-        return pagename.rstrip('/') in self.pages.get()
+        self._update_index()
+        return self._index.has_key(pagename.rstrip('/'))
+
+    # IWikiChangeListener methods
+
+    def wiki_page_added(self, page):
+        if not self.has_page(page.name):
+            self.log.debug('Adding page %s to index' % page.name)
+            self._index[page.name] = True
+
+    def wiki_page_changed(self, page, version, t, comment, author, ipnr):
+        pass
+
+    def wiki_page_deleted(self, page):
+        if self.has_page(page.name):
+            self.log.debug('Removing page %s from index' % page.name)
+            del self._index[page.name]
+
+    def wiki_page_version_deleted(self, page):
+        pass
 
     # IWikiSyntaxProvider methods
 
@@ -265,22 +308,7 @@ class WikiSystem(Component):
             pagename, version = pagename.split('@', 1)
         if version and query:
             query = '&' + query[1:]
-        pagename = pagename.rstrip('/') or 'WikiStart'
-        if formatter.resource and formatter.resource.realm == 'wiki' \
-                              and not pagename.startswith('/'):
-            prefix = formatter.resource.id
-            if '/' in prefix:
-                while '/' in prefix:
-                    prefix = prefix.rsplit('/', 1)[0]
-                    name = prefix + '/' + pagename
-                    if self.has_page(name):
-                        pagename = name
-                        break
-                else:
-                    if not self.has_page(pagename):
-                        pagename = formatter.resource.id.rsplit('/', 1)[0] \
-                                   + '/' + pagename
-        pagename = pagename.lstrip('/')
+        pagename = pagename.strip('/') or 'WikiStart'
         if 'WIKI_VIEW' in formatter.perm('wiki', pagename, version):
             href = formatter.href.wiki(pagename, version=version) + query \
                    + fragment
