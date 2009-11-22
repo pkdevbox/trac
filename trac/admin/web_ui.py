@@ -33,8 +33,8 @@ from trac.util.compat import partial
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
 from trac.web import HTTPNotFound, IRequestHandler
-from trac.web.chrome import add_notice, add_stylesheet, \
-                            add_warning, INavigationContributor, \
+from trac.web.chrome import add_notice, add_script, add_stylesheet, \
+                            add_warning, Chrome, INavigationContributor, \
                             ITemplateProvider
 
 try:
@@ -84,11 +84,7 @@ class AdminModule(Component):
             raise HTTPNotFound(_('No administration panels available'))
 
         def _panel_order(p1, p2):
-            if p1[::2] == ('general', 'basics'):
-                return -1
-            elif p2[::2] == ('general', 'basics'):
-                return 1
-            elif p1[0] == 'general':
+            if p1[0] == 'general':
                 if p2[0] == 'general':
                     return cmp(p1[1:], p2[1:])
                 return -1

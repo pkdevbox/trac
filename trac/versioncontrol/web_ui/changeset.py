@@ -19,11 +19,11 @@
 #         Christian Boos <cboos@neuf.fr>
 
 from datetime import datetime
-from itertools import groupby
 import os
 import posixpath
 import re
 from StringIO import StringIO
+import time
 
 from genshi.builder import tag
 
@@ -35,7 +35,7 @@ from trac.resource import Resource, ResourceNotFound
 from trac.search import ISearchSource, search_to_sql, shorten_result
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import embedded_numbers, content_disposition
-from trac.util.compat import any
+from trac.util.compat import any, sorted, groupby
 from trac.util.datefmt import pretty_timedelta, utc
 from trac.util.text import exception_to_unicode, unicode_urlencode, \
                            shorten_line, CRLF
@@ -337,9 +337,9 @@ class ChangesetModule(Component):
         add_stylesheet(req, 'common/css/code.css')
         if chgset:
             if restricted:
-                prevnext_nav(req, _('Previous Change'), _('Next Change'))
+                prevnext_nav(req, _('Change'))
             else:
-                prevnext_nav(req, _('Previous Changeset'), _('Next Changeset'))
+                prevnext_nav(req, _('Changeset'))
         else:
             rev_href = req.href.changeset(old, old_path, old=new, 
                                           old_path=new_path)
@@ -708,6 +708,7 @@ class ChangesetModule(Component):
 
     def _render_zip(self, req, filename, repos, data):
         """ZIP archive with all the added and/or modified files."""
+        new_rev = data['new_rev']
         req.send_response(200)
         req.send_header('Content-Type', 'application/zip')
         req.send_header('Content-Disposition',
@@ -759,7 +760,8 @@ class ChangesetModule(Component):
             quality = renderer.match_property_diff(name)
             if quality > 0:
                 candidates.append((quality, renderer))
-        candidates.sort(reverse=True)
+        candidates.sort()
+        candidates.reverse()
         for (quality, renderer) in candidates:
             try:
                 return renderer.render_property_diff(name, old_node, old_props,

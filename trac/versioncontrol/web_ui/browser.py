@@ -18,16 +18,18 @@
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
 import re
+import os
+import urllib
 
 from genshi.builder import tag
 
 from trac.config import ListOption, BoolOption, Option
 from trac.core import *
-from trac.mimeview.api import Mimeview, is_binary, \
+from trac.mimeview.api import Mimeview, is_binary, get_mimetype, \
                               IHTMLPreviewAnnotator, Context
 from trac.perm import IPermissionRequestor
-from trac.resource import ResourceNotFound
-from trac.util import embedded_numbers
+from trac.resource import ResourceNotFound, Resource
+from trac.util import sorted, embedded_numbers
 from trac.util.datefmt import http_date, utc
 from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
@@ -37,7 +39,7 @@ from trac.web.chrome import add_ctxtnav, add_link, add_script, add_stylesheet, \
                             prevnext_nav, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import format_to_html, format_to_oneliner
-from trac.versioncontrol.api import NoSuchChangeset
+from trac.versioncontrol.api import NoSuchChangeset, NoSuchNode
 from trac.versioncontrol.web_ui.util import *
 
 
@@ -194,7 +196,7 @@ class BrowserModule(Component):
         blue is older, red is newer.
         (''since 0.11'')""")
 
-    NEWEST_COLOR = (255, 136, 136)
+    NEWEST_COLOR = (255,136,136)
 
     newest_color = Option('browser', 'newest_color', repr(NEWEST_COLOR),
         doc="""(r,g,b) color triple to use for the color corresponding
@@ -202,7 +204,7 @@ class BrowserModule(Component):
         the browser ''age'' column if `color_scale` is enabled.
         (''since 0.11'')""")
 
-    OLDEST_COLOR = (136, 136, 255)
+    OLDEST_COLOR = (136,136,255)
 
     oldest_color = Option('browser', 'oldest_color', repr(OLDEST_COLOR),
         doc="""(r,g,b) color triple to use for the color corresponding
@@ -249,7 +251,7 @@ class BrowserModule(Component):
         def interpolate(old, new, value):
             # Provides a linearly interpolated color triple for `value`
             # which must be a floating point value between 0.0 and 1.0
-            return tuple([int(b + (a - b) * value) for a, b in zip(new, old)])
+            return tuple([int(b+(a-b)*value) for a,b in zip(new,old)])
 
         def parse_color(rgb, default):
             # Get three ints out of a `rgb` string or return `default`
@@ -268,7 +270,7 @@ class BrowserModule(Component):
         if intermediate:
             intermediate_color = parse_color(self.intermediate_color, None)
             if not intermediate_color:
-                intermediate_color = tuple([(a + b) / 2 for a, b in
+                intermediate_color = tuple([(a+b)/2 for a,b in
                                             zip(newest_color, oldest_color)])
             def colorizer(value):
                 if value <= intermediate:
@@ -342,6 +344,8 @@ class BrowserModule(Component):
         context = Context.from_request(req, 'source', path, rev_or_latest)
 
         path_links = get_path_links(req.href, path, rev, order, desc)
+        if len(path_links) > 1:
+            add_link(req, 'up', path_links[-2]['href'], _('Parent directory'))
 
         data = {
             'context': context,
@@ -363,27 +367,6 @@ class BrowserModule(Component):
             return 'dir_entries.html', data, None
 
         # Links for contextual navigation
-        if node.isfile:
-            prev_rev = repos.previous_rev(rev=node.rev,
-                                          path=node.created_path)
-            if prev_rev:
-                href = req.href.browser(node.created_path, rev=prev_rev)
-                add_link(req, 'prev', href,
-                         _('Revision %(num)s', num=prev_rev))
-            if rev is not None:
-                add_link(req, 'up', req.href.browser(node.created_path))
-            next_rev = repos.next_rev(rev=node.rev,
-                                      path=node.created_path)
-            if next_rev:
-                href = req.href.browser(node.created_path, rev=next_rev)
-                add_link(req, 'next', href,
-                         _('Revision %(num)s', num=next_rev))
-            prevnext_nav(req, _('Previous Revision'), _('Next Revision'),
-                         _('Latest Revision'))
-        else:
-            if len(path_links) > 1:
-                add_link(req, 'up', path_links[-2]['href'],
-                         _('Parent directory'))
         add_ctxtnav(req, tag.a(_('Last Change'), 
                     href=req.href.changeset(node.rev, node.created_path)))
         if node.isfile:
@@ -571,7 +554,8 @@ class BrowserModule(Component):
             quality = renderer.match_property(name, mode)
             if quality > 0:
                 candidates.append((quality, renderer))
-        candidates.sort(reverse=True)
+        candidates.sort()
+        candidates.reverse()
         for (quality, renderer) in candidates:
             try:
                 rendered = renderer.render_property(name, mode, context, props)
@@ -620,7 +604,7 @@ class BrowserModule(Component):
             path, rev = export.split('@', 1)
         else:
             rev, path = self.env.get_repository().youngest_rev, export
-        return tag.a(label, class_='export',
+        return tag.a(label, class_='source',
                      href=formatter.href.export(rev, path) + fragment)
 
     def _format_browser_link(self, formatter, ns, path, label):

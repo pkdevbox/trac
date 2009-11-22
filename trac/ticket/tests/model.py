@@ -2,7 +2,7 @@ from trac import core
 from trac.core import TracError, implements
 from trac.resource import ResourceNotFound
 from trac.ticket.model import Ticket, Component, Milestone, Priority, Type, Version
-from trac.ticket.api import IMilestoneChangeListener, ITicketChangeListener
+from trac.ticket.api import ITicketChangeListener
 from trac.test import EnvironmentStub
 from trac.util.datefmt import utc, to_timestamp
 
@@ -43,7 +43,7 @@ class TicketTestCase(unittest.TestCase):
     def _insert_ticket(self, summary, **kw):
         """Helper for inserting a ticket into the database"""
         ticket = Ticket(self.env)
-        for k, v in kw.items():
+        for k,v in kw.items():
             ticket[k] = v
         return ticket.insert()
 
@@ -115,13 +115,6 @@ class TicketTestCase(unittest.TestCase):
         log = ticket3.get_changelog()
         self.assertEqual(len(log), 0)
         self.assertRaises(TracError, Ticket, self.env, 1)
-
-    def test_ticket_id_is_always_int(self):
-        ticket_id = self._insert_ticket('Foo')
-        self.assertEqual(ticket_id, int(ticket_id))
-        ticket = Ticket(self.env, str(ticket_id))
-        self.assertEqual(ticket_id, ticket.id)
-        self.assertEqual(ticket.resource.id, ticket_id)
 
     def test_ticket_default_values(self):
         """
@@ -287,31 +280,6 @@ class TicketTestCase(unittest.TestCase):
                 self.fail('Unexpected change (%s)'
                           % ((t, author, field, old, new),))
 
-    def test_changelog_with_attachment(self):
-        """Verify ordering of attachments and comments in the changelog."""
-        tkt_id = self._insert_ticket('Test', reporter='joe', component='foo')
-        ticket = Ticket(self.env, tkt_id)
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        ticket.save_changes('jane', 'Testing', t1)
-        t2 = datetime(2001, 1, 1, 1, 1, 2, 0, utc)
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO attachment (type,id,filename,size,time,"
-                       "                        description,author,ipnr) "
-                       "VALUES ('ticket',%s,'file.txt',1234,%s,"
-                       "        'My file','mark','')",
-                       (str(tkt_id), to_timestamp(t2)))
-        db.commit()
-        t3 = datetime(2001, 1, 1, 1, 1, 3, 0, utc)
-        ticket.save_changes('jim', 'Other', t3)
-        log = ticket.get_changelog()
-        self.assertEqual(4, len(log))
-        self.assertEqual((t1, 'jane', 'comment', '', 'Testing', True), log[0])
-        self.assertEqual([(t2, 'mark', 'attachment', '', 'file.txt', False),
-                          (t2, 'mark', 'comment', '', 'My file', False)],
-                          sorted(log[1:3]))
-        self.assertEqual((t3, 'jim', 'comment', '', 'Other', True), log[3])
-
     def test_changelog_with_reverted_change(self):
         tkt_id = self._insert_ticket('Test', reporter='joe', component='foo')
         ticket = Ticket(self.env, tkt_id)
@@ -413,23 +381,6 @@ class EnumTestCase(unittest.TestCase):
         Type(self.env, 'foo')
 
 
-class TestMilestoneChangeListener(core.Component):
-    implements(IMilestoneChangeListener)
-
-    def milestone_created(self, milestone):
-        self.action = 'created'
-        self.milestone = milestone
-
-    def milestone_changed(self, milestone, old_values):
-        self.action = 'changed'
-        self.milestone = milestone
-        self.old_values = old_values
-        
-    def milestone_deleted(self, milestone):
-        self.action = 'deleted'
-        self.milestone = milestone
-
-
 class MilestoneTestCase(unittest.TestCase):
 
     def setUp(self):
@@ -438,12 +389,6 @@ class MilestoneTestCase(unittest.TestCase):
 
     def tearDown(self):
         self.env.reset_db()
-
-    def _create_milestone(self, **values):
-        milestone = Milestone(self.env)
-        for k, v in values.iteritems():
-            setattr(milestone, k, v)
-        return milestone
 
     def test_new_milestone(self):
         milestone = Milestone(self.env)
@@ -496,7 +441,7 @@ class MilestoneTestCase(unittest.TestCase):
 
     def test_create_milestone_without_name(self):
         milestone = Milestone(self.env)
-        self.assertRaises(TracError, milestone.insert)
+        self.assertRaises(AssertionError, milestone.insert)
 
     def test_delete_milestone(self):
         cursor = self.db.cursor()
@@ -505,7 +450,6 @@ class MilestoneTestCase(unittest.TestCase):
 
         milestone = Milestone(self.env, 'Test')
         milestone.delete()
-        self.assertEqual(False, milestone.exists)
 
         cursor = self.db.cursor()
         cursor.execute("SELECT * FROM milestone WHERE name='Test'")
@@ -525,7 +469,6 @@ class MilestoneTestCase(unittest.TestCase):
 
         milestone = Milestone(self.env, 'Test')
         milestone.delete(retarget_to='Other')
-        self.assertEqual(False, milestone.exists)
 
         self.assertEqual('Other', Ticket(self.env, tkt1.id)['milestone'])
         self.assertEqual('Other', Ticket(self.env, tkt2.id)['milestone'])
@@ -536,8 +479,8 @@ class MilestoneTestCase(unittest.TestCase):
         cursor.close()
 
         milestone = Milestone(self.env, 'Test')
-        t1 = datetime(2001, 01, 01, tzinfo=utc)
-        t2 = datetime(2002, 02, 02, tzinfo=utc)
+        t1 = datetime(2001,01,01, tzinfo=utc)
+        t2 = datetime(2002,02,02, tzinfo=utc)
         milestone.due = t1
         milestone.completed = t2
         milestone.description = 'Foo bar'
@@ -555,7 +498,7 @@ class MilestoneTestCase(unittest.TestCase):
 
         milestone = Milestone(self.env, 'Test')
         milestone.name = None
-        self.assertRaises(TracError, milestone.update)
+        self.assertRaises(AssertionError, milestone.update)
 
     def test_update_milestone_update_tickets(self):
         cursor = self.db.cursor()
@@ -587,43 +530,6 @@ class MilestoneTestCase(unittest.TestCase):
         assert milestones[0].exists
         self.assertEqual('2.0', milestones[1].name)
         assert milestones[1].exists
-
-    def test_change_listener_created(self):
-        listener = TestMilestoneChangeListener(self.env)
-        milestone = self._create_milestone(name='Milestone 1')
-        milestone.insert()
-        self.assertEqual('created', listener.action)
-        self.assertEqual(milestone, listener.milestone)
-
-    def test_change_listener_changed(self):
-        listener = TestMilestoneChangeListener(self.env)
-        milestone = self._create_milestone(
-            name='Milestone 1',
-            due=datetime(2001, 01, 01, tzinfo=utc),
-            description='The milestone description')
-        milestone.insert()
-        
-        milestone.name = 'Milestone 2'
-        milestone.completed = datetime(2001, 02, 03, tzinfo=utc)
-        milestone.description = 'The changed description'
-        milestone.update()
-        
-        self.assertEqual('changed', listener.action)
-        self.assertEqual(milestone, listener.milestone)
-        self.assertEqual({'name': 'Milestone 1', 'completed': None,
-                          'description': 'The milestone description'},
-                         listener.old_values)
-
-    def test_change_listener_deleted(self):
-        listener = TestMilestoneChangeListener(self.env)
-        milestone = self._create_milestone(name='Milestone 1')
-        milestone.insert()
-        self.assertEqual(True, milestone.exists)
-        milestone.delete()
-        self.assertEqual('Milestone 1', milestone.name)
-        self.assertEqual(False, milestone.exists)
-        self.assertEqual('deleted', listener.action)
-        self.assertEqual(milestone, listener.milestone)
 
 
 class ComponentTestCase(unittest.TestCase):

@@ -25,7 +25,7 @@ except ImportError:
 from trac.config import Option
 from trac.core import *
 from trac.perm import PermissionError
-from trac.resource import IResourceManager, ResourceNotFound
+from trac.resource import IResourceManager, ResourceSystem, ResourceNotFound
 from trac.util.text import to_unicode
 from trac.util.translation import _
 from trac.web.api import IRequestFilter
@@ -91,8 +91,8 @@ class RepositoryManager(Component):
                           
         return handler
 
-    def post_process_request(self, req, template, data, content_type):
-        return (template, data, content_type)
+    def post_process_request(self, req, template, content_type):
+        return (template, content_type)
 
     # IResourceManager methods
 

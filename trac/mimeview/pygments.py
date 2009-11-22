@@ -21,7 +21,7 @@ from trac.core import *
 from trac.config import ListOption, Option
 from trac.mimeview.api import IHTMLPreviewRenderer, Mimeview
 from trac.prefs import IPreferencePanelProvider
-from trac.util import get_pkginfo
+from trac.util import get_module_path, get_pkginfo
 from trac.util.datefmt import http_date, localtz
 from trac.util.translation import _
 from trac.web import IRequestHandler
@@ -87,7 +87,7 @@ class PygmentsRenderer(Component):
         # if installed from source, fallback to the hardcoded version info
         if not version and hasattr(pygments, '__version__'):
             version = pygments.__version__
-        self.env.systeminfo.append(('Pygments', version))
+        self.env.systeminfo.append(('Pygments',version))
                                         
         self._types = None
 
@@ -120,7 +120,7 @@ class PygmentsRenderer(Component):
     # IPreferencePanelProvider implementation
 
     def get_preference_panels(self, req):
-        yield ('pygments', _('Syntax Highlighting'))
+        yield ('pygments', _('Pygments Theme'))
 
     def render_preference_panel(self, req, panel):
         styles = list(get_all_styles())

@@ -18,7 +18,7 @@
 from StringIO import StringIO
 from datetime import datetime
 import re
-from time import time
+from time import localtime, strftime, time
 
 from genshi.builder import tag
 
@@ -30,16 +30,17 @@ from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import *
 from trac.search import ISearchSource, search_to_sql, shorten_result
+from trac.util.compat import set, sorted
 from trac.util.datefmt import parse_date, utc, to_timestamp, to_datetime, \
                               get_date_format_hint, get_datetime_format_hint, \
                               format_date, format_datetime
-from trac.util.text import CRLF
+from trac.util.text import shorten_line, CRLF, to_unicode
 from trac.util.translation import _
 from trac.ticket import Milestone, Ticket, TicketSystem, group_milestones
-from trac.ticket.query import QueryModule
+from trac.ticket.query import Query, QueryModule
 from trac.timeline.api import ITimelineEventProvider
 from trac.web import IRequestHandler, RequestDone
-from trac.web.chrome import add_link, add_notice, add_script, add_stylesheet, \
+from trac.web.chrome import add_link, add_notice, add_stylesheet, \
                             add_warning, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import format_to
@@ -326,6 +327,7 @@ class RoadmapModule(Component):
         return req.path_info == '/roadmap'
 
     def process_request(self, req):
+        milestone_realm = Resource('milestone')
         req.perm.require('MILESTONE_VIEW')
 
         showall = req.args.get('show') == 'all'
@@ -364,7 +366,6 @@ class RoadmapModule(Component):
             'queries': queries,
             'showall': showall,
         }
-        add_stylesheet(req, 'common/css/roadmap.css')
         return 'roadmap.html', data, None
 
     # Internal methods
@@ -390,8 +391,7 @@ class RoadmapModule(Component):
             elif status == 'assigned' or status == 'reopened':
                 return 'IN-PROCESS'
             elif status == 'closed':
-                if ticket['resolution'] == 'fixed':
-                    return 'COMPLETED'
+                if ticket['resolution'] == 'fixed': return 'COMPLETED'
                 else: return 'CANCELLED'
             else: return ''
 
@@ -404,8 +404,7 @@ class RoadmapModule(Component):
                  + ':' + escape_value(value)
             firstline = 1
             while text:
-                if not firstline:
-                    text = ' ' + text
+                if not firstline: text = ' ' + text
                 else: firstline = 0
                 buf.write(text[:75] + CRLF)
                 text = text[75:]
@@ -427,7 +426,7 @@ class RoadmapModule(Component):
                    % __version__)
         write_prop('METHOD', 'PUBLISH')
         write_prop('X-WR-CALNAME',
-                   self.env.project_name + ' - ' + _('Roadmap'))
+                   self.config.get('project', 'name') + ' - ' + _('Roadmap'))
         for milestone in milestones:
             uid = '<%s/milestone/%s@%s>' % (req.base_path, milestone.name,
                                             host)
@@ -436,8 +435,9 @@ class RoadmapModule(Component):
                 write_prop('UID', uid)
                 write_utctime('DTSTAMP', milestone.due)
                 write_date('DTSTART', milestone.due)
-                write_prop('SUMMARY', _('Milestone %(name)s',
-                                        name=milestone.name))
+                write_prop('SUMMARY', _('Milestone %(name)s') % {
+                    'name': milestone.name
+                })
                 write_prop('URL', req.base_url + '/milestone/' +
                            milestone.name)
                 if milestone.description:
@@ -455,9 +455,9 @@ class RoadmapModule(Component):
                 if milestone.due:
                     write_prop('RELATED-TO', uid)
                     write_date('DUE', milestone.due)
-                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s',
-                                        num=ticket.id,
-                                        summary=ticket['summary']))
+                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s') % {
+                    'num': ticket.id, 'summary': ticket['summary']
+                })
                 write_prop('URL', req.abs_href.ticket(ticket.id))
                 write_prop('DESCRIPTION', ticket['description'])
                 priority = get_priority(ticket)
@@ -517,7 +517,7 @@ class MilestoneModule(Component):
 
     def get_timeline_filters(self, req):
         if 'MILESTONE_VIEW' in req.perm:
-            yield ('milestone', _('Milestones reached'))
+            yield ('milestone', _('Milestones'))
 
     def get_timeline_events(self, req, start, stop, filters):
         if 'milestone' in filters:
@@ -565,15 +565,8 @@ class MilestoneModule(Component):
         add_link(req, 'up', req.href.roadmap(), _('Roadmap'))
 
         db = self.env.get_db_cnx() # TODO: db can be removed
+        milestone = Milestone(self.env, milestone_id, db)
         action = req.args.get('action', 'view')
-        try:
-            milestone = Milestone(self.env, milestone_id, db)
-        except ResourceNotFound:
-            if 'MILESTONE_CREATE' not in req.perm('milestone', milestone_id):
-                raise
-            milestone = Milestone(self.env, None, db)
-            milestone.name = milestone_id
-            action = 'edit' # rather than 'new' so that it works for POST/save
 
         if req.method == 'POST':
             if req.args.has_key('cancel'):
@@ -635,22 +628,20 @@ class MilestoneModule(Component):
             warnings.append(msg)
 
         # -- check the name
-        # If the name has changed, check that the milestone doesn't already
-        # exist
-        # FIXME: the whole .exists business needs to be clarified
-        #        (#4130) and should behave like a WikiPage does in
-        #        this respect.
-        try:
-            new_milestone = Milestone(self.env, new_name, db)
-            if new_milestone.name == old_name:
-                pass        # Creation or no name change
-            elif new_milestone.name:
-                warn(_('Milestone "%(name)s" already exists, please '
-                       'choose another name.', name=new_milestone.name))
-            else:
-                warn(_('You must provide a name for the milestone.'))
-        except ResourceNotFound:
-            pass
+        if new_name:
+            if new_name != old_name:
+                # check that the milestone doesn't already exists
+                # FIXME: the whole .exists business needs to be clarified
+                #        (#4130) and should behave like a WikiPage does in
+                #        this respect.
+                try:
+                    other_milestone = Milestone(self.env, new_name, db)
+                    warn(_('Milestone "%(name)s" already exists, please '
+                           'choose another name', name=new_name))
+                except ResourceNotFound:
+                    pass
+        else:
+            warn(_('You must provide a name for the milestone.'))
 
         # -- check completed date
         if 'completed' in req.args:
@@ -791,8 +782,6 @@ class MilestoneModule(Component):
                     percent = float(gstat.count) / float(max_count) * 100
                 gs_dict['percent_of_max_total'] = percent
 
-        add_stylesheet(req, 'common/css/roadmap.css')
-        add_script(req, 'common/js/folding.js')
         return 'milestone_view.html', data, None
 
     # IWikiSyntaxProvider methods

@@ -25,7 +25,7 @@ from trac.perm import PermissionSystem
 from trac.env import IEnvironmentSetupParticipant
 from trac.config import Configuration
 from trac.ticket.api import ITicketActionController, TicketSystem
-from trac.ticket.model import Resolution
+from trac.util.compat import set
 from trac.util.translation import _
 
 # -- Utilities for the ConfigurableTicketWorkflow
@@ -171,30 +171,29 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
         # once and get really confused.
         status = ticket._old.get('status', ticket['status']) or 'new'
 
-        ticket_perm = req.perm(ticket.resource)
         allowed_actions = []
         for action_name, action_info in self.actions.items():
             oldstates = action_info['oldstates']
             if oldstates == ['*'] or status in oldstates:
                 # This action is valid in this state.  Check permissions.
+                allowed = 0
                 required_perms = action_info['permissions']
-                if self._is_action_allowed(ticket_perm, required_perms):
+                if required_perms:
+                    for permission in required_perms:
+                        if permission in req.perm(ticket.resource):
+                            allowed = 1
+                            break
+                else:
+                    allowed = 1
+                if allowed:
                     allowed_actions.append((action_info['default'],
                                             action_name))
         if not (status in ['new', 'closed'] or \
                     status in TicketSystem(self.env).get_all_status()) \
-                and 'TICKET_ADMIN' in ticket_perm:
+                and 'TICKET_ADMIN' in req.perm(ticket.resource):
             # State no longer exists - add a 'reset' action if admin.
             allowed_actions.append((0, '_reset'))
         return allowed_actions
-
-    def _is_action_allowed(self, ticket_perm, required_perms):
-        if not required_perms:
-            return True
-        for permission in required_perms:
-            if permission in ticket_perm:
-                return True
-        return False
 
     def get_all_status(self):
         """Return a list of all states described by the configuration.
@@ -208,6 +207,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
         return all_status
         
     def render_ticket_action_control(self, req, ticket, action):
+        from trac.ticket import model
 
         self.log.debug('render_ticket_action_control: action "%s"' % action)
 
@@ -267,19 +267,20 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                 resolutions = [x.strip() for x in
                                this_action['set_resolution'].split(',')]
             else:
-                resolutions = [val.name for val in Resolution.select(self.env)]
+                resolutions = [val.name for val in
+                               model.Resolution.select(self.env)]
             if not resolutions:
                 raise TracError(_("Your workflow attempts to set a resolution "
                                   "but none is defined (configuration issue, "
                                   "please contact your Trac admin)."))
             if len(resolutions) == 1:
                 control.append(tag('as %s' % resolutions[0]))
-                hints.append(_("The resolution will be set to %(name)s",
-                               name=resolutions[0]))
+                hints.append(_("The resolution will be set to %s") %
+                             resolutions[0])
             else:
                 id = 'action_%s_resolve_resolution' % action
-                selected_option = req.args.get(id, 
-                        TicketSystem(self.env).default_resolution)
+                selected_option = req.args.get(id,
+                        self.config.get('ticket', 'default_resolution'))
                 control.append(tag(['as ', tag.select(
                     [tag.option(x, selected=(x == selected_option or None))
                      for x in resolutions],
@@ -290,7 +291,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                                                       ticket['status']))
         else:
             if status != '*':
-                hints.append(_("Next status will be '%(name)s'", name=status))
+                hints.append(_("Next status will be '%s'") % status)
         return (this_action['name'], tag(*control), '. '.join(hints))
 
     def get_ticket_changes(self, req, ticket, action):

@@ -21,7 +21,7 @@ from trac.config import Option, ListOption
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewRenderer, Mimeview
 from trac.util import NaivePopen
-from trac.util.html import Deuglifier
+from trac.util.html import escape, Deuglifier
 
 __all__ = ['EnscriptRenderer']
 
@@ -78,7 +78,6 @@ types = {
 
 
 class EnscriptDeuglifier(Deuglifier):
-    @classmethod
     def rules(cls):
         return [
             r'(?P<comment><FONT COLOR="#B22222">)',
@@ -92,6 +91,7 @@ class EnscriptDeuglifier(Deuglifier):
             r'(?P<font><FONT.*?>)',
             r'(?P<endfont></FONT>)'
         ]
+    rules = classmethod(rules)
 
 
 class EnscriptRenderer(Component):
@@ -132,6 +132,11 @@ class EnscriptRenderer(Component):
         return self._types.get(mimetype, (None, 0))[1]
 
     def render(self, context, mimetype, content, filename=None, rev=None):
+        if not getattr(self, '_deprecation_shown', False):
+            self.log.warning('The Enscript highlighter is deprecated and '
+                             'will be disabled by default in 0.12')
+            self._deprecation_shown = True
+
         cmdline = self.path
         mimetype = mimetype.split(';', 1)[0] # strip off charset
         mode = self._types[mimetype][0]

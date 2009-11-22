@@ -5,27 +5,23 @@
     var message = null;
     var message_rev = null;
   
+    /* for each blame cell containing a changeset link... */
+    var rev_paths = {};
+    $("table.code th.blame a").each(function() {
+      href = $(this).attr("href");
+      $(this).removeAttr("href");
+      rev_href = href.substr(href.indexOf("changeset/") + 10);
+      elts = rev_href.split("/");
+      var path = elts.slice(1).join("/");
+      if (path != original_path)
+        rev_paths["r"+elts[0]] = path;
+    });
+  
     /* for each blame cell... */
-    var path = null;
     $("table.code th.blame").each(function() {
-      // determine path from the changeset link
-      var a = $(this).find("a");
-      var href = a.attr("href");
-      if ( ! (href || path) )
-        return; // was "Rev" column title
-      
-      if ( href ) {
-        a.removeAttr("href");
-        href = href.slice(href.indexOf("changeset/") + 10);
-        var sep = href.indexOf("/");
-        if ( sep > 0 )
-          path = href.slice(sep+1);
-        else
-          path = original_path;
-      }
-
-      // determine rev from th class, which is of the form "blame r123"
-      var rev = $(this).attr("class").split(" ")[1];
+      var rev = $(this).attr("class").split(" ")[1]; // "blame r123"
+      var path = rev_paths[rev] || original_path; // only found if != orig
+  
       if (!rev)
         return;
   
@@ -33,7 +29,6 @@
         var row = this.parentNode;
         var message_is_visible = message && message.css("display") == "block";
         var highlight_rev = null;
-        var annotate_path = path;
   
         function show() {
           /* Display commit message for the selected revision */
@@ -71,7 +66,7 @@
           message_rev = rev;
           highlight_rev = message_rev;
   
-          $.get(url + rev.substr(1), {annotate: annotate_path}, function(data) {
+          $.get(url + rev.substr(1), {annotate: path}, function(data) {
             // remove former message panel if any
             if (message)
               message.remove();
@@ -83,7 +78,7 @@
               .appendTo("body");
 
             // workaround non-clickable "Close" issue in Firefox
-            if ($.browser.mozilla || $.browser.safari)
+            if ($.browser.mozilla)
               message.find("div.inlinebuttons").next().css("clear", "right");
   
             show();

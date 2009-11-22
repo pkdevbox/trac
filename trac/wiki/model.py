@@ -16,6 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+import time
 from datetime import datetime
 
 from trac.core import *
@@ -36,8 +37,6 @@ class WikiPage(object):
             self.resource = name
             name = self.resource.id
         else:
-            if version:
-                version = int(version) # must be a number or None
             self.resource = Resource('wiki', name, version)
         self.name = name
         if name:
@@ -53,7 +52,7 @@ class WikiPage(object):
         if not db:
             db = self.env.get_db_cnx()
         cursor = db.cursor()
-        if version is not None:
+        if version:
             cursor.execute("SELECT version,time,author,text,comment,readonly "
                            "FROM wiki "
                            "WHERE name=%s AND version=%s",
@@ -65,7 +64,7 @@ class WikiPage(object):
                            (name,))
         row = cursor.fetchone()
         if row:
-            version, time, author, text, comment, readonly = row
+            version,time,author,text,comment,readonly = row
             self.version = int(version)
             self.author = author
             self.time = datetime.fromtimestamp(time, utc)
@@ -104,10 +103,8 @@ class WikiPage(object):
             self._fetch(self.name, None, db)
 
         if not self.exists:
-            # Invalidate page name cache
-            WikiSystem(self.env).pages.invalidate(db)
-            # Delete orphaned attachments
             from trac.attachment import Attachment
+            # Delete orphaned attachments
             Attachment.delete_all(self.env, 'wiki', self.name, db)
 
         if handle_ta:
@@ -149,10 +146,6 @@ class WikiPage(object):
         else:
             raise TracError(_('Page not modified'))
 
-        if self.version == 1:
-            # Invalidate page name cache
-            WikiSystem(self.env).pages.invalidate(db)
-        
         if handle_ta:
             db.commit()
 
@@ -173,6 +166,6 @@ class WikiPage(object):
         cursor.execute("SELECT version,time,author,comment,ipnr FROM wiki "
                        "WHERE name=%s AND version<=%s "
                        "ORDER BY version DESC", (self.name, self.version))
-        for version, ts, author, comment, ipnr in cursor:
+        for version,ts,author,comment,ipnr in cursor:
             time = datetime.fromtimestamp(ts, utc)
-            yield version, time, author, comment, ipnr
+            yield version,time,author,comment,ipnr

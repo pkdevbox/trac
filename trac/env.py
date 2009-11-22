@@ -14,7 +14,7 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import os.path
+import os
 try:
     import threading
 except ImportError:
@@ -24,14 +24,12 @@ import sys
 from urlparse import urlsplit
 
 from trac import db_default
-from trac.admin import AdminCommandError, IAdminCommandProvider
-from trac.cache import CacheManager
 from trac.config import *
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
 from trac.db import DatabaseManager
-from trac.util import copytree, create_file, get_pkginfo, makedirs
-from trac.util.text import exception_to_unicode, printerr, printout
+from trac.util import create_file, get_pkginfo
+from trac.util.text import exception_to_unicode
 from trac.util.translation import _
 from trac.versioncontrol import RepositoryManager
 from trac.web.href import Href
@@ -166,13 +164,13 @@ class Environment(Component, ComponentManager):
          - $(basename)s the last path component of the current environment
          - $(project)s  the project name
 
-         Note the usage of `$(...)s` instead of `%(...)s` as the latter form
-         would be interpreted by the ConfigParser itself.
+        Note the usage of `$(...)s` instead of `%(...)s` as the latter form
+        would be interpreted by the ConfigParser itself.
 
-         Example:
-         ($(thread)d) Trac[$(basename)s:$(module)s] $(levelname)s: $(message)s
+        Example:
+        `($(thread)d) Trac[$(basename)s:$(module)s] $(levelname)s: $(message)s`
 
-         (since 0.10.5)""")
+        ''(since 0.10.5)''""")
 
     def __init__(self, path, create=False, options=[]):
         """Initialize the Trac environment.
@@ -196,10 +194,7 @@ class Environment(Component, ComponentManager):
             ('Trac', trac_version),
             ('Python', sys.version),
             ('setuptools', setuptools.__version__),
-        ]
-        from trac.util.datefmt import pytz
-        if pytz is not None:
-            self.systeminfo.append(('pytz', pytz.__version__))
+            ]
         self.log.info('-' * 32 + ' environment startup [Trac %s] ' + '-' * 32,
                       trac_version)
         self._href = self._abs_href = None
@@ -227,12 +222,6 @@ class Environment(Component, ComponentManager):
         component.config = self.config
         component.log = self.log
 
-    def _component_name(self, name_or_class):
-        name = name_or_class
-        if not isinstance(name_or_class, basestring):
-            name = name_or_class.__module__ + '.' + name_or_class.__name__
-        return name.lower()
-
     def is_component_enabled(self, cls):
         """Implemented to only allow activation of components that are not
         disabled in the configuration.
@@ -247,7 +236,10 @@ class Environment(Component, ComponentManager):
                     name = name[:-2]
                 self._rules[name.lower()] = value.lower() in ('enabled', 'on')
 
-        component_name = self._component_name(cls)
+        if not isinstance(cls, basestring):
+            component_name = (cls.__module__ + '.' + cls.__name__).lower()
+        else:
+            component_name = cls.lower()
 
         # Disable the pre-0.11 WebAdmin plugin
         # Please note that there's no recommendation to uninstall the
@@ -369,13 +361,11 @@ class Environment(Component, ComponentManager):
 
     def setup_config(self, load_defaults=False):
         """Load the configuration file."""
-        self.config = Configuration(os.path.join(self.path, 'conf',
-                                                 'trac.ini'))
+        self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'))
         if load_defaults:
-            for section, default_options in self.config.defaults(self).items():
+            for section, default_options in self.config.defaults().items():
                 for name, value in default_options.items():
-                    parent = self.config.parent
-                    if parent and name in parent[section]:
+                    if self.config.parent and name in self.config.parent[section]:
                         value = None
                     self.config.set(section, name, value)
 
@@ -428,7 +418,7 @@ class Environment(Component, ComponentManager):
                        " LEFT JOIN session_attribute AS e ON (e.sid=s.sid "
                        "  AND e.authenticated=1 AND e.name = 'email') "
                        "WHERE s.authenticated=1 ORDER BY s.sid")
-        for username, name, email in cursor:
+        for username,name,email in cursor:
             yield username, name, email
 
     def backup(self, dest=None):
@@ -574,6 +564,8 @@ def open_environment(env_path=None, use_cache=False):
                       invocations of this function
     @return: the `Environment` object
     """
+    global env_cache, env_cache_lock
+
     if not env_path:
         env_path = os.getenv('TRAC_ENV')
     if not env_path:
@@ -596,8 +588,6 @@ def open_environment(env_path=None, use_cache=False):
                 env = None
             if env is None:
                 env = env_cache.setdefault(env_path, open_environment(env_path))
-            else:
-                CacheManager(env).reset_metadata()
         finally:
             env_cache_lock.release()
     else:
@@ -614,121 +604,3 @@ def open_environment(env_path=None, use_cache=False):
                               path=env_path))
 
     return env
-
-
-class EnvironmentAdmin(Component):
-    """Component representing the project environment administration."""
-    
-    implements(IAdminCommandProvider)
-    
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('deploy', '<directory>',
-               'Extract static resources from Trac and all plugins',
-               None, self._do_deploy)
-        yield ('hotcopy', '<backupdir>',
-               'Make a hot backup copy of an environment',
-               None, self._do_hotcopy)
-        yield ('upgrade', '',
-               'Upgrade database to current version',
-               None, self._do_upgrade)
-    
-    def _do_deploy(self, dest):
-        target = os.path.normpath(dest)
-        chrome_target = os.path.join(target, 'htdocs')
-        script_target = os.path.join(target, 'cgi-bin')
-
-        # Copy static content
-        makedirs(target, overwrite=True)
-        makedirs(chrome_target, overwrite=True)
-        from trac.web.chrome import Chrome
-        printout(_("Copying resources from:"))
-        for provider in Chrome(self.env).template_providers:
-            paths = list(provider.get_htdocs_dirs())
-            if not len(paths):
-                continue
-            printout('  %s.%s' % (provider.__module__, 
-                                  provider.__class__.__name__))
-            for key, root in paths:
-                source = os.path.normpath(root)
-                printout('   ', source)
-                if os.path.exists(source):
-                    dest = os.path.join(chrome_target, key)
-                    copytree(source, dest, overwrite=True)
-
-        # Create and copy scripts
-        makedirs(script_target, overwrite=True)
-        printout(_("Creating scripts."))
-        data = {'env': self.env, 'executable': sys.executable}
-        for script in ('cgi', 'fcgi', 'wsgi'):
-            dest = os.path.join(script_target, 'trac.' + script)
-            template = Chrome(self.env).load_template('deploy_trac.' + script,
-                                                      'text')
-            stream = template.generate(**data)
-            out = os.fdopen(os.open(dest, os.O_CREAT | os.O_WRONLY), 'w')
-            try:
-                stream.render('text', out=out)
-            finally:
-                out.close()
-    
-    def _do_hotcopy(self, dest):
-        if os.path.exists(dest):
-            raise TracError(_("hotcopy can't overwrite existing '%(dest)s'",
-                              dest=dest))
-        import shutil
-
-        # Bogus statement to lock the database while copying files
-        cnx = self.env.get_db_cnx()
-        cursor = cnx.cursor()
-        cursor.execute("UPDATE system SET name=NULL WHERE name IS NULL")
-
-        try:
-            printout(_('Hotcopying %(src)s to %(dst)s ...', 
-                       src=self.env.path, dst=dest))
-            db_str = self.env.config.get('trac', 'database')
-            prefix, db_path = db_str.split(':', 1)
-            if prefix == 'sqlite':
-                # don't copy the journal (also, this would fail on Windows)
-                db = os.path.join(self.env.path, os.path.normpath(db_path))
-                skip = [db + '-journal', db + '-stmtjrnl']
-            else:
-                skip = []
-            try:
-                copytree(self.env.path, dest, symlinks=1, skip=skip)
-                retval = 0
-            except shutil.Error, e:
-                retval = 1
-                printerr(_('The following errors happened while copying '
-                           'the environment:'))
-                for (src, dst, err) in e.args[0]:
-                    if src in err:
-                        printerr('  %s' % err)
-                    else:
-                        printerr("  %s: '%s'" % (err, src))
-        finally:
-            # Unlock database
-            cnx.rollback()
-
-        printout(_("Hotcopy done."))
-        return retval
-    
-    def _do_upgrade(self, no_backup=None):
-        if no_backup not in (None, '-b', '--no-backup'):
-            raise AdminCommandError(_("Invalid arguments"), show_usage=True)
-        
-        if not self.env.needs_upgrade():
-            printout(_("Database is up to date, no upgrade necessary."))
-            return
-
-        try:
-            self.env.upgrade(backup=no_backup is None)
-        except TracError, e:
-            msg = unicode(e)
-            if 'backup' in msg.lower():
-                raise TracError(_("Backup failed with '%(msg)s'.\nUse "
-                                  "'--no-backup' to upgrade without doing a "
-                                  "backup.", msg=msg))
-            else:
-                raise
-        printout(_("Upgrade done."))

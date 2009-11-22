@@ -21,32 +21,13 @@ import pkg_resources
 import pprint
 import re
 try: 
-    from cStringIO import StringIO
+    from cStringIO import StringIO as cStringIO 
 except ImportError: 
-    from StringIO import StringIO
+    cStringIO = StringIO 
 
 from genshi import Markup
 from genshi.builder import tag, Element
-
-# FIXME Genshi's advanced-i18n is now required if one wants to use 0.12 + i18n
-#       Genshi 0.5.1 can still be used with Trac 0.12 without i18n support.
-#
-# Once advanced-i18n is in the required Genshi version (0.6?), uncomment the
-# following:
-#
-# from genshi.filters import Translator
-#
-# and remove the rest:
-from genshi.filters import Translator
-try:
-    from genshi.filters import setup_i18n
-except ImportError:
-    def setup_i18n(template, translator):
-        # another compatibility hack for Genshi trunk, we need a FunctionType
-        def gettext(*args, **kwargs):
-            return translation.gettext(*args, **kwargs)
-        template.filters.insert(0, Translator(gettext))
-
+from genshi.input import HTML, ParseError
 from genshi.core import Attrs, START
 from genshi.output import DocType
 from genshi.template import TemplateLoader, MarkupTemplate, TextTemplate
@@ -58,12 +39,12 @@ from trac.env import IEnvironmentSetupParticipant
 from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
-                      translation
-from trac.util.compat import any, partial
+                      get_module_path, translation
+from trac.util.compat import partial, set
 from trac.util.html import escape, plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode, \
-                           javascript_quote, exception_to_unicode
+                           javascript_quote
 from trac.util.datefmt import pretty_timedelta, format_datetime, format_date, \
                               format_time, http_date, utc
 from trac.util.translation import _
@@ -154,39 +135,55 @@ def add_ctxtnav(req, elm_or_label, href=None, title=None):
         elm = elm_or_label
     req.chrome.setdefault('ctxtnav', []).append(elm)
 
-def prevnext_nav(req, prev_label, next_label, up_label=None):
-    """Add Previous/Up/Next navigation links.
-
-       @param req        a `Request` object
-       @param prev_label the label to use for left (previous) link
-       @param up_label   the label to use for the middle (up) link
-       @param next_label the label to use for right (next) link
+# ???: Does this belong in trac.util somewhere? <NPK>
+def prevnext_nav(req, label, uplabel=None):
+    """Add Previous/Up/Next navigation links
+       
+       `req` a Request object
+       `label` the label to use after the Previous/Next words
+       `uplabel` the label to use for the Up link
     """
     links = req.chrome['links']
-    prev_link = next_link = None
     
-    if not any(lnk in links for lnk in ('prev', 'up', 'next')): # Short circuit
+    if 'prev' not in links and \
+       'up' not in links and \
+       'next' not in links:
+        # Short circuit
         return
     
     if 'prev' in links:
-        prev = links['prev'][0]
-        prev_link = tag.a(prev_label, href=prev['href'], title=prev['title'],
-                          class_='prev')
-        
-    add_ctxtnav(req, tag.span(Markup('&larr; '), prev_link or prev_label,
-                              class_=prev_link or 'missing'))
+        link = links['prev'][0]
+        add_ctxtnav(req, 
+            tag.span(Markup('&larr; '),
+                     tag.a(_('Previous %(label)s', label=label),
+                            href=link['href'],
+                            title=link['title'],
+                            class_='prev'
+                           )))
+    else:
+        add_ctxtnav(req, 
+            tag.span(Markup('&larr; '),
+                     _('Previous %(label)s', label=label), 
+                     class_='missing'))
 
-    if up_label and 'up' in links:
-        up = links['up'][0]
-        add_ctxtnav(req, tag.a(up_label, href=up['href'], title=up['title']))
+    if uplabel and 'up' in links:
+        link = links['up'][0]
+        add_ctxtnav(req, tag.a(uplabel, 
+                               href=link['href'], 
+                               title=link['title']))
 
     if 'next' in links:
-        next_ = links['next'][0]
-        next_link = tag.a(next_label, href=next_['href'], title=next_['title'],
-                          class_='next')
-
-    add_ctxtnav(req, tag.span(next_link or next_label, Markup(' &rarr;'),
-                              class_=next_link or 'missing'))
+        link = links['next'][0]
+        add_ctxtnav(req, 
+            tag.span(tag.a(_('Next %(label)s', label=label),
+                           href=link['href'],
+                           title=link['title'],
+                           class_='next'),
+                     Markup(' &rarr;')))
+    else:
+        add_ctxtnav(req, 
+            tag.span(_('Next %(label)s', label=label),
+                     Markup(' &rarr;'), class_='missing'))
 
 
 def _save_messages(req, url, permanent):
@@ -266,12 +263,6 @@ class Chrome(Component):
 
     auto_reload = BoolOption('trac', 'auto_reload', False,
         """Automatically reload template files after modification.""")
-    
-    genshi_cache_size = IntOption('trac', 'genshi_cache_size', 25,
-        """The maximum number of templates that the template loader will cache
-        in memory. The default value is 25. You may want to choose a higher
-        value if your site uses a larger number of templates, and you have
-        enough memory to spare.""")
 
     htdocs_location = Option('trac', 'htdocs_location', '',
         """Base URL of the core static resources.""")
@@ -315,21 +306,21 @@ class Chrome(Component):
 
     # A dictionary of default context data for templates
     _default_context_data = {
-        '_': translation.gettext,
+        '_': translation._,
         'all': compat.all,
         'any': compat.any,
+        'attrgetter': compat.attrgetter,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
-        'dgettext': translation.dgettext,
-        'dngettext': translation.dngettext,
         'first_last': presentation.first_last,
         'get_reporter_id': get_reporter_id,
         'gettext': translation.gettext,
         'group': presentation.group,
-        'groupby': compat.py_groupby, # http://bugs.python.org/issue2246
+        'groupby': compat.py_groupby,
         'http_date': http_date,
         'istext': presentation.istext,
+        'itemgetter': compat.itemgetter,
         'javascript_quote': javascript_quote,
         'ngettext': translation.ngettext,
         'paginate': presentation.paginate,
@@ -339,10 +330,10 @@ class Chrome(Component):
         'pretty_size': pretty_size,
         'pretty_timedelta': pretty_timedelta,
         'quote_plus': unicode_quote_plus,
-        'reversed': reversed,
+        'reversed': compat.reversed,
         'separated': presentation.separated,
         'shorten_line': shorten_line,
-        'sorted': sorted,
+        'sorted': compat.sorted,
         'time': datetime.time,
         'timedelta': datetime.timedelta,
         'to_unicode': to_unicode,
@@ -351,15 +342,8 @@ class Chrome(Component):
 
     def __init__(self):
         import genshi
-        genshi_version = get_pkginfo(genshi).get('version')
-        self.env.systeminfo.append(('Genshi', genshi_version))
-        try:
-            import babel
-            babel_version = get_pkginfo(babel).get('version')
-        except ImportError, e:
-            self.log.debug("Babel not found: %s", exception_to_unicode(e))
-            babel_version = '-'
-        self.env.systeminfo.append(('Babel', babel_version))
+        self.env.systeminfo.append(('Genshi',
+                                    get_pkginfo(genshi).get('version')))
 
     # IEnvironmentSetupParticipant methods
 
@@ -461,31 +445,38 @@ class Chrome(Component):
 
         chrome = {'links': {}, 'scripts': [], 'ctxtnav': [], 'warnings': [],
                   'notices': []}
-        setattr(req, 'chrome', chrome)
+
+        # This is ugly... we can't pass the real Request object to the
+        # add_xxx methods, because it doesn't yet have the chrome attribute
+        class FakeRequest(object):
+            def __init__(self, req):
+                self.base_path = req.base_path
+                self.chrome = chrome
+        fakereq = FakeRequest(req)
 
         htdocs_location = self.htdocs_location or req.href.chrome('common')
         chrome['htdocs_location'] = htdocs_location.rstrip('/') + '/'
 
         # HTML <head> links
-        add_link(req, 'start', req.href.wiki())
-        add_link(req, 'search', req.href.search())
-        add_link(req, 'help', req.href.wiki('TracGuide'))
-        add_stylesheet(req, 'common/css/trac.css')
-        add_script(req, 'common/js/jquery.js')
+        add_link(fakereq, 'start', req.href.wiki())
+        add_link(fakereq, 'search', req.href.search())
+        add_link(fakereq, 'help', req.href.wiki('TracGuide'))
+        add_stylesheet(fakereq, 'common/css/trac.css')
+        add_script(fakereq, 'common/js/jquery.js')
         # Only activate noConflict mode if requested to by the handler
         if handler is not None and \
            getattr(handler.__class__, 'jquery_noconflict', False):
-            add_script(req, 'common/js/noconflict.js')
-        add_script(req, 'common/js/trac.js')
-        add_script(req, 'common/js/search.js')
+            add_script(fakereq, 'common/js/noconflict.js')
+        add_script(fakereq, 'common/js/trac.js')
+        add_script(fakereq, 'common/js/search.js')
 
         # Shortcut icon
         chrome['icon'] = self.get_icon_data(req)
         if chrome['icon']:
             src = chrome['icon']['src']
             mimetype = chrome['icon']['mimetype']
-            add_link(req, 'icon', src, mimetype=mimetype)
-            add_link(req, 'shortcut icon', src, mimetype=mimetype)
+            add_link(fakereq, 'icon', src, mimetype=mimetype)
+            add_link(fakereq, 'shortcut icon', src, mimetype=mimetype)
 
         # Logo image
         chrome['logo'] = self.get_logo_data(req.href, req.abs_href)
@@ -494,43 +485,30 @@ class Chrome(Component):
         allitems = {}
         active = None
         for contributor in self.navigation_contributors:
-            try:
-                for category, name, text in \
-                        contributor.get_navigation_items(req):
-                    category_section = self.config[category]
-                    if category_section.getbool(name, True):
-                        # the navigation item is enabled (this is the default)
-                        item = None
-                        if isinstance(text, Element) and \
-                                text.tag.localname == 'a':
-                            item = text
-                        label = category_section.get(name + '.label')
-                        href = category_section.get(name + '.href')
-                        if href:
-                            if href.startswith('/'):
-                                href = req.href + href
-                            if label:
-                                item = tag.a(label) # create new label
-                            elif not item:
-                                item = tag.a(text) # wrap old text
-                            item = item(href=href) # use new href
-                        elif label and item: # create new label, use old href
-                            item = tag.a(label, href=item.attrib.get('href'))
-                        elif not item: # use old text
-                            item = text
-                        allitems.setdefault(category, {})[name] = item
-                if contributor is handler:
-                    active = contributor.get_active_navigation_item(req)
-            except Exception, e:
-                name = contributor.__class__.__name__
-                if isinstance(e, TracError):
-                    self.log.warning("Error with navigation contributor %s",
-                                     name)
-                else:
-                    self.log.error("Error with navigation contributor %s: %s",
-                                   name, exception_to_unicode(e))
-                add_warning(req, _("Error with navigation contributor "
-                                   '"%(name)s"', name=name))
+            for category, name, text in contributor.get_navigation_items(req):
+                category_section = self.config[category]
+                if category_section.getbool(name, True):
+                    # the navigation item is enabled (this is the default)
+                    item = None
+                    if isinstance(text, Element) and text.tag.localname == 'a':
+                        item = text
+                    label = category_section.get(name + '.label')
+                    href = category_section.get(name + '.href')
+                    if href:
+                        if href.startswith('/'):
+                            href = req.href + href
+                        if label:
+                            item = tag.a(label) # create new label
+                        elif not item:
+                            item = tag.a(text) # wrap old text
+                        item = item(href=href) # use new href
+                    elif label and item: # create new label, use old href
+                        item = tag.a(label, href=item.attrib.get('href'))
+                    elif not item: # use old text
+                        item = text
+                    allitems.setdefault(category, {})[name] = item
+            if contributor is handler:
+                active = contributor.get_active_navigation_item(req)
 
         nav = {}
         for category, items in [(k, v.items()) for k, v in allitems.items()]:
@@ -659,15 +637,8 @@ class Chrome(Component):
                 'logo': self.get_logo_data(self.env.abs_href),
             })
 
-        try:
-            show_email_addresses = (self.show_email_addresses or not req or \
+        show_email_addresses = (self.show_email_addresses or not req or \
                                 'EMAIL_VIEW' in req.perm)
-        except Exception, e:
-            # simply log the exception here, as we might already be rendering
-            # the error page
-            self.log.error("Error during check of EMAIL_VIEW: %s", 
-                           exception_to_unicode(e))
-            show_email_addresses = False
         tzinfo = None
         if req:
             tzinfo = req.tz
@@ -694,7 +665,6 @@ class Chrome(Component):
             'href': href,
             'perm': req and req.perm,
             'authname': req and req.authname or '<trac>',
-            'locale': req and req.locale,
             'show_email_addresses': show_email_addresses,
             'show_ip_addresses': self.show_ip_addresses,
             'format_author': partial(self.format_author, req),
@@ -725,17 +695,9 @@ class Chrome(Component):
         TextTemplate instance will be created instead of a MarkupTemplate.
         """
         if not self.templates:
-            def _template_loaded(template):
-                translator = Translator(translation.get_translations())
-                if hasattr(translator, 'setup'):
-                    translator.setup(template)
-                else: # pre-[G1003], remove once advanced-i18n hits trunk
-                    setup_i18n(template, translator)
-
-            self.templates = TemplateLoader(
-                self.get_all_templates_dirs(), auto_reload=self.auto_reload,
-                max_cache_size=self.genshi_cache_size,
-                variable_lookup='lenient', callback=_template_loaded)
+            self.templates = TemplateLoader(self.get_all_templates_dirs(),
+                                            auto_reload=self.auto_reload,
+                                            variable_lookup='lenient')
         if method == 'text':
             cls = TextTemplate
         else:
@@ -751,9 +713,6 @@ class Chrome(Component):
         used (TextTemplate if `'text/plain'`, MarkupTemplate otherwise), and
         tweak the rendering process (use of XHTML Strict doctype if
         `'text/html'` is given).
-
-        When `fragment` is specified, the (filtered) Genshi stream is
-        returned.
         """
         if content_type is None:
             content_type = 'text/html'
@@ -772,7 +731,6 @@ class Chrome(Component):
 
         template = self.load_template(filename, method=method)
         data = self.populate_data(req, data)
-        data['chrome']['content_type'] = content_type
 
         stream = template.generate(**data)
 
@@ -784,7 +742,7 @@ class Chrome(Component):
             return stream
 
         if method == 'text':
-            buffer = StringIO()
+            buffer = cStringIO()
             stream.render('text', out=buffer)
             return buffer.getvalue()
 
@@ -805,7 +763,7 @@ class Chrome(Component):
         })
 
         try:
-            buffer = StringIO()
+            buffer = cStringIO()
             stream.render(method, doctype=doctype, out=buffer)
             return buffer.getvalue().translate(_translate_nop,
                                                _invalid_control_chars)
@@ -873,7 +831,7 @@ class Chrome(Component):
     def _strip_accesskeys(self, stream, ctxt=None):
         for kind, data, pos in stream:
             if kind is START and 'accesskey' in data[1]:
-                data = data[0], Attrs([(k, v) for k, v in data[1]
+                data = data[0], Attrs([(k,v) for k,v in data[1]
                                        if k != 'accesskey'])
             yield kind, data, pos
 

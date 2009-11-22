@@ -25,7 +25,6 @@ from datetime import tzinfo, timedelta, datetime, date
 
 from trac.core import TracError
 from trac.util.text import to_unicode
-from trac.util.translation import ngettext
 
 # Date/time utilities
 
@@ -49,7 +48,7 @@ def to_datetime(t, tzinfo=None):
         return t
     elif isinstance(t, date):
         return tzinfo.localize(datetime(t.year, t.month, t.day))
-    elif isinstance(t, (int, long, float)):
+    elif isinstance(t, (int,long,float)):
         return tzinfo.localize(datetime.fromtimestamp(t))
     raise TypeError('expecting datetime, int, long, float, or None; got %s' %
                     type(t))
@@ -65,14 +64,6 @@ def to_timestamp(dt):
 
 # -- formatting
 
-_units = (
-    (3600*24*365, lambda r: ngettext('%(num)d year', '%(num)d years', r)),
-    (3600*24*30,  lambda r: ngettext('%(num)d month', '%(num)d months', r)),
-    (3600*24*7,   lambda r: ngettext('%(num)d week', '%(num)d weeks', r)),
-    (3600*24,     lambda r: ngettext('%(num)d day', '%(num)d days', r)),
-    (3600,        lambda r: ngettext('%(num)d hour', '%(num)d hours', r)),
-    (60,          lambda r: ngettext('%(num)d minute', '%(num)d minutes', r)))
-
 def pretty_timedelta(time1, time2=None, resolution=None):
     """Calculate time delta between two `datetime` objects.
     (the result is somewhat imprecise, only use for prettyprinting).
@@ -84,20 +75,24 @@ def pretty_timedelta(time1, time2=None, resolution=None):
     time2 = to_datetime(time2)
     if time1 > time2:
         time2, time1 = time1, time2
-    
+    units = ((3600 * 24 * 365, 'year',   'years'),
+             (3600 * 24 * 30,  'month',  'months'),
+             (3600 * 24 * 7,   'week',   'weeks'),
+             (3600 * 24,       'day',    'days'),
+             (3600,            'hour',   'hours'),
+             (60,              'minute', 'minutes'))
     diff = time2 - time1
     age_s = int(diff.days * 86400 + diff.seconds)
     if resolution and age_s < resolution:
         return ''
     if age_s <= 60 * 1.9:
-        return ngettext('%(num)i second', '%(num)i seconds', age_s)
-    for u, format_units in _units:
+        return '%i second%s' % (age_s, age_s != 1 and 's' or '')
+    for u, unit, unit_plural in units:
         r = float(age_s) / float(u)
         if r >= 1.9:
             r = int(round(r))
-            return format_units(r)
+            return '%d %s' % (r, r == 1 and unit or unit_plural)
     return ''
-
     
 def format_datetime(t=None, format='%x %X', tzinfo=None):
     """Format the `datetime` object `t` into an `unicode` string
@@ -106,7 +101,7 @@ def format_datetime(t=None, format='%x %X', tzinfo=None):
     
     The formatting will be done using the given `format`, which consist
     of conventional `strftime` keys. In addition the format can be 'iso8601'
-    to specify the international date format (compliant with RFC 3339).
+    to specify the international date format.
 
     `tzinfo` will default to the local timezone if left to `None`.
     """
@@ -114,19 +109,23 @@ def format_datetime(t=None, format='%x %X', tzinfo=None):
     t = to_datetime(t, tzinfo).astimezone(tz)
     normalize_Z = False
     if format.lower().startswith('iso8601'):
+        date_only = time_only = False
         if 'date' in format:
-            format = '%Y-%m-%d'
+            date_only = True
         elif 'time' in format:
-            format = '%H:%M:%S%z'
-            normalize_Z = True
+            time_only = True
+        if date_only:
+            format = '%Y-%m-%d'
+        elif time_only:
+            format = '%H:%M:%S'
         else:
-            format = '%Y-%m-%dT%H:%M:%S%z'
+            format = '%Y-%m-%dT%H:%M:%S'
+        if not date_only:
+            format += '%z'
             normalize_Z = True
     text = t.strftime(format)
     if normalize_Z:
         text = text.replace('+0000', 'Z')
-        if not text.endswith('Z'):
-            text = text[:-2] + ":" + text[-2:]
     encoding = locale.getpreferredencoding() or sys.getdefaultencoding()
     if sys.platform != 'win32' or sys.version_info[:2] > (2, 3):
         encoding = locale.getlocale(locale.LC_TIME)[1] or encoding
@@ -193,7 +192,9 @@ _ISO_8601_RE = re.compile(r'(\d\d\d\d)(?:-?(\d\d)(?:-?(\d\d))?)?'   # date
 
 def parse_date(text, tzinfo=None):
     tzinfo = tzinfo or localtz
-    dt = None
+    if text == 'now': # TODO: today, yesterday, etc.
+        return datetime.now(utc)
+    tm = None
     text = text.strip()
     # normalize ISO time
     match = _ISO_8601_RE.match(text)
@@ -217,25 +218,22 @@ def parse_date(text, tzinfo=None):
             tm = time.strptime('%s ' * 6 % (years, months, days,
                                             hours, minutes, seconds),
                                '%Y %m %d %H %M %S ')
-            dt = tzinfo.localize(datetime(*tm[0:6]))
         except ValueError:
             pass
-    if dt is None:
+    else:
         for format in ['%x %X', '%x, %X', '%X %x', '%X, %x', '%x', '%c',
                        '%b %d, %Y']:
             try:
                 tm = time.strptime(text, format)
-                dt = tzinfo.localize(datetime(*tm[0:6]))
                 break
             except ValueError:
                 continue
-    if dt is None:
-        dt = _parse_relative_time(text, tzinfo)
-    if dt is None:
+    if tm == None:
         hint = get_date_format_hint()        
         raise TracError('"%s" is an invalid date, or the date format '
                         'is not known. Try "%s" instead.' % (text, hint),
                         'Invalid Date')
+    dt = tzinfo.localize(datetime(*tm[0:6]))
     # Make sure we can convert it to a timestamp and back - fromtimestamp()
     # may raise ValueError if larger than platform C localtime() or gmtime()
     try:
@@ -245,68 +243,6 @@ def parse_date(text, tzinfo=None):
                         'Try a date closer to present time.' % (text,),
                         'Invalid Date')
     return dt
-
-
-_REL_TIME_RE = re.compile(
-    r'(\d+\.?\d*)\s*'
-    r'(second|minute|hour|day|week|month|year|[hdwmy])s?\s*'
-    r'(?:ago)?$')
-_time_intervals = dict(
-    second=lambda v: timedelta(seconds=v),
-    minute=lambda v: timedelta(minutes=v),
-    hour=lambda v: timedelta(hours=v),
-    day=lambda v: timedelta(days=v),
-    week=lambda v: timedelta(weeks=v),
-    month=lambda v: timedelta(days=30 * v),
-    year=lambda v: timedelta(days=365 * v),
-    h=lambda v: timedelta(hours=v),
-    d=lambda v: timedelta(days=v),
-    w=lambda v: timedelta(weeks=v),
-    m=lambda v: timedelta(days=30 * v),
-    y=lambda v: timedelta(days=365 * v),
-)
-_TIME_START_RE = re.compile(r'(this|last)\s*'
-                            r'(second|minute|hour|day|week|month|year)$')
-_time_starts = dict(
-    second=lambda now: now.replace(microsecond=0),
-    minute=lambda now: now.replace(microsecond=0, second=0),
-    hour=lambda now: now.replace(microsecond=0, second=0, minute=0),
-    day=lambda now: now.replace(microsecond=0, second=0, minute=0, hour=0),
-    week=lambda now: now.replace(microsecond=0, second=0, minute=0, hour=0) \
-                     - timedelta(days=now.weekday()),
-    month=lambda now: now.replace(microsecond=0, second=0, minute=0, hour=0,
-                                  day=1),
-    year=lambda now: now.replace(microsecond=0, second=0, minute=0, hour=0,
-                                  day=1, month=1),
-)
-
-def _parse_relative_time(text, tzinfo):
-    now = tzinfo.localize(datetime.now())
-    if text == 'now':
-        return now
-    if text == 'today':
-        return now.replace(microsecond=0, second=0, minute=0, hour=0)
-    if text == 'yesterday':
-        return now.replace(microsecond=0, second=0, minute=0, hour=0) \
-               - timedelta(days=1)
-    match = _REL_TIME_RE.match(text)
-    if match:
-        (value, interval) = match.groups()
-        return now - _time_intervals[interval](float(value))
-    match = _TIME_START_RE.match(text)
-    if match:
-        (which, start) = match.groups()
-        dt = _time_starts[start](now)
-        if which == 'last':
-            if start == 'month':
-                if dt.month > 1:
-                    dt = dt.replace(month=dt.month - 1)
-                else:
-                    dt = dt.replace(year=dt.year - 1, month=12)
-            else:
-                dt -= _time_intervals[start](1)
-        return dt
-    return None
 
 
 # -- timezone utilities
@@ -350,14 +286,6 @@ DSTDIFF = DSTOFFSET - STDOFFSET
 
 class LocalTimezone(tzinfo):
     """A 'local' time zone implementation"""
-    
-    def __str__(self):
-        return self.tzname(datetime.now())
-    
-    def __repr__(self):
-        return '<LocalTimezone "%s" %s "%s" %s>' % (
-            time.tzname[False], STDOFFSET,
-            time.tzname[True], DSTOFFSET)
 
     def utcoffset(self, dt):
         if self._isdst(dt):
@@ -456,7 +384,6 @@ try:
                     _pytz_zones[_gmt_index:]
  
 except ImportError:
-    pytz = None
 
     def timezone(tzname):
         """Fetch timezone instance by name or raise `KeyError`"""

@@ -24,11 +24,6 @@ class ITest(Interface):
         """Dummy function."""
 
 
-class IOtherTest(Interface):
-    def other_test():
-        """Other dummy function."""
-
-
 class ComponentTestCase(unittest.TestCase):
 
     def setUp(self):
@@ -71,8 +66,7 @@ class ComponentTestCase(unittest.TestCase):
         Make sure the component manager refuses to manage classes not derived
         from `Component`.
         """
-        class NoComponent(object):
-            pass
+        class NoComponent(object): pass
         self.assertRaises(TracError, self.compmgr.__getitem__, NoComponent)
 
     def test_component_registration(self):
@@ -133,30 +127,22 @@ class ComponentTestCase(unittest.TestCase):
         """
         try:
             implements()
+            self.fail('Expected AssertionError')
         except AssertionError:
             pass
-        else:
-            self.fail('Expected AssertionError')
 
-    def test_implements_multiple(self):
+    def test_implements_called_twice(self):
         """
-        Verify that a component "implementing" an interface more than once
-        (e.g. through inheritance) is not called more than once from an
-        extension point.
+        Verify that calling implements() twice in a class definition raises an
+        `AssertionError`.
         """
-        log = []
-        class Parent(Component):
-            abstract = True
-            implements(ITest)
-        class Child(Parent):
-            implements(ITest)
-            def test(self):
-                log.append("call")
-        class Other(Component):
-            tests = ExtensionPoint(ITest)
-        for test in Other(self.compmgr).tests:
-            test.test()
-        self.assertEqual(["call"], log)
+        try:
+            class ComponentA(Component):
+                implements()
+                implements()
+            self.fail('Expected AssertionError')
+        except AssertionError:
+            pass
 
     def test_attribute_access(self):
         """
@@ -209,8 +195,7 @@ class ComponentTestCase(unittest.TestCase):
             tests = ExtensionPoint(ITest)
         class ComponentB(Component):
             implements(ITest)
-            def test(self):
-                return 'x'
+            def test(self): return 'x'
         tests = iter(ComponentA(self.compmgr).tests)
         self.assertEquals('x', tests.next().test())
         self.assertRaises(StopIteration, tests.next)
@@ -224,14 +209,14 @@ class ComponentTestCase(unittest.TestCase):
             tests = ExtensionPoint(ITest)
         class ComponentB(Component):
             implements(ITest)
-            def test(self):
-                return 'x'
+            def test(self): return 'x'
         class ComponentC(Component):
             implements(ITest)
-            def test(self):
-                return 'y'
-        results = [test.test() for test in ComponentA(self.compmgr).tests]
-        self.assertEquals(['x', 'y'], sorted(results))
+            def test(self): return 'y'
+        tests = iter(ComponentA(self.compmgr).tests)
+        self.assertEquals('x', tests.next().test())
+        self.assertEquals('y', tests.next().test())
+        self.assertRaises(StopIteration, tests.next)
 
     def test_inherited_extension_point(self):
         """
@@ -243,8 +228,7 @@ class ComponentTestCase(unittest.TestCase):
             pass
         class ExtendingComponent(Component):
             implements(ITest)
-            def test(self):
-                return 'x'
+            def test(self): return 'x'
         tests = iter(ConcreteComponent(self.compmgr).tests)
         self.assertEquals('x', tests.next().test())
         self.assertRaises(StopIteration, tests.next)
@@ -260,25 +244,8 @@ class ComponentTestCase(unittest.TestCase):
         class ConcreteComponent(BaseComponent):
             pass
         from trac.core import ComponentMeta
-        assert ConcreteComponent in ComponentMeta._registry.get(ITest, [])
+        assert ConcreteComponent in ComponentMeta._registry[ITest]
 
-    def test_inherited_implements_multilevel(self):
-        """
-        Verify that extension point interfaces are inherited for more than
-        one level of inheritance.
-        """
-        class BaseComponent(Component):
-            implements(ITest)
-            abstract = True
-        class ChildComponent(BaseComponent):
-            implements(IOtherTest)
-            abstract = True
-        class ConcreteComponent(ChildComponent):
-            pass
-        from trac.core import ComponentMeta
-        assert ConcreteComponent in ComponentMeta._registry.get(ITest, [])
-        assert ConcreteComponent in ComponentMeta._registry.get(IOtherTest, [])
-        
     def test_component_manager_component(self):
         """
         Verify that a component manager can itself be a component with its own
@@ -292,8 +259,7 @@ class ComponentTestCase(unittest.TestCase):
                 self.foo, self.bar = foo, bar
         class Extender(Component):
             implements(ITest)
-            def test(self):
-                return 'x'
+            def test(self): return 'x'
         mgr = ManagerComponent('Test', 42)
         assert id(mgr) == id(mgr[ManagerComponent])
         tests = iter(mgr.tests)

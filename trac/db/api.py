@@ -22,7 +22,6 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.db.pool import ConnectionPool
 from trac.util.text import unicode_passwd
-from trac.util.translation import _
 
 
 def get_column_names(cursor):
@@ -110,7 +109,7 @@ class DatabaseManager(Component):
             if backup_dir[0] != "/":
                 backup_dir = os.path.join(self.env.path, backup_dir)
             db_str = self.config.get('trac', 'database')
-            db_name, db_path = db_str.split(":", 1)
+            db_name, db_path = db_str.split(":",1)
             dest_name = '%s.%i.%d.bak' % (db_name, self.env.get_version(),
                                           int(time.time()))
             dest = os.path.join(backup_dir, dest_name)
@@ -129,8 +128,7 @@ class DatabaseManager(Component):
             if scheme_ == scheme
         ]
         if not candidates:
-            raise TracError(_('Unsupported database type "%(scheme)s"',
-                              scheme=scheme))
+            raise TracError('Unsupported database type "%s"' % scheme)
         priority, connector = max(candidates)
         if priority < 0:
             raise TracError(connector.error)
@@ -157,9 +155,8 @@ def _parse_db_str(db_str):
             host = None
             path = rest
         else:
-            raise TracError(_('Unknown scheme "%(scheme)s"; database '
-                              'connection string must start with {scheme}:/',
-                              scheme=scheme))
+            raise TracError('Unknown scheme "%s"; database connection string '
+                            'must start with {scheme}:/' % scheme)
     else:
         if not rest.startswith('//'):
             host = None

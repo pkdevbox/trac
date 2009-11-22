@@ -58,8 +58,11 @@ class HrefTestCase(unittest.TestCase):
     def test_empty_base(self):
         """Build URLs with an empty base."""
         href = trac.web.href.Href('')
-        self.assertEqual('/', href())
-        self.assertEqual('/', href('/'))
+        # The two following href calls don't result in a valid local URL.
+        # This is relied upon by existing code (see #8153).
+        self.assertEqual('', href())
+        self.assertEqual('', href('/'))
+        
         self.assertEqual('/sub', href('sub'))
         self.assertEqual('/sub', href('/sub/'))
         self.assertEqual('/sub/other', href('sub', 'other'))
@@ -76,27 +79,6 @@ class HrefTestCase(unittest.TestCase):
         self.assertEqual('/path/to/file/', href + '/path/to/file/')
         self.assertEqual('/path/to/file', href + 'path/to/file')
         self.assertEqual('/', href + '')
-    
-    def test_params_subclasses(self):
-        """Parameters passed using subclasses of dict, list and tuple."""
-        class MyDict(dict):
-            pass
-        class MyList(list):
-            pass
-        class MyTuple(tuple):
-            pass
-        href = trac.web.href.Href('/base')
-        self.assertEqual('/base?param=test&param=other',
-                         href(param=MyList(['test', 'other'])))
-        self.assertEqual('/base?param=test&param=other',
-                         href(param=MyTuple(['test', 'other'])))
-        assert href(MyDict(param='value', other='other value')) in [
-            '/base?param=value&other=other+value',
-            '/base?other=other+value&param=value']
-        self.assertEqual('/base?param=value&other=other+value',
-                         href(MyList([('param', 'value'), ('other', 'other value')])))
-        self.assertEqual('/base?param=value&other=other+value',
-                         href(MyTuple([('param', 'value'), ('other', 'other value')])))
 
 
 def suite():

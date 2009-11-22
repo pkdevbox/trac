@@ -14,28 +14,9 @@
 
 from setuptools import setup, find_packages
 
-extra = {}
-
-try:
-    import babel
-    extra['message_extractors'] = {
-        'trac': [
-            ('**.py',                'python', None),
-            ('**/templates/**.html', 'genshi', None),
-            ('**/templates/**.txt',  'genshi', {
-                'template_class': 'genshi.template:TextTemplate'
-            })
-        ],
-        'tracopt': [
-            ('**.py', 'python', None)
-        ]
-    }
-except ImportError:
-    pass
-
 setup(
     name = 'Trac',
-    version = '0.12',
+    version = '0.11.6',
     description = 'Integrated SCM, wiki, issue tracker and project environment',
     long_description = """
 Trac is a minimalistic web-based software project management and bug/issue
@@ -63,20 +44,19 @@ facilities.
     package_data = {
         '': ['templates/*'],
         'trac': ['htdocs/*.*', 'htdocs/README', 'htdocs/js/*', 'htdocs/css/*',
-                 'htdocs/guide/*', 'locale/*.*', 'locale/*/LC_MESSAGES/*.*'],
+                 'htdocs/guide/*'],
         'trac.wiki': ['default-pages/*'],
         'trac.ticket': ['workflows/*.ini'],
     },
 
     test_suite = 'trac.test.suite',
-    zip_safe = True,
+    zip_safe = False,
 
     install_requires = [
         'setuptools>=0.6b1',
-        'Genshi>=0.6dev-r1072'
+        'Genshi>=0.5'
     ],
     extras_require = {
-        'Babel': ['Babel>=0.9.4'],
         'Pygments': ['Pygments>=0.6'],
         'reST': ['docutils>=0.3'],
         'SilverCity': ['SilverCity>=0.9.4'],
@@ -96,7 +76,9 @@ facilities.
         trac.db.mysql = trac.db.mysql_backend
         trac.db.postgres = trac.db.postgres_backend
         trac.db.sqlite = trac.db.sqlite_backend
+        trac.mimeview.enscript = trac.mimeview.enscript
         trac.mimeview.patch = trac.mimeview.patch
+        trac.mimeview.php = trac.mimeview.php
         trac.mimeview.pygments = trac.mimeview.pygments[Pygments]
         trac.mimeview.rst = trac.mimeview.rst[reST]
         trac.mimeview.silvercity = trac.mimeview.silvercity[SilverCity]
@@ -109,20 +91,12 @@ facilities.
         trac.ticket.roadmap = trac.ticket.roadmap
         trac.ticket.web_ui = trac.ticket.web_ui
         trac.timeline = trac.timeline.web_ui
-        trac.versioncontrol.admin = trac.versioncontrol.admin
         trac.versioncontrol.svn_fs = trac.versioncontrol.svn_fs
         trac.versioncontrol.svn_prop = trac.versioncontrol.svn_prop
         trac.versioncontrol.web_ui = trac.versioncontrol.web_ui
         trac.web.auth = trac.web.auth
-        trac.wiki.admin = trac.wiki.admin
         trac.wiki.interwiki = trac.wiki.interwiki
         trac.wiki.macros = trac.wiki.macros
         trac.wiki.web_ui = trac.wiki.web_ui
-        tracopt.mimeview.enscript = tracopt.mimeview.enscript
-        tracopt.mimeview.php = tracopt.mimeview.php
-        tracopt.perm.authz_policy = tracopt.perm.authz_policy
-        tracopt.perm.config_perm_provider = tracopt.perm.config_perm_provider
     """,
-
-    **extra
 )

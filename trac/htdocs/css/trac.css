@@ -46,8 +46,7 @@ h4 :link, h4 :visited, h5 :link, h5 :visited, h6 :link, h6 :visited {
  visibility: hidden;
 }
 h1:hover .anchor, h2:hover .anchor, h3:hover .anchor,
-h4:hover .anchor, h5:hover .anchor, h6:hover .anchor,
-span:hover .anchor {
+h4:hover .anchor, h5:hover .anchor, h6:hover .anchor {
  visibility: visible;
 }
 
@@ -148,7 +147,7 @@ label.disabled { color: #d7d7d7 }
 
 /* Main navigation bar */
 #mainnav {
- background: #fff url(../topbar_gradient.png) 0 0;
+ background: #f7f7f7 url(../topbar_gradient.png) 0 0;
  border: 1px solid #000;
  font: normal 10px verdana,'Bitstream Vera Sans',helvetica,arial,sans-serif;
  margin: .66em 0 .33em;
@@ -169,7 +168,7 @@ label.disabled { color: #d7d7d7 }
  border-right: 1px solid #ddd;
 }
 #mainnav .active :link, #mainnav .active :visited {
- background: #000 url(../topbar_gradient2.png) 0 0 repeat-x;
+ background: #333 url(../topbar_gradient2.png) 0 0 repeat-x;
  border-top: none;
  border-right: 1px solid #000;
  color: #eee;
@@ -256,22 +255,6 @@ label.disabled { color: #d7d7d7 }
 #help :link, #help :visited { cursor: help }
 #help hr { display: none }
 
-/* Section folding */
-.foldable :link, .foldable :visited {
- background: url(../expanded.png) 0 50% no-repeat;
- border: none;
- padding-left: 16px;
-}
-.foldable :link:hover, .foldable :visited:hover { background-color: transparent }
-.collapsed > .foldable :link, .collapsed > .foldable :visited {
- background-image: url(../collapsed.png);
-}
-.collapsed > div, .collapsed > table, .collapsed > ul { display: none }
-fieldset > legend.foldable :link, fieldset > legend.foldable :visited {
- color: #666;
- font-size: 110%;
-}
-
 /* Page preferences form */
 #prefs {
  background: #f7f7f0;
@@ -319,8 +302,6 @@ fieldset > legend.foldable :link, fieldset > legend.foldable :visited {
 /* Wiki */
 .wikipage { padding-left: 18px }
 .wikipage h1, .wikipage h2, .wikipage h3 { margin-left: -18px }
-div.compact > p:first-child { margin-top: 0 }
-div.compact > p:last-child { margin-bottom: 0 }
 
 a.missing:link, a.missing:visited, a.missing, span.missing,
 a.forbidden, span.forbidden { color: #998 }
@@ -365,11 +346,6 @@ table.wiki {
  border-spacing: 0;
 }
 table.wiki td { border: 1px solid #ccc;  padding: .1em .25em; }
-table.wiki th {
- border: 2px solid #bbb;
- padding: .1em .8em;
- background-color: #f7f7f7;
-}
 
 .wikitoolbar {
  margin-top: 0.3em;
@@ -413,7 +389,7 @@ table.wiki th {
 .attachment #preview { margin-top: 1em }
 
 /* Styles for the list of attachments. */
-#attachments > div { border: 1px outset #996; padding: 1em }
+#attachments { border: 1px outset #996; padding: 1em }
 #attachments .attachments { margin-left: 2em; padding: 0 }
 #attachments dt { display: list-item; list-style: square; }
 #attachments dd { font-style: italic; margin-left: 0; padding-left: 0; }

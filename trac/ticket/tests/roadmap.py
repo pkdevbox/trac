@@ -1,3 +1,4 @@
+from trac.config import Configuration
 from trac.test import EnvironmentStub
 from trac.ticket.roadmap import *
 from trac.core import ComponentManager
@@ -33,7 +34,7 @@ class TicketGroupStatsTestCase(unittest.TestCase):
         self.stats.add_interval('intTitle', 3, {'k1': 'v1'}, 'css', 0)
         self.stats.add_interval('intTitle', 5, {'k1': 'v1'}, 'css', 0)
         self.stats.refresh_calcs()
-        interval = self.stats.intervals[1]
+        int = self.stats.intervals[1]
         self.assertEquals(0, self.stats.done_count, 'count added for no prog')
         self.assertEquals(0, self.stats.done_percent, 'percent incremented')
 

@@ -1,4 +1,6 @@
 import os
+import inspect
+import StringIO
 import unittest
 import difflib
 from datetime import datetime
@@ -111,11 +113,7 @@ class WikiTestCase(unittest.TestCase):
             context = Context.from_request(req, 'wiki', 'WikiStart')
         self.context = context
 
-        all_test_components = [
-                HelloWorldMacro, DivHelloWorldMacro, TableHelloWorldMacro, 
-                DivCodeMacro, DivCodeElementMacro, DivCodeStreamMacro, 
-                NoneMacro, SampleResolver]
-        self.env = EnvironmentStub(enable=['trac.*'] + all_test_components)
+        self.env = EnvironmentStub()
         # -- macros support
         self.env.path = ''
         # -- intertrac support

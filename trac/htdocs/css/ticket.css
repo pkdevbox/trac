@@ -73,40 +73,25 @@ h1 .status { color: #444; }
  float: right;
  position: relative;
  bottom: 0.3em;
- margin-left: 0.2em;
 }
 
-.trac-nav { float: right }
 #changelog { border: 1px outset #996; padding: 1em }
-.trac-shade { background-color: #eee }
-#trac-comment-editor { margin-top: 1em; margin-left: 2em }
-#trac-comment-editor textarea { margin-left: -1px; margin-right: -1px; width: 100% }
-#trac-comment-editor .wikitoolbar { margin-left: -1px }
 #preview { border: 1px solid #d7d7d7; padding: 1em }
-#trac-add-comment :link, #trac-add-comment :visited { color: #b00 }
-#changelog h3, #ticketchange h3 {
+#preview h3, #changelog h3 {
  border-bottom: 1px solid #d7d7d7;
  color: #999;
  font-size: 100%;
  font-weight: normal;
 }
-.threading, #changelog .inlinebuttons { float: right; margin-left: 0.2em }
-.threading { font-size: 85%; }
-.threading :link, .threading :visited { border-bottom: 0 }
-#changelog .trac-lastedit {
- padding-left: 2.5em;
- color: #999;
- font-size: 80%;
-}
-#changelog .trac-lastedit :link, #changelog .trac-lastedit :visited { color: inherit }
+.threading, #changelog .inlinebuttons { float: right; }
+.threading { font-size: 90%; }
 
 #preview .changes, #changelog .changes { list-style: square; margin-left: 2em; padding: 0 }
 #preview .comment, #changelog .comment { margin-left: 2em }
 
 form .field { margin-top: .75em; width: 100% }
 form .field fieldset.iefix { margin-left: 1px; margin-right: 1px }
-label[for=comment] { float: right }
-#comment { margin-left: -1px; margin-right: -1px; padding: 0; width: 100% }
+form .field #comment { margin-left: -1px; margin-right: -1px; padding: 0; width: 100% }
 form .field .wikitoolbar { margin-left: -1px }
 
 #properties { white-space: nowrap; line-height: 160%; padding: .5em }
