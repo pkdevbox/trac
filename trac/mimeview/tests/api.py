@@ -21,7 +21,7 @@ from trac.mimeview import api
 from trac.mimeview.api import get_mimetype, IContentConverter, Mimeview, \
                               _group_lines
 from genshi import Stream, Namespace
-from genshi.core import Attrs, TEXT, START, END
+from genshi.core import Attrs, TEXT, START, END, START_NS, END_NS
 from genshi.input import HTMLParser
 
 
@@ -108,6 +108,9 @@ class MimeviewTestCase(unittest.TestCase):
         self.assertEqual(Converter2(self.env), conversions[2][-1])
 
 class GroupLinesTestCase(unittest.TestCase):
+    
+    if not hasattr(unittest.TestCase, "assertTrue"):
+        assertTrue = unittest.TestCase.failUnless   # Python 2.3 compatibility
 
     def test_empty_stream(self):
         # FIXME: this currently fails

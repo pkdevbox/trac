@@ -14,19 +14,24 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import copy
 import re
+from datetime import datetime
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
 
 from genshi.builder import tag
 
-from trac.cache import cached, cached_value
 from trac.config import *
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionCache, PermissionSystem
 from trac.resource import IResourceManager
 from trac.util import Ranges
-from trac.util.text import shorten_line
-from trac.util.translation import _, N_, gettext
+from trac.util.compat import set, sorted
+from trac.util.datefmt import utc
+from trac.util.text import shorten_line, obfuscate_email_address
+from trac.util.translation import _
 from trac.wiki import IWikiSyntaxProvider, WikiParser
 
 
@@ -138,31 +143,10 @@ class ITicketManipulator(Interface):
         ticket. Therefore, a return value of `[]` means everything is OK."""
 
 
-class IMilestoneChangeListener(Interface):
-    """Extension point interface for components that require notification
-    when milestones are created, modified, or deleted."""
-
-    def milestone_created(milestone):
-        """Called when a milestone is created."""
-
-    def milestone_changed(milestone, old_values):
-        """Called when a milestone is modified.
-
-        `old_values` is a dictionary containing the previous values of the
-        milestone properties that changed. Currently those properties can be
-        'name', 'due', 'completed', or 'description'.
-        """
-
-    def milestone_deleted(milestone):
-        """Called when a milestone is deleted."""
-
-
 class TicketSystem(Component):
     implements(IPermissionRequestor, IWikiSyntaxProvider, IResourceManager)
 
     change_listeners = ExtensionPoint(ITicketChangeListener)
-    milestone_change_listeners = ExtensionPoint(IMilestoneChangeListener)
-    
     action_controllers = OrderedExtensionsOption('ticket', 'workflow',
         ITicketActionController, default='ConfigurableTicketWorkflow',
         include_missing=False,
@@ -176,46 +160,13 @@ class TicketSystem(Component):
         [TracTickets#Assign-toasDrop-DownList Assign-to as Drop-Down List]
         (''since 0.9'').""")
 
-    default_version = Option('ticket', 'default_version', '',
-        """Default version for newly created tickets.""")
-
-    default_type = Option('ticket', 'default_type', 'defect',
-        """Default type for newly created tickets (''since 0.9'').""")
-
-    default_priority = Option('ticket', 'default_priority', 'major',
-        """Default priority for newly created tickets.""")
-
-    default_milestone = Option('ticket', 'default_milestone', '',
-        """Default milestone for newly created tickets.""")
-
-    default_component = Option('ticket', 'default_component', '',
-        """Default component for newly created tickets.""")
-
-    default_severity = Option('ticket', 'default_severity', '',
-        """Default severity for newly created tickets.""")
-
-    default_summary = Option('ticket', 'default_summary', '',
-        """Default summary (title) for newly created tickets.""")
-
-    default_description = Option('ticket', 'default_description', '',
-        """Default description for newly created tickets.""")
-
-    default_keywords = Option('ticket', 'default_keywords', '',
-        """Default keywords for newly created tickets.""")
-
-    default_owner = Option('ticket', 'default_owner', '',
-        """Default owner for newly created tickets.""")
-
-    default_cc = Option('ticket', 'default_cc', '',
-        """Default cc: list for newly created tickets.""")
-
-    default_resolution = Option('ticket', 'default_resolution', 'fixed',
-        """Default resolution for resolving (closing) tickets
-        (''since 0.11'').""")
+    _fields = None
+    _custom_fields = None
 
     def __init__(self):
         self.log.debug('action controllers for ticket workflow: %r' % 
                 [c.__class__.__name__ for c in self.action_controllers])
+        self._fields_lock = threading.RLock()
 
     # Public API
 
@@ -243,66 +194,64 @@ class TicketSystem(Component):
         return sorted(valid_states)
 
     def get_ticket_fields(self):
-        """Returns list of fields available for tickets.
+        """Returns the list of fields available for tickets."""
+        # This is now cached - as it makes quite a number of things faster,
+        # e.g. #6436
+        if self._fields is None:
+            self._fields_lock.acquire()
+            try:
+                if self._fields is None: # double-check (race after 1st check)
+                    self._fields = self._get_ticket_fields()
+            finally:
+                self._fields_lock.release()
+        return [f.copy() for f in self._fields]
 
-        Each field is a dict with at least the 'name', 'label' and 'type' keys.
-        Note that 'label' value is *not* localized here, see
-        `get_ticket_field_labels` for that.
-        It may in addition contain the 'custom' key, the 'optional' and the
-        'options' keys. When present 'custom' and 'optional' are always `True`.
-        """
-        return copy.deepcopy(self.fields())
+    def reset_ticket_fields(self):
+        self._fields_lock.acquire()
+        try:
+            self._fields = None
+            self.config.touch() # brute force approach for now
+        finally:
+            self._fields_lock.release()
 
-    def get_ticket_field_labels(self):
-        """Return a mapping of localized labels for ticket field names"""
-        label = 'label' # workaround gettext extraction bug
-        return dict((f['name'], gettext(f[label]))
-                    for f in self.get_ticket_fields())
-
-    def reset_ticket_fields(self, db=None):
-        """Invalidate ticket field cache."""
-        self.fields.invalidate(db)
-
-    @cached
-    def fields(self, db):
-        """Return the list of fields available for tickets."""
+    def _get_ticket_fields(self):
         from trac.ticket import model
 
+        db = self.env.get_db_cnx()
         fields = []
 
         # Basic text fields
-        fields.append({'name': 'summary', 'type': 'text',
-                       'label': N_('Summary')})
-        fields.append({'name': 'reporter', 'type': 'text',
-                       'label': N_('Reporter')})
+        for name in ('summary', 'reporter'):
+            field = {'name': name, 'type': 'text', 'label': name.title()}
+            fields.append(field)
 
         # Owner field, by default text but can be changed dynamically 
         # into a drop-down depending on configuration (restrict_owner=true)
-        field = {'name': 'owner', 'label': N_('Owner')}
+        field = {'name': 'owner', 'label': 'Owner'}
         field['type'] = 'text'
         fields.append(field)
 
         # Description
         fields.append({'name': 'description', 'type': 'textarea',
-                       'label': N_('Description')})
+                       'label': 'Description'})
 
         # Default select and radio fields
-        selects = [('type', N_('Type'), model.Type),
-                   ('status', N_('Status'), model.Status),
-                   ('priority', N_('Priority'), model.Priority),
-                   ('milestone', N_('Milestone'), model.Milestone),
-                   ('component', N_('Component'), model.Component),
-                   ('version', N_('Version'), model.Version),
-                   ('severity', N_('Severity'), model.Severity),
-                   ('resolution', N_('Resolution'), model.Resolution)]
-        for name, label, cls in selects:
+        selects = [('type', model.Type),
+                   ('status', model.Status),
+                   ('priority', model.Priority),
+                   ('milestone', model.Milestone),
+                   ('component', model.Component),
+                   ('version', model.Version),
+                   ('severity', model.Severity),
+                   ('resolution', model.Resolution)]
+        for name, cls in selects:
             options = [val.name for val in cls.select(self.env, db=db)]
             if not options:
                 # Fields without possible values are treated as if they didn't
                 # exist
                 continue
-            field = {'name': name, 'type': 'select', 'label': label,
-                     'value': getattr(self, 'default_' + name, ''),
+            field = {'name': name, 'type': 'select', 'label': name.title(),
+                     'value': self.config.get('ticket', 'default_' + name),
                      'options': options}
             if name in ('status', 'resolution'):
                 field['type'] = 'radio'
@@ -312,15 +261,9 @@ class TicketSystem(Component):
             fields.append(field)
 
         # Advanced text fields
-        fields.append({'name': 'keywords', 'type': 'text',
-                       'label': N_('Keywords')})
-        fields.append({'name': 'cc', 'type': 'text', 'label': N_('Cc')})
-
-        # Date/time fields
-        fields.append({'name': 'time', 'type': 'time',
-                       'label': N_('Created')})
-        fields.append({'name': 'changetime', 'type': 'time',
-                       'label': N_('Modified')})
+        for name in ('keywords', 'cc', ):
+            field = {'name': name, 'type': 'text', 'label': name.title()}
+            fields.append(field)
 
         for field in self.get_custom_fields():
             if field['name'] in [f['name'] for f in fields]:
@@ -342,14 +285,19 @@ class TicketSystem(Component):
 
     reserved_field_names = ['report', 'order', 'desc', 'group', 'groupdesc',
                             'col', 'row', 'format', 'max', 'page', 'verbose',
-                            'comment', 'or']
+                            'comment']
 
     def get_custom_fields(self):
-        return copy.deepcopy(self.custom_fields)
+        if self._custom_fields is None:
+            self._fields_lock.acquire()
+            try:
+                if self._custom_fields is None: # double-check
+                    self._custom_fields = self._get_custom_fields()
+            finally:
+                self._fields_lock.release()
+        return [f.copy() for f in self._custom_fields]
 
-    @cached_value
-    def custom_fields(self, db):
-        """Return the list of custom ticket fields available for tickets."""
+    def _get_custom_fields(self):
         fields = []
         config = self.config['ticket-custom']
         for name in [option for option, value in config.options()
@@ -377,12 +325,6 @@ class TicketSystem(Component):
         fields.sort(lambda x, y: cmp(x['order'], y['order']))
         return fields
 
-    def get_field_synonyms(self):
-        """Return a mapping from field name synonyms to field names.
-        The synonyms are supposed to be more intuitive for custom queries."""
-        # i18n TODO - translated keys
-        return {'created': 'time', 'modified': 'changetime'}
-
     def eventually_restrict_owner(self, field, ticket=None):
         """Restrict given owner field to be a list of users having
         the TICKET_MODIFY permission (for the given ticket)
@@ -405,12 +347,10 @@ class TicketSystem(Component):
     def get_permission_actions(self):
         return ['TICKET_APPEND', 'TICKET_CREATE', 'TICKET_CHGPROP',
                 'TICKET_VIEW', 'TICKET_EDIT_CC', 'TICKET_EDIT_DESCRIPTION',
-                'TICKET_EDIT_COMMENT',
                 ('TICKET_MODIFY', ['TICKET_APPEND', 'TICKET_CHGPROP']),
                 ('TICKET_ADMIN', ['TICKET_CREATE', 'TICKET_MODIFY',
                                   'TICKET_VIEW', 'TICKET_EDIT_CC',
-                                  'TICKET_EDIT_DESCRIPTION',
-                                  'TICKET_EDIT_COMMENT'])]
+                                  'TICKET_EDIT_DESCRIPTION'])]
 
     # IWikiSyntaxProvider methods
 

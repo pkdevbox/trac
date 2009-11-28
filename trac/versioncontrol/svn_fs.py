@@ -45,6 +45,7 @@ Note about Unicode:
 """
 
 import os.path
+import time
 import weakref
 import posixpath
 from datetime import datetime
@@ -57,6 +58,7 @@ from trac.versioncontrol import Changeset, Node, Repository, \
 from trac.versioncontrol.cache import CachedRepository
 from trac.versioncontrol.svn_authz import SubversionAuthorizer
 from trac.util import embedded_numbers
+from trac.util.compat import sorted
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
 from trac.util.datefmt import utc
@@ -172,7 +174,7 @@ class Pool(object):
 
     def assert_valid(self):
         """Assert that this memory_pool is still valid."""
-        assert self.valid()
+        assert self.valid();
 
     def clear(self):
         """Clear embedded memory pool. Invalidate all subpools."""
@@ -213,7 +215,7 @@ class Pool(object):
             # are destroyed
             self._weakref = weakref.ref(self._parent_pool._is_valid,
                                         lambda x: \
-                                        _mark_weakpool_invalid(weakself))
+                                        _mark_weakpool_invalid(weakself));
 
         # mark pool as valid
         self._is_valid = lambda: 1
@@ -614,8 +616,7 @@ class SubversionRepository(Repository):
             e_ptr, e_baton = delta.make_editor(editor, subpool())
             old_root = fs.revision_root(self.fs_ptr, old_rev, subpool())
             new_root = fs.revision_root(self.fs_ptr, new_rev, subpool())
-            def authz_cb(root, path, pool):
-                return 1
+            def authz_cb(root, path, pool): return 1
             text_deltas = 0 # as this is anyway re-done in Diff.py...
             entry_props = 0 # "... typically used only for working copy updates"
             repos.svn_repos_dir_delta(old_root,
@@ -859,7 +860,7 @@ class SubversionChangeset(Changeset):
     def get_properties(self):
         props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
         properties = {}
-        for k, v in props.iteritems():
+        for k,v in props.iteritems():
             if k not in (core.SVN_PROP_REVISION_LOG,
                          core.SVN_PROP_REVISION_AUTHOR,
                          core.SVN_PROP_REVISION_DATE):
@@ -940,7 +941,7 @@ class SubversionChangeset(Changeset):
             idx += 1
 
         moves = []
-        for k, v in copies.items():
+        for k,v in copies.items():
             if k in deletions:
                 changes[v][2] = Changeset.MOVE
                 moves.append(deletions[k])

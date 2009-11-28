@@ -61,20 +61,19 @@ class AboutModule(Component):
 
         if 'CONFIG_VIEW' in req.perm('config', 'ini'):
             # Collect config information
-            defaults = self.config.defaults(self.compmgr)
             sections = []
-            for section in self.config.sections(self.compmgr):
+            for section in self.config.sections():
                 options = []
-                default_options = defaults.get(section, {})
-                for name, value in self.config.options(section, self.compmgr):
-                    default = default_options.get(name) or ''
+                default_options = self.config.defaults().get(section)
+                for name,value in self.config.options(section):
+                    default = default_options and default_options.get(name) or ''
                     options.append({
                         'name': name, 'value': value,
                         'modified': unicode(value) != unicode(default)
                     })
-                options.sort(key=lambda o: o['name'])
+                options.sort(lambda x,y: cmp(x['name'], y['name']))
                 sections.append({'name': section, 'options': options})
-            sections.sort(key=lambda s: s['name'])
+            sections.sort(lambda x,y: cmp(x['name'], y['name']))
             data['config'] = sections
 
         return 'about.html', data, None

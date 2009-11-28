@@ -15,7 +15,7 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 from datetime import datetime
-from itertools import groupby
+import imp
 import inspect
 import os
 import re
@@ -27,12 +27,15 @@ from genshi.core import Markup
 from trac.core import *
 from trac.resource import Resource, get_resource_url, get_resource_summary
 from trac.util.datefmt import format_date, utc
+from trac.util.compat import sorted, groupby, any, set
 from trac.util.html import escape
 from trac.util.text import unquote, to_unicode
 from trac.util.translation import _
 from trac.wiki.api import IWikiMacroProvider, WikiSystem, parse_args
 from trac.wiki.formatter import format_to_html, format_to_oneliner, \
                                 extract_link, OutlineFormatter
+from trac.wiki.model import WikiPage
+from trac.web.chrome import add_stylesheet
 
 
 class WikiMacroBase(Component):
@@ -73,12 +76,9 @@ class TitleIndexMacro(WikiMacroBase):
     parameter is omitted, all pages are listed.
 
     Alternate `format` and `depth` can be specified:
-     - `format=group`: The list of pages will be structured in groups
+     - `format=group`: The list of page will be structured in groups
        according to common prefix. This format also supports a `min=n`
        argument, where `n` is the minimal number of pages for a group.
-     - `format=hierarchy`: The list of pages will be structured according
-       to the page name path hierarchy. This format also supports a `min=n`
-       argument, where higher `n` flatten the display hierarchy
      - `depth=n`: limit the depth of the pages to list. If set to 0,
        only toplevel pages will be shown, if set to 1, only immediate
        children pages will be shown, etc. If not set, or set to -1,
@@ -90,52 +90,30 @@ class TitleIndexMacro(WikiMacroBase):
     def expand_macro(self, formatter, name, content):
         args, kw = parse_args(content)
         prefix = args and args[0] or None
+        format = kw.get('format', '')
         minsize = max(int(kw.get('min', 2)), 2)
         depth = int(kw.get('depth', -1))
         start = prefix and prefix.count('/') or 0
 
         wiki = formatter.wiki
         pages = sorted([page for page in wiki.get_pages(prefix) \
-                        if (depth < 0 or depth >= page.count('/') - start) and
-                            'WIKI_VIEW' in formatter.perm('wiki', page)])
+                        if 'WIKI_VIEW' in formatter.perm('wiki', page)])
 
-        # the function definitions for the different format styles
-
-        # the different page split formats, each corresponding to its rendering
-        def split_pages_group(pages):
-            return [(self.SPLIT_RE.split(
-                        wiki.format_page_name(page, split=True)), page)
-                    for page in pages]
-
-        def split_pages_hierarchy(pages):
-            return [(wiki.format_page_name(page).split("/"), page)
-                    for page in pages]
-
-        # the different rendering formats
-        def render_group(group, classattribute=None):
-            return tag.ul(
-                [tag.li(isinstance(elt, tuple) and 
-                        tag(tag.strong(elt[0]), render_group(elt[1])) or
-                        tag.a(wiki.format_page_name(elt),
-                              href=formatter.href.wiki(elt)))
-                 for elt in group],
-                class_=classattribute)
-        def render_hierarchy(group, classattribute=None):
-            return tag.ul(
-                [tag.li(isinstance(elt, tuple) and 
-                        tag(tag.a(elt[0], href=formatter.href.wiki(elt[1][0])),
-                            render_hierarchy(elt[1][1:])) or
-                        tag.a(elt.rpartition("/")[2], 
-                              href=formatter.href.wiki(elt)))
-                 for elt in group],
-                class_=classattribute)
-
-        # create the group hierarchy, that's the same for every format
+        if format != 'group':
+            return tag.ul([tag.li(tag.a(wiki.format_page_name(page),
+                                        href=formatter.href.wiki(page)))
+                           for page in pages
+                           if depth < 0 or depth >= page.count('/') - start])
+        
+        # Group by Wiki word and/or Wiki hierarchy
+        pages = [(self.SPLIT_RE.split(wiki.format_page_name(page, split=True)),
+                  page) for page in pages
+                 if depth < 0 or depth >= page.count('/') - start]
         def split_in_groups(group):
             """Return list of pagename or (key, sublist) elements"""
             groups = []
-            for key, subgrp in groupby(group, lambda (k, p): k and k[0] or ''):
-                subgrp = [(k[1:], p) for k, p in subgrp]
+            for key, subgrp in groupby(group, lambda (k,p): k and k[0] or ''):
+                subgrp = [(k[1:],p) for k,p in subgrp]
                 if key and len(subgrp) >= minsize:
                     sublist = split_in_groups(sorted(subgrp))
                     if len(sublist) == 1:
@@ -148,16 +126,14 @@ class TitleIndexMacro(WikiMacroBase):
                         groups.append(elt[1])
             return groups
 
-        format = {'group':     (split_pages_group,     render_group),
-                  'hierarchy': (split_pages_hierarchy, render_hierarchy)
-                 }.get(kw.get('format', ''), None)
-
-        if format:
-            return format[1](split_in_groups(format[0](pages)), "titleindex")
-        else:
-            return tag.ul(tag.li(tag.a(wiki.format_page_name(page), 
-                                        href=formatter.href.wiki(page)))
-                          for page in pages)
+        def render_groups(groups):
+            return tag.ul(
+                [tag.li(isinstance(elt, tuple) and 
+                        tag(tag.strong(elt[0]), render_groups(elt[1])) or
+                        tag.a(wiki.format_page_name(elt),
+                              href=formatter.href.wiki(elt)))
+                 for elt in groups])
+        return render_groups(split_in_groups(pages))
 
 
 class RecentChangesMacro(WikiMacroBase):
@@ -308,19 +284,17 @@ class ImageMacro(WikiMacroBase):
     and style of the rendered `<img>` element:
      * digits and unit are interpreted as the size (ex. 120, 25%)
        for the image
-     * `right`, `left`, `center`, `top`, `bottom` and `middle` are interpreted 
-       as the alignment for the image (alternatively, the first three can be
-       specified using `align=...` and the last three using `valign=...`)
+     * `right`, `left`, `top` or `bottom` are interpreted as the alignment for
+       the image
      * `link=some TracLinks...` replaces the link to the image source by the
        one specified using a TracLinks. If no value is specified, the link is
        simply removed.
      * `nolink` means without link to image source (deprecated, use `link=`)
      * `key=value` style are interpreted as HTML attributes or CSS style
        indications for the image. Valid keys are:
-        * align, valign, border, width, height, alt, title, longdesc, class, 
-          margin, id and usemap
-        * `border` and `margin` can only be a number
-        * `margin` is superseded by `center` which uses auto margins 
+        * align, border, width, height, alt, title, longdesc, class, id
+          and usemap
+        * `border` can only be a number
     
     Examples:
     {{{
@@ -354,55 +328,47 @@ class ImageMacro(WikiMacroBase):
         args = content.split(',')
         if len(args) == 0:
             raise Exception("No argument.")
-        filespec = args.pop(0)
+        filespec = args[0]
 
         # style information
         size_re = re.compile('[0-9]+(%|px)?$')
-        attr_re = re.compile('(align|valign|border|margin|width|height|alt'
+        attr_re = re.compile('(align|border|width|height|alt'
                              '|title|longdesc|class|id|usemap)=(.+)')
         quoted_re = re.compile("(?:[\"'])(.*)(?:[\"'])$")
         attr = {}
         style = {}
         link = ''
-        while args:
-            arg = args.pop(0).strip()
+        for arg in args[1:]:
+            arg = arg.strip()
             if size_re.match(arg):
                 # 'width' keyword
                 attr['width'] = arg
-            elif arg == 'nolink':
+                continue
+            if arg == 'nolink':
                 link = None
-            elif arg.startswith('link='):
+                continue
+            if arg.startswith('link='):
                 val = arg.split('=', 1)[1]
                 elt = extract_link(self.env, formatter.context, val.strip())
                 link = None
                 if isinstance(elt, Element):
                     link = elt.attrib.get('href')
-            elif arg in ('left', 'right'):
+                continue
+            if arg in ('left', 'right', 'top', 'bottom'):
                 style['float'] = arg
-            elif arg == 'center':
-                style['margin-left'] = style['margin-right'] = 'auto'
-                style['display'] = 'block'
-                style.pop('margin', '')
-            elif arg in ('top', 'bottom', 'middle'):
-                style['vertical-align'] = arg
-            else:
-                match = attr_re.match(arg)
-                if match:
-                    key, val = match.groups()
-                    if (key == 'align' and 
-                            val in ('left', 'right', 'center')) or \
-                        (key == 'valign' and \
-                            val in ('top', 'middle', 'bottom')):
-                        args.append(val)
-                    elif key == 'margin' and 'margin-left' not in style:
-                        style['margin'] = ' %dpx' % int(val)
-                    elif key == 'border':
-                        style['border'] = ' %dpx solid' % int(val)
-                    else:
-                        m = quoted_re.search(val) # unquote "..." and '...'
-                        if m:
-                            val = m.group(1)
-                        attr[str(key)] = val # will be used as a __call__ kwd
+                continue
+            match = attr_re.match(arg)
+            if match:
+                key, val = match.groups()
+                m = quoted_re.search(val) # unquote "..." and '...'
+                if m:
+                    val = m.group(1)
+                if key == 'align':
+                    style['float'] = val
+                elif key == 'border':
+                    style['border'] = ' %dpx solid' % int(val);
+                else:
+                    attr[str(key)] = val # will be used as a __call__ keyword
 
         # parse filespec argument to get realm and id if contained.
         parts = filespec.split(':')
@@ -503,7 +469,7 @@ class MacroListMacro(WikiMacroBase):
                                                  name=macro_name), e)
                     yield (macro_name, descr)
 
-        return tag.dl([(tag.dt(tag.code('[[', macro_name, ']]'),
+        return tag.dl([(tag.dt(tag.code('[[',macro_name,']]'),
                                id='%s-macro' % macro_name),
                         tag.dd(description))
                        for macro_name, description in get_macro_descr()])
@@ -527,11 +493,8 @@ class TracIniMacro(WikiMacroBase):
         if args:
             key_filter = args.pop(0).strip()
 
-        registry = Option.get_registry(self.compmgr)
-        sections = {}
-        for (section, key), option in registry.iteritems():
-            if section.startswith(section_filter):
-                sections.setdefault(section, {})[key] = option
+        sections = set([section for section, option in Option.registry.keys()
+                        if section.startswith(section_filter)])
 
         return tag.div(class_='tracini')(
             [(tag.h2('[%s]' % section, id='%s-section' % section),
@@ -540,9 +503,10 @@ class TracIniMacro(WikiMacroBase):
                               tag.td(format_to_oneliner(
                                             self.env, formatter.context,
                                             to_unicode(option.__doc__))))
-                       for option in sorted(sections[section].itervalues(),
+                       for option in sorted(Option.registry.values(),
                                             key=lambda o: o.name)
-                       if option.name.startswith(key_filter)])))
+                       if option.section == section and
+                           option.name.startswith(key_filter)])))
              for section in sorted(sections)])
 
 
@@ -550,9 +514,7 @@ class TracIniMacro(WikiMacroBase):
 class TracGuideTocMacro(WikiMacroBase):
     """
     This macro shows a quick and dirty way to make a table-of-contents
-    for the Help/Guide. The table of contents will contain the Trac* and 
-    WikiFormatting pages, and can't be customized. Search for TocMacro for a
-    a more customizable table of contents.
+    for a set of wiki pages.
     """
 
     TOC = [('TracGuide',                    'Index'),

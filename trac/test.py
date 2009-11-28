@@ -20,21 +20,17 @@
 import os
 import unittest
 import sys
-
-try:
-    from babel import Locale
-except ImportError:
-    Locale = None
+import pkg_resources
+from fnmatch import fnmatch
 
 from trac.config import Configuration
-from trac.core import Component, ComponentManager
+from trac.core import Component, ComponentManager, ExtensionPoint
 from trac.env import Environment
 from trac.db.api import _parse_db_str, DatabaseManager
 from trac.db.sqlite_backend import SQLiteConnection
 import trac.db.postgres_backend
 import trac.db.mysql_backend
 from trac.ticket.default_workflow import load_workflow_config_snippet
-from trac.util import translation
 
 
 def Mock(bases=(), *initargs, **kw):
@@ -89,7 +85,7 @@ def Mock(bases=(), *initargs, **kw):
         bases = (bases,)
     cls = type('Mock', bases, {})
     mock = cls(*initargs)
-    for k, v in kw.items():
+    for k,v in kw.items():
         setattr(mock, k, v)
     return mock
 
@@ -131,9 +127,15 @@ class TestSetup(unittest.TestSuite):
             for test in self._tests:
                 if hasattr(test, 'setFixture'):
                     test.setFixture(self.fixture)
-        unittest.TestSuite.run(self, result)
+        for test in self._tests:    # Content of unittest.TestSuite.run()
+            if result.shouldStop:   # copied here for Python 2.3 compatibility
+                break
+            test(result)
         self.tearDown()
         return result
+
+    def __call__(self, *args, **kwds):      # Python 2.3 compatibility
+        return self.run(*args, **kwds)
 
 
 class TestCaseSetup(unittest.TestCase):
@@ -231,6 +233,7 @@ class EnvironmentStub(Environment):
         """
         ComponentManager.__init__(self)
         Component.__init__(self)
+        self.enabled_components = enable or ['trac.*']
         self.systeminfo = [('Python', sys.version)]
 
         import trac
@@ -246,11 +249,6 @@ class EnvironmentStub(Environment):
         load_workflow_config_snippet(self.config, 'basic-workflow.ini')
         self.config.set('logging', 'log_level', 'DEBUG')
         self.config.set('logging', 'log_type', 'stderr')
-        if enable is not None:
-            self.config.set('components', 'trac.*', 'disabled')
-        for name_or_class in enable or ():
-            config_key = self._component_name(name_or_class)
-            self.config.set('components', config_key, 'enabled')
 
         # -- logging
         from trac.log import logger_factory
@@ -269,7 +267,15 @@ class EnvironmentStub(Environment):
         self.abs_href = Href('http://example.org/trac.cgi')
 
         self.known_users = []
-        translation.activate(Locale and Locale('en', 'US'))
+
+    def is_component_enabled(self, cls):
+        for component in self.enabled_components:
+            if component is cls:
+                return True
+            if isinstance(component, basestring) and \
+                fnmatch(cls.__module__ + '.' + cls.__name__, component):
+                return True
+        return False
 
     def get_db_cnx(self, destroying=False):
         if self.db:
@@ -362,7 +368,7 @@ class EnvironmentStub(Environment):
                 for t in tables:
                     cursor.execute('DROP TABLE IF EXISTS `%s`' % t)
             db.commit()
-        except Exception:
+        except Exception, e:
             db.rollback()
 
     def get_known_users(self, cnx=None):
@@ -374,6 +380,7 @@ def locate(fn):
 
     Returns the fully-qualified path, or None.
     """
+    import os
     exec_suffix = os.name == 'nt' and '.exe' or ''
     
     for p in ["."] + os.environ['PATH'].split(os.pathsep):
@@ -396,7 +403,6 @@ def suite():
     import trac.versioncontrol.web_ui.tests
     import trac.web.tests
     import trac.wiki.tests
-    import tracopt.mimeview.tests
 
     suite = unittest.TestSuite()
     suite.addTest(trac.tests.basicSuite())
@@ -411,12 +417,11 @@ def suite():
     suite.addTest(trac.versioncontrol.web_ui.tests.suite())
     suite.addTest(trac.web.tests.suite())
     suite.addTest(trac.wiki.tests.suite())
-    suite.addTest(tracopt.mimeview.tests.suite())
 
     return suite
 
 if __name__ == '__main__':
-    import doctest
+    import doctest, sys
     doctest.testmod(sys.modules[__name__])
 
     # Clean up after doctest or spambayes gets unhappy

@@ -9,13 +9,6 @@ This should be '''''bold and italic'''''
 This should be <strong><i>bold and italic</i></strong>
 </p>
 ------------------------------
-============================== Problematic markup: comma-separated list with a time + bold markup
-23:59,'''test''',123
-------------------------------
-<p>
-23:59,<strong>test</strong>,123
-</p>
-------------------------------
 ============================== Consecutive bold + italic markup
 '''''one''''', '''''two''''', '''''three''''', '''''four'''''
 ------------------------------
@@ -157,25 +150,6 @@ Thing ![link:1 number 1], CS![link:1], ![link:bar]
 <p>
 link:1
 Thing [link:1 number 1], CS[link:1], [link:bar]
-</p>
-------------------------------
-============================== Link resolvers, alternative short form
-<link:1>
-
-Thing<link:2 and (3)>
-------------------------------
-<p>
-&lt;<a class="odd resolver" href="/thing/1">link:1</a>&gt;
-</p>
-<p>
-Thing&lt;<a class="text resolver" href="/stuff/2%20and%20%283%29">link:2 and (3)</a>&gt;
-</p>
-------------------------------
-============================== Escaping links resolvers, alternative short form
-!<link:1>
-------------------------------
-<p>
-&lt;link:1&gt;
 </p>
 ------------------------------
 ============================== Link resolvers, long form with label
@@ -328,15 +302,6 @@ Relative links are supported:
 <a href="/newticket?component=test">new ticket</a>
 <a class="wiki" href="/wiki/WikiStart#title">#title</a>
 <a class="wiki" href="/wiki/WikiStart#title">see Title</a>
-</p>
-------------------------------
-==============================  Wiki anchors
-This is the [=#init] initialization routine: ...
-Look for [=#extra ''additional explanations''] here.
-------------------------------
-<p>
-This is the <span class="wikianchor" id="init"></span> initialization routine: ...
-Look for <span class="wikianchor" id="extra"><i>additional explanations</i></span> here.
 </p>
 ------------------------------
 ==============================  Image links are now regular external links
@@ -588,66 +553,6 @@ Paragraph
 <div>Click me</div>
 ------------------------------
  […]
-============================== HTML comment wiki processor
-Before
-{{{
-#!htmlcomment
-This is a comment <em>with embedded tags &amp; entities</em>
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This is a comment <em>with embedded tags &amp; entities</em>
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment ends with "-"
-Before
-{{{
-#!htmlcomment
-This comment ends with -
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This comment ends with -
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment contains "--"
-Before
-{{{
-#!htmlcomment
-The character sequence -- is not allowed in comments
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<div class="system-message"><strong>Error: Forbidden character sequence "--" in htmlcomment wiki code block</strong></div><p>
-After
-</p>
-------------------------------
-Before
- […]
-After
 ============================== div and span wiki processors
 And now it's [[span('''TIME FOR BED!,class=important)]]. Really.
 {{{
@@ -1111,28 +1016,28 @@ Paragraph
 ============================== Simple definition list
  term:: definition
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition
+<dl><dt>term</dt><dd>definition
 </dd></dl>
 ------------------------------
 term:: definition
 ============================== Tricky definition list
  term:: definition:: text
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition:: text
+<dl><dt>term</dt><dd>definition:: text
 </dd></dl>
 ------------------------------
 term:: definition:: text
 ============================== Verbatim term in definition list
  `term`:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
 ============================== Another verbatim term in definition list
  {{{term}}}:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
@@ -1141,7 +1046,7 @@ term:: definition:: text
                  ''formatted''
                  definition
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <i>formatted</i>
 definition
 </dd></dl>
@@ -1173,7 +1078,7 @@ term::definition
  complex topic:: multiline
                  `not:: a dl`
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------
@@ -1183,7 +1088,7 @@ complex topic:: multiline
  complex topic:: multiline
                  {{{not:: a dl}}}
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------
@@ -1230,37 +1135,6 @@ in:
 out:
 || RPC# || parameter len || ..... parameter ..... ||
 ----
-============================== Simple Table with colspan
-in:
-|| name |||| parameter info ||
-|| RPC# || parameter len || ..... parameter ..... ||
-|||||| end ||
-----
-------------------------------
-<p>
-in:
-</p>
-<table class="wiki">
-<tr><td> name </td><td colspan="2"> parameter info 
-</td></tr><tr><td> RPC# </td><td> parameter len </td><td> ..... parameter ..... 
-</td></tr><tr><td colspan="3"> end 
-</td></tr></table>
-<hr />
-------------------------------
-in:
-|| name |||| parameter info ||
-|| RPC# || parameter len || ..... parameter ..... ||
-|||||| end ||
-----
-============================== Table headings (plus colspan)
-||= this is a header =||||= another header =|| not a header ||
-||= also a header =|| some non- || header cells ||= header =||
-------------------------------
-<table class="wiki">
-<tr><th> this is a header </th><th colspan="2"> another header </th><td> not a header 
-</td></tr><tr><th> also a header </th><td> some non- </td><td> header cells </td><th> header 
-</th></tr></table>
-------------------------------
 ============================== Indented tables, multiple columns
 || a || b ||
 
@@ -1286,21 +1160,6 @@ in:
 
   || a || b ||
   || a || b ||
-
-|| a || b ||
-============================== Table escaping
-|| a !|| b ||
-
-!|| a !|| b !||
-------------------------------
-<table class="wiki">
-<tr><td> a || b 
-</td></tr></table>
-<p>
-|| a || b ||
-</p>
-------------------------------
-|| a || b ||
 
 || a || b ||
 ============================================================

@@ -11,7 +11,9 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+import htmlentitydefs
 import os
+import re
 import unittest
 
 from genshi.core import Stream
@@ -25,11 +27,14 @@ from trac.web.href import Href
 
 
 class PatchRendererTestCase(unittest.TestCase):
+    
+    if not hasattr(unittest.TestCase, "assertTrue"):
+        assertTrue = unittest.TestCase.failUnless   # Python 2.3 compatibility
 
     def setUp(self):
         env = EnvironmentStub(enable=[Chrome, PatchRenderer])
         req = Mock(base_path='', chrome={}, args={}, session={},
-                   abs_href=Href('/'), href=Href('/'), locale='',
+                   abs_href=Href('/'), href=Href('/'),
                    perm=MockPerm(), authname=None, tz=None)
         self.context = Context.from_request(req)
         self.patch = Mimeview(env).renderers[0]

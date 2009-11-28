@@ -1,6 +1,7 @@
 from trac import perm
 from trac.core import *
 from trac.test import EnvironmentStub
+from trac.util.compat import sorted, set
 
 import unittest
 
@@ -88,6 +89,8 @@ class TestPermissionRequestor(Component):
 class PermissionSystemTestCase(unittest.TestCase):
 
     def setUp(self):
+        from trac.core import ComponentMeta
+
         self.env = EnvironmentStub(enable=[perm.PermissionSystem,
                                            perm.DefaultPermissionStore,
                                            TestPermissionRequestor])

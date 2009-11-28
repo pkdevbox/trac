@@ -30,12 +30,11 @@ import urllib2
 
 from genshi.builder import tag
 
-from trac.config import BoolOption, IntOption
+from trac.config import BoolOption
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
 from trac.util import hex_entropy, md5, md5crypt
-from trac.util.translation import _
 
 
 class LoginModule(Component):
@@ -61,14 +60,6 @@ class LoginModule(Component):
         """Whether login names should be converted to lower case
         (''since 0.9'').""")
 
-    auth_cookie_lifetime = IntOption('trac', 'auth_cookie_lifetime', 0,
-        """Lifetime of the authentication cookie, in seconds.
-        
-        This value determines how long the browser will cache authentication
-        information, and therefore, after how much inactivity a user will have
-        to log in again. The default value of 0 makes the cookie expire at the
-        end of the browsing session. (''since 0.12'')""")
-    
     # IAuthenticator methods
 
     def authenticate(self, req):
@@ -93,13 +84,12 @@ class LoginModule(Component):
 
     def get_navigation_items(self, req):
         if req.authname and req.authname != 'anonymous':
-            yield ('metanav', 'login', _('logged in as %(user)s',
-                                         user=req.authname))
+            yield ('metanav', 'login', 'logged in as %s' % req.authname)
             yield ('metanav', 'logout',
-                   tag.a(_('Logout'), href=req.href.logout()))
+                   tag.a('Logout', href=req.href.logout()))
         else:
             yield ('metanav', 'login',
-                   tag.a(_('Login'), href=req.href.login()))
+                   tag.a('Login', href=req.href.login()))
 
     # IRequestHandler methods
 
@@ -141,7 +131,7 @@ class LoginModule(Component):
             remote_user = remote_user.lower()
 
         assert req.authname in ('anonymous', remote_user), \
-               _('Already logged in as %(user)s.', user=req.authname)
+               'Already logged in as %s.' % req.authname
 
         cookie = hex_entropy()
         db = self.env.get_db_cnx()
@@ -156,8 +146,6 @@ class LoginModule(Component):
         req.outcookie['trac_auth']['path'] = req.base_path or '/'
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        if self.auth_cookie_lifetime > 0:
-            req.outcookie['trac_auth']['expires'] = self.auth_cookie_lifetime
 
     def _do_logout(self, req):
         """Log the user out.
@@ -272,13 +260,13 @@ class BasicAuthentication(PasswordFileAuthentication):
             try:
                 u, h = line.split(':')
             except ValueError:
-                print >> sys.stderr, 'Warning: invalid password line in %s: ' \
-                                     '%s' % (filename, line)
+                print >>sys.stderr, 'Warning: invalid password line in %s: %s' \
+                                    % (filename, line)
                 continue
             if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
-                print >> sys.stderr, 'Warning: cannot parse password for ' \
+                print >>sys.stderr, 'Warning: cannot parse password for ' \
                                     'user "%s" without the "crypt" module' % u
 
         if self.hash == {}:
@@ -334,8 +322,8 @@ class DigestAuthentication(PasswordFileAuthentication):
             try:
                 u, r, a1 = line.split(':')
             except ValueError:
-                print >> sys.stderr, 'Warning: invalid digest line in %s: %s' \
-                                     % (filename, line)
+                print >>sys.stderr, 'Warning: invalid digest line in %s: %s' \
+                                    % (filename, line)
                 continue
             if r == self.realm:
                 self.hash[u] = a1

@@ -14,9 +14,7 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-import os, re, types
-
-from genshi.core import Markup
+import re, sys, os, time
 
 from trac.core import *
 from trac.config import Option
@@ -196,9 +194,6 @@ class MySQLConnection(ConnectionWrapper):
             port = 3306
         cnx = MySQLdb.connect(db=path, user=user, passwd=password,
                               host=host, port=port, charset='utf8')
-        if hasattr(cnx, 'encoders'):
-            # 'encoders' undocumented but present since 1.2.1 (r422)
-            cnx.encoders[Markup] = cnx.encoders[types.UnicodeType]
         ConnectionWrapper.__init__(self, cnx, log)
         self._is_closed = False
 

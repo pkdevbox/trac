@@ -1,3 +1,4 @@
+import doctest
 import unittest
 
 from trac.tests import attachment, config, core, env, perm, resource, \

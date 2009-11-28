@@ -20,6 +20,7 @@
 
 import re
 import os
+import urllib
 
 from StringIO import StringIO
 
@@ -31,9 +32,9 @@ from genshi.util import plaintext
 from trac.core import *
 from trac.mimeview import *
 from trac.resource import get_relative_resource, get_resource_url
+from trac.util.compat import set
 from trac.wiki.api import WikiSystem, parse_args
 from trac.wiki.parser import WikiParser
-from trac.util import arity
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode, \
                            unicode_quote, unicode_quote_plus
 from trac.util.html import TracHTMLSanitizer
@@ -81,7 +82,6 @@ class WikiProcessor(object):
         self.macro_provider = None
 
         builtin_processors = {'html': self._html_processor,
-                              'htmlcomment': self._htmlcomment_processor,
                               'default': self._default_processor,
                               'comment': self._comment_processor,
                               'div': self._div_processor,
@@ -105,19 +105,13 @@ class WikiProcessor(object):
         if not self.processor:
             # Find a matching mimeview renderer
             from trac.mimeview.api import Mimeview
-            mimeview = Mimeview(formatter.env)
-            for renderer in mimeview.renderers:
-                if renderer.get_quality_ratio(self.name) > 1:
-                    self.processor = self._mimeview_processor
-                    break
-            if not self.processor:
-                mimetype = mimeview.get_mimetype(self.name)
-                if mimetype:
-                    self.name = mimetype
-                    self.processor = self._mimeview_processor
-        if not self.processor:
-            self.processor = self._default_processor
-            self.error = "No macro or processor named '%s' found" % name
+            mimetype = Mimeview(formatter.env).get_mimetype(self.name)
+            if mimetype:
+                self.name = mimetype
+                self.processor = self._mimeview_processor
+            else:
+                self.processor = self._default_processor
+                self.error = "No macro or processor named '%s' found" % name
 
     # builtin processors
 
@@ -139,18 +133,11 @@ class WikiProcessor(object):
             return system_message(_('HTML parsing error: %(message)s',
                                     message=escape(e.msg)), line)
         
-    def _htmlcomment_processor(self, text):
-        if "--" in text:
-            return system_message(_('Error: Forbidden character sequence '
-                                    '"--" in htmlcomment wiki code block'))
-        return Markup('<!--\n%s-->\n' % text)
-        
     def _elt_processor(self, eltname, format_to, text, args):
-        # Note: as long as _processor_param_re is not re.UNICODE, **args is OK
         elt = getattr(tag, eltname)(**args)
         if not WikiSystem(self.env).render_unsafe_content:
             sanitized_elt = getattr(tag, eltname)
-            for (k, data, pos) in (Stream(elt) | self._sanitizer):
+            for (k,data,pos) in (Stream(elt) | self._sanitizer):
                 sanitized_elt.attrib = data[1]
                 break # only look at START (elt,attrs)
             elt = sanitized_elt
@@ -158,8 +145,6 @@ class WikiProcessor(object):
         return elt
 
     def _div_processor(self, text):
-        if 'class' not in self.args:
-            self.args['class'] = 'wikipage'
         return self._elt_processor('div', format_to_html, text, self.args)
     
     def _span_processor(self, text):
@@ -178,12 +163,8 @@ class WikiProcessor(object):
     def _macro_processor(self, text):
         self.env.log.debug('Executing Wiki macro %s by provider %s'
                            % (self.name, self.macro_provider))
-        if arity(self.macro_provider.expand_macro) == 5:
-            return self.macro_provider.expand_macro(self.formatter, self.name,
-                                                    text, self.args)
-        else:
-            return self.macro_provider.expand_macro(self.formatter, self.name,
-                                                    text)
+        return self.macro_provider.expand_macro(self.formatter, self.name,
+                                                text)
 
     def _mimeview_processor(self, text):
         return Mimeview(self.env).render(self.formatter.context,
@@ -362,13 +343,6 @@ class Formatter(object):
     def _shref_formatter(self, match, fullmatch):
         ns = fullmatch.group('sns')
         target = self._unquote(fullmatch.group('stgt'))
-        match = match[1:-1]
-        return '&lt;%s&gt;' % \
-                self._make_link(ns, target, match, match, fullmatch)
-
-    def _shref2_formatter(self, match, fullmatch):
-        ns = fullmatch.group('sns2')
-        target = self._unquote(fullmatch.group('stgt2'))
         return self._make_link(ns, target, match, match, fullmatch)
 
     def _lhref_formatter(self, match, fullmatch):
@@ -378,19 +352,15 @@ class Formatter(object):
         label = fullmatch.group('label')
         if not label: # e.g. `[http://target]` or `[wiki:target]`
             if target:
-                if target.startswith('//'):     # for `[http://target]`
-                    label = ns+':'+target       #  use `http://target`
-                else:                           # for `wiki:target`
-                    label = target.lstrip('/')  #  use only `target`
+                if target.startswith('//'): # for `[http://target]`
+                    label = ns+':'+target   #  use `http://target`
+                else:                       # for `wiki:target`
+                    label = target          #  use only `target`
             else: # e.g. `[search:]` 
                 label = ns
         else:
             label = self._unquote(label)
         if rel:
-            if not label:
-                label = rel
-                while label.startswith('./') or label.startswith('../'):
-                    label = label.split('/', 1)[1]
             path, query, fragment = self.split_link(rel)
             if path.startswith('//'):
                 path = '/' + path.lstrip('/')
@@ -407,13 +377,11 @@ class Formatter(object):
                         else:
                             query = path[idx:]
                     target = unicode(resource.id) + query + fragment
-                    if resource.realm == 'wiki':
-                        target = '/' + target   # Avoid wiki page scoping
                     return self._make_link(resource.realm, target, match,
-                                           label, fullmatch)
+                                           label or rel, fullmatch)
                 if '?' in path and query:
                     query = '&' + query.lstrip('?')
-            return tag.a(label, href=path + query + fragment)
+            return tag.a(label or rel, href=path + query + fragment)
         else:
             return self._make_link(ns, target, match, label, fullmatch)
 
@@ -427,8 +395,12 @@ class Formatter(object):
             return self._make_ext_link(ns+':'+target, label)
         elif ns == "mailto":
             from trac.web.chrome import Chrome
-            otarget = Chrome(self.env).format_emails(self.context, target)
-            olabel = Chrome(self.env).format_emails(self.context, label)
+            chrome = Chrome(self.env)
+            if chrome.never_obfuscate_mailto:
+                otarget, olabel = target, label
+            else:
+                otarget = chrome.format_emails(self.context, target)
+                olabel = chrome.format_emails(self.context, label)
             if (otarget, olabel) == (target, label):
                 return self._make_mail_link('mailto:'+target, label)
             else:
@@ -488,7 +460,7 @@ class Formatter(object):
             return None
 
     def _make_ext_link(self, url, text, title=''):
-        local_url = self.env.project_url or \
+        local_url = self.env.config.get('project', 'url') or \
                     (self.req or self.env).abs_href.base
         if not url.startswith(local_url):
             return tag.a(tag.span(u'\xa0', class_="icon"), text,
@@ -499,15 +471,6 @@ class Formatter(object):
     def _make_mail_link(self, url, text, title=''):
         return tag.a(tag.span(u'\xa0', class_="icon"), text,
                       class_="mail-link", href=url, title=title or None)
-
-    # Anchors
-    
-    def _anchor_formatter(self, match, fullmatch):
-        anchor = fullmatch.group('anchorname')
-        label = fullmatch.group('anchorlabel') or ''
-        if label:
-            label = format_to_oneliner(self.env, self.context, label)
-        return '<span class="wikianchor" id="%s">%s</span>' % (anchor, label)
 
     # WikiMacros
     
@@ -650,7 +613,7 @@ class Formatter(object):
     # Definition Lists
 
     def _definition_formatter(self, match, fullmatch):
-        tmp = self.in_def_list and '</dd>' or '<dl class="wiki">'
+        tmp = self.in_def_list and '</dd>' or '<dl>'
         definition = match[:match.find('::')]
         tmp += '<dt>%s</dt><dd>' % format_to_oneliner(self.env, self.context,
                                                       definition)
@@ -745,22 +708,11 @@ class Formatter(object):
     def _table_cell_formatter(self, match, fullmatch):
         self.open_table()
         self.open_table_row()
-        numpipes = len(match)
-        cell = 'td'
-        if match[0] == '=':
-            numpipes -= 1
-        if match[-1] == '=':
-            numpipes -= 1
-            cell = 'th'
-        colspan = numpipes/2
-        if colspan > 1:
-            td = '<%s colspan="%d">' % (cell, int(colspan))
-        else:
-            td = '<%s>' % cell
         if self.in_table_cell:
-            td = '</%s>' % self.in_table_cell + td
-        self.in_table_cell = cell
-        return td
+            return '</td><td>'
+        else:
+            self.in_table_cell = 1
+            return '<td>'
 
     def open_table(self):
         if not self.in_table:
@@ -780,8 +732,9 @@ class Formatter(object):
         if self.in_table_row:
             self.in_table_row = 0
             if self.in_table_cell:
-                self.out.write('</%s>' % self.in_table_cell)
-                self.in_table_cell = ''
+                self.in_table_cell = 0
+                self.out.write('</td>')
+
             self.out.write('</tr>')
 
     def close_table(self):
@@ -833,12 +786,14 @@ class Formatter(object):
             match = WikiParser._processor_re.match(line)
             if match:
                 name = match.group(1)
-                args = WikiParser._processor_param_re.split(line[2+len(name):])
+                args = WikiParser._processor_param_re.split(line[len(name):])
                 del args[::3]
                 keys = [str(k) for k in args[::2]] # used as keyword parameters
                 values = [(v and v[0] in '"\'' and [v[1:-1]] or [v])[0]
                           for v in args[1::2]]
                 args = dict(zip(keys, values))
+                if 'class' not in args:
+                    args['class'] = 'wikipage'
                 self.code_processor = WikiProcessor(self, name, args)
             else:
                 self.code_buf.append(line)
@@ -874,8 +829,7 @@ class Formatter(object):
     def reset(self, source, out=None):
         self.source = source
         class NullOut(object):
-            def write(self, data):
-                pass
+            def write(self, data): pass
         self.out = out or NullOut()
         self._open_tags = []
         self._list_stack = []
@@ -886,7 +840,7 @@ class Formatter(object):
         self.in_table = 0
         self.in_def_list = 0
         self.in_table_row = 0
-        self.in_table_cell = ''
+        self.in_table_cell = 0
         self.paragraph_open = 0
 
     def format(self, text, out=None, escape_newlines=False):
@@ -964,20 +918,16 @@ class OneLinerFormatter(Formatter):
         Formatter.__init__(self, env, context)
 
     # Override a few formatters to disable some wiki syntax in "oneliner"-mode
-    def _list_formatter(self, match, fullmatch):
-        return match
-    def _indent_formatter(self, match, fullmatch):
-        return match
+    def _list_formatter(self, match, fullmatch): return match
+    def _indent_formatter(self, match, fullmatch): return match
     def _citation_formatter(self, match, fullmatch):
         return escape(match, False)
     def _heading_formatter(self, match, fullmatch):
         return escape(match, False)
     def _definition_formatter(self, match, fullmatch):
         return escape(match, False)
-    def _table_cell_formatter(self, match, fullmatch):
-        return match
-    def _last_table_cell_formatter(self, match, fullmatch):
-        return match
+    def _table_cell_formatter(self, match, fullmatch): return match
+    def _last_table_cell_formatter(self, match, fullmatch): return match
 
     def _macro_formatter(self, match, fullmatch):
         name = fullmatch.group('macroname')
@@ -1051,7 +1001,6 @@ class OutlineFormatter(Formatter):
             self.in_code_block -= 1
 
     def format(self, text, out, max_depth=6, min_depth=1):
-        whitespace_indent = '  '
         self.outline = []
         Formatter.format(self, text)
 
@@ -1061,30 +1010,19 @@ class OutlineFormatter(Formatter):
         min_depth = max(1, min_depth)
 
         curr_depth = min_depth - 1
-        out.write('\n')
         for depth, anchor, text in self.outline:
             if depth < min_depth or depth > max_depth:
                 continue
-            if depth > curr_depth: # Deeper indent
-                for i in range(curr_depth, depth):
-                    out.write(whitespace_indent * (2*i) + '<ol>\n' +
-                              whitespace_indent * (2*i+1) + '<li>\n')
-            elif depth < curr_depth: # Shallower indent
-                for i in range(curr_depth-1, depth-1, -1):
-                    out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                              whitespace_indent * (2*i) + '</ol>\n')
-                out.write(whitespace_indent * (2*depth-1) + '</li>\n' +
-                          whitespace_indent * (2*depth-1) + '<li>\n')
-            else: # Same indent
-                out.write( whitespace_indent * (2*depth-1) + '</li>\n' +
-                           whitespace_indent * (2*depth-1) + '<li>\n')
+            if depth < curr_depth:
+                out.write('</li></ol>' * (curr_depth - depth))
+                out.write("</li><li>\n")
+            elif depth > curr_depth:
+                out.write('<ol><li>' * (depth - curr_depth))
+            else:
+                out.write("</li><li>\n")
             curr_depth = depth
-            out.write(whitespace_indent * (2*depth) +
-                      '<a href="#%s">%s</a>\n' % (anchor, text))
-        # Close out all indentation
-        for i in range(curr_depth-1, min_depth-2, -1):
-            out.write(whitespace_indent * (2*i+1) + '</li>\n' +
-                      whitespace_indent * (2*i) + '</ol>\n')
+            out.write('<a href="#%s">%s</a>' % (anchor, text))
+        out.write('</li></ol>' * curr_depth)
 
     def _heading_formatter(self, match, fullmatch):
         depth, heading, anchor = self._parse_heading(match, fullmatch, True)
@@ -1100,7 +1038,7 @@ class LinkFormatter(OutlineFormatter):
         OutlineFormatter.__init__(self, env, context)
 
     def _heading_formatter(self, match, fullmatch):
-        return ''
+         return ''
 
     def match(self, wikitext):
         """Return the Wiki match found at the beginning of the `wikitext`"""

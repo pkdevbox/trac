@@ -18,14 +18,15 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 
 import re
+import sys
+import time
 from datetime import date, datetime
 
 from trac.attachment import Attachment
 from trac.core import TracError
 from trac.resource import Resource, ResourceNotFound
 from trac.ticket.api import TicketSystem
-from trac.util import embedded_numbers, partition
-from trac.util.text import empty
+from trac.util import embedded_numbers, partition, sorted
 from trac.util.datefmt import utc, utcmax, to_timestamp
 from trac.util.translation import _
 
@@ -35,28 +36,18 @@ __all__ = ['Ticket', 'Type', 'Status', 'Resolution', 'Priority', 'Severity',
 
 class Ticket(object):
 
-    @staticmethod
-    def id_is_valid(num):
-        return 0 < int(num) <= 1L << 31
+    id_is_valid = staticmethod(lambda num: 0 < int(num) <= 1L << 31)
 
-    # 0.11 compatibility
-    time_created = property(lambda self: self.values.get('time'))
-    time_changed = property(lambda self: self.values.get('changetime'))
-    
     def __init__(self, env, tkt_id=None, db=None, version=None):
         self.env = env
-        if tkt_id is not None:
-            tkt_id = int(tkt_id)
         self.resource = Resource('ticket', tkt_id, version)
         self.fields = TicketSystem(self.env).get_ticket_fields()
-        self.time_fields = [f['name'] for f in self.fields
-                            if f['type'] == 'time']
         self.values = {}
         if tkt_id is not None:
             self._fetch_ticket(tkt_id, db)
         else:
             self._init_defaults(db)
-            self.id = None
+            self.id = self.time_created = self.time_changed = None
         self._old = {}
 
     def _get_db(self, db):
@@ -73,7 +64,7 @@ class Ticket(object):
     def _init_defaults(self, db=None):
         for field in self.fields:
             default = None
-            if field['name'] in ['resolution', 'status', 'time', 'changetime']:
+            if field['name'] in ['resolution', 'status']:
                 # Ignore for new - only change through workflow
                 pass
             elif not field.get('custom'):
@@ -100,33 +91,27 @@ class Ticket(object):
             # Fetch the standard ticket fields
             std_fields = [f['name'] for f in self.fields if not f.get('custom')]
             cursor = db.cursor()
-            cursor.execute("SELECT %s FROM ticket WHERE id=%%s"
+            cursor.execute("SELECT %s,time,changetime FROM ticket WHERE id=%%s"
                            % ','.join(std_fields), (tkt_id,))
             row = cursor.fetchone()
         if not row:
-            raise ResourceNotFound(_('Ticket %(id)s does not exist.', 
-                                     id=tkt_id), _('Invalid ticket number'))
+            raise ResourceNotFound('Ticket %s does not exist.' % tkt_id,
+                                   'Invalid Ticket Number')
 
         self.id = tkt_id
-        for i, field in enumerate(std_fields):
-            value = row[i]
-            if field in self.time_fields:
-                self.values[field] = datetime.fromtimestamp(value or 0, utc)
-            elif value is None:
-                self.values[field] = empty
-            else:
-                self.values[field] = value
+        for i in range(len(std_fields)):
+            if row[i] is not None:
+                self.values[std_fields[i]] = row[i]
+        self.time_created = datetime.fromtimestamp(row[len(std_fields)], utc)
+        self.time_changed = datetime.fromtimestamp(row[len(std_fields) + 1], utc)
 
         # Fetch custom fields if available
         custom_fields = [f['name'] for f in self.fields if f.get('custom')]
         cursor.execute("SELECT name,value FROM ticket_custom WHERE ticket=%s",
                        (tkt_id,))
         for name, value in cursor:
-            if name in custom_fields:
-                if value is None:
-                    self.values[name] = empty
-                else:
-                    self.values[name] = value
+            if name in custom_fields and value is not None:
+                self.values[name] = value
 
     def __getitem__(self, name):
         return self.values.get(name)
@@ -151,14 +136,12 @@ class Ticket(object):
         """Return the value of a field or the default value if it is
         undefined"""
         try:
-            value = self.values[name]
-            if value is not empty:
-                return value
+            return self.values[name]
+        except KeyError:
             field = [field for field in self.fields if field['name'] == name]
             if field:
-                return field[0].get('value', '')
-        except KeyError:
-            pass
+                return field[0].get('value')
+            return None
         
     def populate(self, values):
         """Populate the ticket with 'suitable' values from a dictionary"""
@@ -180,7 +163,7 @@ class Ticket(object):
         # Add a timestamp
         if when is None:
             when = datetime.now(utc)
-        self.values['time'] = self.values['changetime'] = when
+        self.time_created = self.time_changed = when
 
         cursor = db.cursor()
 
@@ -190,17 +173,13 @@ class Ticket(object):
                 component = Component(self.env, self['component'], db=db)
                 if component.owner:
                     self['owner'] = component.owner
-            except ResourceNotFound:
+            except ResourceNotFound, e:
                 # No such component exists
                 pass
 
-        # Perform type conversions
-        values = dict(self.values)
-        for field in self.time_fields:
-            if field in values:
-                values[field] = to_timestamp(values[field])
-        
         # Insert ticket record
+        created = to_timestamp(self.time_created)
+        changed = to_timestamp(self.time_changed)
         std_fields = []
         custom_fields = []
         for f in self.fields:
@@ -210,10 +189,10 @@ class Ticket(object):
                     custom_fields.append(fname)
                 else:
                     std_fields.append(fname)
-        cursor.execute("INSERT INTO ticket (%s) VALUES (%s)"
+        cursor.execute("INSERT INTO ticket (%s,time,changetime) VALUES (%s)"
                        % (','.join(std_fields),
-                          ','.join(['%s'] * len(std_fields))),
-                       [values[name] for name in std_fields])
+                          ','.join(['%s'] * (len(std_fields) + 2))),
+                       [self[name] for name in std_fields] + [created, changed])
         tkt_id = db.get_last_id(cursor, 'ticket')
 
         # Insert custom fields
@@ -264,7 +243,7 @@ class Ticket(object):
                         new_comp = Component(self.env, self['component'], db)
                         if new_comp.owner:
                             self['owner'] = new_comp.owner
-                except TracError:
+                except TracError, e:
                     # If the old component has been removed from the database we
                     # just leave the owner as is.
                     pass
@@ -311,7 +290,7 @@ class Ticket(object):
             db.commit()
         old_values = self._old
         self._old = {}
-        self.values['changetime'] = when
+        self.time_changed = when
 
         for listener in TicketSystem(self.env).change_listeners:
             listener.ticket_changed(self, comment, author, old_values)
@@ -327,33 +306,30 @@ class Ticket(object):
         """
         db = self._get_db(db)
         cursor = db.cursor()
-        sid = str(self.id)
         when_ts = when and to_timestamp(when) or 0
         if when_ts:
-            cursor.execute("SELECT time,author,field,oldvalue,newvalue,"
-                           "1 AS permanent FROM ticket_change "
-                           "WHERE ticket=%s AND time=%s "
+            cursor.execute("SELECT time,author,field,oldvalue,newvalue,1 "
+                           "FROM ticket_change WHERE ticket=%s AND time=%s "
                            "UNION "
-                           "SELECT time,author,'attachment',null,filename,"
-                           "0 AS permanent FROM attachment "
-                           "WHERE id=%s AND time=%s "
+                           "SELECT time,author,'attachment',null,filename,0 "
+                           "FROM attachment WHERE id=%s AND time=%s "
                            "UNION "
-                           "SELECT time,author,'comment',null,description,"
-                           "0 AS permanent FROM attachment "
-                           "WHERE id=%s AND time=%s "
-                           "ORDER BY time,permanent,author",
-                           (self.id, when_ts, sid, when_ts, sid, when_ts))
+                           "SELECT time,author,'comment',null,description,0 "
+                           "FROM attachment WHERE id=%s AND time=%s "
+                           "ORDER BY time",
+                           (self.id, when_ts, str(self.id), when_ts, 
+                           str(self.id), when_ts))
         else:
-            cursor.execute("SELECT time,author,field,oldvalue,newvalue,"
-                           "1 AS permanent FROM ticket_change WHERE ticket=%s "
+            cursor.execute("SELECT time,author,field,oldvalue,newvalue,1 "
+                           "FROM ticket_change WHERE ticket=%s "
                            "UNION "
-                           "SELECT time,author,'attachment',null,filename,"
-                           "0 AS permanent FROM attachment WHERE id=%s "
+                           "SELECT time,author,'attachment',null,filename,0 "
+                           "FROM attachment WHERE id=%s "
                            "UNION "
-                           "SELECT time,author,'comment',null,description,"
-                           "0 AS permanent FROM attachment WHERE id=%s "
-                           "ORDER BY time,permanent,author",
-                           (self.id, sid, sid))
+                           "SELECT time,author,'comment',null,description,0 "
+                           "FROM attachment WHERE id=%s "
+                           "ORDER BY time", (self.id,  str(self.id), 
+                           str(self.id)))
         log = []
         for t, author, field, oldvalue, newvalue, permanent in cursor:
             log.append((datetime.fromtimestamp(int(t), utc), author, field,
@@ -374,92 +350,10 @@ class Ticket(object):
         for listener in TicketSystem(self.env).change_listeners:
             listener.ticket_deleted(self)
 
-    def get_change(self, cnum, db=None):
-        """Return a ticket change by its number."""
-        scnum = str(cnum)
-        db = self._get_db(db)
-        cursor = db.cursor()
-        cursor.execute("SELECT time,author FROM ticket_change "
-                       "WHERE ticket=%%s AND field='comment' "
-                       "  AND (oldvalue=%%s OR oldvalue %s)" % db.like(),
-                       (self.id, scnum, '%.' + db.like_escape(scnum)))
-        for ts, author in cursor:
-            cursor.execute("SELECT field,author,oldvalue,newvalue "
-                           "FROM ticket_change "
-                           "WHERE ticket=%s AND time=%s",
-                           (self.id, ts))
-            fields = {}
-            change = {'date': datetime.fromtimestamp(int(ts), utc),
-                      'author': author, 'fields': fields}
-            for field, author, old, new in cursor:
-                fields[field] = {'author': author, 'old': old, 'new': new}
-            return change
-
-    def modify_comment(self, cnum, author, comment, when=None, db=None):
-        """Modify a ticket change comment, while keeping a history of edits."""
-        scnum = str(cnum)
-        if when is None:
-            when = datetime.now(utc)
-        when_ts = to_timestamp(when)
-        
-        db, handle_ta = self._get_db_for_write(db)
-        like = db.like()
-        cursor = db.cursor()
-        cursor.execute("SELECT time,newvalue FROM ticket_change "
-                       "WHERE ticket=%%s AND field='comment' "
-                       "  AND (oldvalue=%%s OR oldvalue %s)" % like,
-                       (self.id, scnum, '%.' + db.like_escape(scnum)))
-        for (ts, old_comment) in cursor:
-            if comment == old_comment:
-                return
-            cursor.execute("SELECT COUNT(ticket) FROM ticket_change "
-                           "WHERE ticket=%%s AND time=%%s AND field %s" % like,
-                           (self.id, ts, db.like_escape('_comment') + '%'))
-            rev = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO ticket_change "
-                           "(ticket,time,author,field,oldvalue,newvalue) "
-                           "VALUES (%s,%s,%s,%s,%s,%s)",
-                           (self.id, ts, author, '_comment%d' % rev,
-                            old_comment, str(when_ts)))
-            cursor.execute("UPDATE ticket_change SET newvalue=%s "
-                           "WHERE ticket=%s AND time=%s AND field='comment'",
-                           (comment, self.id, ts))
-            break
-        if handle_ta:
-            db.commit()
-
-    def get_comment_history(self, cnum, db=None):
-        scnum = str(cnum)
-        db = self._get_db(db)
-        like = db.like()
-        history = []
-        cursor = db.cursor()
-        cursor.execute("SELECT time,author,newvalue FROM ticket_change "
-                       "WHERE ticket=%%s AND field='comment' "
-                       "  AND (oldvalue=%%s OR oldvalue %s)" % like,
-                       (self.id, scnum, '%.' + db.like_escape(scnum)))
-        for (ts0, author0, last_comment) in cursor:
-            cursor.execute("SELECT field,author,oldvalue,newvalue "
-                           "FROM ticket_change "
-                           "WHERE ticket=%%s AND time=%%s AND field %s" % like,
-                           (self.id, ts0, db.like_escape('_comment') + '%'))
-            for field, author, comment, ts in cursor:
-                rev = int(field[8:])
-                history.append((rev, datetime.fromtimestamp(int(ts0), utc),
-                                author0, comment))
-                ts0, author0 = ts, author
-            history.sort()
-            rev = history and (history[-1][0] + 1) or 0
-            history.append((rev, datetime.fromtimestamp(int(ts), utc),
-                            author, last_comment))
-        return history
-
 
 def simplify_whitespace(name):
     """Strip spaces and remove duplicate spaces within names"""
-    if name:
-        return ' '.join(name.split())
-    return name
+    return ' '.join(name.split())
         
 
 class AbstractEnum(object):
@@ -470,7 +364,8 @@ class AbstractEnum(object):
         if not self.ticket_col:
             self.ticket_col = self.type
         self.env = env
-        name = simplify_whitespace(name)
+        if name:
+            name = simplify_whitespace(name)
         if name:
             if not db:
                 db = self.env.get_db_cnx()
@@ -480,7 +375,7 @@ class AbstractEnum(object):
             row = cursor.fetchone()
             if not row:
                 raise ResourceNotFound(_('%(type)s %(name)s does not exist.',
-                                         type=self.type, name=name))
+                                  type=self.type, name=name))
             self.value = self._old_value = row[0]
             self.name = self._old_name = name
         else:
@@ -509,18 +404,17 @@ class AbstractEnum(object):
                     enum.update(db=db)
             except ValueError:
                 pass # Ignore cast error for this non-essential operation
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
         self.value = self._old_value = None
         self.name = self._old_name = None
+        TicketSystem(self.env).reset_ticket_fields()
 
     def insert(self, db=None):
         assert not self.exists, 'Cannot insert existing %s' % self.type
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid %(type)s name.', type=self.type))
+        assert self.name, 'Cannot create %s with no name' % self.type
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -536,18 +430,17 @@ class AbstractEnum(object):
             self.value = int(float(cursor.fetchone()[0])) + 1
         cursor.execute("INSERT INTO enum (type,name,value) VALUES (%s,%s,%s)",
                        (self.type, self.name, self.value))
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
         self._old_name = self.name
         self._old_value = self.value
+        TicketSystem(self.env).reset_ticket_fields()
 
     def update(self, db=None):
         assert self.exists, 'Cannot update non-existent %s' % self.type
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid %(type)s name.', type=self.type))
+        assert self.name, 'Cannot update %s with no name' % self.type
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -564,14 +457,13 @@ class AbstractEnum(object):
             cursor.execute("UPDATE ticket SET %s=%%s WHERE %s=%%s" %
                            (self.ticket_col, self.ticket_col),
                            (self.name, self._old_name))
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
         self._old_name = self.name
         self._old_value = self.value
+        TicketSystem(self.env).reset_ticket_fields()
 
-    @classmethod
     def select(cls, env, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -584,6 +476,7 @@ class AbstractEnum(object):
             obj.name = obj._old_name = name
             obj.value = obj._old_value = value
             yield obj
+    select = classmethod(select)
 
 
 class Type(AbstractEnum):
@@ -594,13 +487,12 @@ class Type(AbstractEnum):
 class Status(object):
     def __init__(self, env):
         self.env = env
-
-    @classmethod
     def select(cls, env, db=None):
         for state in TicketSystem(env).get_all_status():
             status = cls(env)
             status.name = state
             yield status
+    select = classmethod(select)
 
 
 class Resolution(AbstractEnum):
@@ -619,7 +511,8 @@ class Component(object):
 
     def __init__(self, env, name=None, db=None):
         self.env = env
-        name = simplify_whitespace(name)
+        if name:
+            name = simplify_whitespace(name)
         if name:
             if not db:
                 db = self.env.get_db_cnx()
@@ -629,7 +522,7 @@ class Component(object):
             row = cursor.fetchone()
             if not row:
                 raise ResourceNotFound(_('Component %(name)s does not exist.',
-                                         name=name))
+                                  name=name))
             self.name = self._old_name = name
             self.owner = row[0] or None
             self.description = row[1] or ''
@@ -651,17 +544,17 @@ class Component(object):
         cursor = db.cursor()
         self.env.log.info('Deleting component %s' % self.name)
         cursor.execute("DELETE FROM component WHERE name=%s", (self.name,))
+
         self.name = self._old_name = None
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
     def insert(self, db=None):
         assert not self.exists, 'Cannot insert existing component'
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid component name.'))
+        assert self.name, 'Cannot create component with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -674,16 +567,15 @@ class Component(object):
                        "VALUES (%s,%s,%s)",
                        (self.name, self.owner, self.description))
         self._old_name = self.name
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
     def update(self, db=None):
         assert self.exists, 'Cannot update non-existent component'
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid component name.'))
+        assert self.name, 'Cannot update component with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -701,12 +593,11 @@ class Component(object):
             cursor.execute("UPDATE ticket SET component=%s WHERE component=%s",
                            (self.name, self._old_name))
             self._old_name = self.name
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
-    @classmethod
     def select(cls, env, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -719,20 +610,20 @@ class Component(object):
             component.owner = owner or None
             component.description = description or ''
             yield component
+    select = classmethod(select)
 
 
 class Milestone(object):
 
     def __init__(self, env, name=None, db=None):
         self.env = env
-        name = simplify_whitespace(name)
         if name:
             self._fetch(name, db)
+            self._old_name = name
         else:
-            self.name = None
+            self.name = self._old_name = None
             self.due = self.completed = None
             self.description = ''
-            self._to_old()
 
     def _get_resource(self):
         return Resource('milestone', self.name) ### .version !!!
@@ -746,28 +637,22 @@ class Milestone(object):
                        "FROM milestone WHERE name=%s", (name,))
         row = cursor.fetchone()
         if not row:
-            raise ResourceNotFound(_('Milestone %(name)s does not exist.',
-                                   name=name), _('Invalid milestone name'))
+            raise ResourceNotFound('Milestone %s does not exist.' % name,
+                                   'Invalid Milestone Name')
         self._from_database(row)
 
-    exists = property(fget=lambda self: self._old['name'] is not None)
+    exists = property(fget=lambda self: self._old_name is not None)
     is_completed = property(fget=lambda self: self.completed is not None)
     is_late = property(fget=lambda self: self.due and \
                                          self.due.date() < date.today())
 
     def _from_database(self, row):
         name, due, completed, description = row
-        self.name = name
+        self.name = self._old_name = name
         self.due = due and datetime.fromtimestamp(int(due), utc) or None
         self.completed = completed and \
                          datetime.fromtimestamp(int(completed), utc) or None
         self.description = description or ''
-        self._to_old()
-
-    def _to_old(self):
-        self._old = {'name': self.name, 'due': self.due,
-                     'completed': self.completed,
-                     'description': self.description}
 
     def delete(self, retarget_to=None, author=None, db=None):
         if not db:
@@ -789,72 +674,59 @@ class Milestone(object):
             ticket['milestone'] = retarget_to
             ticket.save_changes(author, 'Milestone %s deleted' % self.name,
                                 now, db=db)
-        self._old['name'] = None
-        TicketSystem(self.env).reset_ticket_fields(db)
+        self.name = self._old_name = None
 
         if handle_ta:
             db.commit()
-
-        for listener in TicketSystem(self.env).milestone_change_listeners:
-            listener.milestone_deleted(self)
+        TicketSystem(self.env).reset_ticket_fields()
 
     def insert(self, db=None):
-        self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid milestone name.'))
+        assert self.name, 'Cannot create milestone with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
         else:
             handle_ta = False
 
+        self.name = simplify_whitespace(self.name)
         cursor = db.cursor()
         self.env.log.debug("Creating new milestone '%s'" % self.name)
         cursor.execute("INSERT INTO milestone (name,due,completed,description) "
                        "VALUES (%s,%s,%s,%s)",
                        (self.name, to_timestamp(self.due), to_timestamp(self.completed),
                         self.description))
-        self._to_old()
-        TicketSystem(self.env).reset_ticket_fields(db)
+        self._old_name = self.name
 
         if handle_ta:
             db.commit()
-
-        for listener in TicketSystem(self.env).milestone_change_listeners:
-            listener.milestone_created(self)
+        TicketSystem(self.env).reset_ticket_fields()
 
     def update(self, db=None):
-        self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid milestone name.'))
+        assert self.name, 'Cannot update milestone with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
         else:
             handle_ta = False
 
+        self.name = simplify_whitespace(self.name)
         cursor = db.cursor()
         self.env.log.info('Updating milestone "%s"' % self.name)
         cursor.execute("UPDATE milestone SET name=%s,due=%s,"
                        "completed=%s,description=%s WHERE name=%s",
                        (self.name, to_timestamp(self.due), to_timestamp(self.completed),
-                        self.description, self._old['name']))
+                        self.description,
+                        self._old_name))
         self.env.log.info('Updating milestone field of all tickets '
                           'associated with milestone "%s"' % self.name)
         cursor.execute("UPDATE ticket SET milestone=%s WHERE milestone=%s",
-                       (self.name, self._old['name']))
-        TicketSystem(self.env).reset_ticket_fields(db)
+                       (self.name, self._old_name))
+        self._old_name = self.name
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
-        old_values = dict((k, v) for k, v in self._old.iteritems()
-                          if getattr(self, k) != v)
-        self._to_old()
-        for listener in TicketSystem(self.env).milestone_change_listeners:
-            listener.milestone_changed(self, old_values)
-
-    @classmethod
     def select(cls, env, include_completed=True, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -873,6 +745,7 @@ class Milestone(object):
                     m.due or utcmax,
                     embedded_numbers(m.name))
         return sorted(milestones, key=milestone_order)
+    select = classmethod(select)
 
 
 def group_milestones(milestones, include_completed):
@@ -896,7 +769,6 @@ class Version(object):
 
     def __init__(self, env, name=None, db=None):
         self.env = env
-        name = simplify_whitespace(name)
         if name:
             if not db:
                 db = self.env.get_db_cnx()
@@ -906,7 +778,7 @@ class Version(object):
             row = cursor.fetchone()
             if not row:
                 raise ResourceNotFound(_('Version %(name)s does not exist.',
-                                         name=name))
+                                  name=name))
             self.name = self._old_name = name
             self.time = row[0] and datetime.fromtimestamp(int(row[0]), utc) or None
             self.description = row[1] or ''
@@ -928,17 +800,17 @@ class Version(object):
         cursor = db.cursor()
         self.env.log.info('Deleting version %s' % self.name)
         cursor.execute("DELETE FROM version WHERE name=%s", (self.name,))
+
         self.name = self._old_name = None
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
     def insert(self, db=None):
         assert not self.exists, 'Cannot insert existing version'
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid version name.'))
+        assert self.name, 'Cannot create version with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -951,16 +823,15 @@ class Version(object):
                        "VALUES (%s,%s,%s)",
                        (self.name, to_timestamp(self.time), self.description))
         self._old_name = self.name
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
     def update(self, db=None):
         assert self.exists, 'Cannot update non-existent version'
         self.name = simplify_whitespace(self.name)
-        if not self.name:
-            raise TracError(_('Invalid version name.'))
+        assert self.name, 'Cannot update version with no name'
         if not db:
             db = self.env.get_db_cnx()
             handle_ta = True
@@ -978,12 +849,11 @@ class Version(object):
             cursor.execute("UPDATE ticket SET version=%s WHERE version=%s",
                            (self.name, self._old_name))
             self._old_name = self.name
-        TicketSystem(self.env).reset_ticket_fields(db)
 
         if handle_ta:
             db.commit()
+        TicketSystem(self.env).reset_ticket_fields()
 
-    @classmethod
     def select(cls, env, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -999,3 +869,4 @@ class Version(object):
         def version_order(v):
             return (v.time or utcmax, embedded_numbers(v.name))
         return sorted(versions, key=version_order, reverse=True)
+    select = classmethod(select)

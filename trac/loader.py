@@ -22,6 +22,7 @@ from pkg_resources import working_set, DistributionNotFound, VersionConflict, \
 import os
 import sys
 
+from trac.util.compat import set
 from trac.util.text import exception_to_unicode
 
 __all__ = ['load_components']
@@ -40,9 +41,8 @@ def load_eggs(entry_point_name):
             pkg_resources.Environment(search_path)
         )
         for dist in distributions:
-            if dist not in working_set:
-                env.log.debug('Adding plugin %s from %s', dist, dist.location)
-                working_set.add(dist)
+            env.log.debug('Adding plugin %s from %s', dist, dist.location)
+            working_set.add(dist)
 
         def _log_error(item, e):
             ue = exception_to_unicode(e)
@@ -56,8 +56,7 @@ def load_eggs(entry_point_name):
             elif isinstance(e, ImportError):
                 env.log.error('Skipping "%s": (can\'t import "%s")', item, ue)
             else:
-                env.log.error('Skipping "%s": %s)', item,
-                              exception_to_unicode(e, traceback=True))
+                env.log.error('Skipping "%s": (error "%s")', item, ue)
 
         for dist, e in errors.iteritems():
             _log_error(dist, e)
@@ -67,7 +66,8 @@ def load_eggs(entry_point_name):
                           entry.dist.location)
             try:
                 entry.load(require=True)
-            except Exception, e:
+            except (ImportError, DistributionNotFound, VersionConflict,
+                    UnknownExtra), e:
                 _log_error(entry, e)
             else:
                 if os.path.dirname(entry.dist.location) == auto_enable:

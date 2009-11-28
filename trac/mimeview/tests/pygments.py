@@ -12,10 +12,11 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 import os
+import re
 import unittest
 
 from genshi.core import Stream, TEXT
-from genshi.input import HTMLParser
+from genshi.input import HTMLParser, XML
 
 try:
     pygments = __import__('pygments', {}, {}, [])
@@ -33,10 +34,13 @@ from trac.web.href import Href
 
 class PygmentsRendererTestCase(unittest.TestCase):
 
+    if not hasattr(unittest.TestCase, "assertTrue"):
+        assertTrue = unittest.TestCase.failUnless   # Python 2.3 compatibility
+
     def setUp(self):
         self.env = EnvironmentStub(enable=[Chrome, PygmentsRenderer])
         self.pygments = Mimeview(self.env).renderers[0]
-        self.req = Mock(base_path='', chrome={}, args={},
+        self.req = Mock(base_path='',chrome={}, args={},
                         abs_href=Href('/'), href=Href('/'),
                         session={}, perm=None, authname=None, tz=None)
         self.context = Context.from_request(self.req)
@@ -74,7 +78,8 @@ def hello():
         """
         Simple Python highlighting with Pygments (through Mimeview.render)
         """
-        result = Mimeview(self.env).render(self.context, 'text/x-python', """
+        result = mimeview = Mimeview(self.env).render(self.context,
+                                                      'text/x-python', """
 def hello():
         return "Hello World!"
 """)

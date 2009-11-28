@@ -34,7 +34,11 @@ except ImportError:
         import sqlite3 as sqlite
         have_pysqlite = 2
     except ImportError:
-        have_pysqlite = 0
+        try:
+            import sqlite
+            have_pysqlite = 1
+        except ImportError:
+            have_pysqlite = 0
 
 if have_pysqlite == 2:
     _ver = sqlite.sqlite_version_info
@@ -45,7 +49,7 @@ if have_pysqlite == 2:
         def _rollback_on_error(self, function, *args, **kwargs):
             try:
                 return function(self, *args, **kwargs)
-            except sqlite.DatabaseError:
+            except sqlite.DatabaseError, e:
                 self.cnx.rollback()
                 raise
         def execute(self, sql, args=None):
@@ -108,6 +112,28 @@ if have_pysqlite == 2:
                 yield row
 
 
+elif have_pysqlite == 1:
+    _ver = sqlite._sqlite.sqlite_version_info()
+    sqlite_version = _ver[0] * 10000 + _ver[1] * 100 + _ver[2]
+    sqlite_version_string = '%d.%d.%d' % _ver
+
+    class SQLiteUnicodeCursor(sqlite.Cursor):
+        def _convert_row(self, row):
+            return tuple([(isinstance(v, str) and [v.decode('utf-8')] or [v])[0]
+                          for v in row])
+        def fetchone(self):
+            row = sqlite.Cursor.fetchone(self)
+            return row and self._convert_row(row) or None
+        def fetchmany(self, num):
+            rows = sqlite.Cursor.fetchmany(self, num)
+            return rows != None and [self._convert_row(row)
+                                     for row in rows] or []
+        def fetchall(self):
+            rows = sqlite.Cursor.fetchall(self)
+            return rows != None and [self._convert_row(row)
+                                     for row in rows] or []
+
+
 def _to_sql(table):
     sql = ["CREATE TABLE %s (" % table.name]
     coldefs = []
@@ -142,7 +168,9 @@ class SQLiteConnector(Component):
         if not have_pysqlite:
             self.error = _("Cannot load Python bindings for SQLite")
         elif sqlite_version >= 30303:
-            if sqlite.version_info[0] == 2 and \
+            if sqlite.version_info < (1, 0, 7):
+                self.error = _("Need at least PySqlite 1.0.7 or higher")
+            elif sqlite.version_info[0] == 2 and \
                     sqlite.version_info < (2, 0, 7):
                 self.error = _("Need at least PySqlite 2.0.7 or higher")
         yield ('sqlite', self.error and -1 or 1)
@@ -153,14 +181,18 @@ class SQLiteConnector(Component):
                 'version', '%d.%d.%s' % sqlite.version_info)
             self.env.systeminfo.extend([('SQLite', sqlite_version_string),
                                         ('pysqlite', self._version)])
+            if have_pysqlite == 1:
+                self.log.warning("Support for SQLite v2 and PySqlite 1.0.x "
+                                 "will be dropped in version 0.12, see "
+                                 "http://trac.edgewall.org/wiki/"
+                                 "PySqlite#UpgradingSQLitefrom2.xto3.x")
         return SQLiteConnection(path, log, params)
 
-    def init_db(self, path, log=None, params={}):
+    def init_db(cls, path, log=None, params={}):
         if path != ':memory:':
             # make the directory to hold the database
             if os.path.exists(path):
-                raise TracError(_('Database already exists at %(path)s',
-                                  path=path))
+                raise TracError('Database already exists at %s' % path)
             os.makedirs(os.path.split(path)[0])
         if isinstance(path, unicode): # needed with 2.4.0
             path = path.encode('utf-8')
@@ -168,11 +200,11 @@ class SQLiteConnector(Component):
         cursor = cnx.cursor()
         from trac.db_default import schema
         for table in schema:
-            for stmt in self.to_sql(table):
+            for stmt in cls.to_sql(table):
                 cursor.execute(stmt)
         cnx.commit()
 
-    def to_sql(self, table):
+    def to_sql(cls, table):
         return _to_sql(table)
 
     def backup(self, dest_file):
@@ -194,45 +226,55 @@ class SQLiteConnection(ConnectionWrapper):
     __slots__ = ['_active_cursors', '_eager']
 
     poolable = have_pysqlite and sqlite_version >= 30308 \
-                             and sqlite.version_info >= (2, 5, 0)
+                             and sqlite.version_info >= (2,5,0)
 
     def __init__(self, path, log=None, params={}):
         assert have_pysqlite > 0
         self.cnx = None
         if path != ':memory:':
             if not os.access(path, os.F_OK):
-                raise TracError(_('Database "%(path)s" not found.', path=path))
+                raise TracError('Database "%s" not found.' % path)
 
             dbdir = os.path.dirname(path)
             if not os.access(path, os.R_OK + os.W_OK) or \
                    not os.access(dbdir, os.R_OK + os.W_OK):
-                raise TracError(_('The user %(user)s requires read _and_ write '
-                                  'permissions to the database file %(path)s '
-                                  'and the directory it is located in.',
-                                  user=getuser(), path=path))
+                raise TracError('The user %s requires read _and_ write ' \
+                                'permissions to the database file %s and the ' \
+                                'directory it is located in.' \
+                                % (getuser(), path))
 
-        self._active_cursors = weakref.WeakKeyDictionary()
-        timeout = int(params.get('timeout', 10.0))
-        self._eager = params.get('cursor', 'eager') == 'eager'
-        # eager is default, can be turned off by specifying ?cursor=
-        if isinstance(path, unicode): # needed with 2.4.0
-            path = path.encode('utf-8')
-        cnx = sqlite.connect(path, detect_types=sqlite.PARSE_DECLTYPES,
-                             check_same_thread=sqlite_version < 30301,
-                             timeout=timeout)
+        if have_pysqlite == 2:
+            self._active_cursors = weakref.WeakKeyDictionary()
+            timeout = int(params.get('timeout', 10.0))
+            self._eager = params.get('cursor', 'eager') == 'eager'
+            # eager is default, can be turned off by specifying ?cursor=
+            if isinstance(path, unicode): # needed with 2.4.0
+                path = path.encode('utf-8')
+            cnx = sqlite.connect(path, detect_types=sqlite.PARSE_DECLTYPES,
+                                 check_same_thread=sqlite_version < 30301,
+                                 timeout=timeout)
+        else:
+            timeout = int(params.get('timeout', 10000))
+            cnx = sqlite.connect(path, timeout=timeout, encoding='utf-8')
             
         ConnectionWrapper.__init__(self, cnx, log)
 
-    def cursor(self):
-        cursor = self.cnx.cursor((PyFormatCursor, EagerCursor)[self._eager])
-        self._active_cursors[cursor] = True
-        cursor.cnx = self
-        return cursor
+    if have_pysqlite == 2:
+        def cursor(self):
+            cursor = self.cnx.cursor((PyFormatCursor, EagerCursor)[self._eager])
+            self._active_cursors[cursor] = True
+            cursor.cnx = self
+            return cursor
 
-    def rollback(self):
-        for cursor in self._active_cursors.keys():
-            cursor.close()
-        self.cnx.rollback()
+        def rollback(self):
+            for cursor in self._active_cursors.keys():
+                cursor.close()
+            self.cnx.rollback()
+
+    else:
+        def cursor(self):
+            self.cnx._checkNotClosed("cursor")
+            return SQLiteUnicodeCursor(self.cnx, self.cnx.rowclass)
 
     def cast(self, column, type):
         if sqlite_version >= 30203:
@@ -258,5 +300,9 @@ class SQLiteConnection(ConnectionWrapper):
         else:
             return text
 
-    def get_last_id(self, cursor, table, column='id'):
-        return cursor.lastrowid
+    if have_pysqlite == 2:
+        def get_last_id(self, cursor, table, column='id'):
+            return cursor.lastrowid
+    else:
+        def get_last_id(self, cursor, table, column='id'):
+            return self.cnx.db.sqlite_last_insert_rowid()

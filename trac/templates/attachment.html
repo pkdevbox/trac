@@ -3,20 +3,11 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:xi="http://www.w3.org/2001/XInclude"
-      xmlns:i18n="http://genshi.edgewall.org/i18n">
+      xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <xi:include href="macros.html" />
   <head>
     <title>Attachment</title>
-    <py:if test="preview">
-      <script type="text/javascript" src="${chrome.htdocs_location}js/folding.js"></script>
-      <script type="text/javascript">
-        jQuery(document).ready(function($) {
-          $('#preview table.code').enableCollapsibleColumns($('#preview table.code thead th.content')); 
-        });
-      </script>
-    </py:if>
   </head>
 
   <body py:with="parent = attachments and attachments.parent or
@@ -27,7 +18,7 @@
         <form id="attachment" method="post" enctype="multipart/form-data" action="">
           <div class="field">
             <label>File<py:if test="max_size >= 0"> (size limit
-                  ${pretty_size(max_size)})</py:if>:<br />
+                  ${pretty_size(max_size, format='%d')})</py:if>:<br />
               <input type="file" name="attachment" /></label>
           </div>
           <fieldset>
@@ -56,8 +47,8 @@
             <input type="hidden" name="action" value="new" />
             <input type="hidden" name="realm" value="$parent.realm" />
             <input type="hidden" name="id" value="$parent.id" />
-            <input type="submit" value="${_('Add attachment')}" />
-            <input type="submit" name="cancel" value="${_('Cancel')}" />
+            <input type="submit" value="Add attachment" />
+            <input type="submit" name="cancel" value="Cancel" />
           </div>
         </form>
       </py:when>
@@ -70,8 +61,8 @@
           <form method="post" action="">
             <div id="delete">
               <input type="hidden" name="action" value="delete" />
-              <input type="submit" name="cancel" value="${_('Cancel')}" />
-              <input type="submit" value="${_('Delete attachment')}" />
+              <input type="submit" name="cancel" value="Cancel" />
+              <input type="submit" value="Delete attachment" />
             </div>
           </form>
         </div>
@@ -89,7 +80,7 @@
         <table id="info" summary="Description">
           <tbody>
             <tr>
-              <th scope="col" i18n:msg="file,size,author,date">
+              <th scope="col">
                 File $attachment.filename, ${sizeinfo(attachment.size)}
                 (added by ${authorinfo(attachment.author)},  ${dateinfo(attachment.date)} ago)
               </th>

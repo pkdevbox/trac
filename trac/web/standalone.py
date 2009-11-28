@@ -95,7 +95,7 @@ class TracEnvironMiddleware(object):
             self.environ['trac.env_paths'] = env_paths
 
     def __call__(self, environ, start_response):
-        for k, v in self.environ.iteritems():
+        for k,v in self.environ.iteritems():
             environ.setdefault(k, v)
         return self.application(environ, start_response)
 
@@ -135,8 +135,8 @@ def main():
 
         env_name, filename, realm = info
         if env_name in auths:
-            print >> sys.stderr, 'Ignoring duplicate authentication option ' \
-                                 'for project: %s' % env_name
+            print >>sys.stderr, 'Ignoring duplicate authentication option for ' \
+                                'project: %s' % env_name
         else:
             auths[env_name] = cls(os.path.abspath(filename), realm)
 
@@ -167,15 +167,15 @@ def main():
                       help='the host name or IP address to bind to')
     parser.add_option('--protocol', action='callback', type="string",
                       dest='protocol', callback=_validate_callback,
-                      callback_args=(('http', 'scgi', 'ajp', 'fcgi'),),
-                      help='http|scgi|ajp|fcgi')
+                      callback_args=(('http', 'scgi', 'ajp'),),
+                      help='http|scgi|ajp')
     parser.add_option('-q', '--unquote', action='store_true',
                       dest='unquote',
                       help='unquote PATH_INFO (may be needed when using ajp)')
     parser.add_option('--http10', action='store_false', dest='http11',
-                      help='use HTTP/1.0 protocol version instead of HTTP/1.1')
+                      help='use HTTP/1.0 protocol version (default)')
     parser.add_option('--http11', action='store_true', dest='http11',
-                      help='use HTTP/1.1 protocol version (default)')
+                      help='use HTTP/1.1 protocol version instead of HTTP/1.0')
     parser.add_option('-e', '--env-parent-dir', action='store',
                       dest='env_parent_dir', metavar='PARENTDIR',
                       help='parent directory of the project environments')
@@ -204,7 +204,7 @@ def main():
                           'to use, in octal notation (default 022)')
 
     parser.set_defaults(port=None, hostname='', base_path='', daemonize=False,
-                        protocol='http', http11=True, umask=022)
+                        protocol='http', umask=022)
     options, args = parser.parse_args()
 
     if not args and not options.env_parent_dir:
@@ -226,7 +226,6 @@ def main():
             'http': 80,
             'scgi': 4000,
             'ajp': 8009,
-            'fcgi': 8000,
         }[options.protocol]
     server_address = (options.hostname, options.port)
 
@@ -266,7 +265,7 @@ def main():
             if options.http11:
                 print 'Using HTTP/1.1 protocol version'
             httpd.serve_forever()
-    elif options.protocol in ('scgi', 'ajp', 'fcgi'):
+    elif options.protocol in ('scgi', 'ajp'):
         def serve():
             server_cls = __import__('flup.server.%s' % options.protocol,
                                     None, None, ['']).WSGIServer
@@ -283,8 +282,8 @@ def main():
 
         if options.autoreload:
             def modification_callback(file):
-                print >> sys.stderr, 'Detected modification of %s, ' \
-                                     'restarting.' % file
+                print>>sys.stderr, 'Detected modification of %s, restarting.' \
+                                   % file
             autoreload.main(serve, modification_callback)
         else:
             serve()

@@ -2,7 +2,9 @@
 
 from trac.test import Mock
 from trac.web.api import Request, RequestDone
+from trac.web.clearsilver import HDFWrapper
 
+from Cookie import SimpleCookie as Cookie
 from StringIO import StringIO
 import unittest
 
@@ -55,12 +57,6 @@ class RequestTestCase(unittest.TestCase):
         req = Request(environ, None)
         self.assertEqual('http://localhost/trac', req.base_url)
 
-    def test_languages(self):
-        environ = self._make_environ()
-        environ['HTTP_ACCEPT_LANGUAGE'] = 'en-us,en;q=0.5'
-        req = Request(environ, None)
-        self.assertEqual(['en-us', 'en'], req.languages)
-
     def test_redirect(self):
         status_sent = []
         headers_sent = {}
@@ -99,14 +95,8 @@ class RequestTestCase(unittest.TestCase):
         environ = self._make_environ(method='HEAD')
         req = Request(environ, start_response)
         req.send_header('Content-Type', 'text/plain;charset=utf-8')
-        # we didn't set Content-Length, so we get a RuntimeError for that
-        self.assertRaises(RuntimeError, req.write, u'Föö')
-
-        req = Request(environ, start_response)
-        req.send_header('Content-Type', 'text/plain;charset=utf-8')
-        req.send_header('Content-Length', 0)
-        # anyway we're not supposed to send unicode, so we get a ValueError
-        self.assertRaises(ValueError, req.write, u'Föö')
+        req.write(u'Föö')
+        self.assertEqual('Föö', buf.getvalue())
 
     def test_invalid_cookies(self):
         environ = self._make_environ(HTTP_COOKIE='bad:key=value;')

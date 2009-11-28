@@ -28,12 +28,8 @@ try:
 except ImportError:
     import dummy_threading as threading
 
-try:
-    from babel import Locale
-except ImportError:
-    Locale = None
 from genshi.core import Markup
-from genshi.builder import Fragment, tag
+from genshi.builder import Fragment
 from genshi.output import DocType
 from genshi.template import TemplateLoader
 
@@ -41,30 +37,19 @@ from trac import __version__ as TRAC_VERSION
 from trac.config import ExtensionOption, Option, OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
-from trac.perm import PermissionCache, PermissionError
+from trac.perm import PermissionCache, PermissionError, PermissionSystem
 from trac.resource import ResourceNotFound
 from trac.util import get_lines_from_file, get_last_traceback, hex_entropy, \
-                      arity, translation
-from trac.util.compat import partial
+                      arity
+from trac.util.compat import partial, reversed
 from trac.util.datefmt import format_datetime, http_date, localtz, timezone
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode
-from trac.util.translation import tag_, _
+from trac.util.translation import _
 from trac.web.api import *
 from trac.web.chrome import Chrome
 from trac.web.clearsilver import HDFWrapper
 from trac.web.href import Href
 from trac.web.session import Session
-
-class FakeSession(dict):
-    sid = None
-    def save(self):
-        pass
-
-class FakePerm(dict):
-    def require(self, *args):
-        return False
-    def __call__(self, *args):
-        return self
 
 def populate_hdf(hdf, env, req=None):
     """Populate the HDF data set with various information, such as common URLs,
@@ -169,7 +154,6 @@ class RequestDispatcher(Component):
             'hdf': self._get_hdf,
             'perm': self._get_perm,
             'session': self._get_session,
-            'locale': self._get_locale,
             'tz': self._get_timezone,
             'form_token': self._get_form_token
         })
@@ -189,7 +173,7 @@ class RequestDispatcher(Component):
                     # pre-process any incoming request, whether a handler
                     # was found or not
                     chosen_handler = self._pre_process_request(req,
-                                                            chosen_handler)
+                                                               chosen_handler)
                 except TracError, e:
                     raise HTTPInternalError(e)
                 if not chosen_handler:
@@ -205,9 +189,9 @@ class RequestDispatcher(Component):
                 req.callbacks['chrome'] = partial(chrome.prepare_request,
                                                   handler=chosen_handler)
 
-                # Protect against CSRF attacks: we validate the form token
-                # for all POST requests with a content-type corresponding
-                # to form submissions
+                # Protect against CSRF attacks: we validate the form token for
+                # all POST requests with a content-type corresponding to form
+                # submissions
                 if req.method == 'POST':
                     ctype = req.get_header('Content-Type')
                     if ctype:
@@ -215,9 +199,8 @@ class RequestDispatcher(Component):
                     if ctype in ('application/x-www-form-urlencoded',
                                  'multipart/form-data') and \
                             req.args.get('__FORM_TOKEN') != req.form_token:
-                        raise HTTPBadRequest('Missing or invalid form '
-                                             'token. Do you have cookies '
-                                             'enabled?')
+                        raise HTTPBadRequest('Missing or invalid form token. '
+                                             'Do you have cookies enabled?')
 
                 # Process the request and render the template
                 resp = chosen_handler.process_request(req)
@@ -241,8 +224,7 @@ class RequestDispatcher(Component):
                             req.send(out.getvalue(), 'text/plain')
                         else:
                             output = chrome.render_template(req, template,
-                                                            data,
-                                                            content_type)
+                                                            data, content_type)
                             # Give the session a chance to persist changes
                             req.session.save()
                             req.send(output, content_type or 'text/html')
@@ -277,31 +259,10 @@ class RequestDispatcher(Component):
         return hdf
 
     def _get_perm(self, req):
-        if isinstance(req.session, FakeSession):
-            return FakePerm()
-        else:
-            return PermissionCache(self.env, self.authenticate(req))
+        return PermissionCache(self.env, self.authenticate(req))
 
     def _get_session(self, req):
-        try:
-            return Session(self.env, req)
-        except TracError, e:
-            self.log.error("can't retrieve session: %s",
-                           exception_to_unicode(e))
-            return FakeSession()
-
-    def _get_locale(self, req):
-        if Locale:
-            available = [locale_id.replace('_', '-') for locale_id in
-                         translation.get_available_locales()]
-
-            preferred = req.session.get('language', req.languages)
-            if not isinstance(preferred, list):
-                preferred = [preferred]
-            negociated = Locale.negotiate(preferred, available, sep='-') 
-            self.log.debug("Negociated locale: %s -> %s", 
-                           preferred, negociated) 
-            return negociated 
+        return Session(self.env, req)
 
     def _get_timezone(self, req):
         try:
@@ -455,11 +416,9 @@ def dispatch_request(environ, start_response):
         env_error = e
 
     req = Request(environ, start_response)
-    translation.make_activable(lambda: req.locale, env and env.path or None)
     try:
         return _dispatch_request(req, env, env_error)
     finally:
-        translation.deactivate()
         if env and not run_once:
             env.shutdown(threading._get_ident())
             # Now it's a good time to do some clean-ups
@@ -516,11 +475,10 @@ def _dispatch_request(req, env, env_error):
         data = {'title': title, 'type': 'TracError', 'message': message,
                 'frames': [], 'traceback': None}
         if e.code == 403 and req.authname == 'anonymous':
-            # TRANSLATOR: ... not logged in, you may want to 'do so' now (link)
-            do_so = tag.a(_("do so"), href=req.href.login())
-            req.chrome['notices'].append(
-                tag_("You are currently not logged in. You may want to "
-                     "%(do_so)s now.", do_so=do_so))
+            req.chrome['notices'].append(Markup(
+                _('You are currently not logged in. You may want to '
+                  '<a href="%(href)s">do so</a> now.',
+                  href=req.href.login())))
         try:
             req.send_error(sys.exc_info(), status=e.code, env=env, data=data)
         except RequestDone:
@@ -590,8 +548,7 @@ def send_project_index(environ, start_response, parent_dir=None,
     else:
         template = 'index.html'
 
-    data = {'trac': {'version': TRAC_VERSION, 'time': format_datetime()},
-            'req': req}
+    data = {'trac': {'version': TRAC_VERSION, 'time': format_datetime()}}
     if req.environ.get('trac.template_vars'):
         for pair in req.environ['trac.template_vars'].split(','):
             key, val = pair.split('=')

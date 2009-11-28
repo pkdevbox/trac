@@ -20,18 +20,16 @@
 import errno
 import locale
 import os.path
-import random
 import re
-import shutil
 import sys
 import time
 import tempfile
 from urllib import quote, unquote, urlencode
-from itertools import izip, tee
+from itertools import izip
 
 # Imports for backward compatibility
 from trac.core import TracError
-from trac.util.compat import md5, reversed, sha1, sorted
+from trac.util.compat import md5, reversed, sha1, sorted, tee
 from trac.util.html import escape, unescape, Markup, Deuglifier
 from trac.util.text import CRLF, to_utf8, to_unicode, shorten_line, \
                            wrap, pretty_size
@@ -121,6 +119,8 @@ if os.name == 'nt':
                                             | MOVEFILE_WRITE_THROUGH):
                     raise ctypes.WinError()
     except Exception:
+        import random
+        
         def rename(src, dst):
             try:
                 os.rename(src, dst)
@@ -276,67 +276,6 @@ class NaivePopen:
             if capturestderr and os.path.isfile(errfile):
                 os.remove(errfile)
 
-
-def makedirs(path, overwrite=False):
-    if overwrite and os.path.exists(path):
-        return
-    os.makedirs(path)
-
-
-def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
-    """Recursively copy a directory tree using copy2() (from shutil.copytree.)
-
-    Added a `skip` parameter consisting of absolute paths
-    which we don't want to copy.
-    """
-    def str_path(path):
-        if isinstance(path, unicode):
-            path = path.encode(sys.getfilesystemencoding() or
-                               locale.getpreferredencoding())
-        return path
-
-    def remove_if_overwriting(path):
-        if overwrite and os.path.exists(path):
-            os.unlink(path)
-
-    skip = [str_path(f) for f in skip]
-    def copytree_rec(src, dst):
-        names = os.listdir(src)
-        makedirs(dst, overwrite=overwrite)
-        errors = []
-        for name in names:
-            srcname = os.path.join(src, name)
-            if srcname in skip:
-                continue
-            dstname = os.path.join(dst, name)
-            try:
-                if symlinks and os.path.islink(srcname):
-                    remove_if_overwriting(dstname)
-                    linkto = os.readlink(srcname)
-                    os.symlink(linkto, dstname)
-                elif os.path.isdir(srcname):
-                    copytree_rec(srcname, dstname)
-                else:
-                    remove_if_overwriting(dstname)
-                    shutil.copy2(srcname, dstname)
-                # XXX What about devices, sockets etc.?
-            except (IOError, OSError), why:
-                errors.append((srcname, dstname, str(why)))
-            # catch the Error from the recursive copytree so that we can
-            # continue with other files
-            except shutil.Error, err:
-                errors.extend(err.args[0])
-        try:
-            shutil.copystat(src, dst)
-        except WindowsError, why:
-            pass # Ignore errors due to limited Windows copystat support
-        except OSError, why:
-            errors.append((src, dst, str(why)))
-        if errors:
-            raise shutil.Error(errors)
-    copytree_rec(str_path(src), str_path(dst))
-
-
 # -- sys utils
 
 def arity(f):
@@ -465,6 +404,7 @@ def get_pkginfo(dist):
 # -- crypto utils
 
 def hex_entropy(bytes=32):
+    import random
     return sha1(str(random.random())).hexdigest()[:bytes]
 
 
@@ -527,13 +467,11 @@ def md5crypt(password, salt, magic='$1$'):
     for a, b, c in ((0, 6, 12), (1, 7, 13), (2, 8, 14), (3, 9, 15), (4, 10, 5)):
         v = ord(final[a]) << 16 | ord(final[b]) << 8 | ord(final[c])
         for i in range(4):
-            rearranged += itoa64[v & 0x3f]
-            v >>= 6
+            rearranged += itoa64[v & 0x3f]; v >>= 6
 
     v = ord(final[11])
     for i in range(2):
-        rearranged += itoa64[v & 0x3f]
-        v >>= 6
+        rearranged += itoa64[v & 0x3f]; v >>= 6
 
     return magic + salt + '$' + rearranged
 
@@ -768,9 +706,7 @@ def content_disposition(type, filename=None):
     return type
 
 def pairwise(iterable):
-    """
-    >>> list(pairwise([0, 1, 2, 3]))
-    [(0, 1), (1, 2), (2, 3)]
+    """s -> (s0,s1), (s1,s2), (s2, s3), ...
 
     :deprecated: since 0.11 (if this really needs to be used, rewrite it
                              without izip)
@@ -783,12 +719,6 @@ def pairwise(iterable):
     return izip(a, b)
 
 def partition(iterable, order=None):
-    """
-    >>> partition([(1,"a"),(2, "b"),(3, "a")])
-    {'a': [1, 3], 'b': [2]}
-    >>> partition([(1,"a"),(2, "b"),(3, "a")], "ab")
-    [[1, 3], [2]]
-    """
     result = {}
     if order is not None:
         for key in order:
@@ -798,16 +728,3 @@ def partition(iterable, order=None):
     if order is None:
         return result
     return [result[key] for key in order]
-
-def as_int(s, default, min=None, max=None):
-    """Convert s to an int and limit it to the given range, or return default
-    if unsuccessful."""
-    try:
-        value = int(s)
-    except (TypeError, ValueError):
-        return default
-    if min is not None and value < min:
-        value = min
-    if max is not None and value > max:
-        value = max
-    return value

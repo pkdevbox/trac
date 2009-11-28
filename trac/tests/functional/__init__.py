@@ -17,7 +17,7 @@ Secondarily, the cost of setting up a new Trac environment and Subversion
 repository is significant, so recreating the fixture for each test would be
 very costly.
 
-There are two primary objects invovled in the testing, the
+There are two primary objects involved in the testing, the
 FunctionalTestEnvironment and the FunctionalTester.
 
 FunctionalTestEnvironment represents the Trac environment, the Subversion
@@ -78,6 +78,7 @@ from datetime import datetime, timedelta
 
 from trac.tests.contentgen import random_sentence, random_page, random_word, \
     random_unique_camel
+from trac.util.compat import sorted, reversed
 from trac.test import TestSetup, TestCaseSetup
 
 internal_error = 'Trac detected an internal error:'

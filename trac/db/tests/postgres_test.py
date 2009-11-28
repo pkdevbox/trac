@@ -35,8 +35,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(1, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo bar" ( "name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo bar" ( "name" text)', sql_commands[0])
     
     def test_quote_column_names(self):
         table = Table('foo')
@@ -44,8 +43,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(1, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "my name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "my name" text)', sql_commands[0])
     
     def test_quote_compound_primary_key_declaration(self):
         table = Table('foo bar', key=['my name', 'your name'])
@@ -64,8 +62,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(2, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "my name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "my name" text)', sql_commands[0])
         index_sql = 'CREATE INDEX "foo_my name_idx" ON "foo" ("my name")'
         self.assertEqual(index_sql, sql_commands[1])
     
@@ -76,8 +73,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(2, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "a" text, "b" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "a" text, "b" text)', sql_commands[0])
         index_sql = 'CREATE INDEX "foo_a_b_idx" ON "foo" ("a","b")'
         self.assertEqual(index_sql, sql_commands[1])
 

@@ -41,21 +41,11 @@ if twill:
     # #5497).  Therefore we turn it off here.
     twill.commands.config('use_tidy', '0')
 
-    # We use a transparent proxy to access the global browser object through
-    # twill.get_browser(), as the browser can be destroyed by browser_reset()
-    # (see #7472).
-    class _BrowserProxy(object):
-        def __getattribute__(self, name):
-            return getattr(twill.get_browser(), name)
-        
-        def __setattr__(self, name, value):
-            setattr(twill.get_browser(), name, value)
-            
     # setup short names to reduce typing
     # This twill browser (and the tc commands that use it) are essentially
     # global, and not tied to our test fixture.
     tc = twill.commands
-    b = _BrowserProxy()
+    b = twill.get_browser()
 
     # Setup XHTML validation for all retrieved pages
     try:
@@ -101,7 +91,7 @@ if twill:
                 return
             etree.clear_error_log()
             try:
-                etree.parse(StringIO(page), base_url=b.get_url())
+                doc = etree.parse(StringIO(page), base_url=b.get_url())
             except etree.XMLSyntaxError, e:
                 raise twill.errors.TwillAssertionError(
                     _format_error_log(page, e.error_log))

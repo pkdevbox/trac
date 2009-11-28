@@ -14,9 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-import re, os
-
-from genshi import Markup
+import re, sys, os, time
 
 from trac.core import *
 from trac.config import Option
@@ -24,24 +22,26 @@ from trac.db.api import IDatabaseConnector, _parse_db_str
 from trac.db.util import ConnectionWrapper
 from trac.util import get_pkginfo
 from trac.util.compat import close_fds
-from trac.util.text import to_unicode, empty
+from trac.util.text import to_unicode
 from trac.util.translation import _
 
 has_psycopg = False
+has_pgsql = False
+PGSchemaError = None
 try:
     import psycopg2 as psycopg
     import psycopg2.extensions
     from psycopg2 import ProgrammingError as PGSchemaError
-    from psycopg2.extensions import register_type, UNICODE, \
-                                    register_adapter, AsIs, QuotedString
-
-    register_type(UNICODE)
-    register_adapter(Markup, lambda markup: QuotedString(unicode(markup)))
-    register_adapter(type(empty), lambda empty: AsIs("''"))
-
+    psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
     has_psycopg = True
 except ImportError:
-    pass
+    try:
+        from pyPgSQL import PgSQL
+        from pyPgSQL.libpq import OperationalError as PGSchemaError
+        has_pgsql = True
+    except ImportError:
+        pass
+
 
 _like_escape_re = re.compile(r'([/_%])')
 
@@ -59,7 +59,7 @@ class PostgreSQLConnector(Component):
         self.error = None
 
     def get_supported_schemes(self):
-        if not has_psycopg:
+        if not (has_psycopg or has_pgsql):
             self.error = _("Cannot load Python bindings for PostgreSQL")
         yield ('postgres', self.error and -1 or 1)
 
@@ -68,9 +68,19 @@ class PostgreSQLConnector(Component):
         cnx = PostgreSQLConnection(path, log, user, password, host, port,
                                    params)
         if not self._version:
-            self._version = get_pkginfo(psycopg).get('version',
-                                                     psycopg.__version__)
-            self.env.systeminfo.append(('psycopg2', self._version))
+            if has_psycopg:
+                self._version = get_pkginfo(psycopg).get('version',
+                                                         psycopg.__version__)
+                name = 'psycopg2'
+            elif has_pgsql:
+                import pyPgSQL
+                self._version = get_pkginfo(pyPgSQL).get('version',
+                                                         pyPgSQL.__version__)
+                name = 'pyPgSQL'
+            else:
+                name = 'unknown postgreSQL driver'
+                self._version = '?'
+            self.env.systeminfo.append((name, self._version))
         return cnx
 
     def init_db(self, path, log=None, user=None, password=None, host=None,
@@ -117,22 +127,22 @@ class PostgreSQLConnector(Component):
                             'is required for pre-upgrade backup support')
         db_url = self.env.config.get('trac', 'database')
         scheme, db_prop = _parse_db_str(db_url)
-        db_params = db_prop.setdefault('params', {})
+        db_prop.setdefault('params', {})
         db_name = os.path.basename(db_prop['path'])
 
         args = [self.pg_dump_path, '-C', '--inserts', '-x', '-Z', '8']
         if 'user' in db_prop:
             args.extend(['-U', db_prop['user']])
-        if 'host' in db_params:
-            host = db_params['host']
+        if 'host' in db_prop['params']:
+            host = db_prop['params']['host']
         else:
             host = db_prop.get('host', 'localhost')
         args.extend(['-h', host])
         if '/' not in host:
             args.extend(['-p', str(db_prop.get('port', '5432'))])
 
-        if 'schema' in db_params:
-            args.extend(['-n', '"%s"' % db_params['schema']])
+        if 'schema' in db_prop['params']:
+            args.extend(['-n', '"%s"' % db_prop['params']['schema']])
 
         dest_file += ".gz"
         args.extend(['-f', dest_file, db_name])
@@ -160,19 +170,27 @@ class PostgreSQLConnection(ConnectionWrapper):
             path = path[1:]
         if 'host' in params:
             host = params['host']
-        dsn = []
-        if path:
-            dsn.append('dbname=' + path)
-        if user:
-            dsn.append('user=' + user)
-        if password:
-            dsn.append('password=' + password)
-        if host:
-            dsn.append('host=' + host)
-        if port:
-            dsn.append('port=' + str(port))
-        cnx = psycopg.connect(' '.join(dsn))
-        cnx.set_client_encoding('UNICODE')
+        if has_psycopg:
+            dsn = []
+            if path:
+                dsn.append('dbname=' + path)
+            if user:
+                dsn.append('user=' + user)
+            if password:
+                dsn.append('password=' + password)
+            if host:
+                dsn.append('host=' + host)
+            if port:
+                dsn.append('port=' + str(port))
+            cnx = psycopg.connect(' '.join(dsn))
+            cnx.set_client_encoding('UNICODE')
+        elif has_pgsql:
+            # Don't use chatty, inefficient server-side cursors.
+            # http://pypgsql.sourceforge.net/pypgsql-faq.html#id2787367
+            PgSQL.fetchReturnsList = 1
+            PgSQL.noPostgresCursor = 1
+            cnx = PgSQL.connect('', user, password, host, path, port, 
+                                client_encoding='utf-8', unicode_results=True)
         try:
             self.schema = None
             if 'schema' in params:
