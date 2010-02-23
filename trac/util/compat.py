@@ -14,18 +14,59 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 """Various classes and functions to provide some backwards-compatibility with
-previous versions of Python from 2.4 onward.
+previous of Python prior to 2.4.
 """
 
 import os
 
-# Import symbols previously defined here for Python 2.3 compatibility from
-# __builtin__ so that plugins importing them don't suddenly stop working
-set = set
-frozenset = frozenset
-reversed = reversed
-sorted = sorted
-from itertools import groupby, tee
+try:
+    set = set
+    frozenset = frozenset
+except NameError:
+    from sets import Set as set
+    from sets import ImmutableSet as frozenset
+
+try:
+    reversed = reversed
+except NameError:
+    def reversed(x):
+        if hasattr(x, 'keys'):
+            raise ValueError('mappings do not support reverse iteration')
+        i = len(x)
+        while i > 0:
+            i -= 1
+            yield x[i]
+
+try:
+    sorted = sorted
+except NameError:
+    def sorted(iterable, cmp=None, key=None, reverse=False):
+        """Partial implementation of the "sorted" function from Python 2.4"""
+        if key is None:
+            lst = list(iterable)
+        else:
+            lst = [(key(val), idx, val) for idx, val in enumerate(iterable)]
+        lst.sort()
+        if key is None:
+            if reverse:
+                return lst[::-1]
+            return lst
+        if reverse:
+            lst = reversed(lst)
+        return [i[-1] for i in lst]
+
+# Note: not used, suggest to remove in 0.12
+try:
+    from operator import attrgetter, itemgetter
+except ImportError:
+    def attrgetter(name):
+        def _getattr(obj):
+            return getattr(obj, name)
+        return _getattr
+    def itemgetter(name):
+        def _getitem(obj):
+            return obj[name]
+        return _getitem
 
 class py_groupby(object):
     def __init__(self, iterable, key=None):
@@ -47,6 +88,28 @@ class py_groupby(object):
             yield self.currvalue
             self.currvalue = self.it.next() # Exit on StopIteration
             self.currkey = self.keyfunc(self.currvalue)
+try:
+    from itertools import groupby
+except ImportError:
+    groupby = py_groupby
+
+# Note: only used by pairwise, which is now deprecated
+#       (suggest to remove it from 0.12 as well)
+try:
+    from itertools import tee
+except ImportError:
+    from itertools import count
+    def tee(iterable):
+        def gen(next, data={}, cnt=[0]):
+            for i in count():
+                if i == cnt[0]:
+                    item = data[i] = next()
+                    cnt[0] += 1
+                else:
+                    item = data.pop(i)
+                yield item
+        it = iter(iterable)
+        return (gen(it.next), gen(it.next))
 
 try:
     all = all
@@ -55,25 +118,14 @@ except NameError:
     def any(S):
         for x in S:
             if x:
-                return True
+               return True
         return False
 
     def all(S):
         for x in S:
             if not x:
-                return False
+               return False
         return True
-
-if hasattr('', 'rpartition'):
-    def rpartition(s, sep):
-        return s.rpartition(sep)
-else:
-    def rpartition(s, sep):
-        idx = s.rfind(sep)
-        if idx < 0:
-            return ('', '', s)
-        else:
-            return (s[:idx], sep, s[idx+len(sep):])
 
 try:
     from functools import partial

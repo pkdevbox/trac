@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
+import doctest
 import unittest
 
-from trac.util.text import expandtabs, javascript_quote, \
-                           normalize_whitespace, to_unicode
-
+from trac.util.text import to_unicode, expandtabs
 
 class ToUnicodeTestCase(unittest.TestCase):
 
@@ -49,32 +48,10 @@ class ExpandtabsTestCase(unittest.TestCase):
         self.assertEquals('        ', expandtabs('       \t'))
         self.assertEquals('                ', expandtabs('\t\t'))
 
-
-class JavascriptQuoteTestCase(unittest.TestCase):
-    def test_quoting(self):
-        self.assertEqual(r'Quote \" in text',
-                         javascript_quote('Quote " in text'))
-        self.assertEqual(r'\\\"\b\f\n\r\t\'',
-                         javascript_quote('\\"\b\f\n\r\t\''))
-        self.assertEqual(r'\u0002\u001e',
-                         javascript_quote('\x02\x1e'))
-
-
-class WhitespaceTestCase(unittest.TestCase):
-    def test_default(self):
-        self.assertEqual(u'This is text ',
-            normalize_whitespace(u'Th\u200bis\u00a0is te\u200bxt\u00a0'))
-        self.assertEqual(u'Some other text',
-            normalize_whitespace(u'Some\tother\ntext\r', to_space='\t\n',
-                                 remove='\r'))
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(ToUnicodeTestCase, 'test'))
     suite.addTest(unittest.makeSuite(ExpandtabsTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(JavascriptQuoteTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(WhitespaceTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

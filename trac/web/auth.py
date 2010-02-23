@@ -30,21 +30,17 @@ import urllib2
 
 from genshi.builder import tag
 
-from trac.config import BoolOption, IntOption, Option
+from trac.config import BoolOption
 from trac.core import *
-from trac.db.util import with_transaction
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
 from trac.util import hex_entropy, md5, md5crypt
-from trac.util.translation import _
 
 
 class LoginModule(Component):
-    """User authentication manager.
-    
-    This component implements user authentication based on HTTP authentication
-    provided by the web-server, combined with cookies for communicating the
-    login information across the whole site.
+    """Implements user authentication based on HTTP authentication provided by
+    the web-server, combined with cookies for communicating the login
+    information across the whole site.
 
     This mechanism expects that the web-server is setup so that a request to the
     path '/login' requires authentication (such as Basic or Digest). The login
@@ -63,19 +59,6 @@ class LoginModule(Component):
     ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
         """Whether login names should be converted to lower case
         (''since 0.9'').""")
-
-    auth_cookie_lifetime = IntOption('trac', 'auth_cookie_lifetime', 0,
-        """Lifetime of the authentication cookie, in seconds.
-        
-        This value determines how long the browser will cache authentication
-        information, and therefore, after how much inactivity a user will have
-        to log in again. The default value of 0 makes the cookie expire at the
-        end of the browsing session. (''since 0.12'')""")
-    
-    auth_cookie_path = Option('trac', 'auth_cookie_path', '',
-        """Path for the authentication cookie. Set this to the common base path
-        of several Trac instances if you want them to share the cookie.
-        (''since 0.12'')""")
 
     # IAuthenticator methods
 
@@ -101,13 +84,12 @@ class LoginModule(Component):
 
     def get_navigation_items(self, req):
         if req.authname and req.authname != 'anonymous':
-            yield ('metanav', 'login', _('logged in as %(user)s',
-                                         user=req.authname))
+            yield ('metanav', 'login', 'logged in as %s' % req.authname)
             yield ('metanav', 'logout',
-                   tag.a(_('Logout'), href=req.href.logout()))
+                   tag.a('Logout', href=req.href.logout()))
         else:
             yield ('metanav', 'login',
-                   tag.a(_('Login'), href=req.href.login()))
+                   tag.a('Login', href=req.href.login()))
 
     # IRequestHandler methods
 
@@ -149,24 +131,21 @@ class LoginModule(Component):
             remote_user = remote_user.lower()
 
         assert req.authname in ('anonymous', remote_user), \
-               _('Already logged in as %(user)s.', user=req.authname)
+               'Already logged in as %s.' % req.authname
 
         cookie = hex_entropy()
-        @with_transaction(self.env)
-        def store_session_cookie(db):
-            cursor = db.cursor()
-            cursor.execute("INSERT INTO auth_cookie (cookie,name,ipnr,time) "
-                           "VALUES (%s, %s, %s, %s)",
-                           (cookie, remote_user, req.remote_addr,
-                            int(time.time())))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO auth_cookie (cookie,name,ipnr,time) "
+                       "VALUES (%s, %s, %s, %s)", (cookie, remote_user,
+                       req.remote_addr, int(time.time())))
+        db.commit()
+
         req.authname = remote_user
         req.outcookie['trac_auth'] = cookie
-        req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
-                                             or req.base_path or '/'
+        req.outcookie['trac_auth']['path'] = req.base_path or '/'
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        if self.auth_cookie_lifetime > 0:
-            req.outcookie['trac_auth']['expires'] = self.auth_cookie_lifetime
 
     def _do_logout(self, req):
         """Log the user out.
@@ -179,12 +158,11 @@ class LoginModule(Component):
 
         # While deleting this cookie we also take the opportunity to delete
         # cookies older than 10 days
-        @with_transaction(self.env)
-        def delete_session_cookie(db):
-            cursor = db.cursor()
-            cursor.execute("DELETE FROM auth_cookie "
-                           "WHERE name=%s OR time < %s",
-                           (req.authname, int(time.time()) - 86400 * 10))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM auth_cookie WHERE name=%s OR time < %s",
+                       (req.authname, int(time.time()) - 86400 * 10))
+        db.commit()
         self._expire_cookie(req)
         custom_redirect = self.config['metanav'].get('logout.redirect')
         if custom_redirect:
@@ -197,8 +175,7 @@ class LoginModule(Component):
         "expires" property to a date in the past.
         """
         req.outcookie['trac_auth'] = ''
-        req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
-                                             or req.base_path or '/'
+        req.outcookie['trac_auth']['path'] = req.base_path or '/'
         req.outcookie['trac_auth']['expires'] = -10000
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
@@ -283,13 +260,13 @@ class BasicAuthentication(PasswordFileAuthentication):
             try:
                 u, h = line.split(':')
             except ValueError:
-                print >> sys.stderr, 'Warning: invalid password line in %s: ' \
-                                     '%s' % (filename, line)
+                print >>sys.stderr, 'Warning: invalid password line in %s: %s' \
+                                    % (filename, line)
                 continue
             if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
-                print >> sys.stderr, 'Warning: cannot parse password for ' \
+                print >>sys.stderr, 'Warning: cannot parse password for ' \
                                     'user "%s" without the "crypt" module' % u
 
         if self.hash == {}:
@@ -345,8 +322,8 @@ class DigestAuthentication(PasswordFileAuthentication):
             try:
                 u, r, a1 = line.split(':')
             except ValueError:
-                print >> sys.stderr, 'Warning: invalid digest line in %s: %s' \
-                                     % (filename, line)
+                print >>sys.stderr, 'Warning: invalid digest line in %s: %s' \
+                                    % (filename, line)
                 continue
             if r == self.realm:
                 self.hash[u] = a1

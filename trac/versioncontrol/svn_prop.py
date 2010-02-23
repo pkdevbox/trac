@@ -21,12 +21,13 @@ import posixpath
 from genshi.builder import tag
 
 from trac.core import *
-from trac.versioncontrol.api import NoSuchNode, RepositoryManager
+from trac.versioncontrol import NoSuchNode
 from trac.versioncontrol.svn_fs import _path_within_scope
 from trac.versioncontrol.web_ui.browser import IPropertyRenderer
 from trac.versioncontrol.web_ui.changeset import IPropertyDiffRenderer
 from trac.util import Ranges, to_ranges
-from trac.util.translation import _, tag_
+from trac.util.compat import set
+from trac.util.translation import _
 
 
 class SubversionPropertyRenderer(Component):
@@ -58,7 +59,7 @@ class SubversionPropertyRenderer(Component):
                 if len(value) != 2:
                     self.log.warn("svn:externals entry %s doesn't contain "
                             "a space-separated key value pair, skipping.", 
-                            dummykey)
+                            label)
                     continue
                 key, value = value
                 self._externals_map[key] = value.replace('%', '%%') \
@@ -80,7 +81,7 @@ class SubversionPropertyRenderer(Component):
             prefix = []
             base_url = url
             while base_url:
-                if base_url in self._externals_map or base_url == u'/':
+                if base_url in self._externals_map or base_url==u'/':
                     break
                 base_url, pref = posixpath.split(base_url)
                 prefix.append(pref)
@@ -147,9 +148,8 @@ class SubversionMergePropertyRenderer(Component):
         has_eligible = name in ('svnmerge-integrated', 'svn:mergeinfo')
         revs_label = (_('merged'), _('blocked'))[name.endswith('blocked')]
         revs_cols = has_eligible and 2 or None
-        reponame = context.resource.parent.id
+        repos = self.env.get_repository()
         target_path = context.resource.id
-        repos = RepositoryManager(self.env).get_repository(reponame)
         target_rev = context.resource.version
         if has_eligible:
             node = repos.get_node(target_path, target_rev)
@@ -171,8 +171,7 @@ class SubversionMergePropertyRenderer(Component):
             deleted = False
             try:
                 node = repos.get_node(spath, target_rev)
-                resource = context.resource.parent.child('source', spath)
-                if 'LOG_VIEW' in context.perm(resource):
+                if 'LOG_VIEW' in context.perm('source', spath):
                     row = [_get_source_link(spath, context),
                            _get_revs_link(revs_label, context, spath, revs)]
                     if has_eligible:
@@ -230,9 +229,8 @@ def _get_blocked_revs(props, name, path):
 
 def _get_source_link(spath, context):
     """Return a link to a merge source."""
-    reponame = context.resource.parent.id
     return tag.a('/' + spath, title=_('View merge source'),
-                 href=context.href.browser(reponame or None, spath,
+                 href=context.href.browser(spath,
                                            rev=context.resource.version))
 
 def _get_revs_link(label, context, spath, revs):
@@ -240,13 +238,12 @@ def _get_revs_link(label, context, spath, revs):
     given, to the revision itself for a single revision, or a `<span>`
     with "no revision" for none.
     """
-    reponame = context.resource.parent.id
     if not revs:
         return tag.span(label, title=_('No revisions'))
     elif ',' in revs or '-' in revs:
-        revs_href = context.href.log(reponame or None, spath, revs=revs)
+        revs_href = context.href.log(spath, revs=revs)
     else:
-        revs_href = context.href.changeset(revs, reponame or None, spath)
+        revs_href = context.href.changeset(revs, spath)
     return tag.a(label, title=revs.replace(',', ', '), href=revs_href)
 
 
@@ -264,8 +261,7 @@ class SubversionMergePropertyDiffRenderer(Component):
         # Build 3 columns table showing modifications on merge sources
         # || source || added revs || removed revs ||
         # || source || removed                    ||
-        rm = RepositoryManager(self.env)
-        repos = rm.get_repository(old_context.resource.parent.id)
+        repos = self.env.get_repository()
         def parse_sources(props):
             sources = {}
             for line in props[name].splitlines():
@@ -322,5 +318,5 @@ class SubversionMergePropertyDiffRenderer(Component):
                  for spath, src in removed_sources]), class_='props')
         else:
             changes = tag.em(_(' (with no actual effect on merging)'))
-        return tag.li(tag_('Property %(prop)s changed', prop=tag.strong(name)),
+        return tag.li(tag('Property ', tag.strong(name), ' changed'),
                       changes)

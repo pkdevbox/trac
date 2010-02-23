@@ -1,7 +1,5 @@
 @import url(code.css);
 
-#prefs .buttons { margin-top: 0 }
-
 h1 .numrows, h2 .numrows {
  margin-left: 1em;
  color: #999; 
@@ -21,7 +19,6 @@ h2.report-result {
 
 #query { clear: right }
 #query fieldset, #query fieldset input, #query fieldset select { font-size: 11px }
-#query fieldset input[type="button"] { padding: 0.1em 0.5em }
 #query fieldset { margin-top: 1em }
 #query fieldset.collapsed { 
  border-width: 0;
@@ -35,37 +32,14 @@ h2.report-result {
 #query hr { clear: both; margin: 0; visibility: hidden }
 
 #filters table { width: 100% }
-#filters td.trac-clause { padding: 0 }
-#filters td .trac-clause-lsep { 
- float: left;
- width: 47%;
- line-height: 50%;
-}
-#filters td .trac-clause-msep {
- float: left;
- text-align: center;
- width: 5%;
-}
-#filters td .trac-clause-rsep { 
- float: right;
- width: 47%; 
- line-height: 50%;
-}
-#filters td hr {
- margin: 1px;
- visibility: visible
-}
-
 #filters tr { height: 2em }
 #filters th, #filters td { padding: 0 .2em; vertical-align: middle }
 #filters th { font-size: 11px; text-align: right; white-space: nowrap; }
 #filters td label { font-size: 11px }
 #filters td.mode { text-align: right }
 #filters td.filter { width: 100% }
-#filters td.filter label.control { padding-right: 1em }
-#filters td.and { white-space: nowrap }
-#filters td.or { text-align: right; white-space: nowrap }
-#filters div.inlinebuttons { display: inline }
+#filters td.filter label { padding-right: 1em }
+#filters td.actions { text-align: right; white-space: nowrap }
 
 #columns div label { 
  display: block;
@@ -109,6 +83,22 @@ h2.report-result {
 .tickets .fullrow :link, .tickets .fullrow :visited { display: inline }
 .tickets .fullrow .meta { color: #999; }
 .tickets .fullrow hr { display: none }
+
+fieldset legend.foldable :link, fieldset legend.foldable :visited { 
+ background: url(../expanded.png) 0 50% no-repeat;
+ border: none;
+ color: #666;
+ font-size: 110%;
+ padding-left: 16px;
+}
+fieldset legend.foldable :link:hover, fieldset legend.foldable :visited:hover {
+  background-color: transparent;
+}
+
+fieldset.collapsed legend.foldable :link, fieldset.collapsed legend.foldable :visited { 
+ background-image: url(../collapsed.png);  
+}
+fieldset.collapsed table, fieldset.collapsed div { display: none }
 
 /* Query results table */
 

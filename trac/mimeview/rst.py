@@ -25,6 +25,7 @@
 __docformat__ = 'reStructuredText'
 
 from distutils.version import StrictVersion
+import re
 try:
     from docutils import nodes
     from docutils.core import publish_parts
@@ -35,9 +36,10 @@ except ImportError:
     has_docutils = False
 
 from trac.core import *
-from trac.env import ISystemInfoProvider
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
 from trac.util.html import Element, Markup
+from trac.util.translation import _
+from trac.web.href import Href
 from trac.wiki.api import WikiSystem
 from trac.wiki.formatter import WikiProcessor, Formatter, extract_link
 
@@ -60,8 +62,10 @@ if has_docutils and StrictVersion(__version__) < StrictVersion('0.6'):
 
 
 class ReStructuredTextRenderer(Component):
-    """HTML renderer for plain text in reStructuredText format."""
-    implements(ISystemInfoProvider, IHTMLPreviewRenderer)
+    """
+    Renders plain text in reStructuredText format as HTML.
+    """
+    implements(IHTMLPreviewRenderer)
 
     can_render = False
     
@@ -72,15 +76,8 @@ class ReStructuredTextRenderer(Component):
                                  '%s found' % ('0.3.9', __version__))
             else:
                 self.can_render = True
+                self.env.systeminfo.append(('Docutils', __version__))
         
-    # ISystemInfoProvider methods
-    
-    def get_system_info(self):
-        if has_docutils:
-            yield 'Docutils', __version__
-
-    # IHTMLPreviewRenderer methods
-
     def get_quality_ratio(self, mimetype):
         if self.can_render and mimetype == 'text/x-rst':
             return 8
@@ -106,7 +103,7 @@ class ReStructuredTextRenderer(Component):
                 missing = not WikiSystem(self.env).has_page(target)
             if uri:                    
                 reference = nodes.reference(rawtext, text or target)
-                reference['refuri'] = uri
+                reference['refuri']= uri
                 if missing:
                     reference['classes'].append('missing')
                 return reference
@@ -152,9 +149,9 @@ class ReStructuredTextRenderer(Component):
 
         def trac_role(name, rawtext, text, lineno, inliner, options={},
                       content=[]):
-            args  = text.split(" ", 1)
+            args  = text.split(" ",1)
             link = args[0]
-            if len(args) == 2:
+            if len(args)==2:
                 text = args[1]
             else:
                 text = None
@@ -166,7 +163,7 @@ class ReStructuredTextRenderer(Component):
             return warning, []
 
         # 1 required arg, 1 optional arg, spaces allowed in last arg
-        trac.arguments = (1, 1, 1)
+        trac.arguments = (1,1,1)
         trac.options = None
         trac.content = None
         rst.directives.register_directive('trac', trac)

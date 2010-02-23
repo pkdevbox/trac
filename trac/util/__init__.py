@@ -18,22 +18,19 @@
 #         Matthew Good <trac@matt-good.net>
 
 import errno
-import inspect
-from itertools import izip, tee
 import locale
 import os.path
-from pkg_resources import find_distributions
 import random
 import re
-import shutil
 import sys
 import time
 import tempfile
 from urllib import quote, unquote, urlencode
+from itertools import izip
 
 # Imports for backward compatibility
 from trac.core import TracError
-from trac.util.compat import any, md5, reversed, sha1, sorted
+from trac.util.compat import md5, reversed, sha1, sorted, tee
 from trac.util.html import escape, unescape, Markup, Deuglifier
 from trac.util.text import CRLF, to_utf8, to_unicode, shorten_line, \
                            wrap, pretty_size
@@ -116,7 +113,7 @@ if os.name == 'nt':
         can_rename_open_file = True
         
         def _rename_atomic(src, dst):
-            ta = CreateTransaction(None, 0, 0, 0, 0, 10000, 'Trac rename')
+            ta = CreateTransaction(None, 0, 0, 0, 0, 1000, 'Trac rename')
             if ta == -1:
                 return False
             try:
@@ -288,67 +285,6 @@ class NaivePopen:
             if capturestderr and os.path.isfile(errfile):
                 os.remove(errfile)
 
-
-def makedirs(path, overwrite=False):
-    if overwrite and os.path.exists(path):
-        return
-    os.makedirs(path)
-
-
-def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
-    """Recursively copy a directory tree using copy2() (from shutil.copytree.)
-
-    Added a `skip` parameter consisting of absolute paths
-    which we don't want to copy.
-    """
-    def str_path(path):
-        if isinstance(path, unicode):
-            path = path.encode(sys.getfilesystemencoding() or
-                               locale.getpreferredencoding())
-        return path
-
-    def remove_if_overwriting(path):
-        if overwrite and os.path.exists(path):
-            os.unlink(path)
-
-    skip = [str_path(f) for f in skip]
-    def copytree_rec(src, dst):
-        names = os.listdir(src)
-        makedirs(dst, overwrite=overwrite)
-        errors = []
-        for name in names:
-            srcname = os.path.join(src, name)
-            if srcname in skip:
-                continue
-            dstname = os.path.join(dst, name)
-            try:
-                if symlinks and os.path.islink(srcname):
-                    remove_if_overwriting(dstname)
-                    linkto = os.readlink(srcname)
-                    os.symlink(linkto, dstname)
-                elif os.path.isdir(srcname):
-                    copytree_rec(srcname, dstname)
-                else:
-                    remove_if_overwriting(dstname)
-                    shutil.copy2(srcname, dstname)
-                # XXX What about devices, sockets etc.?
-            except (IOError, OSError), why:
-                errors.append((srcname, dstname, str(why)))
-            # catch the Error from the recursive copytree so that we can
-            # continue with other files
-            except shutil.Error, err:
-                errors.extend(err.args[0])
-        try:
-            shutil.copystat(src, dst)
-        except WindowsError, why:
-            pass # Ignore errors due to limited Windows copystat support
-        except OSError, why:
-            errors.append((src, dst, str(why)))
-        if errors:
-            raise shutil.Error(errors)
-    copytree_rec(str_path(src), str_path(dst))
-
-
 # -- sys utils
 
 def arity(f):
@@ -394,27 +330,6 @@ def get_lines_from_file(filename, lineno, context=0):
             fileobj.close()
     return (), None, ()
 
-def get_frame_info(tb):
-    """Return frame information for a traceback."""
-    frames = []
-    while tb:
-        tb_hide = tb.tb_frame.f_locals.get('__traceback_hide__')
-        if tb_hide in ('before', 'before_and_this'):
-            del frames[:]
-            tb_hide = tb_hide[6:]
-        if not tb_hide:
-            filename = tb.tb_frame.f_code.co_filename
-            filename = filename.replace('\\', '/')
-            lineno = tb.tb_lineno - 1
-            before, line, after = get_lines_from_file(filename, lineno, 5)
-            frames.append({'traceback': tb, 'filename': filename,
-                           'lineno': lineno, 'line': line,
-                           'lines_before': before, 'lines_after': after,
-                           'function': tb.tb_frame.f_code.co_name,
-                           'vars': tb.tb_frame.f_locals})
-        tb = tb.tb_next
-    return frames
-
 def safe__import__(module_name):
     """
     Safe imports: rollback after a failed import.
@@ -433,23 +348,10 @@ def safe__import__(module_name):
                 del(sys.modules[modname])
         raise e
 
-def get_doc(obj):
-    """Return the docstring of an object as a tuple `(summary, description)`,
-    where `summary` is the first paragraph and `description` is the remaining
-    text.
-    """
-    doc = inspect.getdoc(obj)
-    if not doc:
-        return (None, None)
-    doc = to_unicode(doc).split('\n\n', 1)
-    summary = doc[0].replace('\n', ' ')
-    description = len(doc) > 1 and doc[1] or None
-    return (summary, description)
-
 # -- setuptools utils
 
 def get_module_path(module):
-    """Return the base path the given module is imported from"""
+    # Determine the plugin that this component belongs to
     path = module.__file__
     module_name = module.__name__
     if path.endswith('.pyc') or path.endswith('.pyo'):
@@ -464,23 +366,6 @@ def get_module_path(module):
             break
     return base_path
 
-def get_sources(path):
-    """Return a dictionary mapping Python module source paths to the
-    distributions that contain them.
-    """
-    sources = {}
-    for dist in find_distributions(path, only=True):
-        try:
-            toplevels = dist.get_metadata('top_level.txt').splitlines()
-            toplevels = [each + '/' for each in toplevels]
-            files = dist.get_metadata('SOURCES.txt').splitlines()
-            sources.update((src, dist) for src in files
-                           if any(src.startswith(toplevel)
-                                  for toplevel in toplevels))
-        except KeyError:
-            pass    # Metadata not found
-    return sources
-
 def get_pkginfo(dist):
     """Get a dictionary containing package information for a package
 
@@ -493,13 +378,17 @@ def get_pkginfo(dist):
     """
     import types
     if isinstance(dist, types.ModuleType):
-        module = dist
-        module_path = get_module_path(module)
-        for dist in find_distributions(module_path, only=True):
-            if os.path.isfile(module_path) or \
-                   dist.key == module.__name__.lower():
-                break
-        else:
+        try:
+            from pkg_resources import find_distributions
+            module = dist
+            module_path = get_module_path(module)
+            for dist in find_distributions(module_path, only=True):
+                if os.path.isfile(module_path) or \
+                       dist.key == module.__name__.lower():
+                    break
+            else:
+                return {}
+        except ImportError:
             return {}
     import email
     attrs = ('author', 'author-email', 'license', 'home-page', 'summary',
@@ -524,6 +413,7 @@ def get_pkginfo(dist):
 # -- crypto utils
 
 def hex_entropy(bytes=32):
+    import random
     return sha1(str(random.random())).hexdigest()[:bytes]
 
 
@@ -586,13 +476,11 @@ def md5crypt(password, salt, magic='$1$'):
     for a, b, c in ((0, 6, 12), (1, 7, 13), (2, 8, 14), (3, 9, 15), (4, 10, 5)):
         v = ord(final[a]) << 16 | ord(final[b]) << 8 | ord(final[c])
         for i in range(4):
-            rearranged += itoa64[v & 0x3f]
-            v >>= 6
+            rearranged += itoa64[v & 0x3f]; v >>= 6
 
     v = ord(final[11])
     for i in range(2):
-        rearranged += itoa64[v & 0x3f]
-        v >>= 6
+        rearranged += itoa64[v & 0x3f]; v >>= 6
 
     return magic + salt + '$' + rearranged
 
@@ -827,9 +715,7 @@ def content_disposition(type, filename=None):
     return type
 
 def pairwise(iterable):
-    """
-    >>> list(pairwise([0, 1, 2, 3]))
-    [(0, 1), (1, 2), (2, 3)]
+    """s -> (s0,s1), (s1,s2), (s2, s3), ...
 
     :deprecated: since 0.11 (if this really needs to be used, rewrite it
                              without izip)
@@ -842,12 +728,6 @@ def pairwise(iterable):
     return izip(a, b)
 
 def partition(iterable, order=None):
-    """
-    >>> partition([(1,"a"),(2, "b"),(3, "a")])
-    {'a': [1, 3], 'b': [2]}
-    >>> partition([(1,"a"),(2, "b"),(3, "a")], "ab")
-    [[1, 3], [2]]
-    """
     result = {}
     if order is not None:
         for key in order:
@@ -857,20 +737,3 @@ def partition(iterable, order=None):
     if order is None:
         return result
     return [result[key] for key in order]
-
-def as_int(s, default, min=None, max=None):
-    """Convert s to an int and limit it to the given range, or return default
-    if unsuccessful."""
-    try:
-        value = int(s)
-    except (TypeError, ValueError):
-        return default
-    if min is not None and value < min:
-        value = min
-    if max is not None and value > max:
-        value = max
-    return value
-
-def pathjoin(*args):
-    """Strip `/` from the arguments and join them with a single `/`."""
-    return '/'.join(filter(None, (each.strip('/') for each in args if each)))

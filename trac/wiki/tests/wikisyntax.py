@@ -7,13 +7,11 @@ from trac.util.datefmt import utc
 from trac.wiki.model import WikiPage
 from trac.wiki.tests import formatter
 
-TEST_CASES = u"""
+TEST_CASES=u"""
 ============================== wiki: link resolver
 wiki:TestPage
 wiki:TestPage/
 wiki:/TestPage
-[wiki:/TestPage]
-[wiki:/TestPage /TestPage]
 wiki:"Space 1 23"
 wiki:"C'est l'\xe9t\xe9"
 wiki:MissingPage
@@ -24,8 +22,6 @@ wiki:abc
 <a class="wiki" href="/wiki/TestPage">wiki:TestPage</a>
 <a class="wiki" href="/wiki/TestPage">wiki:TestPage/</a>
 <a class="wiki" href="/wiki/TestPage">wiki:/TestPage</a>
-<a class="wiki" href="/wiki/TestPage">TestPage</a>
-<a class="wiki" href="/wiki/TestPage">/TestPage</a>
 <a class="wiki" href="/wiki/Space%201%2023">wiki:"Space 1 23"</a>
 <a class="wiki" href="/wiki/C%27est%20l%27%C3%A9t%C3%A9">wiki:"C'est l'\xe9t\xe9"</a>
 <a class="missing wiki" href="/wiki/MissingPage" rel="nofollow">wiki:MissingPage?</a>
@@ -285,7 +281,7 @@ NoLink:ignored
 """ #" Emacs likes it that way better
 
 
-RELATIVE_LINKS_TESTS = u"""
+RELATIVE_LINKS_TESTS=u"""
 ============================== Relative to the project url
 [//docs Documentation]
 [// Home]
@@ -306,48 +302,13 @@ RELATIVE_LINKS_TESTS = u"""
 ------------------------------
 ============================== Relative to the current page
 [./Detail see detail]
-[./Detail]
-[./Detail ./Detail]
 [.. see parent]
 [../Other see other]
-[../Other]
-[../Other ../Other]
-[.././../Other]
 ------------------------------
 <p>
 <a class="missing wiki" href="/wiki/Main/Sub/Detail" rel="nofollow">see detail?</a>
-<a class="missing wiki" href="/wiki/Main/Sub/Detail" rel="nofollow">Detail?</a>
-<a class="missing wiki" href="/wiki/Main/Sub/Detail" rel="nofollow">./Detail?</a>
 <a class="missing wiki" href="/wiki/Main" rel="nofollow">see parent?</a>
 <a class="missing wiki" href="/wiki/Main/Other" rel="nofollow">see other?</a>
-<a class="missing wiki" href="/wiki/Main/Other" rel="nofollow">Other?</a>
-<a class="missing wiki" href="/wiki/Main/Other" rel="nofollow">../Other?</a>
-<a class="missing wiki" href="/wiki/Other" rel="nofollow">Other?</a>
-</p>
-------------------------------
-============================== Relative to the current page, in wiki realm
-[wiki:. this page]
-[wiki:./Detail see detail]
-[wiki:.. see parent]
-[wiki:../Other see other]
-[wiki:.././../Other]
-["."]
-["./Detail"]
-[".."]
-["../Other"]
-[".././../Other"]
-------------------------------
-<p>
-<a class="wiki" href="/wiki/Main/Sub">this page</a>
-<a class="missing wiki" href="/wiki/Main/Sub/Detail" rel="nofollow">see detail?</a>
-<a class="missing wiki" href="/wiki/Main" rel="nofollow">see parent?</a>
-<a class="missing wiki" href="/wiki/Main/Other" rel="nofollow">see other?</a>
-<a class="missing wiki" href="/wiki/Other" rel="nofollow">.././../Other?</a>
-<a class="wiki" href="/wiki/Main/Sub">.</a>
-<a class="missing wiki" href="/wiki/Main/Sub/Detail" rel="nofollow">./Detail?</a>
-<a class="missing wiki" href="/wiki/Main" rel="nofollow">..?</a>
-<a class="missing wiki" href="/wiki/Main/Other" rel="nofollow">../Other?</a>
-<a class="missing wiki" href="/wiki/Other" rel="nofollow">.././../Other?</a>
 </p>
 ------------------------------
 ============================== Relative to the current page with anchors
@@ -373,59 +334,6 @@ RELATIVE_LINKS_TESTS = u"""
 ------------------------------
 """ # "
 
-SCOPED_LINKS_TESTS = u"""
-============================== Scoped links for hierarchical pages
-ThirdLevel
-[wiki:ThirdLevel]
-OtherThirdLevel
-[wiki:OtherThirdLevel]
-SecondLevel/OtherThirdLevel
-[wiki:SecondLevel/OtherThirdLevel]
-SecondLevel
-[wiki:SecondLevel]
-FirstLevel
-[wiki:FirstLevel]
-TestPage
-[wiki:TestPage]
-MissingPage
-[wiki:MissingPage]
-FirstLevel/MissingPage
-[wiki:FirstLevel/MissingPage]
-SecondLevel/MissingPage
-[wiki:SecondLevel/MissingPage]
-MissingFirstLevel/MissingPage
-[wiki:MissingFirstLevel/MissingPage]
-["/OtherThirdLevel"]
-[wiki:/OtherThirdLevel]
-[wiki:/OtherThirdLevel /OtherThirdLevel]
-------------------------------
-<p>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/ThirdLevel">ThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/ThirdLevel">ThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/OtherThirdLevel">OtherThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/OtherThirdLevel">OtherThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/OtherThirdLevel">SecondLevel/OtherThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel/OtherThirdLevel">SecondLevel/OtherThirdLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel">SecondLevel</a>
-<a class="wiki" href="/wiki/FirstLevel/SecondLevel">SecondLevel</a>
-<a class="wiki" href="/wiki/FirstLevel">FirstLevel</a>
-<a class="wiki" href="/wiki/FirstLevel">FirstLevel</a>
-<a class="wiki" href="/wiki/TestPage">TestPage</a>
-<a class="wiki" href="/wiki/TestPage">TestPage</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingPage" rel="nofollow">MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingPage" rel="nofollow">MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/MissingPage" rel="nofollow">FirstLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/MissingPage" rel="nofollow">FirstLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingPage" rel="nofollow">SecondLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingPage" rel="nofollow">SecondLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingFirstLevel/MissingPage" rel="nofollow">MissingFirstLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/FirstLevel/SecondLevel/MissingFirstLevel/MissingPage" rel="nofollow">MissingFirstLevel/MissingPage?</a>
-<a class="missing wiki" href="/wiki/OtherThirdLevel" rel="nofollow">OtherThirdLevel?</a>
-<a class="missing wiki" href="/wiki/OtherThirdLevel" rel="nofollow">OtherThirdLevel?</a>
-<a class="missing wiki" href="/wiki/OtherThirdLevel" rel="nofollow">/OtherThirdLevel?</a>
-</p>
-------------------------------
-""" # "
 
 def wiki_setup(tc):
     now = datetime.now(utc)
@@ -466,25 +374,6 @@ nolink          http://noweb
 """ 
     imt.save('joe', 'test InterWiki links', '::1', now)
 
-    w = WikiPage(tc.env)
-    w.name = 'FirstLevel'
-    w.text = '--'
-    w.save('joe', 'first level of hierarchy', '::1', now)
-    
-    w = WikiPage(tc.env)
-    w.name = 'FirstLevel/SecondLevel'
-    w.text = '--'
-    w.save('joe', 'second level of hierarchy', '::1', now)
-    
-    w = WikiPage(tc.env)
-    w.name = 'FirstLevel/SecondLevel/ThirdLevel'
-    w.text = '--'
-    w.save('joe', 'third level of hierarchy', '::1', now)
-    
-    w = WikiPage(tc.env)
-    w.name = 'FirstLevel/SecondLevel/OtherThirdLevel'
-    w.text = '--'
-    w.save('joe', 'other third level of hierarchy', '::1', now)
 
 def wiki_teardown(tc):
     tc.env.reset_db()
@@ -497,10 +386,6 @@ def suite():
     suite.addTest(formatter.suite(RELATIVE_LINKS_TESTS, wiki_setup, __file__,
                                   wiki_teardown,
                                   context=('wiki', 'Main/Sub')))
-    suite.addTest(formatter.suite(SCOPED_LINKS_TESTS, wiki_setup, __file__,
-                                  wiki_teardown,
-                                  context=('wiki', 
-                                      'FirstLevel/SecondLevel/ThirdLevel')))
     return suite
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from urllib import quote, urlencode
 from trac.util.text import unicode_quote, unicode_urlencode
 
 
@@ -74,12 +75,6 @@ class Href(object):
 
     >>> href('timeline', {'from': '02/24/05', 'daysback': 30})
     '/trac/timeline?daysback=30&from=02%2F24%2F05'
-    >>> href('timeline', {})
-    '/trac/timeline'
-    >>> href('timeline', [('from', '02/24/05')])
-    '/trac/timeline?from=02%2F24%2F05'
-    >>> href('timeline', ()) == href('timeline', []) == href('timeline', {})
-    True
 
     The usual way of quoting arguments that would otherwise be interpreted
     as Python keywords is supported too:
@@ -129,7 +124,7 @@ class Href(object):
         params = []
 
         def add_param(name, value):
-            if isinstance(value, (list, tuple)):
+            if type(value) in (list, tuple):
                 for i in [i for i in value if i is not None]:
                     params.append((name, i))
             elif value is not None:
@@ -137,11 +132,11 @@ class Href(object):
 
         if args:
             lastp = args[-1]
-            if isinstance(lastp, dict):
+            if lastp and type(lastp) is dict:
                 for k, v in lastp.items():
                     add_param(k, v)
                 args = args[:-1]
-            elif isinstance(lastp, (list, tuple)):
+            elif lastp and type(lastp) in (list, tuple):
                 for k, v in lastp:
                     add_param(k, v)
                 args = args[:-1]
@@ -151,8 +146,6 @@ class Href(object):
                          if arg is not None])
         if path:
             href += '/' + path
-        elif not href:
-            href = '/'
 
         # assemble the query string
         for k, v in kw.items():

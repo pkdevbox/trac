@@ -1,4 +1,6 @@
 import os
+import inspect
+import StringIO
 import unittest
 import difflib
 from datetime import datetime
@@ -66,15 +68,6 @@ class NoneMacro(WikiMacroBase):
     def expand_macro(self, formatter, name, content):
         return None
 
-class WikiProcessorSampleMacro(WikiMacroBase):
-    def expand_macro(self, formatter, name, content, args):
-        if args is None:
-            return 'Called as a macro: ' + content
-        else:
-            return 'Called as a processor with params: <dl>%s</dl>' % \
-                ''.join('<dt>%s</dt><dd>%s</dd>' % kv for kv in args.items()) \
-                + content
-
 class SampleResolver(Component):
     """A dummy macro returning a div block, used by the unit test."""
 
@@ -120,11 +113,7 @@ class WikiTestCase(unittest.TestCase):
             context = Context.from_request(req, 'wiki', 'WikiStart')
         self.context = context
 
-        all_test_components = [
-                HelloWorldMacro, DivHelloWorldMacro, TableHelloWorldMacro, 
-                DivCodeMacro, DivCodeElementMacro, DivCodeStreamMacro, 
-                NoneMacro, WikiProcessorSampleMacro, SampleResolver]
-        self.env = EnvironmentStub(enable=['trac.*'] + all_test_components)
+        self.env = EnvironmentStub()
         # -- macros support
         self.env.path = ''
         # -- intertrac support

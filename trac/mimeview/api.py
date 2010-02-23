@@ -18,9 +18,26 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-"""File metadata management.
+"""
+----
+NOTE: for plugin developers
 
-The `trac.mimeview` package centralizes the intelligence related to
+ The Mimeview API is quite complex and many things there are currently
+ a bit difficult to work with (e.g. what an actual `content` might be,
+ see last paragraph of this docstring).
+
+ So this area is mainly in a ''work in progress'' state, which will
+ be improved upon in the near future
+ (see http://trac.edgewall.org/ticket/3332).
+
+ In particular, if you are interested in writing IContentConverter
+ and IHTMLPreviewRenderer components, note that those interfaces
+ will be merged into a new style IContentConverter.
+ Feel free to contribute remarks and suggestions for improvements
+ to the corresponding ticket (#3332).
+----
+
+The `trac.mimeview` module centralize the intelligence related to
 file metadata, principally concerning the `type` (MIME type) of the content
 and, if relevant, concerning the text encoding (charset) used by the content.
 
@@ -37,22 +54,6 @@ needed, that's why we avoid to read the file's content when it's not needed.
 The actual `content` to be converted might be a `unicode` object,
 but it can also be the raw byte string (`str`) object, or simply
 an object that can be `read()`.
-
-----
-NOTE: for plugin developers
-
-  The Mimeview API is quite complex and many things there are currently
-  a bit difficult to work with (e.g. what an actual `content` might be,
-  see the last paragraph of this description).
-
-  So this area is mainly in a ''work in progress'' state, which will
-  be improved upon in the near future (see [trac:ticket:3332 #3332]).
-
-  In particular, if you are interested in writing `IContentConverter`
-  and `IHTMLPreviewRenderer` components, note that those interfaces
-  will be merged into a new style `IContentConverter`.
-  Feel free to contribute remarks and suggestions for improvements
-  to the corresponding ticket ([trac:ticket:3332 #3332]).
 """
 
 import re
@@ -66,8 +67,8 @@ from genshi.input import HTMLParser
 from trac.config import IntOption, ListOption, Option
 from trac.core import *
 from trac.resource import Resource
-from trac.util import Ranges
-from trac.util.text import exception_to_unicode, to_utf8, to_unicode
+from trac.util import reversed, sorted, Ranges
+from trac.util.text import to_utf8, to_unicode
 from trac.util.translation import _
 
 
@@ -125,9 +126,8 @@ class Context(object):
         self.perm = resource and perm and perm(resource) or perm
         self._hints = None
 
-    @classmethod
     def from_request(cls, req, resource=None, id=False, version=False,
-                     parent=False, absurls=False):
+                     absurls=False):
         """Create a rendering context from a request.
 
         The `perm` and `href` properties of the context will be initialized
@@ -157,10 +157,11 @@ class Context(object):
         else:
             href = None
             perm = None
-        self = cls(Resource(resource, id=id, version=version, parent=parent),
-                   href=href, perm=perm)
+        self = cls(Resource(resource, id=id, version=version), href=href,
+                   perm=perm)
         self.req = req
         return self
+    from_request = classmethod(from_request)
 
     def __repr__(self):
         path = []
@@ -171,7 +172,7 @@ class Context(object):
             context = context.parent
         return '<%s %s>' % (type(self).__name__, ' - '.join(reversed(path)))
 
-    def __call__(self, resource=None, id=False, version=False, parent=False):
+    def __call__(self, resource=None, id=False, version=False):
         """Create a nested rendering context.
 
         `self` will be the parent for the new nested context.
@@ -195,8 +196,7 @@ class Context(object):
         True
         """
         if resource:
-            resource = Resource(resource, id=id, version=version,
-                                parent=parent)
+            resource = Resource(resource, id=id, version=version)
         else:
             resource = self.resource
         context = Context(resource, href=self.href, perm=self.perm)
@@ -592,7 +592,7 @@ class Content(object):
 
 
 class Mimeview(Component):
-    """Generic HTML renderer for data, typically source code."""
+    """A generic class to prettify data, typically source code."""
 
     renderers = ExtensionPoint(IHTMLPreviewRenderer)
     annotators = ExtensionPoint(IHTMLPreviewAnnotator)
@@ -716,7 +716,7 @@ class Mimeview(Component):
             qr = renderer.get_quality_ratio(mimetype)
             if qr > 0:
                 candidates.append((qr, renderer))
-        candidates.sort(lambda x, y: cmp(y[0], x[0]))
+        candidates.sort(lambda x,y: cmp(y[0], x[0]))
         
         # Wrap file-like object so that it can be read multiple times
         if hasattr(content, 'read'):
@@ -725,6 +725,7 @@ class Mimeview(Component):
         # First candidate which renders successfully wins.
         # Also, we don't want to expand tabs more than once.
         expanded_content = None
+        errors = []
         for qr, renderer in candidates:
             if force_source and not getattr(renderer, 'returns_source', False):
                 continue # skip non-source renderers in force_source mode
@@ -773,14 +774,10 @@ class Mimeview(Component):
                     return tag.div(class_='code')(tag.pre(result)).generate()
 
             except Exception, e:
-                if context.req:
-                    from trac.web.chrome import add_warning
-                    add_warning(context.req,
-                        _("HTML preview using %(renderer)s failed (%(err)s)",
-                          renderer=renderer.__class__.__name__,
-                          err=exception_to_unicode(e)))
-                self.log.warning('HTML preview using %s failed (%s)',
-                        renderer, exception_to_unicode(e,traceback=True))
+                self.log.warning('HTML preview using %s failed (%s)' %
+                                 (renderer, e), exc_info=True)
+                errors.append((renderer, e))
+        return errors
 
     def _render_source(self, context, stream, annotations, marks=None):
         from trac.web.chrome import add_warning
@@ -949,7 +946,10 @@ class Mimeview(Component):
         else:
             result = self.render(context, mimetype, content, filename, url,
                                  annotations, force_source=force_source)
-            data['rendered'] = result
+            if isinstance(result, list):
+                data['errors'] = result
+            else:
+                data['rendered'] = result
         return data
 
     def send_converted(self, req, in_type, content, selector, filename='file'):
@@ -1093,10 +1093,7 @@ class PlainTextRenderer(Component):
 
 
 class ImageRenderer(Component):
-    """Inline image display.
-    
-    This component doesn't need the `content` at all.
-    """
+    """Inline image display. Here we don't need the `content` at all."""
     implements(IHTMLPreviewRenderer)
 
     def get_quality_ratio(self, mimetype):
@@ -1111,7 +1108,7 @@ class ImageRenderer(Component):
 
 
 class WikiTextRenderer(Component):
-    """HTML renderer for files containing Trac's own Wiki formatting markup."""
+    """Render files containing Trac's own Wiki formatting markup."""
     implements(IHTMLPreviewRenderer)
 
     def get_quality_ratio(self, mimetype):

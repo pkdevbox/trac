@@ -21,6 +21,7 @@ from genshi.builder import Element, tag
 from trac.core import *
 from trac.mimeview import Context
 from trac.perm import PermissionError
+from trac.util import sorted
 from trac.util.translation import _
 from trac.web import IRequestHandler
 from trac.wiki.api import IWikiMacroProvider
@@ -28,7 +29,7 @@ from trac.wiki.formatter import extract_link
 
 
 class InterTracDispatcher(Component):
-    """InterTrac dispatcher."""
+    """Implements support for InterTrac dispatching."""
 
     implements(IRequestHandler, IWikiMacroProvider)
 

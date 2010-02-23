@@ -10,6 +10,8 @@
 #
 # Author: Matthew Good <matt@matt-good.net>
 
+"""Syntax highlighting based on Pygments."""
+
 from datetime import datetime
 import os
 from pkg_resources import resource_filename
@@ -17,10 +19,9 @@ import re
 
 from trac.core import *
 from trac.config import ListOption, Option
-from trac.env import ISystemInfoProvider
 from trac.mimeview.api import IHTMLPreviewRenderer, Mimeview
 from trac.prefs import IPreferencePanelProvider
-from trac.util import get_pkginfo
+from trac.util import get_module_path, get_pkginfo
 from trac.util.datefmt import http_date, localtz
 from trac.util.translation import _
 from trac.web import IRequestHandler
@@ -42,10 +43,9 @@ __all__ = ['PygmentsRenderer']
 
 
 class PygmentsRenderer(Component):
-    """HTML renderer for syntax highlighting based on Pygments."""
+    """Syntax highlighting based on Pygments."""
 
-    implements(ISystemInfoProvider, IHTMLPreviewRenderer,
-               IPreferencePanelProvider, IRequestHandler)
+    implements(IHTMLPreviewRenderer, IPreferencePanelProvider, IRequestHandler)
 
     default_style = Option('mimeviewer', 'pygments_default_style', 'trac',
         """The default style to use for Pygments syntax highlighting.""")
@@ -83,18 +83,15 @@ class PygmentsRenderer(Component):
 </html>"""
 
     def __init__(self):
-        self._types = None
-
-    # ISystemInfoProvider methods
-    
-    def get_system_info(self):
         version = get_pkginfo(pygments).get('version')
         # if installed from source, fallback to the hardcoded version info
         if not version and hasattr(pygments, '__version__'):
             version = pygments.__version__
-        yield 'Pygments', version
-    
-    # IHTMLPreviewRenderer methods
+        self.env.systeminfo.append(('Pygments',version))
+                                        
+        self._types = None
+
+    # IHTMLPreviewRenderer implementation
 
     def get_quality_ratio(self, mimetype):
         # Extend default MIME type to mode mappings with configured ones
@@ -120,10 +117,10 @@ class PygmentsRenderer(Component):
             raise Exception("No Pygments lexer found for mime-type '%s'."
                             % mimetype)
 
-    # IPreferencePanelProvider methods
+    # IPreferencePanelProvider implementation
 
     def get_preference_panels(self, req):
-        yield ('pygments', _('Syntax Highlighting'))
+        yield ('pygments', _('Pygments Theme'))
 
     def render_preference_panel(self, req, panel):
         styles = list(get_all_styles())
@@ -141,7 +138,7 @@ class PygmentsRenderer(Component):
             'styles': styles
         }
 
-    # IRequestHandler methods
+    # IRequestHandler implementation
 
     def match_request(self, req):
         match = re.match(r'/pygments/(\w+)\.css', req.path_info)

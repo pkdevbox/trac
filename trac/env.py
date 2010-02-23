@@ -14,7 +14,7 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import os.path
+import os
 try:
     import threading
 except ImportError:
@@ -24,31 +24,17 @@ import sys
 from urlparse import urlsplit
 
 from trac import db_default
-from trac.admin import AdminCommandError, IAdminCommandProvider
-from trac.cache import CacheManager
 from trac.config import *
 from trac.core import Component, ComponentManager, implements, Interface, \
                       ExtensionPoint, TracError
 from trac.db import DatabaseManager
-from trac.db.util import with_transaction
-from trac.util import copytree, create_file, get_pkginfo, makedirs
-from trac.util.compat import any
-from trac.util.text import exception_to_unicode, printerr, printout
+from trac.util import create_file, get_pkginfo
+from trac.util.text import exception_to_unicode
 from trac.util.translation import _
 from trac.versioncontrol import RepositoryManager
 from trac.web.href import Href
 
 __all__ = ['Environment', 'IEnvironmentSetupParticipant', 'open_environment']
-
-
-class ISystemInfoProvider(Interface):
-    """Provider of system information, displayed in the "About Trac" page and
-    in internal error reports.
-    """
-    def get_system_info():
-        """Yield a sequence of `(name, version)` tuples describing the name and
-        version information of external packages used by a component.
-        """
 
 
 class IEnvironmentSetupParticipant(Interface):
@@ -76,18 +62,15 @@ class IEnvironmentSetupParticipant(Interface):
 
 
 class Environment(Component, ComponentManager):
-    """Trac environment manager.
+    """Trac stores project information in a Trac environment.
 
-    Trac stores project information in a Trac environment. It consists of a
-    directory structure containing among other things:
-     * a configuration file
+    A Trac environment consists of a directory structure containing among other
+    things:
+     * a configuration file.
      * an SQLite database (stores tickets, wiki pages...)
-     * project-specific templates and plugins
-     * wiki and ticket attachments
-    """
-    implements(ISystemInfoProvider)
-    
-    system_info_providers = ExtensionPoint(ISystemInfoProvider)
+     * Project specific templates and plugins.
+     * wiki and ticket attachments.
+    """   
     setup_participants = ExtensionPoint(IEnvironmentSetupParticipant)
 
     shared_plugins_dir = PathOption('inherit', 'plugins_dir', '',
@@ -205,10 +188,15 @@ class Environment(Component, ComponentManager):
         self.setup_config(load_defaults=create)
         self.setup_log()
 
-        self.systeminfo = []
         from trac import core, __version__ as VERSION
+        trac_version = get_pkginfo(core).get('version', VERSION)
+        self.systeminfo = [
+            ('Trac', trac_version),
+            ('Python', sys.version),
+            ('setuptools', setuptools.__version__),
+            ]
         self.log.info('-' * 32 + ' environment startup [Trac %s] ' + '-' * 32,
-                      get_pkginfo(core).get('version', VERSION))
+                      trac_version)
         self._href = self._abs_href = None
 
         from trac.loader import load_components
@@ -224,27 +212,6 @@ class Environment(Component, ComponentManager):
             for setup_participant in self.setup_participants:
                 setup_participant.environment_created()
 
-    def get_systeminfo(self):
-        """Return a list of `(name, version)` tuples describing the name and
-        version information of external packages used by Trac and plugins.
-        """
-        info = self.systeminfo[:]
-        for provider in self.system_info_providers:
-            info.extend(provider.get_system_info())
-        info.sort(key=lambda (name, version): (name != 'Trac', name.lower()))
-        return info
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        from trac import core, __version__ as VERSION
-        yield 'Trac', get_pkginfo(core).get('version', VERSION)
-        yield 'Python', sys.version
-        yield 'setuptools', setuptools.__version__
-        from trac.util.datefmt import pytz
-        if pytz is not None:
-            yield 'pytz', pytz.__version__
-    
     def component_activated(self, component):
         """Initialize additional member variables for components.
         
@@ -255,35 +222,24 @@ class Environment(Component, ComponentManager):
         component.config = self.config
         component.log = self.log
 
-    def _component_name(self, name_or_class):
-        name = name_or_class
-        if not isinstance(name_or_class, basestring):
-            name = name_or_class.__module__ + '.' + name_or_class.__name__
-        return name.lower()
-
-    @property
-    def _component_rules(self):
-        try:
-            return self._rules
-        except AttributeError:
-            self._rules = {}
-            for name, value in self.config.options('components'):
-                if name.endswith('.*'):
-                    name = name[:-2]
-                self._rules[name.lower()] = value.lower() in ('enabled', 'on')
-            return self._rules
-        
     def is_component_enabled(self, cls):
         """Implemented to only allow activation of components that are not
         disabled in the configuration.
         
         This is called by the `ComponentManager` base class when a component is
-        about to be activated. If this method returns `False`, the component
-        does not get activated. If it returns `None`, the component only gets
-        activated if it is located in the `plugins` directory of the
-        enironment.
-        """
-        component_name = self._component_name(cls)
+        about to be activated. If this method returns false, the component does
+        not get activated."""
+        if not hasattr(self, '_rules'):
+            self._rules = {}
+            for name, value in self.config.options('components'):
+                if name.endswith('.*'):
+                    name = name[:-2]
+                self._rules[name.lower()] = value.lower() in ('enabled', 'on')
+
+        if not isinstance(cls, basestring):
+            component_name = (cls.__module__ + '.' + cls.__name__).lower()
+        else:
+            component_name = cls.lower()
 
         # Disable the pre-0.11 WebAdmin plugin
         # Please note that there's no recommendation to uninstall the
@@ -297,10 +253,9 @@ class Environment(Component, ComponentManager):
                           'instead.')
             return False
         
-        rules = self._component_rules
         cname = component_name
         while cname:
-            enabled = rules.get(cname)
+            enabled = self._rules.get(cname)
             if enabled is not None:
                 return enabled
             idx = cname.rfind('.')
@@ -308,12 +263,13 @@ class Environment(Component, ComponentManager):
                 break
             cname = cname[:idx]
 
-        # By default, all components in the trac package are enabled
-        return component_name.startswith('trac.') or None
+        # versioncontrol components are enabled if the repository is configured
+        # FIXME: this shouldn't be hardcoded like this
+        if component_name.startswith('trac.versioncontrol.'):
+            return self.config.get('trac', 'repository_dir') != ''
 
-    def enable_component(self, cls):
-        """Enable a component or module."""
-        self._component_rules[self._component_name(cls)] = True
+        # By default, all components in the trac package are enabled
+        return component_name.startswith('trac.')
 
     def verify(self):
         """Verify that the provided path points to a valid Trac environment
@@ -340,19 +296,13 @@ class Environment(Component, ComponentManager):
             hdlr.close()
             del self.log._trac_handler
 
-    def get_repository(self, reponame=None, authname=None):
-        """Return the version control repository with the given name, or the
-        default repository if `None`.
+    def get_repository(self, authname=None):
+        """Return the version control repository configured for this
+        environment.
         
-        The standard way of retrieving repositories is to use the methods
-        of `RepositoryManager`. This method is retained here for backward
-        compatibility.
-        
-        @param reponame: the name of the repository
-        @param authname: the user name for authorization (not used anymore,
-                         left here for compatibility with 0.11)
+        @param authname: user name for authorization
         """
-        return RepositoryManager(self).get_repository(reponame)
+        return RepositoryManager(self).get_repository(authname)
 
     def create(self, options=[]):
         """Create the basic directory structure of the environment, initialize
@@ -379,14 +329,13 @@ class Environment(Component, ComponentManager):
         os.mkdir(os.path.join(self.path, 'conf'))
         create_file(os.path.join(self.path, 'conf', 'trac.ini'))
         create_file(os.path.join(self.path, 'conf', 'trac.ini.sample'))
-        skip_defaults = any((section, option) == ('inherit', 'file')
-                            for section, option, value in options)
+        skip_defaults = options and ('inherit', 'file') in [(section, option) \
+                for (section, option, value) in options]
         self.setup_config(load_defaults=not skip_defaults)
         for section, name, value in options:
             self.config.set(section, name, value)
         self.config.save()
-        # Full reload to get 'inherit' working
-        self.config.parse_if_needed(force=True)
+        self.config.parse_if_needed() # Full reload to get 'inherit' working
 
         # Create the database
         DatabaseManager(self).init_db()
@@ -412,13 +361,11 @@ class Environment(Component, ComponentManager):
 
     def setup_config(self, load_defaults=False):
         """Load the configuration file."""
-        self.config = Configuration(os.path.join(self.path, 'conf',
-                                                 'trac.ini'))
+        self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'))
         if load_defaults:
-            for section, default_options in self.config.defaults(self).items():
+            for section, default_options in self.config.defaults().items():
                 for name, value in default_options.items():
-                    if any(parent[section].contains(name, defaults=False)
-                           for parent in self.config.parents):
+                    if self.config.parent and name in self.config.parent[section]:
                         value = None
                     self.config.set(section, name, value)
 
@@ -471,7 +418,7 @@ class Environment(Component, ComponentManager):
                        " LEFT JOIN session_attribute AS e ON (e.sid=s.sid "
                        "  AND e.authenticated=1 AND e.name = 'email') "
                        "WHERE s.authenticated=1 ORDER BY s.sid")
-        for username, name, email in cursor:
+        for username,name,email in cursor:
             yield username, name, email
 
     def backup(self, dest=None):
@@ -495,31 +442,27 @@ class Environment(Component, ComponentManager):
     def upgrade(self, backup=False, backup_dest=None):
         """Upgrade database.
         
-        Each db version should have its own upgrade module, named
+        Each db version should have its own upgrade module, names
         upgrades/dbN.py, where 'N' is the version number (int).
 
         @param backup: whether or not to backup before upgrading
         @param backup_dest: name of the backup file
         @return: whether the upgrade was performed
         """
+        db = self.get_db_cnx()
+
         upgraders = []
-        
-        @with_transaction(self)
-        def do_upgrade(db):
-            for participant in self.setup_participants:
-                if participant.environment_needs_upgrade(db):
-                    upgraders.append(participant)
-            if not upgraders:
-                return
-    
-            if backup:
-                self.backup(backup_dest)
-
-            for participant in upgraders:
-                participant.upgrade_environment(db)
-
+        for participant in self.setup_participants:
+            if participant.environment_needs_upgrade(db):
+                upgraders.append(participant)
         if not upgraders:
             return False
+
+        if backup:
+            self.backup(backup_dest)
+        for participant in upgraders:
+            participant.upgrade_environment(db)
+        db.commit()
 
         # Database schema may have changed, so close all connections
         self.shutdown(except_logging=True)
@@ -551,14 +494,13 @@ class EnvironmentSetup(Component):
 
     def environment_created(self):
         """Insert default data into the database."""
-        @with_transaction(self.env)
-        def do_db_populate(db):
-            cursor = db.cursor()
-            for table, cols, vals in db_default.get_data(db):
-                cursor.executemany("INSERT INTO %s (%s) VALUES (%s)"
-                                   % (table, ','.join(cols),
-                                      ','.join(['%s' for c in cols])),
-                                   vals)
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        for table, cols, vals in db_default.get_data(db):
+            cursor.executemany("INSERT INTO %s (%s) VALUES (%s)" % (table,
+                               ','.join(cols), ','.join(['%s' for c in cols])),
+                               vals)
+        db.commit()
         self._update_sample_config()
 
     def environment_needs_upgrade(self, db):
@@ -622,6 +564,8 @@ def open_environment(env_path=None, use_cache=False):
                       invocations of this function
     @return: the `Environment` object
     """
+    global env_cache, env_cache_lock
+
     if not env_path:
         env_path = os.getenv('TRAC_ENV')
     if not env_path:
@@ -644,8 +588,6 @@ def open_environment(env_path=None, use_cache=False):
                 env = None
             if env is None:
                 env = env_cache.setdefault(env_path, open_environment(env_path))
-            else:
-                CacheManager(env).reset_metadata()
         finally:
             env_cache_lock.release()
     else:
@@ -662,143 +604,3 @@ def open_environment(env_path=None, use_cache=False):
                               path=env_path))
 
     return env
-
-
-class EnvironmentAdmin(Component):
-    """trac-admin command provider for environment administration."""
-    
-    implements(IAdminCommandProvider)
-    
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('deploy', '<directory>',
-               'Extract static resources from Trac and all plugins',
-               None, self._do_deploy)
-        yield ('hotcopy', '<backupdir>',
-               'Make a hot backup copy of an environment',
-               None, self._do_hotcopy)
-        yield ('upgrade', '',
-               'Upgrade database to current version',
-               None, self._do_upgrade)
-    
-    def _do_deploy(self, dest):
-        target = os.path.normpath(dest)
-        chrome_target = os.path.join(target, 'htdocs')
-        script_target = os.path.join(target, 'cgi-bin')
-
-        # Copy static content
-        makedirs(target, overwrite=True)
-        makedirs(chrome_target, overwrite=True)
-        from trac.web.chrome import Chrome
-        printout(_("Copying resources from:"))
-        for provider in Chrome(self.env).template_providers:
-            paths = list(provider.get_htdocs_dirs())
-            if not len(paths):
-                continue
-            printout('  %s.%s' % (provider.__module__, 
-                                  provider.__class__.__name__))
-            for key, root in paths:
-                source = os.path.normpath(root)
-                printout('   ', source)
-                if os.path.exists(source):
-                    dest = os.path.join(chrome_target, key)
-                    copytree(source, dest, overwrite=True)
-
-        # Create and copy scripts
-        makedirs(script_target, overwrite=True)
-        printout(_("Creating scripts."))
-        data = {'env': self.env, 'executable': sys.executable}
-        for script in ('cgi', 'fcgi', 'wsgi'):
-            dest = os.path.join(script_target, 'trac.' + script)
-            template = Chrome(self.env).load_template('deploy_trac.' + script,
-                                                      'text')
-            stream = template.generate(**data)
-            out = os.fdopen(os.open(dest, os.O_CREAT | os.O_WRONLY), 'w')
-            try:
-                stream.render('text', out=out)
-            finally:
-                out.close()
-    
-    def _do_hotcopy(self, dest):
-        if os.path.exists(dest):
-            raise TracError(_("hotcopy can't overwrite existing '%(dest)s'",
-                              dest=dest))
-        import shutil
-
-        # Bogus statement to lock the database while copying files
-        cnx = self.env.get_db_cnx()
-        cursor = cnx.cursor()
-        cursor.execute("UPDATE system SET name=NULL WHERE name IS NULL")
-
-        try:
-            printout(_('Hotcopying %(src)s to %(dst)s ...', 
-                       src=self.env.path, dst=dest))
-            db_str = self.env.config.get('trac', 'database')
-            prefix, db_path = db_str.split(':', 1)
-            if prefix == 'sqlite':
-                # don't copy the journal (also, this would fail on Windows)
-                db = os.path.join(self.env.path, os.path.normpath(db_path))
-                skip = [db + '-journal', db + '-stmtjrnl']
-            else:
-                skip = []
-            try:
-                copytree(self.env.path, dest, symlinks=1, skip=skip)
-                retval = 0
-            except shutil.Error, e:
-                retval = 1
-                printerr(_('The following errors happened while copying '
-                           'the environment:'))
-                for (src, dst, err) in e.args[0]:
-                    if src in err:
-                        printerr('  %s' % err)
-                    else:
-                        printerr("  %s: '%s'" % (err, src))
-        finally:
-            # Unlock database
-            cnx.rollback()
-
-        printout(_("Hotcopy done."))
-        return retval
-    
-    def _do_upgrade(self, no_backup=None):
-        if no_backup not in (None, '-b', '--no-backup'):
-            raise AdminCommandError(_("Invalid arguments"), show_usage=True)
-        
-        if not self.env.needs_upgrade():
-            printout(_("Database is up to date, no upgrade necessary."))
-            return
-
-        try:
-            self.env.upgrade(backup=no_backup is None)
-        except TracError, e:
-            msg = unicode(e)
-            if 'backup' in msg.lower():
-                raise TracError(_("Backup failed with '%(msg)s'.\nUse "
-                                  "'--no-backup' to upgrade without doing a "
-                                  "backup.", msg=msg))
-            else:
-                raise
-
-        # Remove wiki-macros if it is empty and warn if it isn't
-        wiki_macros = os.path.join(self.env.path, 'wiki-macros')
-        try:
-            entries = os.listdir(wiki_macros)
-        except OSError:
-            pass
-        else:
-            if entries:
-                printerr(_("Warning: the wiki-macros directory in the "
-                           "environment is non-empty, but Trac\n"
-                           "doesn't load plugins from there anymore. "
-                           "Please remove it by hand."))
-            else:
-                try:
-                    os.rmdir(wiki_macros)
-                except OSError, e:
-                    printerr(_("Error while removing wiki-macros: %(err)s\n"
-                               "Trac doesn't load plugins from wiki-macros "
-                               "anymore. Please remove it by hand.",
-                               err=exception_to_unicode(e)))
-        
-        printout(_("Upgrade done."))

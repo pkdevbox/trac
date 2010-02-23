@@ -20,6 +20,8 @@
 from datetime import datetime, timedelta
 import pkg_resources
 import re
+import time
+from urlparse import urlparse
 
 from genshi.builder import tag
 
@@ -28,10 +30,11 @@ from trac.core import *
 from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.timeline.api import ITimelineEventProvider
+from trac.util.compat import sorted
 from trac.util.datefmt import format_date, format_datetime, parse_date, \
-                              to_utimestamp, utc, pretty_timedelta
+                              to_timestamp, utc, pretty_timedelta
 from trac.util.text import exception_to_unicode, to_unicode
-from trac.util.translation import _, tag_
+from trac.util.translation import _
 from trac.web import IRequestHandler, IRequestFilter
 from trac.web.chrome import add_link, add_stylesheet, prevnext_nav, Chrome, \
                             INavigationContributor, ITemplateProvider
@@ -61,8 +64,6 @@ class TimelineModule(Component):
         This only affects the default rendering, and can be overriden by
         specific event providers, see their own documentation.
         (''Since 0.11'')""")
-
-    _authors_pattern = re.compile(r'(-)?(?:"([^"]*)"|\'([^\']*)\'|([^\s]+))')
 
     # INavigationContributor methods
 
@@ -106,8 +107,7 @@ class TimelineModule(Component):
                 precision = timedelta(hours=1)
             else:
                 precision = None
-        fromdate = fromdate.replace(hour=23, minute=59, second=59,
-                                    microsecond=999999)
+        fromdate = fromdate.replace(hour=23, minute=59, second=59)
         try:
             daysback = int(req.args.get('daysback', ''))
         except ValueError:
@@ -118,12 +118,8 @@ class TimelineModule(Component):
         daysback = max(0, daysback)
         if self.max_daysback >= 0:
             daysback = min(self.max_daysback, daysback)
-        authors = req.args.get('authors',
-                               req.session.get('timeline.authors', ''))
-        authors = authors.strip()
 
         data = {'fromdate': fromdate, 'daysback': daysback,
-                'authors': authors,
                 'today': format_date(today),
                 'yesterday': format_date(today - timedelta(days=1)),
                 'precisedate': precisedate, 'precision': precision,
@@ -156,26 +152,13 @@ class TimelineModule(Component):
         stop = fromdate
         start = stop - timedelta(days=daysback + 1)
 
-        # create author include and exclude sets
-        include = set()
-        exclude = set()
-        for match in self._authors_pattern.finditer(authors):
-            name = match.group(2) or match.group(3) or match.group(4)
-            if match.group(1):
-                exclude.add(name)
-            else:
-                include.add(name)
-        
         # gather all events for the given period of time
         events = []
         for provider in self.event_providers:
             try:
                 for event in provider.get_timeline_events(req, start, stop,
                                                           filters):
-                    author = event[len(event) < 6 and 2 or 4]   # 0.10 events
-                    if (not include or author in include) \
-                       and not author in exclude:
-                        events.append(self._event_data(provider, event))
+                    events.append(self._event_data(provider, event))
             except Exception, e: # cope with a failure of that provider
                 self._provider_failure(e, req, provider, filters,
                                        [f[0] for f in available_filters])
@@ -202,7 +185,6 @@ class TimelineModule(Component):
             return 'timeline.rss', data, 'application/rss+xml'
         else:
             req.session['timeline.daysback'] = daysback
-            req.session['timeline.authors'] = authors
             html_context = Context.from_request(req)
             html_context.set_hints(wiki_flavor='oneliner', 
                                    shorten_lines=self.abbreviated_messages)
@@ -210,8 +192,7 @@ class TimelineModule(Component):
 
         add_stylesheet(req, 'common/css/timeline.css')
         rss_href = req.href.timeline([(f, 'on') for f in filters],
-                                     daysback=90, max=50, authors=authors,
-                                     format='rss')
+                                     daysback=90, max=50, format='rss')
         add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
 
@@ -223,17 +204,15 @@ class TimelineModule(Component):
         previous_start = format_date(fromdate - timedelta(days=daysback+1),
                                      format='%Y-%m-%d', tzinfo=req.tz)
         add_link(req, 'prev', req.href.timeline(from_=previous_start,
-                                                authors=authors,
                                                 daysback=daysback),
-                 _('Previous Period'))
+                 _('Previous period'))
         if today - fromdate > timedelta(days=0):
             next_start = format_date(fromdate + timedelta(days=daysback+1),
                                      format='%Y-%m-%d', tzinfo=req.tz)
             add_link(req, 'next', req.href.timeline(from_=next_start,
-                                                    authors=authors,
                                                     daysback=daysback),
-                     _('Next Period'))
-        prevnext_nav(req, _('Previous Period'), _('Next Period'))
+                     _('Next period'))
+        prevnext_nav(req, 'Period')
         
         return 'timeline.html', data, None
 
@@ -313,9 +292,11 @@ class TimelineModule(Component):
                 kind, date, author, data = event
             render = lambda field, context: \
                     provider.render_timeline_event(context, field, event)
-        if not isinstance(date, datetime):
+        if isinstance(date, datetime):
+            dateuid = to_timestamp(date)
+        else:
+            dateuid = date
             date = datetime.fromtimestamp(date, utc)
-        dateuid = to_utimestamp(date)
         return {'kind': kind, 'author': author, 'date': date,
                 'dateuid': dateuid, 'render': render, 'event': event,
                 'data': data, 'provider': provider}
@@ -326,28 +307,21 @@ class TimelineModule(Component):
         At the same time, the message will contain a link to the timeline
         without the filters corresponding to the guilty event provider `ep`.
         """
+        ep_name, exc_name = [i.__class__.__name__ for i in (ep, exc)]
         self.log.error('Timeline event provider failed: %s', 
                        exception_to_unicode(exc, traceback=True))
 
-        ep_kinds = dict((f[0], f[1]) for f in ep.get_timeline_filters(req))
-        ep_filters = set(ep_kinds.keys())
-        current_filters = set(current_filters)
-        other_filters = set(current_filters) - ep_filters
+        guilty_filters = [f[0] for f in ep.get_timeline_filters(req)]
+        guilty_kinds = [f[1] for f in ep.get_timeline_filters(req)]
+        other_filters = [f for f in current_filters if not f in guilty_filters]
         if not other_filters:
-            other_filters = set(all_filters) -  ep_filters
+            other_filters = [f for f in all_filters if not f in guilty_filters]
         args = [(a, req.args.get(a)) for a in ('from', 'format', 'max',
                                                'daysback')]
         href = req.href.timeline(args+[(f, 'on') for f in other_filters])
-        # TRANSLATOR: other_events
-        other_events = _('other kind of events') # help extraction
         raise TracError(tag(
-            tag.p(tag_("Event provider %(name)s failed for filters %(kinds)s: ",
-                       kinds=', '.join(ep_kinds[f] for f in 
-                                       current_filters & ep_filters),
-                       name=tag.tt(ep.__class__.__name__)),
-                  tag.b(exception_to_unicode(exc)), class_='message'),
-            tag.p(tag_("""
-              You may want to see the %(other_events)s from the Timeline or 
-              notify your Trac administrator about the error (detailed
-              informations were written to the log).
-            """, other_events=tag.a(other_events, href=href)))))
+            tag.p(', '.join(guilty_kinds),
+                  ' event provider (', tag.tt(ep_name), ') failed:', tag.br(),
+                  exc_name, ': ', to_unicode(exc), class_='message'),
+            tag.p('You may want to see the other kind of events from the ',
+                  tag.a('Timeline', href=href))))

@@ -2,7 +2,10 @@ from Cookie import SimpleCookie as Cookie
 import time
 import unittest
 
+from trac.core import TracError
+from trac.log import logger_factory
 from trac.test import EnvironmentStub, Mock
+from trac.web.href import Href
 from trac.web.session import DetachedSession, Session, PURGE_AGE, UPDATE_INTERVAL
 
 
@@ -166,7 +169,7 @@ class SessionTestCase(unittest.TestCase):
                        (0,))
         cursor.execute("INSERT INTO session "
                        "VALUES ('987654', 0, %s)",
-                       (int(time.time() - PURGE_AGE - 3600),))
+                       (time.time() - PURGE_AGE - 3600,))
         cursor.execute("INSERT INTO session_attribute VALUES "
                        "('987654', 0, 'foo', 'bar')")
         

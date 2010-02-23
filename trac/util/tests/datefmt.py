@@ -69,7 +69,7 @@ class DateFormatTestCase(unittest.TestCase):
 
     def test_to_datetime_tz(self):
         tz = datefmt.timezone('GMT +1:00')
-        expected = datetime.datetime(1970, 1, 1, 1, 0, 23, 0, tz)
+        expected = datetime.datetime(1970,1,1,1,0,23,0,tz)
         self.assertEqual(datefmt.to_datetime(23, tz), expected)
         self.assertEqual(datefmt.to_datetime(23L, tz), expected)
         self.assertEqual(datefmt.to_datetime(23.0, tz), expected)
@@ -80,7 +80,7 @@ class DateFormatTestCase(unittest.TestCase):
         self.assertEqual(datefmt.to_datetime(23.0, tz), expected)
 
     def test_format_datetime_utc(self):
-        t = datetime.datetime(1970, 1, 1, 1, 0, 23, 0, datefmt.utc)
+        t = datetime.datetime(1970,1,1,1,0,23,0,datefmt.utc)
         expected = '1970-01-01T01:00:23Z'
         self.assertEqual(datefmt.format_datetime(t, '%Y-%m-%dT%H:%M:%SZ',
                                                  datefmt.utc), expected)
@@ -95,11 +95,10 @@ class DateFormatTestCase(unittest.TestCase):
 
     def test_format_datetime_gmt01(self):
         gmt01 = datefmt.FixedOffset(60, 'GMT +1:00')
-        t = datetime.datetime(1970, 1, 1, 1, 0, 23, 0, gmt01)
-        self.assertEqual('1970-01-01T01:00:23+0100',
-                         datefmt.format_datetime(t, '%Y-%m-%dT%H:%M:%S%z',
-                                                 gmt01))
-        expected = '1970-01-01T01:00:23+01:00'
+        t = datetime.datetime(1970,1,1,1,0,23,0,gmt01)
+        expected = '1970-01-01T01:00:23+0100'
+        self.assertEqual(datefmt.format_datetime(t, '%Y-%m-%dT%H:%M:%S%z',
+                                                 gmt01), expected)
         self.assertEqual(datefmt.format_datetime(t, 'iso8601',
                                                  gmt01), expected)
         self.assertEqual(datefmt.format_datetime(t, 'iso8601date', gmt01),
@@ -113,15 +112,6 @@ class DateFormatTestCase(unittest.TestCase):
                          datefmt.format_date(a_date, format='%Y-%m-%d'))
 
 
-class UTimestampTestCase(unittest.TestCase):
-    
-    def test_sub_second(self):
-        t = datetime.datetime(2001, 2, 3, 4, 5, 6, 123456, datefmt.utc)
-        ts = datefmt.to_utimestamp(t)
-        self.assertEqual(981173106123456L, ts)
-        self.assertEqual(t, datefmt.from_utimestamp(ts))
-
-
 def suite():
     suite = unittest.TestSuite()
     if PytzTestCase:
@@ -129,7 +119,6 @@ def suite():
     else:
         print "SKIP: utils/tests/datefmt.py (no pytz installed)"
     suite.addTest(unittest.makeSuite(DateFormatTestCase))
-    suite.addTest(unittest.makeSuite(UTimestampTestCase))
     return suite
 
 if __name__ == '__main__':

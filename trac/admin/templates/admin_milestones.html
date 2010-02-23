@@ -3,8 +3,7 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:xi="http://www.w3.org/2001/XInclude"
-      xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n">
+      xmlns:py="http://genshi.edgewall.org/">
   <xi:include href="admin.html" />
   <head>
     <title>Milestones</title>
@@ -54,18 +53,18 @@
           </div>
           <div class="field">
             <fieldset class="iefix">
-              <label for="description" i18n:msg="">
+              <label for="description">
                 Description (you may use <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a> here):
               </label>
               <p>
-                <textarea id="description" name="description" class="wikitext trac-resizable" rows="6" cols="60" readonly="${readonly}">
+                <textarea id="description" name="description" class="wikitext" rows="6" cols="60" readonly="${readonly}">
 ${milestone.description}</textarea>
               </p>
             </fieldset>
           </div>
           <div class="buttons">
-            <input type="submit" name="cancel" value="${_('Cancel')}"/>
-            <input type="submit" name="save" value="${_('Save')}" disabled="${readonly}"/>
+            <input type="submit" name="cancel" value="Cancel"/>
+            <input type="submit" name="save" value="Save" disabled="${readonly}"/>
           </div>
         </fieldset>
       </form>
@@ -89,7 +88,7 @@ ${milestone.description}</textarea>
               </label>
             </div>
             <div class="buttons">
-              <input type="submit" name="add" value="${_('Add')}" />
+              <input type="submit" name="add" value="Add" />
             </div>
           </fieldset>
         </form>
@@ -124,8 +123,8 @@ ${milestone.description}</textarea>
               </tr></tbody>
             </table>
             <div class="buttons">
-              <input type="submit" name="remove" value="${_('Remove selected items')}" py:if="can_remove" />
-              <input type="submit" name="apply" value="${_('Apply changes')}" />
+              <input type="submit" name="remove" value="Remove selected items" py:if="can_remove" />
+              <input type="submit" name="apply" value="Apply changes" />
             </div>
             <p class="hint">
               You can remove all items from this list to completely hide this

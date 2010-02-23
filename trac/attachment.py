@@ -17,29 +17,26 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 
 from datetime import datetime
-import os.path
+import os
 import re
 import shutil
-import sys
+import time
 import unicodedata
 
 from genshi.builder import tag
 
-from trac.admin import AdminCommandError, IAdminCommandProvider, PrefixList, \
-                       console_datetime_format, get_dir_list
+from trac import perm, util
 from trac.config import BoolOption, IntOption
 from trac.core import *
-from trac.db.util import with_transaction
 from trac.env import IEnvironmentSetupParticipant
 from trac.mimeview import *
-from trac.perm import PermissionError, IPermissionPolicy
+from trac.perm import PermissionError, PermissionSystem, IPermissionPolicy
 from trac.resource import *
 from trac.search import search_to_sql, shorten_result
 from trac.util import get_reporter_id, create_unique_file
-from trac.util.datefmt import format_datetime, from_utimestamp, \
-                              to_datetime, to_utimestamp, utc
-from trac.util.text import exception_to_unicode, pretty_size, print_table, \
-                           unicode_quote, unicode_unquote
+from trac.util.datefmt import to_timestamp, utc
+from trac.util.text import exception_to_unicode, unicode_quote, \
+                           unicode_unquote, pretty_size
 from trac.util.translation import _
 from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.chrome import add_link, add_stylesheet, add_ctxtnav, \
@@ -151,7 +148,8 @@ class Attachment(object):
         self.filename = row[0]
         self.description = row[1]
         self.size = row[2] and int(row[2]) or 0
-        self.date = from_utimestamp(row[3])
+        time = row[3] and int(row[3]) or 0
+        self.date = datetime.fromtimestamp(time, utc)
         self.author = row[4]
         self.ipnr = row[5]
 
@@ -170,36 +168,45 @@ class Attachment(object):
 
     def delete(self, db=None):
         assert self.filename, 'Cannot delete non-existent attachment'
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
 
-        @with_transaction(self.env, db)
-        def do_delete(db):
-            cursor = db.cursor()
-            cursor.execute("DELETE FROM attachment WHERE type=%s AND id=%s "
-                           "AND filename=%s",
-                           (self.parent_realm, self.parent_id, self.filename))
-            if os.path.isfile(self.path):
-                try:
-                    os.unlink(self.path)
-                except OSError, e:
-                    self.env.log.error('Failed to delete attachment '
-                                       'file %s: %s',
-                                       self.path,
-                                       exception_to_unicode(e, traceback=True))
-                    raise TracError(_('Could not delete attachment'))
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM attachment WHERE type=%s AND id=%s "
+                       "AND filename=%s", (self.parent_realm, self.parent_id,
+                       self.filename))
+        if os.path.isfile(self.path):
+            try:
+                os.unlink(self.path)
+            except OSError, e:
+                self.env.log.error('Failed to delete attachment file %s: %s',
+                           self.path, exception_to_unicode(e, traceback=True))
+                if handle_ta:
+                    db.rollback()
+                raise TracError(_('Could not delete attachment'))
 
         self.env.log.info('Attachment removed: %s' % self.title)
+        if handle_ta:
+            db.commit()
 
         for listener in AttachmentModule(self.env).change_listeners:
             listener.attachment_deleted(self)
 
 
     def insert(self, filename, fileobj, size, t=None, db=None):
+        # FIXME: `t` should probably be switched to `datetime` too
+        if not db:
+            db = self.env.get_db_cnx()
+            handle_ta = True
+        else:
+            handle_ta = False
+
         self.size = size and int(size) or 0
-        if t is None:
-            t = datetime.now(utc)
-        elif not isinstance(t, datetime): # Compatibility with 0.11
-            t = to_datetime(t, utc)
-        self.date = t
+        timestamp = int(t or time.time())
+        self.date = datetime.fromtimestamp(timestamp, utc)
 
         # Make sure the path to the attachment is inside the environment
         # attachments directory
@@ -219,27 +226,30 @@ class Attachment(object):
             basename = os.path.basename(path).encode('ascii')
             filename = unicode_unquote(basename)
 
-            @with_transaction(self.env, db)
-            def do_insert(db):
-                cursor = db.cursor()
-                cursor.execute("INSERT INTO attachment "
-                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                               (self.parent_realm, self.parent_id, filename,
-                                self.size, to_utimestamp(t), self.description,
-                                self.author, self.ipnr))
-                shutil.copyfileobj(fileobj, targetfile)
-                self.resource.id = self.filename = filename
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO attachment "
+                           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                           (self.parent_realm, self.parent_id, filename,
+                            self.size, timestamp, self.description,
+                            self.author, self.ipnr))
+            shutil.copyfileobj(fileobj, targetfile)
+            self.resource.id = self.filename = filename
 
-                self.env.log.info('New attachment: %s by %s', self.title,
-                                  self.author)
-        finally:
+            self.env.log.info('New attachment: %s by %s', self.title,
+                              self.author)
+
+            if handle_ta:
+                db.commit()
+
             targetfile.close()
 
-        for listener in AttachmentModule(self.env).change_listeners:
-            listener.attachment_added(self)
+            for listener in AttachmentModule(self.env).change_listeners:
+                listener.attachment_added(self)
 
+        finally:
+            if not targetfile.closed:
+                targetfile.close()
 
-    @classmethod
     def select(cls, env, parent_realm, parent_id, db=None):
         if not db:
             db = env.get_db_cnx()
@@ -247,17 +257,17 @@ class Attachment(object):
         cursor.execute("SELECT filename,description,size,time,author,ipnr "
                        "FROM attachment WHERE type=%s AND id=%s ORDER BY time",
                        (parent_realm, unicode(parent_id)))
-        for filename, description, size, time, author, ipnr in cursor:
+        for filename,description,size,time,author,ipnr in cursor:
             attachment = Attachment(env, parent_realm, parent_id)
             attachment.filename = filename
             attachment.description = description
             attachment.size = size and int(size) or 0
-            attachment.date = from_utimestamp(time or 0)
+            time = time and int(time) or 0
+            attachment.date = datetime.fromtimestamp(time, utc)
             attachment.author = author
             attachment.ipnr = ipnr
             yield attachment
 
-    @classmethod
     def delete_all(cls, env, parent_realm, parent_id, db):
         """Delete all attachments of a given resource.
 
@@ -275,6 +285,9 @@ class Attachment(object):
                 env.log.error("Can't delete attachment directory %s: %s",
                     attachment_dir, exception_to_unicode(e, traceback=True))
             
+    select = classmethod(select)
+    delete_all = classmethod(delete_all)
+
     def open(self):
         self.env.log.debug('Trying to open attachment at %s', self.path)
         try:
@@ -438,9 +451,9 @@ class AttachmentModule(Component):
                        "  FROM attachment "
                        "  WHERE time > %s AND time < %s "
                        "        AND type = %s",
-                       (to_utimestamp(start), to_utimestamp(stop), realm))
+                       (to_timestamp(start), to_timestamp(stop), realm))
         for realm, id, filename, ts, description, author in cursor:
-            time = from_utimestamp(ts)
+            time = datetime.fromtimestamp(ts, utc)
             yield ('created', realm, id, filename, time, description, author)
 
     def get_timeline_events(self, req, resource_realm, start, stop):
@@ -488,7 +501,7 @@ class AttachmentModule(Component):
             if 'ATTACHMENT_VIEW' in req.perm(attachment):
                 yield (get_resource_url(self.env, attachment, req.href),
                        get_resource_shortname(self.env, attachment),
-                       from_utimestamp(time), author,
+                       datetime.fromtimestamp(time, utc), author,
                        shorten_result(desc, terms))
     
     # IResourceManager methods
@@ -632,6 +645,7 @@ class AttachmentModule(Component):
             'attachment': attachment, 'max_size': self.max_size}
 
     def _render_list(self, req, parent):
+        attachment = parent.child('attachment')
         data = {
             'mode': 'list',
             'attachment': None, # no specific attachment
@@ -669,7 +683,7 @@ class AttachmentModule(Component):
                     # XSS attacks
                     req.send_header('Content-Disposition', 'attachment')
                 if format == 'txt':
-                    mime_type = 'text/plain'
+                      mime_type = 'text/plain'
                 elif not mime_type:
                     mime_type = 'application/octet-stream'
                 if 'charset=' not in mime_type:
@@ -739,7 +753,7 @@ class AttachmentModule(Component):
                                           href=raw_href + params,
                                           title=_("Download")),
                                     class_="noprint"))
-            except ResourceNotFound:
+            except ResourceNotFound, e:
                 pass
             # FIXME: should be either:
             #
@@ -790,119 +804,3 @@ class LegacyAttachmentPolicy(Component):
                         resource, perm)
                 if decision is not None:
                     return decision
-
-
-class AttachmentAdmin(Component):
-    """trac-admin command provider for attachment administration."""
-    
-    implements(IAdminCommandProvider)
-    
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('attachment list', '<realm:id>',
-               """List attachments of a resource
-               
-               The resource is identified by its realm and identifier.""",
-               self._complete_list, self._do_list)
-        yield ('attachment add', '<realm:id> <path> [author] [description]',
-               """Attach a file to a resource
-               
-               The resource is identified by its realm and identifier. The
-               attachment will be named according to the base name of the file.""",
-               self._complete_add, self._do_add)
-        yield ('attachment remove', '<realm:id> <name>',
-               """Remove an attachment from a resource
-               
-               The resource is identified by its realm and identifier.""",
-               self._complete_remove, self._do_remove)
-        yield ('attachment export', '<realm:id> <name> [destination]',
-               """Export an attachment from a resource to a file or stdout
-               
-               The resource is identified by its realm and identifier. If no
-               destination is specified, the attachment is output to stdout.
-               """,
-               self._complete_export, self._do_export)
-    
-    def get_realm_list(self):
-        rs = ResourceSystem(self.env)
-        return PrefixList([each + ":" for each in rs.get_known_realms()])
-    
-    def split_resource(self, resource):
-        result = resource.split(':', 1)
-        if len(result) != 2:
-            raise AdminCommandError(_("Invalid resource identifier '%(id)s'",
-                                      id=resource))
-        return result
-    
-    def get_attachment_list(self, resource):
-        (realm, id) = self.split_resource(resource)
-        return [a.filename for a in Attachment.select(self.env, realm, id)]
-    
-    def _complete_list(self, args):
-        if len(args) == 1:
-            return self.get_realm_list()
-    
-    def _complete_add(self, args):
-        if len(args) == 1:
-            return self.get_realm_list()
-        elif len(args) == 2:
-            return get_dir_list(args[1])
-    
-    def _complete_remove(self, args):
-        if len(args) == 1:
-            return self.get_realm_list()
-        elif len(args) == 2:
-            return self.get_attachment_list(args[0])
-    
-    def _complete_export(self, args):
-        if len(args) < 3:
-            return self._complete_remove(args)
-        elif len(args) == 3:
-            return get_dir_list(args[2])
-    
-    def _do_list(self, resource):
-        (realm, id) = self.split_resource(resource)
-        print_table([(a.filename, pretty_size(a.size), a.author,
-                      format_datetime(a.date, console_datetime_format),
-                      a.description)
-                     for a in Attachment.select(self.env, realm, id)],
-                    [_('Name'), _('Size'), _('Author'), _('Date'),
-                     _('Description')])
-    
-    def _do_add(self, resource, path, author='trac', description=''):
-        (realm, id) = self.split_resource(resource)
-        attachment = Attachment(self.env, realm, id)
-        attachment.author = author
-        attachment.description = description
-        f = open(path, 'rb')
-        try:
-            attachment.insert(os.path.basename(path), f, os.path.getsize(path))
-        finally:
-            f.close()
-    
-    def _do_remove(self, resource, name):
-        (realm, id) = self.split_resource(resource)
-        attachment = Attachment(self.env, realm, id, name)
-        attachment.delete()
-    
-    def _do_export(self, resource, name, destination=None):
-        (realm, id) = self.split_resource(resource)
-        attachment = Attachment(self.env, realm, id, name)
-        if destination is not None:
-            if os.path.isdir(destination):
-                destination = os.path.join(destination, name)
-            if os.path.isfile(destination):
-                raise AdminCommandError(_("File '%(name)s' exists",
-                                          name=destination))
-        input = attachment.open()
-        try:
-            output = (destination is None) and sys.stdout \
-                                           or open(destination, "wb")
-            try:
-                shutil.copyfileobj(input, output)
-            finally:
-                if destination is not None:
-                    output.close()
-        finally:
-            input.close()

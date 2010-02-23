@@ -16,12 +16,15 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christian Boos <cboos@neuf.fr>
 
+import re
+import urllib
+
 from genshi.builder import tag
 
+from trac.core import TracError
 from trac.resource import ResourceNotFound 
 from trac.util.datefmt import pretty_timedelta
 from trac.util.text import shorten_line
-from trac.util.translation import tag_, _
 from trac.versioncontrol.api import NoSuchNode, NoSuchChangeset
 
 __all__ = ['get_changes', 'get_path_links', 'get_existing_node']
@@ -38,22 +41,15 @@ def get_changes(repos, revs):
         changes[rev] = changeset
     return changes
 
-def get_path_links(href, reponame, path, rev, order=None, desc=None):
-    desc = desc or None
-    links = [{'name': 'source:',
-              'href': href.browser(rev=reponame == '' and rev or None,
-                                   order=order, desc=desc)}]
-    if reponame:
-        links.append({
-            'name': reponame, 
-            'href': href.browser(reponame, rev=rev, order=order, desc=desc)})
-    partial_path = ''
-    for part in [p for p in path.split('/') if p]:
-        partial_path += part + '/'
+def get_path_links(href, fullpath, rev, order=None, desc=None):
+    links = [{'name': 'root',
+              'href': href.browser(rev=rev, order=order, desc=desc)}]
+    path = ''
+    for part in [p for p in fullpath.split('/') if p]:
+        path += part + '/'
         links.append({
             'name': part,
-            'href': href.browser(reponame or None, partial_path, rev=rev,
-                                 order=order, desc=desc)
+            'href': href.browser(path, rev=rev, order=order, desc=desc)
             })
     return links
 
@@ -61,10 +57,10 @@ def get_existing_node(req, repos, path, rev):
     try: 
         return repos.get_node(path, rev) 
     except NoSuchNode, e:
-        search_a = tag.a(_("search"), 
-                         href=req.href.log(path, rev=rev, mode='path_history'))
         raise ResourceNotFound(tag(
             tag.p(e.message, class_="message"), 
-            tag.p(tag_("You can %(search)s in the repository history to see "
-                       "if that path existed but was later removed",
-                       search=search_a))))
+            tag.p("You can ",
+                  tag.a("search",
+                        href=req.href.log(path, rev=rev, mode='path_history')),
+                  " in the repository history to see if that path existed but"
+                  " was later removed")))

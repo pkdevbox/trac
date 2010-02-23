@@ -14,20 +14,16 @@
 #
 # Author: Daniel Lundin <daniel@edgewall.com>
 
+from datetime import datetime
 import pkg_resources
 import re
-
-try:
-    from babel.core import Locale
-except ImportError:
-    Locale = None
 
 from genshi.builder import tag
 
 from trac.core import *
 from trac.prefs.api import IPreferencePanelProvider
 from trac.util.datefmt import all_timezones, get_timezone, localtz
-from trac.util.translation import _, get_available_locales
+from trac.util.translation import _
 from trac.web import HTTPNotFound, IRequestHandler
 from trac.web.chrome import add_notice, add_stylesheet, \
                             INavigationContributor, ITemplateProvider
@@ -40,7 +36,7 @@ class PreferencesModule(Component):
     implements(INavigationContributor, IPreferencePanelProvider,
                IRequestHandler, ITemplateProvider)
 
-    _form_fields = ['newsid', 'name', 'email', 'tz', 'language', 'accesskeys']
+    _form_fields = ['newsid', 'name', 'email', 'tz', 'accesskeys']
 
     # INavigationContributor methods
 
@@ -86,8 +82,6 @@ class PreferencesModule(Component):
         yield (None, _('General'))
         yield ('datetime', _('Date & Time'))
         yield ('keybindings', _('Keyboard Shortcuts'))
-        if Locale:
-            yield ('language', _('Language'))
         if not req.authname or req.authname == 'anonymous':
             yield ('advanced', _('Advanced'))
 
@@ -99,20 +93,11 @@ class PreferencesModule(Component):
                 self._do_save(req)
             req.redirect(req.href.prefs(panel or None))
 
-        data = {
+        return 'prefs_%s.html' % (panel or 'general'), {
             'settings': {'session': req.session, 'session_id': req.session.sid},
             'timezones': all_timezones, 'timezone': get_timezone,
             'localtz': localtz
         }
-
-        if Locale:
-            locales = map(Locale.parse, get_available_locales())
-            languages = sorted([(str(locale).replace('_','-'),
-                                 locale.display_name) for locale in locales])
-            data['locales'] = locales
-            data['languages'] = languages
-
-        return 'prefs_%s.html' % (panel or 'general'), data
 
     # ITemplateProvider methods
 

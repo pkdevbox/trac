@@ -28,7 +28,6 @@ import urlparse
 from trac.core import Interface, TracError
 from trac.util import get_last_traceback, md5, unquote
 from trac.util.datefmt import http_date, localtz
-from trac.util.text import empty
 from trac.web.href import Href
 from trac.web.wsgi import _FileWrapper
 
@@ -48,8 +47,6 @@ class HTTPException(Exception):
             self.detail = self.detail % args
         Exception.__init__(self, '%s %s (%s)' % (self.code, self.reason,
                                                  self.detail))
-
-    @classmethod
     def subclass(cls, name, code):
         """Create a new Exception class representing a HTTP status code."""
         reason = HTTP_STATUS.get(code, 'Unknown')
@@ -59,6 +56,7 @@ class HTTPException(Exception):
         new_class.code = code
         new_class.reason = reason
         return new_class
+    subclass = classmethod(subclass)
 
 
 for code in [code for code in HTTP_STATUS if code >= 400]:
@@ -101,31 +99,21 @@ class _RequestArgs(dict):
         return val
 
 
-def parse_arg_list(query_string):
-    """Parse a query string into a list of `(name, value)` tuples."""
-    args = []
-    if not query_string:
-        return args
+def parse_query_string(query_string):
+    """Parse a query string into a _RequestArgs."""
+    args = _RequestArgs()
     for arg in query_string.split('&'):
         nv = arg.split('=', 1)
         if len(nv) == 2:
             (name, value) = nv
         else:
-            (name, value) = (nv[0], empty)
+            (name, value) = (nv[0], '')
         name = unquote(name.replace('+', ' '))
         if isinstance(name, unicode):
             name = name.encode('utf-8')
         value = unquote(value.replace('+', ' '))
         if not isinstance(value, unicode):
             value = unicode(value, 'utf-8')
-        args.append((name, value))
-    return args
-
-
-def arg_list_to_args(arg_list):
-    """Convert a list of `(name, value)` tuples into into a `_RequestArgs`."""
-    args = _RequestArgs()
-    for name, value in arg_list:
         if name in args:
             if isinstance(args[name], list):
                 args[name].append(value)
@@ -188,9 +176,7 @@ class Request(object):
         self.outcookie = Cookie()
 
         self.callbacks = {
-            'arg_list': Request._parse_arg_list,
-            'args': lambda req: arg_list_to_args(req.arg_list),
-            'languages': Request._parse_languages,
+            'args': Request._parse_args,
             'incookie': Request._parse_cookies,
             '_inheaders': Request._parse_headers
         }
@@ -269,8 +255,6 @@ class Request(object):
             ctpos = value.find('charset=')
             if ctpos >= 0:
                 self._outcharset = value[ctpos + 8:].strip()
-        elif name.lower() == 'content-length':
-            self._content_length = int(value)
         self._outheaders.append((name, unicode(value).encode('utf-8')))
 
     def end_headers(self):
@@ -337,7 +321,7 @@ class Request(object):
         self.send_header('Content-Type', 'text/plain')
         self.send_header('Content-Length', 0)
         self.send_header('Pragma', 'no-cache')
-        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Cache-control', 'no-cache')
         self.send_header('Expires', 'Fri, 01 Jan 1999 00:00:00 GMT')
         self.end_headers()
 
@@ -366,7 +350,7 @@ class Request(object):
 
     def send(self, content, content_type='text/html', status=200):
         self.send_response(status)
-        self.send_header('Cache-Control', 'must-revalidate')
+        self.send_header('Cache-control', 'must-revalidate')
         self.send_header('Content-Type', content_type + ';charset=utf-8')
         self.send_header('Content-Length', len(content))
         self.end_headers()
@@ -389,14 +373,8 @@ class Request(object):
             if template.endswith('.html'):
                 if env:
                     from trac.web.chrome import Chrome
-                    try:
-                        data = Chrome(env).render_template(self, template, data,
-                                                           'text/html')
-                    except Exception:
-                        # second chance rendering, in "safe" mode
-                        data['trac_error_rendering'] = True
-                        data = Chrome(env).render_template(self, template, data,
-                                                           'text/html')
+                    data = Chrome(env).render_template(self, template, data,
+                                                       'text/html')
                 else:
                     content_type = 'text/plain'
                     data = '%s\n\n%s: %s' % (data.get('title'),
@@ -406,12 +384,9 @@ class Request(object):
             data = get_last_traceback()
             content_type = 'text/plain'
 
-        if isinstance(data, unicode):
-            data = data.encode('utf-8')
-
         self.send_response(status)
         self._outheaders = []
-        self.send_header('Cache-Control', 'must-revalidate')
+        self.send_header('Cache-control', 'must-revalidate')
         self.send_header('Expires', 'Fri, 01 Jan 1999 00:00:00 GMT')
         self.send_header('Content-Type', content_type + ';charset=utf-8')
         self.send_header('Content-Length', len(data))
@@ -476,29 +451,23 @@ class Request(object):
     def write(self, data):
         """Write the given data to the response body.
 
-        `data` *must* be a `str` string, encoded with the charset
-        which has been specified in the ''Content-Type'' header
+        `data` can be either a `str` or an `unicode` string.
+        If it's the latter, the unicode string will be encoded
+        using the charset specified in the ''Content-Type'' header
         or 'utf-8' otherwise.
-
-        Note that the ''Content-Length'' header must have been specified. 
-        Its value either corresponds to the length of `data`, or, if there 
-        are multiple calls to `write`, to the cumulated length of the `data`
-        arguments.
         """
         if not self._write:
             self.end_headers()
-        if not hasattr(self, '_content_length'):
-            raise RuntimeError("No Content-Length header set")
         if isinstance(data, unicode):
-            raise ValueError("Can't send unicode content")
+            data = data.encode(self._outcharset or 'utf-8')
         self._write(data)
 
     # Internal methods
 
-    def _parse_arg_list(self):
-        """Parse the supplied request parameters into a list of
-        `(name, value)` tuples.
-        """
+    def _parse_args(self):
+        """Parse the supplied request parameters into a dictionary."""
+        args = _RequestArgs()
+
         fp = self.environ['wsgi.input']
 
         # Avoid letting cgi.FieldStorage consume the input stream when the
@@ -509,7 +478,6 @@ class Request(object):
         if ctype not in ('application/x-www-form-urlencoded',
                          'multipart/form-data'):
             fp = StringIO('')
-        
         # Python 2.6 introduced a backwards incompatible change for
         # FieldStorage where QUERY_STRING is no longer ignored for POST
         # requests. We'll keep the pre 2.6 behaviour for now...
@@ -518,13 +486,22 @@ class Request(object):
         fs = cgi.FieldStorage(fp, environ=self.environ, keep_blank_values=True)
         if self.method == 'POST':
             self.environ['QUERY_STRING'] = qs_on_post
-        
-        args = []
-        for value in fs.list or ():
-            name = value.name
-            if not value.filename:
-                value = unicode(value.value, 'utf-8')
-            args.append((name, value))
+        if fs.list:
+            for name in fs.keys():
+                values = fs[name]
+                if not isinstance(values, list):
+                    values = [values]
+                for value in values:
+                    if not value.filename:
+                        value = unicode(value.value, 'utf-8')
+                    if name in args:
+                        if isinstance(args[name], list):
+                            args[name].append(value)
+                        else:
+                            args[name] = [args[name], value]
+                    else:
+                        args[name] = value
+
         return args
 
     def _parse_cookies(self):
@@ -543,24 +520,6 @@ class Request(object):
         if 'CONTENT_TYPE' in self.environ:
             headers.append(('content-type', self.environ['CONTENT_TYPE']))
         return headers
-
-    def _parse_languages(self):
-        """The list of languages preferred by the remote user, taken from the
-        ``Accept-Language`` header.
-        """
-        header = self.get_header('Accept-Language') or 'en-us'
-        langs = []
-        for i, lang in enumerate(header.split(',')):
-            code, params = cgi.parse_header(lang)
-            q = 1
-            if 'q' in params:
-                try:
-                    q = float(params['q'])
-                except ValueError:
-                    q = 0
-            langs.append((-q, i, code))
-        langs.sort()
-        return [code for q, i, code in langs]
 
     def _reconstruct_url(self):
         """Reconstruct the absolute base URL of the application."""

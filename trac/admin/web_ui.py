@@ -14,23 +14,26 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+import inspect
 import os
 import pkg_resources
 import re
 import shutil
+import sys
 
 from genshi import HTML
 from genshi.builder import tag
 
+from trac import __version__ as TRAC_VERSION
 from trac.admin.api import IAdminPanelProvider
 from trac.core import *
-from trac.loader import get_plugin_info, get_plugins_dir
 from trac.perm import PermissionSystem, IPermissionRequestor
+from trac.util import get_pkginfo, get_module_path
 from trac.util.compat import partial
-from trac.util.text import exception_to_unicode
+from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
 from trac.web import HTTPNotFound, IRequestHandler
-from trac.web.chrome import add_notice, add_stylesheet, \
+from trac.web.chrome import add_notice, add_script, add_stylesheet, \
                             add_warning, Chrome, INavigationContributor, \
                             ITemplateProvider
 
@@ -41,7 +44,7 @@ except ImportError:
 
 
 class AdminModule(Component):
-    """Web administration interface provider and panel manager."""
+    """Web administration interface."""
 
     implements(INavigationContributor, IRequestHandler, ITemplateProvider)
 
@@ -81,11 +84,7 @@ class AdminModule(Component):
             raise HTTPNotFound(_('No administration panels available'))
 
         def _panel_order(p1, p2):
-            if p1[::2] == ('general', 'basics'):
-                return -1
-            elif p2[::2] == ('general', 'basics'):
-                return 1
-            elif p1[0] == 'general':
+            if p1[0] == 'general':
                 if p2[0] == 'general':
                     return cmp(p1[1:], p2[1:])
                 return -1
@@ -213,7 +212,6 @@ class BasicsAdminPanel(Component):
             'description': self.env.project_description,
             'url': self.env.project_url
         }
-        Chrome(self.env).add_textarea_grips(req)
         return 'admin_basics.html', {'project': data}
 
 
@@ -338,8 +336,8 @@ class PermissionAdminPanel(Component):
                 req.perm.require(action)
                 if (subject, action) not in all_permissions:
                     perm.grant_permission(subject, action)
-                    add_notice(req, _('The subject %(subject)s has been '
-                                      'granted the permission %(action)s.',
+                    add_notice(req, _('The user %(subject)s has been granted '
+                                      'the permission %(action)s.',
                                       subject=subject, action=action))
                     req.redirect(req.href.admin(cat, page))
                 else:
@@ -359,12 +357,12 @@ class PermissionAdminPanel(Component):
                         req.perm.require(action)
                 if (subject, group) not in all_permissions:
                     perm.grant_permission(subject, group)
-                    add_notice(req, _('The subject %(subject)s has been added '
-                                      'to the group %(group)s.',
-                                      subject=subject, group=group))
+                    add_notice(req, _('The user %(subject)s has been added to '
+                                      'the group %(group)s.', subject=subject,
+                                      group=group))
                     req.redirect(req.href.admin(cat, page))
                 else:
-                    add_warning(req, _('The subject %(subject)s was already '
+                    add_warning(req, _('The user %(subject)s was already '
                                        'added to the group %(group)s.',
                                        subject=subject, group=group))
 
@@ -390,6 +388,14 @@ class PermissionAdminPanel(Component):
 class PluginAdminPanel(Component):
 
     implements(IAdminPanelProvider)
+
+    # Ideally, this wouldn't be hard-coded like this
+    required_components = ('AboutModule', 'DefaultPermissionGroupProvider',
+        'Environment', 'EnvironmentSetup', 'PermissionSystem',
+        'RequestDispatcher', 'Mimeview', 'Chrome')
+
+    def __init__(self):
+        self.trac_path = get_module_path(sys.modules['trac.core'])
 
     # IAdminPanelProvider methods
 
@@ -493,10 +499,105 @@ class PluginAdminPanel(Component):
             _save_config(self.config, req, self.log)
 
     def _render_view(self, req):
-        plugins = get_plugin_info(self.env, include_core=True)
+        plugins = {}
+        plugins_dir = os.path.realpath(os.path.join(self.env.path, 'plugins'))
+        plugins_dir = os.path.normcase(plugins_dir) # needs to match loader.py
+
+        from trac.core import ComponentMeta
+        for component in ComponentMeta._components:
+            module = sys.modules[component.__module__]
+
+            dist = self._find_distribution(module)
+            plugin_filename = None
+            if os.path.realpath(os.path.dirname(dist.location)) == plugins_dir:
+                plugin_filename = os.path.basename(dist.location)
+
+            description = inspect.getdoc(component)
+            if description:
+                description = to_unicode(description).split('.', 1)[0] + '.'
+
+            if dist.project_name not in plugins:
+                readonly = True
+                if plugin_filename and os.access(dist.location,
+                                                 os.F_OK + os.W_OK):
+                    readonly = False
+                # retrieve plugin metadata
+                info = get_pkginfo(dist)
+                if not info:
+                    info = {'summary': description}
+                    for k in ('author author_email home_page url license trac'
+                              .split()):
+                        v = getattr(module, k, '')
+                        if v:
+                            if k == 'home_page' or k == 'url':
+                                k = 'home_page'
+                                v = v.replace('$', '').replace('URL: ', '') 
+                            if k == 'author':
+                                v = to_unicode(v)
+                            info[k] = v
+                else:
+                    # Info found; set all those fields to "None" that have the 
+                    # value "UNKNOWN" as this is the value for fields that
+                    # aren't specified in "setup.py"
+                    for k in info:
+                        if info[k] == 'UNKNOWN':
+                            info[k] = None
+                        elif k == 'author':
+                            # Must be encoded as unicode as otherwise Genshi 
+                            # may raise a "UnicodeDecodeError".
+                            info[k] = to_unicode(info[k])
+
+                # retrieve plugin version info
+                version = dist.version
+                if not version:
+                    version = (getattr(module, 'version', '') or
+                               getattr(module, 'revision', ''))
+                    # special handling for "$Rev$" strings
+                    version = version.replace('$', '').replace('Rev: ', 'r') 
+                plugins[dist.project_name] = {
+                    'name': dist.project_name, 'version': version,
+                    'path': dist.location, 'description': description,
+                    'plugin_filename': plugin_filename, 'readonly': readonly,
+                    'info': info, 'components': []
+                }
+            plugins[dist.project_name]['components'].append({
+                'name': component.__name__, 'module': module.__name__,
+                'description': description,
+                'enabled': self.env.is_component_enabled(component),
+                'required': component.__name__ in self.required_components,
+            })
+
+        def component_order(a, b):
+            c = cmp(len(a['module'].split('.')), len(b['module'].split('.')))
+            if c == 0:
+                c = cmp(a['module'].lower(), b['module'].lower())
+                if c == 0:
+                    c = cmp(a['name'].lower(), b['name'].lower())
+            return c
+        for category in plugins:
+            plugins[category]['components'].sort(component_order)
+
+        plugin_list = [plugins['Trac']]
+        addons = [key for key in plugins.keys() if key != 'Trac']
+        addons.sort()
+        plugin_list += [plugins[category] for category in addons]
+
         data = {
-            'plugins': plugins, 'show': req.args.get('show'),
-            'readonly': not os.access(get_plugins_dir(self.env),
-                                      os.F_OK + os.W_OK),
+            'plugins': plugin_list,
+            'readonly': not os.access(plugins_dir, os.F_OK + os.W_OK)
         }
         return 'admin_plugins.html', data
+
+    def _find_distribution(self, module):
+        path = get_module_path(module)
+        if path == self.trac_path:
+            return pkg_resources.Distribution(project_name='Trac',
+                                              version=TRAC_VERSION,
+                                              location=path)
+        for dist in pkg_resources.find_distributions(path, only=True):
+            return dist
+        else:
+            # This is a plain Python source file, not an egg
+            return pkg_resources.Distribution(project_name=module.__name__,
+                                              version='',
+                                              location=module.__file__)

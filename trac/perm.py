@@ -16,14 +16,13 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from time import time
+"""Management of permissions."""
 
-from trac.admin import AdminCommandError, IAdminCommandProvider
+from time import time
 from trac.config import ExtensionOption, OrderedExtensionsOption
 from trac.core import *
-from trac.db.util import with_transaction
 from trac.resource import Resource, get_resource_name
-from trac.util.text import print_table, printout, wrap
+from trac.util.compat import set
 from trac.util.translation import _
 
 __all__ = ['IPermissionRequestor', 'IPermissionStore',
@@ -153,7 +152,7 @@ class IPermissionPolicy(Interface):
 class DefaultPermissionStore(Component):
     """Default implementation of permission storage and simple group management.
     
-    This component uses the `permission` table in the database to store both
+    This component uses the `PERMISSION` table in the database to store both
     permissions and groups.
     """
     implements(IPermissionStore)
@@ -201,6 +200,8 @@ class DefaultPermissionStore(Component):
         # get_user_permissions() takes care of the magic 'authenticated' group.
         # The optimized loop we had before didn't.  This is very inefficient,
         # but it works.
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
         result = set()
         users = set([u[0] for u in self.env.get_known_users()])
         for user in users:
@@ -222,28 +223,26 @@ class DefaultPermissionStore(Component):
 
     def grant_permission(self, username, action):
         """Grants a user the permission to perform the specified action."""
-        @with_transaction(self.env)
-        def do_grant(db):
-            cursor = db.cursor()
-            cursor.execute("INSERT INTO permission VALUES (%s, %s)",
-                           (username, action))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO permission VALUES (%s, %s)",
+                       (username, action))
         self.log.info('Granted permission for %s to %s' % (action, username))
+        db.commit()
 
     def revoke_permission(self, username, action):
         """Revokes a users' permission to perform the specified action."""
         db = self.env.get_db_cnx()
-        @with_transaction(self.env)
-        def do_revoke(db):
-            cursor = db.cursor()
-            cursor.execute("DELETE FROM permission WHERE username=%s "
-                           "AND action=%s",
-                           (username, action))
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM permission WHERE username=%s AND action=%s",
+                       (username, action))
         self.log.info('Revoked permission for %s to %s' % (action, username))
+        db.commit()
 
 
 class DefaultPermissionGroupProvider(Component):
-    """Permission group provider providing the basic builtin permission groups
-    'anonymous' and 'authenticated'."""
+    """Provides the basic builtin permission groups 'anonymous' and
+    'authenticated'."""
 
     implements(IPermissionGroupProvider)
 
@@ -291,7 +290,7 @@ class DefaultPermissionPolicy(Component):
 
 
 class PermissionSystem(Component):
-    """Permission management sub-system."""
+    """Sub-system that manages user permissions."""
 
     implements(IPermissionRequestor)
 
@@ -580,96 +579,3 @@ class PermissionCache(object):
         perm = PermissionSystem(self.env)
         actions = perm.get_user_permissions(self.username)
         return [action for action in actions if action in self]
-
-
-class PermissionAdmin(Component):
-    """trac-admin command provider for permission system administration."""
-    
-    implements(IAdminCommandProvider)
-    
-    # IAdminCommandProvider methods
-    
-    def get_admin_commands(self):
-        yield ('permission list', '[user]',
-               'List permission rules',
-               self._complete_list, self._do_list)
-        yield ('permission add', '<user> <action> [action] [...]',
-               'Add a new permission rule',
-               self._complete_add, self._do_add)
-        yield ('permission remove', '<user> <action> [action] [...]',
-               'Remove a permission rule',
-               self._complete_remove, self._do_remove)
-    
-    def get_user_list(self):
-        return set(user for (user, action) in 
-                   PermissionSystem(self.env).get_all_permissions())
-    
-    def get_user_perms(self, user):
-        return [action for (subject, action) in
-                PermissionSystem(self.env).get_all_permissions()
-                if subject == user]
-    
-    def _complete_list(self, args):
-        if len(args) == 1:
-            return self.get_user_list()
-    
-    def _complete_add(self, args):
-        if len(args) == 1:
-            return self.get_user_list()
-        elif len(args) >= 2:
-            return (set(PermissionSystem(self.env).get_actions())
-                    - set(self.get_user_perms(args[0])) - set(args[1:-1]))
-    
-    def _complete_remove(self, args):
-        if len(args) == 1:
-            return self.get_user_list()
-        elif len(args) >= 2:
-            return set(self.get_user_perms(args[0])) - set(args[1:-1])
-    
-    def _do_list(self, user=None):
-        permsys = PermissionSystem(self.env)
-        if user:
-            rows = []
-            perms = permsys.get_user_permissions(user)
-            for action in perms:
-                if perms[action]:
-                    rows.append((user, action))
-        else:
-            rows = permsys.get_all_permissions()
-        rows.sort()
-        print_table(rows, [_('User'), _('Action')])
-        print
-        printout(_("Available actions:"))
-        actions = permsys.get_actions()
-        actions.sort()
-        text = ', '.join(actions)
-        printout(wrap(text, initial_indent=' ', subsequent_indent=' ', 
-                      linesep='\n'))
-        print
-    
-    def _do_add(self, user, *actions):
-        permsys = PermissionSystem(self.env)
-        # Check all actions before perform any modifications
-        for action in actions:
-            if not action.islower() and not action.isupper():
-                raise AdminCommandError(_('Group names must be in lower case '
-                                          'and actions in upper case'))
-        for action in actions:
-            permsys.grant_permission(user, action)
-    
-    def _do_remove(self, user, *actions):
-        permsys = PermissionSystem(self.env)
-        rows = permsys.get_all_permissions()
-        for action in actions:
-            if action == '*':
-                for row in rows:
-                    if user != '*' and user != row[0]:
-                        continue
-                    permsys.revoke_permission(row[0], row[1])
-            else:
-                for row in rows:
-                    if action != row[1]:
-                        continue
-                    if user != '*' and user != row[0]:
-                        continue
-                    permsys.revoke_permission(row[0], row[1])

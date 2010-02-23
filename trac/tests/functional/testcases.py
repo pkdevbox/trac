@@ -1,6 +1,9 @@
 #!/usr/bin/python
 import os
+from subprocess import call
+from tempfile import mkdtemp
 from trac.tests.functional import *
+from trac.util.datefmt import format_date, utc
 
 
 class RegressionTestRev6017(FunctionalTwillTestCaseSetup):
@@ -151,15 +154,6 @@ class RegressionTestTicket7209(FunctionalTwillTestCaseSetup):
         tc.notfind('Second Attachment')
 
 
-class ErrorPageValidation(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Validate the error page"""
-        url = self._tester.url + '/wiki/WikiStart'
-        tc.go(url + '?version=bug')
-        tc.url(url)
-        tc.find('Trac detected an internal error:')
-
-
 def functionalSuite():
     suite = FunctionalTestSuite()
     return suite
@@ -174,7 +168,6 @@ def suite():
     suite.addTest(RegressionTestTicket3833c())
     suite.addTest(RegressionTestTicket5572())
     suite.addTest(RegressionTestTicket7209())
-    suite.addTest(ErrorPageValidation())
 
     import trac.versioncontrol.tests
     trac.versioncontrol.tests.functionalSuite(suite)

@@ -3,10 +3,17 @@
 working with a Trac environment to make test cases more succinct.
 """
 
-from trac.tests.functional import internal_error
+import os
+import re
+from datetime import datetime, timedelta
+from subprocess import call, Popen, PIPE
+from tempfile import mkdtemp
+
+from trac.tests.functional import internal_error, logfile, close_fds, rmtree
 from trac.tests.functional.better_twill import tc, b
 from trac.tests.contentgen import random_page, random_sentence, random_word, \
     random_unique_camel
+from trac.util.datefmt import format_date, utc
 from trac.util.text import unicode_quote
 
 try:
@@ -198,7 +205,7 @@ class FunctionalTester(object):
         page_url = self.url + "/wiki/" + page
         tc.go(page_url)
         tc.url(page_url)
-        tc.find("The page %s does not exist." % page)
+        tc.find("Describe %s here." % page)
         tc.formvalue('modifypage', 'action', 'edit')
         tc.submit()
         tc.url(page_url + '\\?action=edit')
@@ -237,8 +244,10 @@ class FunctionalTester(object):
         """Creates the specified milestone, with a random name if none is
         provided.  Returns the name of the milestone.
         """
+        find = False
         if name == None:
             name = random_unique_camel()
+            find = True
         milestone_url = self.url + "/admin/ticket/milestones"
         tc.go(milestone_url)
         tc.url(milestone_url)

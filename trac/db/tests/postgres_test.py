@@ -4,13 +4,14 @@ import re
 import unittest
 
 from trac.db import Table, Column, Index
-from trac.db.postgres_backend import PostgreSQLConnector, assemble_pg_dsn
+from trac.db.postgres_backend import PostgreSQLConnector
 from trac.test import EnvironmentStub
 
 
 class PostgresTableCreationSQLTest(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub()
+        self.db = self.env.get_db_cnx()
     
     def _unroll_generator(self, generator):
         items = []
@@ -34,8 +35,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(1, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo bar" ( "name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo bar" ( "name" text)', sql_commands[0])
     
     def test_quote_column_names(self):
         table = Table('foo')
@@ -43,8 +43,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(1, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "my name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "my name" text)', sql_commands[0])
     
     def test_quote_compound_primary_key_declaration(self):
         table = Table('foo bar', key=['my name', 'your name'])
@@ -63,8 +62,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(2, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "my name" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "my name" text)', sql_commands[0])
         index_sql = 'CREATE INDEX "foo_my name_idx" ON "foo" ("my name")'
         self.assertEqual(index_sql, sql_commands[1])
     
@@ -75,84 +73,13 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
         self.assertEqual(2, len(sql_commands))
-        self.assertEqual('CREATE TABLE "foo" ( "a" text, "b" text)',
-                         sql_commands[0])
+        self.assertEqual('CREATE TABLE "foo" ( "a" text, "b" text)', sql_commands[0])
         index_sql = 'CREATE INDEX "foo_a_b_idx" ON "foo" ("a","b")'
         self.assertEqual(index_sql, sql_commands[1])
 
-    def test_assemble_dsn(self):
-        values = [
-            {'path': 't', 'user': 't'},
-            {'path': 't', 'password': 't'},
-            {'path': 't', 'host': 't'},
-            {'path': 't', 'port': 't'},
-            {'path': 't', 'password': 't', 'user': 't'},
-            {'path': 't', 'host': 't', 'user': 't'},
-            {'path': 't', 'user': 't', 'port': 't'},
-            {'path': 't', 'host': 't', 'password': 't'},
-            {'path': 't', 'password': 't', 'port': 't'},
-            {'path': 't', 'host': 't', 'port': 't'},
-            {'path': 't', 'host': 't', 'password': 't', 'user': 't'},
-            {'path': 't', 'password': 't', 'user': 't', 'port': 't'},
-            {'path': 't', 'host': 't', 'user': 't', 'port': 't'},
-            {'path': 't', 'host': 't', 'password': 't', 'port': 't'},
-        ]
-        for orig in values:
-            dsn = assemble_pg_dsn(**orig)
-            for k, v in orig.iteritems():
-                orig[k] = "'%s'" % v
-                continue
-            orig['dbname'] = "'t'"
-            del orig['path']
-            new_values = {'dbname': "'t'"}
-            for key_value in dsn.split(' '):
-                k, v = key_value.split('=')
-                new_values[k] = v
-                continue
-            self.assertEqual(new_values, orig)
-            continue
-
-
-class PostgresTableAlterationSQLTest(unittest.TestCase):
-    def setUp(self):
-        self.env = EnvironmentStub()
-    
-    def test_alter_column_types(self):
-        connector = PostgreSQLConnector(self.env)
-        sql = connector.alter_column_types('milestone',
-                                           {'due': ('int', 'int64'),
-                                            'completed': ('int', 'int64')})
-        sql = list(sql)
-        self.assertEqual([
-            "ALTER TABLE milestone "
-                "ALTER COLUMN completed TYPE bigint, "
-                "ALTER COLUMN due TYPE bigint",
-            ], sql)
-
-    def test_alter_column_types_same(self):
-        connector = PostgreSQLConnector(self.env)
-        sql = connector.alter_column_types('milestone',
-                                           {'due': ('int', 'int'),
-                                            'completed': ('int', 'int64')})
-        sql = list(sql)
-        self.assertEqual([
-            "ALTER TABLE milestone "
-                "ALTER COLUMN completed TYPE bigint",
-            ], sql)
-
-    def test_alter_column_types_none(self):
-        connector = PostgreSQLConnector(self.env)
-        sql = connector.alter_column_types('milestone',
-                                           {'due': ('int', 'int')})
-        self.assertEqual([], list(sql))
-
 
 def suite():
-    suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(PostgresTableCreationSQLTest, 'test'))
-    suite.addTest(unittest.makeSuite(PostgresTableAlterationSQLTest, 'test'))
-    return suite
-
+    return unittest.makeSuite(PostgresTableCreationSQLTest, 'test')
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')

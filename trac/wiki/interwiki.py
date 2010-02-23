@@ -15,17 +15,21 @@
 # Author: Christian Boos <cboos@neuf.fr>
 
 import re
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
 
 from genshi.builder import tag
 
-from trac.cache import cached_value
 from trac.core import *
+from trac.wiki.formatter import Formatter
 from trac.wiki.parser import WikiParser
 from trac.wiki.api import IWikiChangeListener, IWikiMacroProvider
 
 
 class InterWikiMap(Component):
-    """InterWiki map manager."""
+    """Implements support for InterWiki maps."""
 
     implements(IWikiChangeListener, IWikiMacroProvider)
 
@@ -33,14 +37,27 @@ class InterWikiMap(Component):
     _interwiki_re = re.compile(r"(%s)[ \t]+([^ \t]+)(?:[ \t]+#(.*))?" %
                                WikiParser.LINK_SCHEME, re.UNICODE)
     _argspec_re = re.compile(r"\$\d")
+    _interwiki_map = None
 
-    # The component itself behaves as a read-only map
+    def __init__(self):
+        self._interwiki_lock = threading.RLock()
+
+    def reset(self):
+        self._interwiki_map = None
+        self.config.touch()
+        # This dictionary maps upper-cased namespaces
+        # to (namespace, prefix, title) values;
+
+    # The component itself behaves as a map
 
     def __contains__(self, ns):
         return ns.upper() in self.interwiki_map
 
     def __getitem__(self, ns):
         return self.interwiki_map[ns.upper()]
+
+    def __setitem__(self, ns, value):
+        self.interwiki_map[ns.upper()] = value
 
     def keys(self):
         return self.interwiki_map.keys()
@@ -81,44 +98,46 @@ class InterWikiMap(Component):
     # IWikiChangeListener methods
 
     def wiki_page_added(self, page):
-        if page.name == InterWikiMap._page_name:
-            del self.interwiki_map
+        pass
 
     def wiki_page_changed(self, page, version, t, comment, author, ipnr):
         if page.name == InterWikiMap._page_name:
-            del self.interwiki_map
+            self.reset()
 
     def wiki_page_deleted(self, page):
         if page.name == InterWikiMap._page_name:
-            del self.interwiki_map
+            self.reset()
 
     def wiki_page_version_deleted(self, page):
         if page.name == InterWikiMap._page_name:
-            del self.interwiki_map
+            self.reset()
 
-    @cached_value
-    def interwiki_map(self, db):
-        """Map from upper-cased namespaces to (namespace, prefix, title) 
-        values.
-        """
+    def _get_interwiki_map(self):
         from trac.wiki.model import WikiPage
-        map = {}
-        content = WikiPage(self.env, InterWikiMap._page_name, db=db).text
-        in_map = False
-        for line in content.split('\n'):
-            if in_map:
-                if line.startswith('----'):
+        if self._interwiki_map is None:
+            self._interwiki_lock.acquire()
+            try:
+                if self._interwiki_map is None:
+                    self._interwiki_map = {}
+                    content = WikiPage(self.env, InterWikiMap._page_name).text
                     in_map = False
-                else:
-                    m = re.match(InterWikiMap._interwiki_re, line)
-                    if m:
-                        prefix, url, title = m.groups()
-                        url = url.strip()
-                        title = title and title.strip() or prefix
-                        map[prefix.upper()] = (prefix, url, title)
-            elif line.startswith('----'):
-                in_map = True
-        return map
+                    for line in content.split('\n'):
+                        if in_map:
+                            if line.startswith('----'):
+                                in_map = False
+                            else:
+                                m = re.match(InterWikiMap._interwiki_re, line)
+                                if m:
+                                    prefix, url, title = m.groups()
+                                    url = url.strip()
+                                    title = title and title.strip() or prefix
+                                    self[prefix] = (prefix, url, title)
+                        elif line.startswith('----'):
+                            in_map = True
+            finally:
+                self._interwiki_lock.release()
+        return self._interwiki_map
+    interwiki_map = property(_get_interwiki_map)
 
     # IWikiMacroProvider methods
 
@@ -129,6 +148,7 @@ class InterWikiMap(Component):
         return "Provide a description list for the known InterWiki prefixes."
 
     def expand_macro(self, formatter, name, content):
+        from trac.util import sorted
         interwikis = []
         for k in sorted(self.keys()):
             prefix, url, title = self[k]

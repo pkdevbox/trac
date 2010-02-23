@@ -65,10 +65,8 @@ class SvnFunctionalTestEnvironment(FunctionalTestEnvironment):
         f.write(data)
         f.close()
         self.call_in_workdir(['svn', 'add', filename])
-        environ = os.environ.copy()
-        environ['LC_ALL'] = 'C'     # Force English messages in svn
         output = self.call_in_workdir(['svn', '--username=admin', 'commit', '-m',
-                        'Add %s' % filename, filename], environ=environ)
+                        'Add %s' % filename, filename])
         try:
             revision = re.search(r'Committed revision ([0-9]+)\.',
                                  output).group(1)

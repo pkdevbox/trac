@@ -3,12 +3,13 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <xi:include href="macros.html" />
   <head>
     <title>Roadmap</title>
+    <link rel="stylesheet" type="text/css"
+          href="${chrome.htdocs_location}css/roadmap.css" />
   </head>
 
   <body>
@@ -17,17 +18,12 @@
 
       <form id="prefs" method="get" action="">
         <div>
-          <input type="checkbox" id="showcompleted" name="show" value="completed"
-                 checked="${'completed' in show or None}" />
-          <label for="showcompleted">Show completed milestones</label>
-        </div>
-        <div>
-          <input type="checkbox" id="hidenoduedate" name="show" value="noduedate"
-                 checked="${'noduedate' in show or None}" />
-          <label for="hidenoduedate">Hide milestones with no due date</label>
+          <input type="checkbox" id="showall" name="show" value="all"
+                 checked="${showall or None}" />
+          <label for="showall">Show already completed milestones</label>
         </div>
         <div class="buttons">
-          <input type="submit" value="${_('Update')}" />
+          <input type="submit" value="Update" />
         </div>
       </form>
 
@@ -40,22 +36,16 @@
             </a></h2>
             <py:choose>
               <p py:when="milestone.completed" class="date">
-                <i18n:msg params="duration, date">
-                  Completed ${dateinfo(milestone.completed)} ago
-                  (${format_date(milestone.completed)})
-                </i18n:msg>
+                Completed ${dateinfo(milestone.completed)} ago
+                (${format_date(milestone.completed)})
               </p>
               <p py:when="milestone.is_late" class="date">
-                <i18n:msg params="duration, date">
-                  <strong>${dateinfo(milestone.due)} late</strong>
-                  (${format_date(milestone.due)})
-                </i18n:msg>
+                <strong>${dateinfo(milestone.due)} late</strong>
+                (${format_date(milestone.due)})
               </p>
               <p py:when="milestone.due" class="date">
-                <i18n:msg params="duration, date">
-                  Due in ${dateinfo(milestone.due)}
-                  (${format_date(milestone.due)})
-                </i18n:msg>
+                Due in ${dateinfo(milestone.due)}
+                (${format_date(milestone.due)})
               </p>
               <p py:otherwise="" class="date">
                 No date set
@@ -74,11 +64,11 @@
       <div py:if="'MILESTONE_CREATE' in perm" class="buttons">
        <form method="get" action="${href.milestone()}"><div>
         <input type="hidden" name="action" value="new" />
-        <input type="submit" value="${_('Add new milestone')}" />
+        <input type="submit" value="Add new milestone" />
        </div></form>
       </div>
 
-      <div id="help" i18n:msg=""><strong>Note:</strong> See
+      <div id="help"><strong>Note:</strong> See
         <a href="${href.wiki('TracRoadmap')}">TracRoadmap</a> for help on using
         the roadmap.
       </div>
