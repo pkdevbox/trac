@@ -17,6 +17,7 @@
 #         Alec Thomas <alec@swapoff.org>
 
 from trac.core import *
+from trac.util.compat import reversed
 from trac.util.translation import _
 
 
@@ -95,6 +96,8 @@ class Resource(object):
     __slots__ = ('realm', 'id', 'version', 'parent')
 
     def __repr__(self):
+        if self.realm is None:
+            return '<Resource>'
         path = []
         r = self
         while r:
@@ -156,7 +159,7 @@ class Resource(object):
         "<Resource u'wiki:WikiEnd'>"
 
         >>> repr(Resource(None))
-        "<Resource ''>"
+        '<Resource>'
         """
         realm = resource_or_realm
         if isinstance(resource_or_realm, Resource):
@@ -187,6 +190,7 @@ class Resource(object):
         resource.parent = parent
         return resource
 
+
     def __call__(self, realm=False, id=False, version=False, parent=False):
         """Create a new Resource using the current resource as a template.
 
@@ -205,14 +209,16 @@ class Resource(object):
         >>> repr(Resource(None).child('attachment', 'file.txt'))
         "<Resource u', attachment:file.txt'>"
         """
-        return Resource(realm, id, version, self)
+        return self.__call__(realm, id, version, self)
+    
 
 
 class ResourceSystem(Component):
-    """Resource identification and description manager.
+    """Resource identification and description.
 
     This component makes the link between `Resource` identifiers and their
     corresponding manager `Component`.
+
     """
 
     resource_managers = ExtensionPoint(IResourceManager)
@@ -310,18 +316,18 @@ def get_resource_description(env, resource, format='default', **kwargs):
     >>> env = EnvironmentStub()
     >>> main = Resource('generic', 'Main')
     >>> get_resource_description(env, main)
-    u'generic:Main'
+    'generic:Main'
     
     >>> get_resource_description(env, main(version=3))
-    u'generic:Main'
+    'generic:Main'
 
     >>> get_resource_description(env, main(version=3), format='summary')
-    u'generic:Main at version 3'
+    'generic:Main at version 3'
     
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if not manager or not hasattr(manager, 'get_resource_description'):
-        name = u'%s:%s' % (resource.realm, resource.id)
+        name = '%s:%s' % (resource.realm, resource.id)
         if format == 'summary':
             name += _(' at version %(version)s', version=resource.version)
         return name
@@ -347,10 +353,12 @@ def get_relative_resource(resource, path=''):
     else:
         base = unicode(path[0] != '/' and resource.id or '').split('/')
         for comp in path.split('/'):
-            if comp == '..':
+            if comp in ('.', ''):
+                continue
+            elif comp == '..':
                 if base:
                     base.pop()
-            elif comp and comp != '.':
+            elif comp:
                 base.append(comp)
         return resource(id=base and '/'.join(base) or None)
 

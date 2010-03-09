@@ -21,6 +21,7 @@ from genshi.builder import Element, tag
 from trac.core import *
 from trac.mimeview import Context
 from trac.perm import PermissionError
+from trac.util import sorted
 from trac.util.translation import _
 from trac.web import IRequestHandler
 from trac.wiki.api import IWikiMacroProvider
@@ -28,7 +29,7 @@ from trac.wiki.formatter import extract_link
 
 
 class InterTracDispatcher(Component):
-    """InterTrac dispatcher."""
+    """Implements support for InterTrac dispatching."""
 
     implements(IRequestHandler, IWikiMacroProvider)
 
@@ -43,11 +44,6 @@ class InterTracDispatcher(Component):
 
     def process_request(self, req):
         link = req.args.get('link', '')
-        parts = link.split(':', 1)
-        if len(parts) > 1:
-            resolver, target = parts
-            if target and (target[0] not in '\'"' or target[0] != target[-1]):
-                link = '%s:"%s"' % (resolver, target)
         link_elt = extract_link(self.env, Context.from_request(req), link)
         if isinstance(link_elt, Element):
             href = link_elt.attrib.get('href')

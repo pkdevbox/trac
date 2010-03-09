@@ -14,14 +14,12 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-import os, re, types
-
-from genshi.core import Markup
+import re, sys, os, time
 
 from trac.core import *
 from trac.config import Option
 from trac.db.api import IDatabaseConnector, _parse_db_str
-from trac.db.util import ConnectionWrapper, IterableCursor
+from trac.db.util import ConnectionWrapper
 from trac.util import get_pkginfo
 from trac.util.compat import close_fds
 from trac.util.text import to_unicode
@@ -52,20 +50,14 @@ try:
 except ImportError:
     has_mysqldb = False
 
-# Mapping from "abstract" SQL types to DB-specific types
-_type_map = {
-    'int64': 'bigint',
-}
-
 
 class MySQLConnector(Component):
-    """Database connector for MySQL version 4.1 and greater.
+    """MySQL database support for version 4.1 and greater.
     
-    Database URLs should be of the form:
-    {{{
-    mysql://user[:password]@host[:port]/database
-    }}}
+    Database urls should be of the form:
+        mysql://user[:password]@host[:port]/database
     """
+
     implements(IDatabaseConnector)
 
     mysqldump_path = Option('trac', 'mysqldump_path', 'mysqldump',
@@ -139,7 +131,6 @@ class MySQLConnector(Component):
         coldefs = []
         for column in table.columns:
             ctype = column.type
-            ctype = _type_map.get(ctype, ctype)
             if column.auto_increment:
                 ctype = 'INT UNSIGNED NOT NULL AUTO_INCREMENT'
                 # Override the column type, as a text field cannot
@@ -157,23 +148,6 @@ class MySQLConnector(Component):
             yield 'CREATE %s INDEX %s_%s_idx ON %s (%s);' % (unique, table.name,
                   '_'.join(index.columns), table.name,
                   self._collist(table, index.columns))
-
-    def alter_column_types(self, table, columns):
-        """Yield SQL statements altering the type of one or more columns of
-        a table.
-        
-        Type changes are specified as a `columns` dict mapping column names
-        to `(from, to)` SQL type tuples.
-        """
-        alterations = []
-        for name, (from_, to) in sorted(columns.iteritems()):
-            to = _type_map.get(to, to)
-            if to != _type_map.get(from_, from_):
-                alterations.append((name, to))
-        if alterations:
-            yield "ALTER TABLE %s %s" % (table,
-                ', '.join("MODIFY %s %s" % each
-                          for each in alterations))
 
     def backup(self, dest_file):
         try:
@@ -220,14 +194,11 @@ class MySQLConnection(ConnectionWrapper):
             port = 3306
         cnx = MySQLdb.connect(db=path, user=user, passwd=password,
                               host=host, port=port, charset='utf8')
-        if hasattr(cnx, 'encoders'):
-            # 'encoders' undocumented but present since 1.2.1 (r422)
-            cnx.encoders[Markup] = cnx.encoders[types.UnicodeType]
         ConnectionWrapper.__init__(self, cnx, log)
         self._is_closed = False
 
     def cast(self, column, type):
-        if type == 'int'or type == 'int64':
+        if type == 'int':
             type = 'signed'
         elif type == 'text':
             type = 'char'
@@ -237,18 +208,13 @@ class MySQLConnection(ConnectionWrapper):
         return 'concat(%s)' % ', '.join(args)
 
     def like(self):
-        """Return a case-insensitive LIKE clause."""
         return "LIKE %s COLLATE utf8_general_ci ESCAPE '/'"
 
     def like_escape(self, text):
         return _like_escape_re.sub(r'/\1', text)
 
-    def quote(self, identifier):
-        """Return the quoted identifier."""
-        return "`%s`" % identifier
-
     def get_last_id(self, cursor, table, column='id'):
-        return cursor.lastrowid
+        return self.cnx.insert_id()
 
     def rollback(self):
         self.cnx.ping()
@@ -266,4 +232,4 @@ class MySQLConnection(ConnectionWrapper):
             self._is_closed = True
 
     def cursor(self):
-        return IterableCursor(MySQLUnicodeCursor(self.cnx), self.log)
+        return MySQLUnicodeCursor(self.cnx)

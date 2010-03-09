@@ -40,7 +40,7 @@ Results in:
 This is the ''only'' way to go in Trac 0.11
 }}}
 
-Note that the contents of a `#!div` block are contained in one or more paragraphs, which have a non-zero top and bottom margin by default. This leads to the top and bottom padding in the example above. To remove the top and bottom margin of the contents, add the `compact` class to the `#!div`.
+Note that if you don't specify a CSS class, the `wikipage` class will be added, so that the special layout of headers is respected in the <div>. If you specify explicitly the padding property, you have to take this into account (tip: [http://getfirebug.com/ get FireBug]!).
 
 For spans, you should rather use the Macro call syntax:
 {{{
@@ -51,23 +51,18 @@ Results in:
  Hello [[span(''WORLD'' (click [#world-anchor here]), style=color: green; font-size: 120%, id=world-anchor)]]!
 
 
-== HTML comments ==
-HTML comments are stripped from the output of the `html` processor. To add an HTML comment to a wiki page, use the `htmlcomment` processor (available since 0.12). For example, the following code block:
+== Images ==
+If you want display an image inline, append the following: '''?format=raw''' after the file name.  For example, to display the Trac logo inline, use this syntax:
+
 {{{
+ <img src="http://www.edgewall.org/gfx/trac_logo.png?format=raw" />
+}}}
+
 {{{
-#!htmlcomment
-This block is translated to an HTML comment.
-It can contain <tags> and &entities; that will not be escaped in the output.
+#!html
+<img src="http://www.edgewall.org/gfx/trac_logo.png?format=raw" />
 }}}
-}}}
-results in the following block in the HTML output:
-{{{
-<!--
-This block is translated to an HTML comment.
-It can contain <tags> and &entities; that will not be escaped in the output.
--->
-}}}
-Please note that the character sequence "--" is not allowed in HTML comments, and will generate a rendering error.
+
 
 
 == More Information ==

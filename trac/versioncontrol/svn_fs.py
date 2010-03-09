@@ -16,48 +16,52 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-"""Filesystem access to Subversion repositories.
+"""
+Note about Unicode:
+    
+  The Subversion bindings are not unicode-aware and they expect to
+  receive UTF-8 encoded `string` parameters,
 
-'''Note about Unicode:'''
+  On the other hand, all paths manipulated by Trac are `unicode` objects.
 
-The Subversion bindings are not unicode-aware and they expect to
-receive UTF-8 encoded `string` parameters,
+  Therefore:
 
-On the other hand, all paths manipulated by Trac are `unicode` objects.
+   * before being handed out to SVN, the Trac paths have to be encoded to
+     UTF-8, using `_to_svn()`
+   * before being handed out to Trac, a SVN path has to be decoded from
+     UTF-8, using `_from_svn()`
 
-Therefore:
+  Whenever a value has to be stored as utf8, we explicitly mark the
+  variable name with "_utf8", in order to avoid any possible confusion.
 
- * before being handed out to SVN, the Trac paths have to be encoded to
-   UTF-8, using `_to_svn()`
- * before being handed out to Trac, a SVN path has to be decoded from
-   UTF-8, using `_from_svn()`
-
-Whenever a value has to be stored as utf8, we explicitly mark the
-variable name with "_utf8", in order to avoid any possible confusion.
-
-Warning:
-  `SubversionNode.get_content()` returns an object from which one can read
-  a stream of bytes. NO guarantees can be given about what that stream of
-  bytes represents. It might be some text, encoded in some way or another.
-  SVN properties __might__ give some hints about the content, but they
-  actually only reflect the beliefs of whomever set those properties...
+  Warning: `SubversionNode.get_content` returns an object from which one
+           can read a stream of bytes.
+           NO guarantees can be given about what that stream of bytes
+           represents.
+           It might be some text, encoded in some way or another.
+           SVN properties __might__ give some hints about the content,
+           but they actually only reflect the beliefs of whomever set
+           those properties...
 """
 
 import os.path
+import time
 import weakref
 import posixpath
+from datetime import datetime
 
 from trac.config import ListOption
 from trac.core import *
-from trac.env import ISystemInfoProvider
 from trac.versioncontrol import Changeset, Node, Repository, \
                                 IRepositoryConnector, \
                                 NoSuchChangeset, NoSuchNode
 from trac.versioncontrol.cache import CachedRepository
+from trac.versioncontrol.svn_authz import SubversionAuthorizer
 from trac.util import embedded_numbers
+from trac.util.compat import sorted
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
-from trac.util.datefmt import from_utimestamp
+from trac.util.datefmt import utc
 
 
 application_pool = None
@@ -170,7 +174,7 @@ class Pool(object):
 
     def assert_valid(self):
         """Assert that this memory_pool is still valid."""
-        assert self.valid()
+        assert self.valid();
 
     def clear(self):
         """Clear embedded memory pool. Invalidate all subpools."""
@@ -211,7 +215,7 @@ class Pool(object):
             # are destroyed
             self._weakref = weakref.ref(self._parent_pool._is_valid,
                                         lambda x: \
-                                        _mark_weakpool_invalid(weakself))
+                                        _mark_weakpool_invalid(weakself));
 
         # mark pool as valid
         self._is_valid = lambda: 1
@@ -228,19 +232,9 @@ class Pool(object):
                 del self._weakref
 
 
-class SvnCachedRepository(CachedRepository):
-    """Subversion-specific cached repository, zero-pads revision numbers
-    in the cache tables.
-    """
-    def db_rev(self, rev):
-        return '%010d' % rev
-
-    def rev_db(self, rev):
-        return int(rev or 0)
-
 class SubversionConnector(Component):
 
-    implements(ISystemInfoProvider, IRepositoryConnector)
+    implements(IRepositoryConnector)
 
     branches = ListOption('svn', 'branches', 'trunk,branches/*', doc=
         """Comma separated list of paths categorized as branches.
@@ -261,6 +255,7 @@ class SubversionConnector(Component):
 
     def __init__(self):
         self._version = None
+        
         try:
             _import_svn()
             self.log.debug('Subversion bindings imported')
@@ -268,22 +263,8 @@ class SubversionConnector(Component):
             self.error = e
             self.log.info('Failed to load Subversion bindings', exc_info=True)
         else:
-            version = (core.SVN_VER_MAJOR, core.SVN_VER_MINOR,
-                       core.SVN_VER_MICRO)
-            self._version = '%d.%d.%d' % version + core.SVN_VER_TAG
-            if version[0] < 1:
-                self.error = _("Subversion >= 1.0 required, found %(version)s",
-                               version=self._version)
             Pool()
 
-    # ISystemInfoProvider methods
-    
-    def get_system_info(self):
-        if self._version is not None:
-            yield 'Subversion', self._version
-        
-    # IRepositoryConnector methods
-    
     def get_supported_types(self):
         prio = 1
         if self.error:
@@ -292,38 +273,55 @@ class SubversionConnector(Component):
         yield ("svnfs", prio*4)
         yield ("svn", prio*2)
 
-    def get_repository(self, type, dir, params):
+    def get_repository(self, type, dir, authname):
         """Return a `SubversionRepository`.
 
         The repository is wrapped in a `CachedRepository`, unless `type` is
         'direct-svnfs'.
         """
-        params.update(tags=self.tags, branches=self.branches)
-        fs_repos = SubversionRepository(dir, params, self.log)
+        if not self._version:
+            self._version = self._get_version()
+            self.env.systeminfo.append(('Subversion', self._version))
+        fs_repos = SubversionRepository(dir, None, self.log,
+                                        {'tags': self.tags,
+                                         'branches': self.branches})
         if type == 'direct-svnfs':
             repos = fs_repos
         else:
-            repos = SvnCachedRepository(self.env, fs_repos, self.log)
+            repos = CachedRepository(self.env.get_db_cnx, fs_repos, None,
+                                     self.log)
             repos.has_linear_changesets = True
+        if authname:
+            authz = SubversionAuthorizer(self.env, weakref.proxy(repos),
+                                         authname)
+            repos.authz = fs_repos.authz = authz
         return repos
+
+    def _get_version(self):
+        version = (core.SVN_VER_MAJOR, core.SVN_VER_MINOR, core.SVN_VER_MICRO)
+        version_string = '%d.%d.%d' % version + core.SVN_VER_TAG
+        if version[0] < 1:
+            raise TracError(_("Subversion >= 1.0 required: Found %(version)s",
+                              version=version_string))
+        return version_string
 
 
 class SubversionRepository(Repository):
     """Repository implementation based on the svn.fs API."""
 
-    def __init__(self, path, params, log):
+    def __init__(self, path, authz, log, options={}):
         self.log = log
+        self.options = options
         self.pool = Pool()
         
         # Remove any trailing slash or else subversion might abort
         if isinstance(path, unicode):
+            self.path = path
             path_utf8 = path.encode('utf-8')
         else: # note that this should usually not happen (unicode arg expected)
-            path_utf8 = to_unicode(path).encode('utf-8')
-
+            self.path = to_unicode(path)
+            path_utf8 = self.path.encode('utf-8')
         path_utf8 = os.path.normpath(path_utf8).replace('\\', '/')
-        self.path = path_utf8.decode('utf-8')
-        
         root_path_utf8 = repos.svn_repos_find_root_path(path_utf8, self.pool())
         if root_path_utf8 is None:
             raise TracError(_("%(path)s does not appear to be a Subversion "
@@ -337,11 +335,10 @@ class SubversionRepository(Repository):
                               svn_error=exception_to_unicode(e)))
         self.fs_ptr = repos.svn_repos_fs(self.repos)
         
-        self.uuid = fs.get_uuid(self.fs_ptr, self.pool())
-        self.base = 'svn:%s:%s' % (self.uuid, _from_svn(root_path_utf8))
-        name = 'svn:%s:%s' % (self.uuid, self.path)
+        uuid = fs.get_uuid(self.fs_ptr, self.pool())
+        name = 'svn:%s:%s' % (uuid, _from_svn(path_utf8))
 
-        Repository.__init__(self, name, params, log)
+        Repository.__init__(self, name, authz, log)
 
         # if root_path_utf8 is shorter than the path_utf8, the difference is
         # this scope (which always starts with a '/')
@@ -395,12 +392,9 @@ class SubversionRepository(Repository):
             self.pool.destroy()
         self.repos = self.fs_ptr = self.pool = None
 
-    def get_base(self):
-        return self.base
-        
     def _get_tags_or_branches(self, paths):
         """Retrieve known branches or tags."""
-        for path in self.params.get(paths, []):
+        for path in self.options.get(paths, []):
             if path.endswith('*'):
                 folder = posixpath.dirname(path)
                 try:
@@ -427,22 +421,15 @@ class SubversionRepository(Repository):
         for n in self._get_tags_or_branches('tags'):
             yield 'tags', n.path, n.created_path, n.created_rev
 
-    def get_path_url(self, path, rev):
-        url = self.params.get('url', '').rstrip('/')
-        if url:
-            if not path or path == '/':
-                return url
-            return url + '/' + path.lstrip('/')
-    
     def get_changeset(self, rev):
         rev = self.normalize_rev(rev)
-        return SubversionChangeset(self, rev, self.scope, self.pool)
-
-    def get_changeset_uid(self, rev):
-        return (self.uuid, rev)
+        return SubversionChangeset(rev, self.authz, self.scope,
+                                   self.fs_ptr, self.pool)
 
     def get_node(self, path, rev=None):
         path = path or ''
+        self.authz.assert_permission(posixpath.join(self.scope,
+                                                    path.strip('/')))
         if path and path[-1] == '/':
             path = path[:-1]
 
@@ -493,6 +480,8 @@ class SubversionRepository(Repository):
                 if rev < end:
                     break
                 path = _from_svn(path_utf8)
+                if not self.authz.has_permission(path):
+                    break
                 yield path, rev
         del tmp1
         del tmp2
@@ -627,8 +616,7 @@ class SubversionRepository(Repository):
             e_ptr, e_baton = delta.make_editor(editor, subpool())
             old_root = fs.revision_root(self.fs_ptr, old_rev, subpool())
             new_root = fs.revision_root(self.fs_ptr, new_rev, subpool())
-            def authz_cb(root, path, pool):
-                return 1
+            def authz_cb(root, path, pool): return 1
             text_deltas = 0 # as this is anyway re-done in Diff.py...
             entry_props = 0 # "... typically used only for working copy updates"
             repos.svn_repos_dir_delta(old_root,
@@ -668,7 +656,9 @@ class SubversionRepository(Repository):
 class SubversionNode(Node):
 
     def __init__(self, path, rev, repos, pool=None, parent_root=None):
+        self.repos = repos
         self.fs_ptr = repos.fs_ptr
+        self.authz = repos.authz
         self.scope = repos.scope
         self._scoped_path_utf8 = _to_svn(self.scope, path)
         self.pool = Pool(pool)
@@ -699,7 +689,7 @@ class SubversionNode(Node):
             self.created_rev, self.created_path = rev, path
         self.rev = self.created_rev
         # TODO: check node id
-        Node.__init__(self, repos, path, self.rev, _kindmap[node_type])
+        Node.__init__(self, path, self.rev, _kindmap[node_type])
 
     def get_content(self):
         if self.isdir:
@@ -718,6 +708,9 @@ class SubversionNode(Node):
         entries = fs.dir_entries(self.root, self._scoped_path_utf8, pool())
         for item in entries.keys():
             path = posixpath.join(self.path, _from_svn(item))
+            if not self.authz.has_permission(posixpath.join(self.scope,
+                                                            path.strip('/'))):
+                continue
             yield SubversionNode(path, self._requested_rev, self.repos,
                                  self.pool, self.root)
 
@@ -792,7 +785,8 @@ class SubversionNode(Node):
                                  core.SVN_PROP_REVISION_DATE, self.pool())
         if not _date:
             return None
-        return from_utimestamp(core.svn_time_from_cstring(_date, self.pool()))
+        ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
+        return datetime.fromtimestamp(ts, utc)
 
     def _get_prop(self, name):
         return fs.node_prop(self.root, self._scoped_path_utf8, name,
@@ -841,10 +835,11 @@ class SubversionNode(Node):
 
 class SubversionChangeset(Changeset):
 
-    def __init__(self, repos, rev, scope, pool=None):
+    def __init__(self, rev, authz, scope, fs_ptr, pool=None):
         self.rev = rev
+        self.authz = authz
         self.scope = scope
-        self.fs_ptr = repos.fs_ptr
+        self.fs_ptr = fs_ptr
         self.pool = Pool(pool)
         try:
             message = self._get_prop(core.SVN_PROP_REVISION_LOG)
@@ -856,16 +851,16 @@ class SubversionChangeset(Changeset):
         author = author and to_unicode(author, 'utf-8')
         _date = self._get_prop(core.SVN_PROP_REVISION_DATE)
         if _date:
-            ts = core.svn_time_from_cstring(_date, self.pool())
-            date = from_utimestamp(ts)
+            ts = core.svn_time_from_cstring(_date, self.pool()) / 1000000
+            date = datetime.fromtimestamp(ts, utc)
         else:
             date = None
-        Changeset.__init__(self, repos, rev, message, author, date)
+        Changeset.__init__(self, rev, message, author, date)
 
     def get_properties(self):
         props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
         properties = {}
-        for k, v in props.iteritems():
+        for k,v in props.iteritems():
             if k not in (core.SVN_PROP_REVISION_LOG,
                          core.SVN_PROP_REVISION_AUTHOR,
                          core.SVN_PROP_REVISION_DATE):
@@ -887,10 +882,11 @@ class SubversionChangeset(Changeset):
         changes = []
         revroots = {}
         for path_utf8, change in editor.changes.items():
-            new_path = _from_svn(path_utf8)
+            path = _from_svn(path_utf8)
 
             # Filtering on `path`
-            if not _is_path_within_scope(self.scope, new_path):
+            if not (_is_path_within_scope(self.scope, path) and
+                    self.authz.has_permission(path)):
                 continue
 
             path_utf8 = change.path
@@ -900,14 +896,17 @@ class SubversionChangeset(Changeset):
             base_rev = change.base_rev
 
             # Ensure `base_path` is within the scope
-            if not _is_path_within_scope(self.scope, base_path):
+            if not (_is_path_within_scope(self.scope, base_path) and
+                    self.authz.has_permission(base_path)):
                 base_path, base_rev = None, -1
 
             # Determine the action
             if not path:                # deletion
-                if new_path:
+                if base_path:
+                    if base_path in deletions:
+                        continue # duplicates on base_path are possible (#3778)
                     action = Changeset.DELETE
-                    deletions[new_path.lstrip('/')] = idx
+                    deletions[base_path] = idx
                 elif self.scope == '/': # root property change
                     action = Changeset.EDIT
                 else:                   # deletion outside of scope, ignore
@@ -916,7 +915,7 @@ class SubversionChangeset(Changeset):
                 action = Changeset.ADD
                 if base_path and base_rev:
                     action = Changeset.COPY
-                    copies[base_path.lstrip('/')] = idx
+                    copies[base_path] = idx
             else:
                 action = Changeset.EDIT
                 # identify the most interesting base_path/base_rev
@@ -936,15 +935,13 @@ class SubversionChangeset(Changeset):
                     base_path, base_rev = cbase_path, cbase_rev
 
             kind = _kindmap[change.item_kind]
-            path = _path_within_scope(self.scope, new_path or base_path)
+            path = _path_within_scope(self.scope, path or base_path)
             base_path = _path_within_scope(self.scope, base_path)
             changes.append([path, kind, action, base_path, base_rev])
             idx += 1
 
         moves = []
-        # a MOVE is a COPY whose `base_path` corresponds to a `new_path`
-        # which has been deleted
-        for k, v in copies.items():
+        for k,v in copies.items():
             if k in deletions:
                 changes[v][2] = Changeset.MOVE
                 moves.append(deletions[k])

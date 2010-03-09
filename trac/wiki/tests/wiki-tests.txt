@@ -9,13 +9,6 @@ This should be '''''bold and italic'''''
 This should be <strong><i>bold and italic</i></strong>
 </p>
 ------------------------------
-============================== Problematic markup: comma-separated list with a time + bold markup
-23:59,'''test''',123
-------------------------------
-<p>
-23:59,<strong>test</strong>,123
-</p>
-------------------------------
 ============================== Consecutive bold + italic markup
 '''''one''''', '''''two''''', '''''three''''', '''''four'''''
 ------------------------------
@@ -76,12 +69,6 @@ italic
 multiline</i></strong>
 </p>
 ------------------------------
-------------------------------
-<p>
-<strong><i>bold<br />
-italic<br />
-multiline</i></strong><br />
-</p>
 ============================== Problematic multiline bold italic markup
 '''''bold
 italic
@@ -163,25 +150,6 @@ Thing ![link:1 number 1], CS![link:1], ![link:bar]
 <p>
 link:1
 Thing [link:1 number 1], CS[link:1], [link:bar]
-</p>
-------------------------------
-============================== Link resolvers, alternative short form
-<link:1>
-
-Thing<link:2 and (3)>
-------------------------------
-<p>
-&lt;<a class="odd resolver" href="/thing/1">link:1</a>&gt;
-</p>
-<p>
-Thing&lt;<a class="text resolver" href="/stuff/2%20and%20%283%29">link:2 and (3)</a>&gt;
-</p>
-------------------------------
-============================== Escaping links resolvers, alternative short form
-!<link:1>
-------------------------------
-<p>
-&lt;link:1&gt;
 </p>
 ------------------------------
 ============================== Link resolvers, long form with label
@@ -336,15 +304,6 @@ Relative links are supported:
 <a class="wiki" href="/wiki/WikiStart#title">see Title</a>
 </p>
 ------------------------------
-==============================  Wiki anchors
-This is the [=#init] initialization routine: ...
-Look for [=#extra ''additional explanations''] here.
-------------------------------
-<p>
-This is the <span class="wikianchor" id="init"></span> initialization routine: ...
-Look for <span class="wikianchor" id="extra"><i>additional explanations</i></span> here.
-</p>
-------------------------------
 ==============================  Image links are now regular external links
 http://example.com/img.png?foo=bar
 ------------------------------
@@ -394,30 +353,12 @@ th:roadmap
 th:roadmap:
 [th:]
 [th: Trac Hacks]
-th:wiki:"my test spaced wiki1"
-th:"wiki:my test spaced wiki2"
-th:'wiki:"my test spaced wiki3"'
-[th:wiki:"my test spaced wiki4"]
-[th:'wiki:"my test spaced wiki5"']
-[th:"wiki:my test spaced wiki6"]
-[th:wiki:"my test spaced wiki7" My Test Spaced Wiki 7]
-[th:"wiki:my test spaced wiki8" My Test Spaced Wiki 8]
-[th:'wiki:"my test spaced wiki9"' My Test Spaced Wiki 9]
 ------------------------------
 <p>
 <a class="ext-link" href="http://trac-hacks.org/intertrac/roadmap" title="roadmap in Trac Hacks"><span class="icon"> </span>th:roadmap</a>
 <a class="ext-link" href="http://trac-hacks.org/intertrac/roadmap" title="roadmap in Trac Hacks"><span class="icon"> </span>th:roadmap</a>:
 <a class="ext-link" href="http://trac-hacks.org/intertrac/" title="Trac Hacks"><span class="icon"> </span>th</a>
 <a class="ext-link" href="http://trac-hacks.org/intertrac/" title="Trac Hacks"><span class="icon"> </span>Trac Hacks</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki1%22" title="wiki:&#34;my test spaced wiki1&#34; in Trac Hacks"><span class="icon"> </span>th:wiki:"my test spaced wiki1"</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3Amy%20test%20spaced%20wiki2" title="wiki:my test spaced wiki2 in Trac Hacks"><span class="icon"> </span>th:"wiki:my test spaced wiki2"</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki3%22" title="wiki:&#34;my test spaced wiki3&#34; in Trac Hacks"><span class="icon"> </span>th:'wiki:"my test spaced wiki3"'</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki4%22" title="wiki:&#34;my test spaced wiki4&#34; in Trac Hacks"><span class="icon"> </span>th:wiki:"my test spaced wiki4"</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki5%22" title="wiki:&#34;my test spaced wiki5&#34; in Trac Hacks"><span class="icon"> </span>th:wiki:"my test spaced wiki5"</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3Amy%20test%20spaced%20wiki6" title="wiki:my test spaced wiki6 in Trac Hacks"><span class="icon"> </span>th:wiki:my test spaced wiki6</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki7%22" title="wiki:&#34;my test spaced wiki7&#34; in Trac Hacks"><span class="icon"> </span>My Test Spaced Wiki 7</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3Amy%20test%20spaced%20wiki8" title="wiki:my test spaced wiki8 in Trac Hacks"><span class="icon"> </span>My Test Spaced Wiki 8</a>
-<a class="ext-link" href="http://trac-hacks.org/intertrac/wiki%3A%22my%20test%20spaced%20wiki9%22" title="wiki:&#34;my test spaced wiki9&#34; in Trac Hacks"><span class="icon"> </span>My Test Spaced Wiki 9</a>
 </p>
 ------------------------------
 ============================== Another arbitrary protocol Link
@@ -434,31 +375,20 @@ rfc-2396.compatible://link
 </p>
 ------------------------------
 ============================== Link resolver counter examples
-Test:[[BR]] There should be a
-line break
+Test:[[BR]] There should be a line break
 
 Other test:'''bold text''' should be bold
 ------------------------------
 <p>
-Test:<br /> There should be a
-line break
+Test:<br /> There should be a line break
 </p>
 <p>
 Other test:<strong>bold text</strong> should be bold
 </p>
 ------------------------------
-Test:  There should be a
-line break
+Test:  There should be a line break
 
 Other test:<strong>bold text</strong> should be bold
-------------------------------
-<p>
-Test:<br /> There should be a<br />
-line break<br />
-</p>
-<p>
-Other test:<strong>bold text</strong> should be bold<br />
-</p>
 ============================== Link resolver counter example
 '''Note:'''
 ------------------------------
@@ -581,45 +511,6 @@ Paragraph
 ------------------------------
  […]
 Paragraph
-============================== Wiki processor, compact declaration
-{{{#!default
-Preformatted text.
-}}}
-Paragraph
-{{{#!default}}} just normal inline code.
-------------------------------
-<pre class="wiki">Preformatted text.
-</pre><p>
-Paragraph
-<tt>#!default</tt> just normal inline code.
-</p>
-------------------------------
- […]
-Paragraph
-<tt>#!default</tt> just normal inline code.
-============================== Wiki processor, prefix removal
-  {{{
-  Here we keep the space prefix, as there's at least one line not having it.
-Preformatted text.
-  }}}
-Paragraph
-  {{{#!default
-  Here we remove the space prefix, as all lines have it.
-  Preformatted text.
-  }}}
-Paragraph
-------------------------------
-<pre class="wiki">  Here we keep the space prefix, as there's at least one line not having it.
-Preformatted text.
-</pre><p>
-Paragraph
-</p>
-<pre class="wiki">Here we remove the space prefix, as all lines have it.
-Preformatted text.
-</pre><p>
-Paragraph
-</p>
-------------------------------
 ============================== Wiki processor counter example
 {{{
 #!/bin/sh
@@ -662,90 +553,16 @@ Paragraph
 <div>Click me</div>
 ------------------------------
  […]
-============================== HTML comment wiki processor
-Before
-{{{
-#!htmlcomment
-This is a comment <em>with embedded tags &amp; entities</em>
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This is a comment <em>with embedded tags &amp; entities</em>
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment ends with "-"
-Before
-{{{
-#!htmlcomment
-This comment ends with -
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<!--
-This comment ends with -
--->
-<p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== HTML comment wiki processor, comment contains "--"
-Before
-{{{
-#!htmlcomment
-The character sequence -- is not allowed in comments
-}}}
-After
-------------------------------
-<p>
-Before
-</p>
-<div class="system-message"><strong>Error: Forbidden character sequence "--" in htmlcomment wiki code block</strong></div><p>
-After
-</p>
-------------------------------
-Before
- […]
-After
-============================== WikiProcessor default arguments
-[[div(Div has 'wikipage' class.)]]
-[[table()]]
-Table must have 'wiki' class.
-------------------------------
-<p>
-</p><div class="wikipage"><p>
-Div has 'wikipage' class.
-</p>
-</div><p>
-</p><table class="wiki"></table><p>
-Table must have 'wiki' class.
-</p>
-------------------------------
 ============================== div and span wiki processors
 And now it's [[span('''TIME FOR BED!,class=important)]]. Really.
 {{{
 #!div ; class=important
 Go ahead, edit it freely.
 
- {{{
- #!div; style="border: 2pt solid blue; margin: 1em; padding: .5em"; class=demo
- And now it's [[span('''TIME FOR BED! ''',class=important)]]. Really.
- }}}
+{{{
+#!div; style="border: 2pt solid blue; margin: 1em; padding: .5em"; class=demo
+And now it's [[span('''TIME FOR BED! ''',class=important)]]. Really.
+}}}
 etc.
 }}}
 Done.
@@ -785,23 +602,6 @@ Done.
 ------------------------------
  […]
 Done.
-============================== span wiki processor
-{{{
-#!span style="background: #ffd"
-This is a multiline span
- - only ''inline'' wiki formatting here, of course
- - this is only a span after all!
-}}}
-TODO: should be expanded in inline mode
-------------------------------
-<span style="background: #ffd">This is a multiline span
- - only <i>inline</i> wiki formatting here, of course
- - this is only a span after all!</span><p>
-TODO: should be expanded in inline mode
-</p>
-------------------------------
- […]
-TODO: should be expanded in inline mode
 ============================== div and Span wiki processors
 {{{
 #!div ; style="background: #aeaeae"
@@ -824,28 +624,6 @@ Done.
 
         Wiki Macros
 
-============================== Macro help shortcut (with content)
-[[HelloWorld?(hej hopp)]]
-------------------------------
-<p>
-</p><div class="trac-macrolist"><h3 id="HelloWorld-macro"><code>[[HelloWorld]]</code></h3><p>
-A dummy macro used by the unit test.
-</p>
-</div><p>
-</p>
-------------------------------
-[[HelloWorld?(...)]]
-============================== Macro help shortcut (no content)
-[[HelloWorld?]]
-------------------------------
-<p>
-</p><div class="trac-macrolist"><h3 id="HelloWorld-macro"><code>[[HelloWorld]]</code></h3><p>
-A dummy macro used by the unit test.
-</p>
-</div><p>
-</p>
-------------------------------
-[[HelloWorld?]]
 ============================== Macro with arguments (leading)
 [[HelloWorld(hej hopp)]]
 ------------------------------
@@ -936,21 +714,6 @@ Hello World, args = hej hopp Hello World, args = hej hopp2 # Test non greedy mat
 </p>
 ------------------------------
 [[None(...)]] nada
-============================== WikiProcessor defined as a macro
-[[WikiProcessorSample(inlined content)]]
-{{{#!WikiProcessorSample arg1=this arg2="the second argument"
-multiline
-content
-}}}
-------------------------------
-<p>
-Called as a macro: inlined content
-</p>
-Called as a processor with params: <dl><dt>arg1</dt><dd>this</dd><dt>arg2</dt><dd>the second argument</dd></dl>multiline
-content
-------------------------------
-[[WikiProcessorSample(...)]]
- […]
 ============================== Inlined HTML wiki processor
 Inline [[html(<B> Test </B>)]] text
 ------------------------------
@@ -1045,32 +808,6 @@ Inline  comment
 <h2 id="a10tips">10 tips</h2>
 ------------------------------
 == 10 tips ==
-============================== Relaxed heading
-= Title
-== Chapter
-=== Section
-==== Subsection
-===== Subsubsection #h5
-====== h6
-======== but no h7
-------------------------------
-<h1 id="Title">Title</h1>
-<h2 id="Chapter">Chapter</h2>
-<h3 id="Section">Section</h3>
-<h4 id="Subsection">Subsection</h4>
-<h5 id="h5">Subsubsection</h5>
-<h6 id="h6">h6</h6>
-<p>
-======== but no h7
-</p>
-------------------------------
-= Title
-== Chapter
-=== Section
-==== Subsection
-===== Subsubsection #h5
-====== h6
-======== but no h7
 ============================================================
 
              Lists
@@ -1150,7 +887,7 @@ boo baz
 <ul><li>nested item 1
 </li><li>nested item 2
 nested item 2 continued
-</li></ul>Subitem 1 continued
+</li></ul></li><li>Subitem 1 continued
 </li></ul></li><li>Subitem 2
 Subitem 2 continued
 </li><li>Subitem 3
@@ -1216,100 +953,6 @@ Paragraph
     1. But this line at the second level, which
        is also continued on the next line, does not.
 Paragraph
-============================== List with explicit numerical start > 9
-'''First steps'''
-
- 1. Do this
- 2. Do that
- ...
- 9. Then this
-
-'''Next steps'''
-
- 10. Now this must work
- 11. This is ok again..
- ...
- 19. More steps
-
-'''And more'''
-
- 20. This is ok
- 21. This ok too
-
- ...
-------------------------------
-<p>
-<strong>First steps</strong>
-</p>
-<ol><li>Do this
-</li><li>Do that
-...
-</li><li>Then this
-</li></ol><p>
-<strong>Next steps</strong>
-</p>
-<ol start="10"><li>Now this must work
-</li><li>This is ok again..
-...
-</li><li>More steps
-</li></ol><p>
-<strong>And more</strong>
-</p>
-<ol start="20"><li>This is ok
-</li><li>This ok too
-</li></ol><blockquote>
-<p>
-...
-</p>
-</blockquote>
-------------------------------
-============================== List with explicit loweralpha start > 'a.'
-'''First steps'''
-
- a. Do this
- b. Do that
- ...
- e. Then this
-
-'''Next steps'''
-
- f. restarts at "f"
- g. follows with "g"
- ...
- h. More steps
-
-'''And more'''
-
- i. Now this is wrong
- j. (just never restart with "i." or "I.")
-
- ...
-------------------------------
-<p>
-<strong>First steps</strong>
-</p>
-<ol class="loweralpha"><li>Do this
-</li><li>Do that
-...
-</li><li>Then this
-</li></ol><p>
-<strong>Next steps</strong>
-</p>
-<ol class="loweralpha" start="6"><li>restarts at "f"
-</li><li>follows with "g"
-...
-</li><li>More steps
-</li></ol><p>
-<strong>And more</strong>
-</p>
-<ol class="lowerroman"><li>Now this is wrong
-</li><li>(just never restart with "i." or "I.")
-</li></ol><blockquote>
-<p>
-...
-</p>
-</blockquote>
-------------------------------
 ============================== Numbered lists counter-examples
  This will not start a new numbered
  list. There's more than one character
@@ -1370,79 +1013,31 @@ item iii.
 Paragraph
 </p>
 ------------------------------
-============================== Lists and partial inline markup (#3232)
-This line ''does not close italic.
-
-No problems though as it resets. Lists won't though:
- * '''Not closing bold...
- * Bold Continues here...
-
-This will be bold too as will the rest of the page.
-------------------------------
-<p>
-This line <i>does not close italic.
-</i></p>
-<p>
-No problems though as it resets. Lists won't though:
-</p>
-<ul><li><strong>Not closing bold...
-</strong></li><li>Bold Continues here...
-</li></ul><p>
-This will be bold too as will the rest of the page.
-</p>
-------------------------------
-This line <i>does not close italic.
-
-No problems though as it resets. Lists won't though:
- * <strong>Not closing bold...
- * Bold Continues here...
-
-This will be bold too as will the rest of the page.</strong></i>
-============================== Lists starting at beginning of line
-- item 1
-- item 2
-  - sub 2.1
-  - sub 2.2
-
-a. item A
-b. item B
-Paragraph
-------------------------------
-<ul><li>item 1
-</li><li>item 2
-<ul><li>sub 2.1
-</li><li>sub 2.2
-</li></ul></li></ul><ol class="loweralpha"><li>item A
-</li><li>item B
-</li></ol><p>
-Paragraph
-</p>
-------------------------------
 ============================== Simple definition list
  term:: definition
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition
+<dl><dt>term</dt><dd>definition
 </dd></dl>
 ------------------------------
 term:: definition
 ============================== Tricky definition list
  term:: definition:: text
 ------------------------------
-<dl class="wiki"><dt>term</dt><dd>definition:: text
+<dl><dt>term</dt><dd>definition:: text
 </dd></dl>
 ------------------------------
 term:: definition:: text
 ============================== Verbatim term in definition list
  `term`:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
 ============================== Another verbatim term in definition list
  {{{term}}}:: definition
 ------------------------------
-<dl class="wiki"><dt><tt>term</tt></dt><dd>definition
+<dl><dt><tt>term</tt></dt><dd>definition
 </dd></dl>
 ------------------------------
 <tt>term</tt>:: definition
@@ -1451,7 +1046,7 @@ term:: definition:: text
                  ''formatted''
                  definition
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <i>formatted</i>
 definition
 </dd></dl>
@@ -1483,7 +1078,7 @@ term::definition
  complex topic:: multiline
                  `not:: a dl`
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------
@@ -1493,7 +1088,7 @@ complex topic:: multiline
  complex topic:: multiline
                  {{{not:: a dl}}}
 ------------------------------
-<dl class="wiki"><dt>complex topic</dt><dd>multiline
+<dl><dt>complex topic</dt><dd>multiline
 <tt>not:: a dl</tt>
 </dd></dl>
 ------------------------------
@@ -1540,49 +1135,6 @@ in:
 out:
 || RPC# || parameter len || ..... parameter ..... ||
 ----
-============================== Simple Table with colspan
-in:
-|| name |||| parameter info ||
-|| RPC# || parameter len || ..... parameter ..... ||
-|||||| end ||
-|| !#8977 || this should also work ||||
-----
-------------------------------
-<p>
-in:
-</p>
-<table class="wiki">
-<tr><td> name </td><td colspan="2"> parameter info 
-</td></tr><tr><td> RPC# </td><td> parameter len </td><td> ..... parameter ..... 
-</td></tr><tr><td colspan="3"> end 
-</td></tr><tr><td> #8977 </td><td> this should also work </td><td>
-</td></tr></table>
-<hr />
-------------------------------
-in:
-|| name |||| parameter info ||
-|| RPC# || parameter len || ..... parameter ..... ||
-|||||| end ||
-|| #8977 || this should also work ||||
-----
-============================== Table headings (plus colspan)
-||= this is a header =||||= another header =|| not a header ||
-||= also a header =|| some non- || header cells ||= header =||
-------------------------------
-<table class="wiki">
-<tr><th> this is a header </th><th colspan="2"> another header </th><td> not a header 
-</td></tr><tr><th> also a header </th><td> some non- </td><td> header cells </td><th> header 
-</th></tr></table>
-------------------------------
-============================== Table headings (plus alignment)
-||=left align =||=default=||= default =||= right align=||=  center  =||
-||left align ||default|| default || right align||  center  ||
-------------------------------
-<table class="wiki">
-<tr><th style="text-align: left">left align </th><th>default</th><th> default </th><th style="text-align: right"> right align</th><th style="text-align: center">  center  
-</th></tr><tr><td style="text-align: left">left align </td><td>default</td><td> default </td><td style="text-align: right"> right align</td><td style="text-align: center">  center  
-</td></tr></table>
-------------------------------
 ============================== Indented tables, multiple columns
 || a || b ||
 
@@ -1610,333 +1162,6 @@ in:
   || a || b ||
 
 || a || b ||
-============================== Table escaping
-|| a !|| b ||
-
-!|| a !|| b !||
-------------------------------
-<table class="wiki">
-<tr><td> a || b 
-</td></tr></table>
-<p>
-|| a || b ||
-</p>
-------------------------------
-|| a || b ||
-
-|| a || b ||
-============================== Table with row continuation
-|| a very long cell, with lots of content || \
-|| \
-|| a second cell, on the same row ||
-||
-|| Another row || \
-|| Another row ||
-|| normal || row ||
-|| a very long cell, with lots of content || \
-|| a second cell, on the same row ||
-|| normal || row ||
-|||| \
-|| this should also work ||
-------------------------------
-<table class="wiki">
-<tr><td> a very long cell, with lots of content 
-
-</td><td> a second cell, on the same row 
-</td></tr><tr>
-</tr><tr><td> Another row 
-</td><td> Another row 
-</td></tr><tr><td> normal </td><td> row 
-</td></tr><tr><td> a very long cell, with lots of content 
-</td><td> a second cell, on the same row 
-</td></tr><tr><td> normal </td><td> row 
-</td></tr><tr><td>
-</td><td> this should also work 
-</td></tr></table>
-------------------------------
-============================== Table with !#th and !#td wiki processors
-{{{
-#!th style="text-align: left"
- - some header
-}}}
-{{{
-#!th
- - another header
- - with more rows
-}}}
-||
-{{{
-#!td rowspan=2
-
-Arbitrarily big content (even an embedded table of course):
-|| A || B ||
-
- {{{
- #!div class=important
- or better, an embedded wiki paragraph, itself with a big table
- ||= A =||= B =||
-  {{{
-  #!td colspan=2
-   {{{
-   def hello():
-     print "A and B!"
-   }}}
-  }}}
- }}}
-
-}}}
-{{{
-#!td
-
-Second cell, first row
-}}}
-||
-{{{
-#!td
-
-Second cell, second row...
-}}}
-------------------------------
-<table class="wiki">
-<tr><th style="text-align: left"><ul><li>some header
-</li></ul></th><th><ul><li>another header
-</li><li>with more rows
-</li></ul></th>
-</tr><tr><td rowspan="2"><p>
-Arbitrarily big content (even an embedded table of course):
-</p>
-<table class="wiki">
-<tr><td> A </td><td> B 
-</td></tr></table>
-<div class="important"><p>
-or better, an embedded wiki paragraph, itself with a big table
-</p>
-<table class="wiki">
-<tr><th> A </th><th> B 
-</th></tr><tr><td colspan="2"><pre class="wiki">def hello():
-  print "A and B!"
-</pre></td></tr></table>
-</div></td><td><p>
-Second cell, first row
-</p>
-</td>
-</tr><tr><td><p>
-Second cell, second row...
-</p>
-</td></tr></table>
-------------------------------
-============================== Table with wiki processors, unfinished block
-{{{
-#!td style="vertical-align: top"
- - some header
-}}}
-{{{
-#!td
- - another header
- - with more rows
-||
-{{{
-#!td rowspan=2
-not another cell, but an embedded table...
-------------------------------
-<table class="wiki">
-<tr><td style="vertical-align: top"><ul><li>some header
-</li></ul></td><td><ul><li>another header
-</li><li>with more rows
-</li></ul><table class="wiki">
-<tr>
-</tr><tr><td rowspan="2"><p>
-not another cell, but an embedded table...
-</p>
-</td></tr></table>
-</td></tr></table>
-------------------------------
-============================== Table with wiki processors, wikimedia row sep
-{{{#!th   ........... 11
-Heading A
-}}}
-{{{#!th   ...........    12
-Heading B
-}}}
-|--------------------------- style="background: grey"
-{{{#!td   ........... 21
-Content A
-}}}
-{{{#!td   ...........    22
-Content B
-}}}
-------------------------------
-<table class="wiki">
-<tr><th><p>
-Heading A
-</p>
-</th><th><p>
-Heading B
-</p>
-</th></tr><tr style="background: grey">
-<td><p>
-Content A
-</p>
-</td><td><p>
-Content B
-</p>
-</td></tr></table>
-------------------------------
- […]
- […][…]
- […]
-============================== Table with wiki processors (tr, th and td)
-A very nice table:
-{{{#!table style="border: none"
-{{{#!tr ++++++++++++++++++++++++++++++++++++++++++++++ style="background: #ffd"
-    {{{#!th .......................................... style="background: #dfd"
-
-    Header A
-
-    }}}
-    {{{#!th .......................................... style="background: #dfd"
-
-    Header B
-
-    }}}
-}}}
-{{{#!tr ++++++++++++++++++++++++++++++++++++++++++++++ style="background: #fdf"
-    {{{#!td .......................................... 
-
-    Content A
-
-    }}}
-    {{{#!td .......................................... 
-
-    Content B
-
-    }}}
-}}}
-}}}
-Paragraph
-------------------------------
-<p>
-A very nice table:
-</p>
-<table style="border: none" class="wiki"><tr style="background: #ffd"><th style="background: #dfd"><p>
-Header A
-</p>
-</th><th style="background: #dfd"><p>
-Header B
-</p>
-</th></tr><tr style="background: #fdf"><td><p>
-Content A
-</p>
-</td><td><p>
-Content B
-</p>
-</td></tr></table><p>
-Paragraph
-</p>
-------------------------------
-A very nice table:
- […]
-Paragraph
-============================== Table with wiki processors (table but no cells)
-A very nice table:
-{{{#!table style="border: none"
-
-This table processor doesn't contain any cell, this is an error.
-}}}
-Paragraph
-------------------------------
-<p>
-A very nice table:
-</p>
-<div class="system-message"><strong>!#table must contain at least one table cell (and table cells only)</strong></div><p>
-Paragraph
-</p>
-------------------------------
-A very nice table:
- […]
-Paragraph
-============================== Table with wiki processors (tr but no cells)
-A very nice table:
-{{{#!table style="border: none"
-
-{{{#!tr
-This tr processor doesn't contain any cell, this is an error.
-}}}
-
-}}}
-Paragraph
-------------------------------
-<p>
-A very nice table:
-</p>
-<div class="system-message"><strong>!#table must contain at least one table cell (and table cells only)</strong></div><p>
-Paragraph
-</p>
-------------------------------
-A very nice table:
- […]
-Paragraph
-============================== Table with wiki processors (table + multiple embedded tables)
-A very nice table:
-{{{#!table style="border: none"
-
-|| only one table ||
-
-|| extra table is an error||
-}}}
-Paragraph
-------------------------------
-<p>
-A very nice table:
-</p>
-<div class="system-message"><strong>!#table must contain at most one table</strong></div><p>
-Paragraph
-</p>
-------------------------------
-A very nice table:
- […]
-Paragraph
-============================== Table with wiki processors within div
-{{{#!div
-  {{{#!td rowspan=2
-  A cell can now contain any markup:
-   - lists
-   - blocks
-   - etc.
-  }}}
-  {{{#!td
-  Another cell with rich content,
-  on the same row
-  }}}
-  |-
-  {{{#!td
-  Another cell with rich content,
-  on the next row
-  }}}
-}}}
-Paragraph
-------------------------------
-<div class="wikipage"><table class="wiki">
-<tr><td rowspan="2"><p>
-A cell can now contain any markup:
-</p>
-<ul><li>lists
-</li><li>blocks
-</li><li>etc.
-</li></ul></td><td><p>
-Another cell with rich content,
-on the same row
-</p>
-</td></tr><tr>
-<td><p>
-Another cell with rich content,
-on the next row
-</p>
-</td></tr></table>
-</div><p>
-Paragraph
-</p>
-------------------------------
 ============================================================
 
          Mixed examples
@@ -1963,16 +1188,6 @@ Paragraph
  * Item 1
    * Item 2
 Another paragraph
-------------------------------
-<h1 id="Heading1">Heading 1</h1>
-<p>
-Paragraph<br />
-</p>
-<ul><li>Item 1
-<ul><li>Item 2
-</li></ul></li></ul><p>
-Another paragraph<br />
-</p>
 ============================== Heading, lists and table
 Paragraph
 ----
@@ -2003,20 +1218,6 @@ Paragraph
 ||Table||cell||
 ||Foo||Bar||Baz||
 <a class="ext-link" href="http://www.edgewall.com/"><span class="icon"> </span>http://www.edgewall.com/</a>
-------------------------------
-<p>
-Paragraph<br />
-</p>
-<hr />
-<ol><li>Item 1
-<ol start="2"><li>Item 2
-</li></ol></li></ol><table class="wiki">
-<tr><td>Table</td><td>cell
-</td></tr><tr><td>Foo</td><td>Bar</td><td>Baz
-</td></tr></table>
-<p>
-<a class="ext-link" href="http://www.edgewall.com/"><span class="icon"> </span>http://www.edgewall.com/</a><br />
-</p>
 ============================== Lists, indents and table
 
   * Bar
@@ -2097,21 +1298,20 @@ Continue on level 2.
 Paragraph.
 </p>
 ------------------------------
-============================== Citations (mail style, no consistent space)
+============================== Citations
 > This is the quoted text
 >> a nested quote
 A comment on the above
 >> start 2nd level
->> continue 2nd level
 > first level
 ------------------------------
 <blockquote class="citation">
 <p>
-This is the quoted text
+ This is the quoted text
 </p>
 <blockquote class="citation">
 <p>
-a nested quote
+ a nested quote
 </p>
 </blockquote>
 </blockquote>
@@ -2121,12 +1321,11 @@ A comment on the above
 <blockquote class="citation">
 <blockquote class="citation">
 <p>
-start 2nd level
-continue 2nd level
+ start 2nd level
 </p>
 </blockquote>
 <p>
-first level
+ first level
 </p>
 </blockquote>
 ------------------------------
@@ -2134,173 +1333,4 @@ first level
 &gt;&gt; a nested quote
 A comment on the above
 &gt;&gt; start 2nd level
-&gt;&gt; continue 2nd level
 &gt; first level
-------------------------------
-<blockquote class="citation">
-<p>
-This is the quoted text<br />
-</p>
-<blockquote class="citation">
-<p>
-a nested quote<br />
-</p>
-</blockquote>
-</blockquote>
-<p>
-A comment on the above<br />
-</p>
-<blockquote class="citation">
-<blockquote class="citation">
-<p>
-start 2nd level<br />
-continue 2nd level<br />
-</p>
-</blockquote>
-<p>
-first level<br />
-</p>
-</blockquote>
-============================== Citations (reply to style, consistent space)
- A quote
-A paragraph
- definition :: term
-
-> A quote
->A paragraph
-> definition :: term
-
->  A quote
-> A paragraph
->  definition :: term
-------------------------------
-<blockquote>
-<p>
-A quote
-</p>
-</blockquote>
-<p>
-A paragraph
-<dl class="wiki"><dt>definition</dt><dd>term
-</p>
-</dd></dl>
-<blockquote class="citation">
-<blockquote>
-<p>
-A quote
-</p>
-</blockquote>
-<p>
-A paragraph
-<dl class="wiki"><dt>definition</dt><dd>term
-</p>
-</dd></dl>
-</blockquote>
-<blockquote class="citation">
-<blockquote>
-<p>
-A quote
-</p>
-</blockquote>
-<p>
-A paragraph
-<dl class="wiki"><dt>definition</dt><dd>term
-</p>
-</dd></dl>
-</blockquote>
-------------------------------
-A quote
-A paragraph
- definition :: term
-
-&gt; A quote
-&gt;A paragraph
-&gt; definition :: term
-
-&gt;  A quote
-&gt; A paragraph
-&gt;  definition :: term
-============================== Citations of arbitrary wiki content
- - First level
-   - second level
- > - This is the quoted list, in first level item
- >   - subitem
- >
- > > a nested paragraph with a block (outside of the quoted list above as there's a paragraph sep)
- > > {{{
- > > block
- > > }}}
- > > > || nested || table ||
-Paragraph
-------------------------------
-<ul><li>First level
-<ul><li>second level
-</li></ul><blockquote class="citation">
-<ul><li>This is the quoted list, in first level item
-<ul><li>subitem
-</li></ul></li></ul><blockquote class="citation">
-<p>
-a nested paragraph with a block (outside of the quoted list above as there's a paragraph sep)
-</p>
-<pre class="wiki">block
-</pre><blockquote class="citation">
-<table class="wiki">
-<tr><td> nested </td><td> table 
-</td></tr></table>
-</blockquote>
-</blockquote>
-</blockquote>
-</li></ul><p>
-Paragraph
-</p>
-------------------------------
-- First level
-   - second level
- &gt; - This is the quoted list, in first level item
- &gt;   - subitem
- &gt;
- &gt; &gt; a nested paragraph with a block (outside of the quoted list above as there's a paragraph sep)
- &gt; &gt; {{{
- &gt; &gt; block
- &gt; &gt; }}}
- &gt; &gt; &gt; || nested || table ||
-Paragraph
-============================== Citation and follow-up block
-> a
-{{{
-b
-}}}
-> c
-------------------------------
-<blockquote class="citation">
-<p>
-a
-</p>
-</blockquote>
-<pre class="wiki">b
-</pre><blockquote class="citation">
-<p>
-c
-</p>
-</blockquote>
-------------------------------
-&gt; a
- […]
-&gt; c
-============================== Block and follow-up citation
-{{{
-> a
-b
-}}}
-> c
-------------------------------
-<pre class="wiki">&gt; a
-b
-</pre><blockquote class="citation">
-<p>
-c
-</p>
-</blockquote>
-------------------------------
- […]
-&gt; c

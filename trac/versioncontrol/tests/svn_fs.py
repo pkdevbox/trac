@@ -15,10 +15,10 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 from datetime import datetime
-import new
 import os.path
 import stat
 import shutil
+import sys
 import tempfile
 import unittest
 
@@ -31,18 +31,16 @@ except:
     has_svn = False
 
 from trac.log import logger_factory
-from trac.test import EnvironmentStub, TestSetup
+from trac.test import TestSetup
 from trac.core import TracError
 from trac.util.datefmt import utc
 from trac.versioncontrol import Changeset, Node, NoSuchChangeset
-from trac.versioncontrol.svn_fs import SvnCachedRepository, \
-                                       SubversionRepository
+from trac.versioncontrol.svn_fs import SubversionRepository
 from trac.versioncontrol import svn_fs
 
 REPOS_PATH = os.path.join(tempfile.gettempdir(), 'trac-svnrepos')
 
-HEAD = 22
-TETE = 21
+HEAD = 21
 
 
 class SubversionRepositoryTestSetup(TestSetup):
@@ -85,9 +83,14 @@ class SubversionRepositoryTestSetup(TestSetup):
         shutil.rmtree(REPOS_PATH)
 
 
-# -- Re-usable test mixins
+class SubversionRepositoryTestCase(unittest.TestCase):
 
-class NormalTests(object):
+    def setUp(self):
+        self.repos = SubversionRepository(REPOS_PATH, None,
+                                          logger_factory('test'))
+
+    def tearDown(self):
+        self.repos = None
 
     def test_repos_normalize_path(self):
         self.assertEqual('/', self.repos.normalize_path('/'))
@@ -129,8 +132,7 @@ class NormalTests(object):
         # ...
         self.assertEqual(None, self.repos.next_rev(HEAD, u'tête'))
         # test accentuated characters
-        self.assertEqual(None,
-                         self.repos.previous_rev(17, u'tête/R\xe9sum\xe9.txt'))
+        self.assertEqual(None, self.repos.previous_rev(17, u'tête/R\xe9sum\xe9.txt'))
         self.assertEqual(17, self.repos.next_rev(16, u'tête/R\xe9sum\xe9.txt'))
 
     def test_has_node(self):
@@ -143,16 +145,15 @@ class NormalTests(object):
         self.assertEqual(u'tête', node.name)
         self.assertEqual(u'/tête', node.path)
         self.assertEqual(Node.DIRECTORY, node.kind)
-        self.assertEqual(TETE, node.rev)
-        self.assertEqual(datetime(2007, 4, 30, 17, 45, 26, 234375, utc),
+        self.assertEqual(HEAD, node.rev)
+        self.assertEqual(datetime(2007,4,30,17,45,26,0,utc),
                          node.last_modified)
         node = self.repos.get_node(u'/tête/README.txt')
         self.assertEqual('README.txt', node.name)
         self.assertEqual(u'/tête/README.txt', node.path)
         self.assertEqual(Node.FILE, node.kind)
         self.assertEqual(3, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 13, 24, 58, 234643, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,13,24,58,0,utc), node.last_modified)
 
     def test_get_node_specific_rev(self):
         node = self.repos.get_node(u'/tête', 1)
@@ -160,15 +161,13 @@ class NormalTests(object):
         self.assertEqual(u'/tête', node.path)
         self.assertEqual(Node.DIRECTORY, node.kind)
         self.assertEqual(1, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 10, 0, 52, 353248, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,10,0,52,0,utc), node.last_modified)
         node = self.repos.get_node(u'/tête/README.txt', 2)
         self.assertEqual('README.txt', node.name)
         self.assertEqual(u'/tête/README.txt', node.path)
         self.assertEqual(Node.FILE, node.kind)
         self.assertEqual(2, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 13, 12, 18, 216267, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,13,12,18,0,utc), node.last_modified)
 
     def test_get_dir_entries(self):
         node = self.repos.get_node(u'/tête')
@@ -326,8 +325,7 @@ class NormalTests(object):
         self.assertEqual(expected[2], (got[2], got[3]))
         
     def test_diff_file_different_revs(self):
-        diffs = self.repos.get_changes(u'tête/README.txt', 2,
-                                       u'tête/README.txt', 3)
+        diffs = self.repos.get_changes(u'tête/README.txt', 2, u'tête/README.txt', 3)
         self._cmp_diff(((u'tête/README.txt', 2),
                         (u'tête/README.txt', 3),
                         (Node.FILE, Changeset.EDIT)), diffs.next())
@@ -386,8 +384,7 @@ class NormalTests(object):
         self.assertEqual(0, chgset.rev)
         self.assertEqual('', chgset.message)
         self.assertEqual('', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 9, 57, 41, 312767, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,9,57,41,0,utc), chgset.date)
         self.assertRaises(StopIteration, chgset.get_changes().next)
 
     def test_changeset_added_dirs(self):
@@ -395,8 +392,7 @@ class NormalTests(object):
         self.assertEqual(1, chgset.rev)
         self.assertEqual('Initial directory layout.', chgset.message)
         self.assertEqual('john', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 10, 0, 52, 353248, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,10,0,52,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual(('branches', Node.DIRECTORY, Changeset.ADD, None, -1),
@@ -412,8 +408,7 @@ class NormalTests(object):
         self.assertEqual(3, chgset.rev)
         self.assertEqual('Fixed README.\n', chgset.message)
         self.assertEqual('kate', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 13, 24, 58, 234643, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,13,24,58,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual((u'tête/README.txt', Node.FILE, Changeset.EDIT,
@@ -425,8 +420,7 @@ class NormalTests(object):
         self.assertEqual(5, chgset.rev)
         self.assertEqual('Moved directories.', chgset.message)
         self.assertEqual('kate', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 16, 25, 39, 658099, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,16,25,39,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual((u'tête/dir1/dir2', Node.DIRECTORY, Changeset.MOVE,
@@ -440,8 +434,7 @@ class NormalTests(object):
         self.assertEqual(6, chgset.rev)
         self.assertEqual('More things to read', chgset.message)
         self.assertEqual('john', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 18, 56, 46, 985846, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,18,56,46,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual((u'tête/README2.txt', Node.FILE, Changeset.COPY,
@@ -494,35 +487,16 @@ class NormalTests(object):
         chgset = self.repos.get_changeset(19)
         self.assertEqual(19, chgset.rev)
         changes = chgset.get_changes()
+        self.assertEqual((u'tête/Xprimary_proc/Xprimary_pkg.vhd', Node.FILE,
+                          Changeset.DELETE,
+                          u'tête/Xprimary_proc/Xprimary_pkg.vhd', 18),
+                         changes.next())
         self.assertEqual((u'tête/mpp_proc', Node.DIRECTORY,
                           Changeset.MOVE, u'tête/Xprimary_proc', 18),
-                         changes.next())
-        self.assertEqual((u'tête/mpp_proc/Xprimary_pkg.vhd',
-                          Node.FILE, Changeset.DELETE,
-                          u'tête/Xprimary_proc/Xprimary_pkg.vhd', 18),
                          changes.next())
         self.assertEqual((u'tête/mpp_proc/Xprimary_proc', Node.DIRECTORY,
                           Changeset.COPY, u'tête/Xprimary_proc', 18),
                          changes.next())
-        self.assertEqual((u'tête/mpp_proc/Xprimary_proc/Xprimary_pkg.vhd',
-                          Node.FILE, Changeset.DELETE,
-                          u'tête/Xprimary_proc/Xprimary_pkg.vhd', 18),
-                         changes.next())
-        self.assertRaises(StopIteration, changes.next)
-
-    def test_copy_with_deletions_below_copy(self):
-        """Regression test for #4900."""
-        chgset = self.repos.get_changeset(22)
-        self.assertEqual(22, chgset.rev)
-        changes = chgset.get_changes()
-        self.assertEqual((u'branches/v3', 'dir', 'copy',
-                          u'tête', 21), changes.next())
-        self.assertEqual((u'branches/v3/dir1', 'dir', 'delete',
-                          u'tête/dir1', 21), changes.next())
-        self.assertEqual((u'branches/v3/mpp_proc', 'dir', 'delete',
-                          u'tête/mpp_proc', 21), changes.next())
-        self.assertEqual((u'branches/v3/v2', 'dir', 'delete',
-                          u'tête/v2', 21), changes.next())
         self.assertRaises(StopIteration, changes.next)
 
     def test_changeset_utf_8(self):
@@ -531,9 +505,14 @@ class NormalTests(object):
         self.assertEqual(u'Chez moi ça marche\n', chgset.message)
         self.assertEqual(u'Jonas Borgström', chgset.author)
 
+class ScopedSubversionRepositoryTestCase(unittest.TestCase):
 
+    def setUp(self):
+        self.repos = SubversionRepository(REPOS_PATH + u'/tête', None,
+                                          logger_factory('test'))
 
-class ScopedTests(object):
+    def tearDown(self):
+        self.repos = None
 
     def test_repos_normalize_path(self):
         self.assertEqual('/', self.repos.normalize_path('/'))
@@ -545,10 +524,10 @@ class ScopedTests(object):
         self.assertEqual('dir1', self.repos.normalize_path('/dir1/'))
 
     def test_repos_normalize_rev(self):
-        self.assertEqual(TETE, self.repos.normalize_rev('latest'))
-        self.assertEqual(TETE, self.repos.normalize_rev('head'))
-        self.assertEqual(TETE, self.repos.normalize_rev(''))
-        self.assertEqual(TETE, self.repos.normalize_rev(None))
+        self.assertEqual(HEAD, self.repos.normalize_rev('latest'))
+        self.assertEqual(HEAD, self.repos.normalize_rev('head'))
+        self.assertEqual(HEAD, self.repos.normalize_rev(''))
+        self.assertEqual(HEAD, self.repos.normalize_rev(None))
         self.assertEqual(5, self.repos.normalize_rev('5'))
         self.assertEqual(5, self.repos.normalize_rev(5))
 
@@ -556,11 +535,11 @@ class ScopedTests(object):
         self.assertEqual(1, self.repos.oldest_rev)
         self.assertEqual(None, self.repos.previous_rev(0))
         self.assertEqual(1, self.repos.previous_rev(2))
-        self.assertEqual(TETE, self.repos.youngest_rev)
+        self.assertEqual(HEAD, self.repos.youngest_rev)
         self.assertEqual(2, self.repos.next_rev(1))
         self.assertEqual(3, self.repos.next_rev(2))
         # ...
-        self.assertEqual(None, self.repos.next_rev(TETE))
+        self.assertEqual(None, self.repos.next_rev(HEAD))
 
     def test_has_node(self):
         self.assertEqual(False, self.repos.has_node('/dir1', 3))
@@ -572,15 +551,13 @@ class ScopedTests(object):
         self.assertEqual('/dir1', node.path)
         self.assertEqual(Node.DIRECTORY, node.kind)
         self.assertEqual(5, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 16, 25, 39, 658099, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,16,25,39,0,utc), node.last_modified)
         node = self.repos.get_node('/README.txt')
         self.assertEqual('README.txt', node.name)
         self.assertEqual('/README.txt', node.path)
         self.assertEqual(Node.FILE, node.kind)
         self.assertEqual(3, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 13, 24, 58, 234643, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,13,24,58,0,utc), node.last_modified)
 
     def test_get_node_specific_rev(self):
         node = self.repos.get_node('/dir1', 4)
@@ -588,15 +565,13 @@ class ScopedTests(object):
         self.assertEqual('/dir1', node.path)
         self.assertEqual(Node.DIRECTORY, node.kind)
         self.assertEqual(4, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 15, 42, 35, 450595, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,15,42,35,0,utc), node.last_modified)
         node = self.repos.get_node('/README.txt', 2)
         self.assertEqual('README.txt', node.name)
         self.assertEqual('/README.txt', node.path)
         self.assertEqual(Node.FILE, node.kind)
         self.assertEqual(2, node.rev)
-        self.assertEqual(datetime(2005, 4, 1, 13, 12, 18, 216267, utc),
-                         node.last_modified)
+        self.assertEqual(datetime(2005,4,1,13,12,18,0,utc), node.last_modified)
 
     def test_get_dir_entries(self):
         node = self.repos.get_node('/')
@@ -701,8 +676,7 @@ class ScopedTests(object):
         self.assertEqual(0, chgset.rev)
         self.assertEqual('', chgset.message)
         self.assertEqual('', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 9, 57, 41, 312767, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,9,57,41,0,utc), chgset.date)
         self.assertRaises(StopIteration, chgset.get_changes().next)
 
     def test_changeset_added_dirs(self):
@@ -710,8 +684,7 @@ class ScopedTests(object):
         self.assertEqual(4, chgset.rev)
         self.assertEqual('More directories.', chgset.message)
         self.assertEqual('john', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 15, 42, 35, 450595, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,15,42,35,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual(('dir1', Node.DIRECTORY, 'add', None, -1),
@@ -727,8 +700,7 @@ class ScopedTests(object):
         self.assertEqual(3, chgset.rev)
         self.assertEqual('Fixed README.\n', chgset.message)
         self.assertEqual('kate', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 13, 24, 58, 234643, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,13,24,58,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual(('README.txt', Node.FILE, Changeset.EDIT,
@@ -740,8 +712,7 @@ class ScopedTests(object):
         self.assertEqual(5, chgset.rev)
         self.assertEqual('Moved directories.', chgset.message)
         self.assertEqual('kate', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 16, 25, 39, 658099, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,16,25,39,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual(('dir1/dir2', Node.DIRECTORY, Changeset.MOVE,
@@ -755,8 +726,7 @@ class ScopedTests(object):
         self.assertEqual(6, chgset.rev)
         self.assertEqual('More things to read', chgset.message)
         self.assertEqual('john', chgset.author)
-        self.assertEqual(datetime(2005, 4, 1, 18, 56, 46, 985846, utc),
-                         chgset.date)
+        self.assertEqual(datetime(2005,4,1,18,56,46,0,utc), chgset.date)
 
         changes = chgset.get_changes()
         self.assertEqual(('README2.txt', Node.FILE, Changeset.COPY,
@@ -779,16 +749,19 @@ class ScopedTests(object):
         self.assertEqual('copy from outside of the scope + delete',
                          chgset.message)
         changes = chgset.get_changes()
-        self.assertEqual(('v2', Node.DIRECTORY, Changeset.ADD, None, -1),
+        self.assertEqual(('v2', 'dir', Changeset.ADD, None, -1),
                          changes.next())
-        self.assertEqual(('v2/README2.txt', Node.FILE, Changeset.DELETE,
-                          None, -1), changes.next())
-        self.assertEqual(('v2/dir1', Node.DIRECTORY, Changeset.DELETE,
-                          None, -1), changes.next())
         self.assertRaises(StopIteration, changes.next)
 
 
-class RecentPathScopedTests(object):
+class RecentPathScopedRepositoryTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.repos = SubversionRepository(REPOS_PATH + u'/tête/dir1', None,
+                                          logger_factory('test'))
+
+    def tearDown(self):
+        self.repos = None
 
     def test_rev_navigation(self):
         self.assertEqual(False, self.repos.has_node('/', 1))
@@ -801,7 +774,14 @@ class RecentPathScopedTests(object):
         self.assertEqual(None, self.repos.previous_rev(4))
 
 
-class NonSelfContainedScopedTests(object):
+class NonSelfContainedScopedTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.repos = SubversionRepository(REPOS_PATH + '/tags/v1', None,
+                                          logger_factory('test'))
+
+    def tearDown(self):
+        self.repos = None
 
     def test_mixed_changeset(self):
         chgset = self.repos.get_changeset(7)
@@ -812,7 +792,14 @@ class NonSelfContainedScopedTests(object):
         self.assertRaises(TracError, lambda: self.repos.get_node(None, 6))
 
 
-class AnotherNonSelfContainedScopedTests(object):
+class AnotherNonSelfContainedScopedTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.repos = SubversionRepository(REPOS_PATH + '/branches', None,
+                                          logger_factory('test'))
+
+    def tearDown(self):
+        self.repos = None
 
     def test_mixed_changeset_with_edit(self):
         chgset = self.repos.get_changeset(9)
@@ -823,76 +810,20 @@ class AnotherNonSelfContainedScopedTests(object):
                          changes.next())
 
 
-# -- Test cases for SubversionRepository
-
-def get_direct_svn_fs_repository(path):
-    return SubversionRepository(path, {'name': 'repo', 'id': 1},
-                                logger_factory('test'))
-        
-
-class SubversionRepositoryTestCase(unittest.TestCase):
-    
-    def setUp(self):
-        self.repos = get_direct_svn_fs_repository(self.path)
-
-    def tearDown(self):
-        self.repos = None
-
-
-
-# -- Test cases for SvnCachedRepository
-
-def get_cached_repository(env, path):
-    fs_repos = get_direct_svn_fs_repository(path)
-    repos = SvnCachedRepository(env, fs_repos, fs_repos.log)
-    repos.has_linear_changesets = True
-    return repos
-
-
-class SvnCachedRepositoryTestCase(unittest.TestCase):
-    
-    def setUp(self):
-        self.env = EnvironmentStub()
-        self.repos = get_cached_repository(self.env, self.path)
-        self.repos.sync()
-
-    def tearDown(self):
-        self.env.reset_db()
-        self.repos.close()
-        self.repos = None
-
-
 def suite():
+    global has_svn
     suite = unittest.TestSuite()
     if has_svn:
-        tests = [(NormalTests, ''),
-                 (ScopedTests, u'/tête'),
-                 (RecentPathScopedTests, u'/tête/dir1'),
-                 (NonSelfContainedScopedTests, '/tags/v1'),
-                 (AnotherNonSelfContainedScopedTests, '/branches'),
-                 ]
-        skipped = {
-            'SvnCachedRepositoryNormalTests': [
-                'test_changeset_repos_creation',
-                ],
-            'SvnCachedRepositoryScopedTests': [
-                'test_changeset_repos_creation',
-                'test_rev_navigation',
-                ],
-            }
-        for test, scope in tests:
-            tc = new.classobj('SubversionRepository' + test.__name__,
-                              (SubversionRepositoryTestCase, test),
-                              {'path': REPOS_PATH + scope})
-            suite.addTest(unittest.makeSuite(
-                tc, 'test', suiteClass=SubversionRepositoryTestSetup))
-            tc = new.classobj('SvnCachedRepository' + test.__name__,
-                              (SvnCachedRepositoryTestCase, test),
-                              {'path': REPOS_PATH + scope})
-            for skip in skipped.get(tc.__name__, []):
-                setattr(tc, skip, lambda self: None) # no skip, so we cheat...
-            suite.addTest(unittest.makeSuite(
-                tc, 'test', suiteClass=SubversionRepositoryTestSetup))
+        suite.addTest(unittest.makeSuite(SubversionRepositoryTestCase,
+            'test', suiteClass=SubversionRepositoryTestSetup))
+        suite.addTest(unittest.makeSuite(ScopedSubversionRepositoryTestCase,
+            'test', suiteClass=SubversionRepositoryTestSetup))
+        suite.addTest(unittest.makeSuite(RecentPathScopedRepositoryTestCase,
+            'test', suiteClass=SubversionRepositoryTestSetup))
+        suite.addTest(unittest.makeSuite(NonSelfContainedScopedTestCase,
+            'test', suiteClass=SubversionRepositoryTestSetup))
+        suite.addTest(unittest.makeSuite(AnotherNonSelfContainedScopedTestCase,
+            'test', suiteClass=SubversionRepositoryTestSetup))
     else:
         print "SKIP: versioncontrol/tests/svn_fs.py (no svn bindings)"
     return suite

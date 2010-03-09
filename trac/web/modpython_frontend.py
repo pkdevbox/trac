@@ -125,7 +125,7 @@ _first = True
 _first_lock = threading.Lock()
             
 def handler(req):
-    global _first
+    global _first, _first_lock
     try:
         _first_lock.acquire()
         if _first: 

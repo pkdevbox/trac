@@ -3,7 +3,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <head>
@@ -13,6 +12,7 @@
     </py:choose>
     <link rel="stylesheet" type="text/css"
           href="${chrome.htdocs_location}css/roadmap.css" />
+    <script type="text/javascript" src="${chrome.htdocs_location}js/wikitoolbar.js"></script>
     <script type="text/javascript">/*<![CDATA[*/
       jQuery(document).ready(function($) {
         function updateCompletedDate() {
@@ -49,9 +49,8 @@
           <legend>Schedule</legend>
           <label>Due:<br />
             <input type="text" id="duedate" name="duedate" size="${len(date_hint)}"
-                   value="${milestone.due and format_date(milestone.due)}" 
-                   title="${_('Format: %(datehint)s', datehint=date_hint)}" />
-            <em i18n:msg="datehint">Format: ${date_hint}</em>
+                   value="${milestone.due and format_date(milestone.due)}" title="Format: ${date_hint}" />
+            <em>Format: ${date_hint}</em>
           </label>
           <div class="field">
             <label>
@@ -60,10 +59,10 @@
               Completed:<br />
             </label>
             <label>
-              <input type="text" id="completeddate" name="completeddate" size="${len(datetime_hint)}"
-                     value="${format_datetime(milestone.completed)}"
-                     title="${_('Format: %(datehint)s', datehint=datetime_hint)}" />
-              <em i18n:msg="datehint">Format: ${datetime_hint}</em>
+              <input type="text" id="completeddate" name="completeddate"
+                     size="${len(datetime_hint)}" title="Format: ${datetime_hint}"
+                     value="${format_datetime(milestone.completed)}" />
+              <em>Format: ${datetime_hint}</em>
             </label>
             <py:if test="milestone_groups">
               <br/>
@@ -74,7 +73,7 @@
                 <optgroup py:for="(label, milestones) in milestone_groups"
                           py:if="milestones" label="${label}">
                   <option py:for="milestone in milestones"
-                          value="${milestone.name}" py:content="milestone.name"></option>
+                          py:content="milestone.name"></option>
                 </optgroup>
               </select>
             </py:if>
@@ -82,20 +81,20 @@
         </fieldset>
         <div class="field">
           <fieldset class="iefix">
-            <label for="description" i18n:msg="">Description (you may use <a tabindex="42"
+            <label for="description">Description (you may use <a tabindex="42"
                    href="${href.wiki('WikiFormatting')}">WikiFormatting</a> here):</label>
-            <p><textarea id="description" name="description" class="wikitext trac-resizable" rows="10" cols="78">
+            <p><textarea id="description" name="description" class="wikitext" rows="10" cols="78">
 ${milestone.description}</textarea></p>
           </fieldset>
         </div>
         <div class="buttons" py:choose="milestone.exists">
-          <input py:when="True" type="submit" value="${_('Submit changes')}" />
-          <input py:otherwise="" type="submit" value="${_('Add milestone')}" />
-          <input type="submit" name="cancel" value="${_('Cancel')}" />
+          <input py:when="True" type="submit" value="Submit changes" />
+          <input py:otherwise="" type="submit" value="Add milestone" />
+          <input type="submit" name="cancel" value="Cancel" />
         </div>
       </form>
 
-      <div id="help" i18n:msg=""><strong>Note:</strong> See
+      <div id="help"><strong>Note:</strong> See
         <a href="${href.wiki('TracRoadmap')}">TracRoadmap</a> for help on using
         the roadmap.
       </div>

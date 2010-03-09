@@ -1,14 +1,9 @@
 @import url(code.css);
 
-#content.ticket { 
- width: 58em; 
- max-width: 100%;
- margin-left: auto;
- margin-right: auto;
-}
+#content.ticket { width: 700px; max-width: 100% }
 
-#field-description-help { float: right }
-#properties div.trac-resizable, #field-description { width: 100% }
+#newticket #field-description { width: 100% }
+#newticket #properties { width: 100% }
 
 #ticket {
  background: #ffd;
@@ -18,14 +13,14 @@
  position: relative;
 }
 
-#ticket.ticketdraft {
+div#ticket.ticketdraft {
  background: #f4f4f4 url(../draft.png);
 }
-#ticketchange.ticketdraft {
+div#ticketchange.ticketdraft {
  padding: 0 1em;
  margin: 1em 0;
 }
-#ticketchange.ticketdraft h3 {
+div#ticketchange.ticketdraft h3 {
  margin-top: .5em;
 }
 .preview-notice { font-weight: bold; }
@@ -78,49 +73,29 @@ h1 .status { color: #444; }
  float: right;
  position: relative;
  bottom: 0.3em;
- margin-left: 0.2em;
 }
 
 #changelog { border: 1px outset #996; padding: 1em }
-.trac-shade { background-color: #eee }
-#trac-comment-editor { margin-left: 2em; margin-bottom: 1em }
-#trac-comment-editor div.trac-resizable { width: 100% }
-#trac-comment-editor textarea { 
- background: #ffffe0;
- margin-left: -1px;
- margin-right: -1px;
- width: 100%;
-}
-#trac-comment-editor .wikitoolbar { margin-left: -1px }
-#trac-add-comment :link, #trac-add-comment :visited { color: #b00 }
-#changelog h3, #ticketchange h3 {
+#preview { border: 1px solid #d7d7d7; padding: 1em }
+#preview h3, #changelog h3 {
  border-bottom: 1px solid #d7d7d7;
  color: #999;
  font-size: 100%;
  font-weight: normal;
 }
-.threading, #changelog .inlinebuttons { float: right; margin-left: 0.2em }
-.threading { font-size: 85%; }
-.threading :link, .threading :visited { border-bottom: 0 }
-#changelog .trac-lastedit {
- padding-left: 2.5em;
- color: #999;
- font-size: 80%;
-}
-#changelog .trac-lastedit :link, #changelog .trac-lastedit :visited { color: inherit }
+.threading, #changelog .inlinebuttons { float: right; }
+.threading { font-size: 90%; }
 
-#changelog .changes, #ticketchange .changes { list-style: square; margin-left: 2em; padding: 0 }
-#changelog .comment, #ticketchange .comment { margin-left: 2em }
+#preview .changes, #changelog .changes { list-style: square; margin-left: 2em; padding: 0 }
+#preview .comment, #changelog .comment { margin-left: 2em }
 
 form .field { margin-top: .75em; width: 100% }
 form .field fieldset.iefix { margin-left: 1px; margin-right: 1px }
-label[for=comment] { float: right }
-#comment { margin-left: -1px; margin-right: -1px; padding: 0; width: 100% }
+form .field #comment { margin-left: -1px; margin-right: -1px; padding: 0; width: 100% }
 form .field .wikitoolbar { margin-left: -1px }
-form .field div.trac-resizable { width: 100% }
 
 #properties { white-space: nowrap; line-height: 160%; padding: .5em }
-#properties table { border-spacing: 0; width: 100%; padding: 0 .5em }
+#properties table { border-spacing: 0; width: 100%; }
 #properties table th {
  padding: .4em;
  text-align: right;

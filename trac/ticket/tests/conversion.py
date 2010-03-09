@@ -3,6 +3,7 @@ import unittest
 
 from trac import __version__ as TRAC_VERSION
 from trac.test import EnvironmentStub, Mock
+from trac.util import sorted
 from trac.ticket.model import Ticket
 from trac.ticket.web_ui import TicketModule
 from trac.mimeview.api import Mimeview
@@ -22,7 +23,7 @@ class TicketConversionTestCase(unittest.TestCase):
                         href=Href('/trac.cgi'), chrome={'logo': {}},
                         abs_href=Href('http://example.org/trac.cgi'),
                         environ={}, perm=[], authname='-', args={}, tz=None,
-                        locale='', session=None, form_token=None)
+                        session=None, form_token=None)
 
     def tearDown(self):
         self.env.reset_db()
@@ -76,6 +77,8 @@ class TicketConversionTestCase(unittest.TestCase):
             self.req, 'trac.ticket.Ticket', ticket, 'rss')
         self.assertEqual(("""<?xml version="1.0"?>
 <rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  
+
   <channel>
     <title>My Project: Ticket #1: Foo</title>
     <link>http://example.org/trac.cgi/ticket/1</link>

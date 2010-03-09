@@ -120,7 +120,7 @@ def _group_opcodes(opcodes, n=3):
             yield group
             group = []
             i1, j1 = max(i1, i2 - n), max(j1, j2 - n)
-        group.append((tag, i1, i2, j1, j2))
+        group.append((tag, i1, i2, j1 ,j2))
 
     if group and not (len(group) == 1 and group[0][0] == 'equal'):
         if group[-1][0] == 'equal': # Fixup trailing unchanged block
@@ -230,8 +230,8 @@ def get_diff_options(req):
     
     def get_bool_option(name, default=0):
         pref = int(req.session.get('diff_' + name, default))
-        arg = int(name in req.args)
-        if 'update' in req.args and arg != pref:
+        arg = int(req.args.has_key(name))
+        if req.args.has_key('update') and arg != pref:
             req.session['diff_' + name] = arg
         else:
             arg = pref
@@ -239,22 +239,19 @@ def get_diff_options(req):
 
     pref = req.session.get('diff_style', 'inline')
     style = req.args.get('style', pref)
-    if 'update' in req.args and style != pref:
+    if req.args.has_key('update') and style != pref:
         req.session['diff_style'] = style
     data['style'] = style
 
     pref = int(req.session.get('diff_contextlines', 2))
     try:
-        context = int(req.args.get('contextlines', pref))
+        arg = int(req.args.get('contextlines', pref))
     except ValueError:
-        context = -1
-    if 'update' in req.args and context != pref:
-        req.session['diff_contextlines'] = context
-    options_data['contextlines'] = context
-    
-    arg = int(req.args.get('contextall', 0))
-    options_data['contextall'] = arg
-    options = ['-U%d' % (arg and -1 or context)]
+        arg = -1
+    if req.args.has_key('update') and arg != pref:
+        req.session['diff_contextlines'] = arg
+    options = ['-U%d' % arg]
+    options_data['contextlines'] = arg
 
     arg = get_bool_option('ignoreblanklines')
     if arg:

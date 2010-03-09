@@ -3,7 +3,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="prefs.html" />
   <head>
@@ -16,7 +15,7 @@
       <label>Time zone:
       <select name="tz">
         <option>Default time zone</option>
-        <option py:for="tzname in timezones" value="$tzname"
+        <option py:for="tzname in timezones"
                 selected="${session_tzname != None and
                             session_tzname.startswith('Etc/') and
                             selected_tz == timezone(tzname) or
@@ -26,27 +25,16 @@
       dates and times displayed on this site to use your time zone
       instead of that of the server.</p>
 
-      <!-- This currently crashes Genshi's extractor if you add i18n:msg -->
-      <p class="hint" py:with="now = datetime.now(utc)" py:choose="">
+      <p class="hint" py:with="now = datetime.now(utc)">
         Example: The current time is <strong>${format_time(now, 'iso8601', tzinfo=utc)}</strong> (UTC).
         <br />
-        <py:when test="session_tzname">
-          <i18n:msg params="tz, formatted">
-            In your time zone ${selected_tz.tzname(None)}, this would be displayed as
-            <strong>${format_time(now, 'iso8601', tzinfo=selected_tz)}</strong>.
-          </i18n:msg>
-        </py:when>
-        <py:otherwise>
-          <i18n:msg params="formatted">
-            In the default time zone, this would be displayed as
-            <strong>${format_time(now, 'iso8601', tzinfo=localtz)}</strong>.
-          </i18n:msg>
-        </py:otherwise>
+        In ${session_tzname and 'your' or 'the Default'} time zone ${session_tzname and ' ' + selected_tz.tzname(None) or ''}, this would be displayed as
+        <strong>${format_time(now, 'iso8601', tzinfo=(session_tzname and selected_tz or localtz))}</strong>.
       </p>
 
       <p class="hint">
         Note: Universal Co-ordinated Time (UTC) is also known as Greenwich Mean Time (GMT). <br />
-        A positive offset is used to indicate a timezone at the east of Greenwich, i.e. ahead of Universal Time.
+        A positive offset is used to indicate a timezone at the east of Greenwhich, i.e. ahead of Universal Time.
       </p>
 
     </div>

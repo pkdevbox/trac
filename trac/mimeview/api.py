@@ -18,9 +18,26 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-"""File metadata management.
+"""
+----
+NOTE: for plugin developers
 
-The `trac.mimeview` package centralizes the intelligence related to
+ The Mimeview API is quite complex and many things there are currently
+ a bit difficult to work with (e.g. what an actual `content` might be,
+ see last paragraph of this docstring).
+
+ So this area is mainly in a ''work in progress'' state, which will
+ be improved upon in the near future
+ (see http://trac.edgewall.org/ticket/3332).
+
+ In particular, if you are interested in writing IContentConverter
+ and IHTMLPreviewRenderer components, note that those interfaces
+ will be merged into a new style IContentConverter.
+ Feel free to contribute remarks and suggestions for improvements
+ to the corresponding ticket (#3332).
+----
+
+The `trac.mimeview` module centralize the intelligence related to
 file metadata, principally concerning the `type` (MIME type) of the content
 and, if relevant, concerning the text encoding (charset) used by the content.
 
@@ -37,22 +54,6 @@ needed, that's why we avoid to read the file's content when it's not needed.
 The actual `content` to be converted might be a `unicode` object,
 but it can also be the raw byte string (`str`) object, or simply
 an object that can be `read()`.
-
-----
-NOTE: for plugin developers
-
-  The Mimeview API is quite complex and many things there are currently
-  a bit difficult to work with (e.g. what an actual `content` might be,
-  see the last paragraph of this description).
-
-  So this area is mainly in a ''work in progress'' state, which will
-  be improved upon in the near future (see [trac:ticket:3332 #3332]).
-
-  In particular, if you are interested in writing `IContentConverter`
-  and `IHTMLPreviewRenderer` components, note that those interfaces
-  will be merged into a new style `IContentConverter`.
-  Feel free to contribute remarks and suggestions for improvements
-  to the corresponding ticket ([trac:ticket:3332 #3332]).
 """
 
 import re
@@ -66,9 +67,9 @@ from genshi.input import HTMLParser
 from trac.config import IntOption, ListOption, Option
 from trac.core import *
 from trac.resource import Resource
-from trac.util import Ranges
-from trac.util.text import exception_to_unicode, to_utf8, to_unicode
-from trac.util.translation import _, tag_
+from trac.util import reversed, sorted, Ranges
+from trac.util.text import to_utf8, to_unicode
+from trac.util.translation import _
 
 
 __all__ = ['get_mimetype', 'is_binary', 'detect_unicode', 'Mimeview',
@@ -125,9 +126,8 @@ class Context(object):
         self.perm = resource and perm and perm(resource) or perm
         self._hints = None
 
-    @classmethod
     def from_request(cls, req, resource=None, id=False, version=False,
-                     parent=False, absurls=False):
+                     absurls=False):
         """Create a rendering context from a request.
 
         The `perm` and `href` properties of the context will be initialized
@@ -157,10 +157,11 @@ class Context(object):
         else:
             href = None
             perm = None
-        self = cls(Resource(resource, id=id, version=version, parent=parent),
-                   href=href, perm=perm)
+        self = cls(Resource(resource, id=id, version=version), href=href,
+                   perm=perm)
         self.req = req
         return self
+    from_request = classmethod(from_request)
 
     def __repr__(self):
         path = []
@@ -171,7 +172,7 @@ class Context(object):
             context = context.parent
         return '<%s %s>' % (type(self).__name__, ' - '.join(reversed(path)))
 
-    def __call__(self, resource=None, id=False, version=False, parent=False):
+    def __call__(self, resource=None, id=False, version=False):
         """Create a nested rendering context.
 
         `self` will be the parent for the new nested context.
@@ -195,8 +196,7 @@ class Context(object):
         True
         """
         if resource:
-            resource = Resource(resource, id=id, version=version,
-                                parent=parent)
+            resource = Resource(resource, id=id, version=version)
         else:
             resource = self.resource
         context = Context(resource, href=self.href, perm=self.perm)
@@ -306,69 +306,61 @@ class Context(object):
 # Some common MIME types and their associated keywords and/or file extensions
 
 KNOWN_MIME_TYPES = {
-    'application/javascript': 'js',
-    'application/pdf':        'pdf',
-    'application/postscript': 'ps',
-    'application/rtf':        'rtf',
-    'application/x-sh':       'sh',
-    'application/x-csh':      'csh',
-    'application/x-troff':    'nroff roff troff',
-    'application/x-yaml':     'yml yaml',
+    'application/javascript': ['js'],
+    'application/pdf':        ['pdf'],
+    'application/postscript': ['ps'],
+    'application/rtf':        ['rtf'],
+    'application/x-sh':       ['sh'],
+    'application/x-csh':      ['csh'],
+    'application/x-troff':    ['nroff', 'roff', 'troff'],
+    'application/x-yaml':     ['yml', 'yaml'],
     
-    'application/rss+xml':    'rss',
-    'application/xsl+xml':    'xsl',
-    'application/xslt+xml':   'xslt',
+    'application/rss+xml':    ['rss'],
+    'application/xsl+xml':    ['xsl'],
+    'application/xslt+xml':   ['xslt'],
     
-    'image/x-icon':           'ico',
-    'image/svg+xml':          'svg',
+    'image/x-icon':           ['ico'],
+    'image/svg+xml':          ['svg'],
     
-    'model/vrml':             'vrml wrl',
+    'model/vrml':             ['vrml', 'wrl'],
     
-    'text/css':               'css',
-    'text/html':              'html htm',
-    'text/plain':             'txt TXT text README INSTALL'
-                              'AUTHORS COPYING ChangeLog RELEASE',
-    'text/xml':               'xml',
-    
-    # see also TEXT_X_TYPES below
-    'text/x-csrc':            'c xs',
-    'text/x-chdr':            'h',
-    'text/x-c++src':          'cc CC cpp C c++ C++',
-    'text/x-c++hdr':          'hh HH hpp H',
-    'text/x-csharp':          'cs c# C#',
-    'text/x-diff':            'patch',
-    'text/x-eiffel':          'e',
-    'text/x-elisp':           'el',
-    'text/x-fortran':         'f',
-    'text/x-haskell':         'hs',
-    'text/x-ini':             'ini cfg',
-    'text/x-objc':            'm mm',
-    'text/x-ocaml':           'ml mli',
-    'text/x-makefile':        'make mk Makefile GNUMakefile',
-    'text/x-pascal':          'pas',
-    'text/x-perl':            'pl pm PL',
-    'text/x-php':             'php3 php4',
-    'text/x-python':          'py',
-    'text/x-pyrex':           'pyx',
-    'text/x-ruby':            'rb',
-    'text/x-scheme':          'scm',
-    'text/x-textile':         'txtl',
-    'text/x-vba':             'vb vba bas',
-    'text/x-verilog':         'v',
-    'text/x-vhdl':            'vhd',
+    'text/css':               ['css'],
+    'text/html':              ['html'],
+    'text/plain':             ['txt', 'TXT', 'text', 'README', 'INSTALL',
+                               'AUTHORS', 'COPYING', 'ChangeLog', 'RELEASE'],
+    'text/xml':               ['xml'],
+    'text/x-csrc':            ['c', 'xs'],
+    'text/x-chdr':            ['h'],
+    'text/x-c++src':          ['cc', 'CC', 'cpp', 'C'],
+    'text/x-c++hdr':          ['hh', 'HH', 'hpp', 'H'],
+    'text/x-csharp':          ['cs'],
+    'text/x-diff':            ['diff', 'patch'],
+    'text/x-eiffel':          ['e'],
+    'text/x-elisp':           ['el'],
+    'text/x-fortran':         ['f'],
+    'text/x-haskell':         ['hs'],
+    'text/x-ini':             ['ini', 'cfg'],
+    'text/x-objc':            ['m', 'mm'],
+    'text/x-ocaml':           ['ml', 'mli'],
+    'text/x-makefile':        ['make', 'mk',
+                               'Makefile', 'makefile', 'GNUMakefile'],
+    'text/x-pascal':          ['pas'],
+    'text/x-perl':            ['pl', 'pm', 'PL', 'perl'],
+    'text/x-php':             ['php', 'php3', 'php4'],
+    'text/x-python':          ['py', 'python'],
+    'text/x-pyrex':           ['pyx'],
+    'text/x-ruby':            ['rb', 'ruby'],
+    'text/x-scheme':          ['scm'],
+    'text/x-textile':         ['txtl', 'textile'],
+    'text/x-vba':             ['vb', 'vba', 'bas'],
+    'text/x-verilog':         ['v', 'verilog'],
+    'text/x-vhdl':            ['vhd'],
 }
-for t in KNOWN_MIME_TYPES.keys():
-    types = KNOWN_MIME_TYPES[t].split()
-    if t.startswith('text/x-'):
-        types.append(t[len('text/x-'):])
-    KNOWN_MIME_TYPES[t] = types
 
 # extend the above with simple (text/x-<something>: <something>) mappings
 
-TEXT_X_TYPES = """
-    ada asm asp awk idl inf java ksh lua m4 mail psp rfc rst sql tcl tex zsh
-"""
-for x in TEXT_X_TYPES.split():
+for x in ['ada', 'asm', 'asp', 'awk', 'idl', 'inf', 'java', 'ksh', 'lua',
+          'm4', 'mail', 'psp', 'rfc', 'rst', 'sql', 'tcl', 'tex', 'zsh']:
     KNOWN_MIME_TYPES.setdefault('text/x-%s' % x, []).append(x)
 
 
@@ -381,12 +373,12 @@ for t, exts in KNOWN_MIME_TYPES.items():
         MIME_MAP[e] = t
 
 # Simple builtin autodetection from the content using a regexp
-MODE_RE = re.compile(r"""
-      \#!.+?env\s+(\w+)                     # 1. look for shebang with env
-    | \#!(?:[/\w.-_]+/)?(\w+)               # 2. look for regular shebang
-    | -\*-\s*(?:mode:\s*)?([\w+-]+)\s*-\*-  # 3. look for Emacs' -*- mode -*-
-    | vim:.*?(?:syntax|filetype|ft)=(\w+)   # 4. look for VIM's syntax=<n>
-    """, re.VERBOSE)
+MODE_RE = re.compile(
+    r"#!.+?env (\w+)|"                       # look for shebang with env
+    r"#!(?:[/\w.-_]+/)?(\w+)|"               # look for regular shebang
+    r"-\*-\s*(?:mode:\s*)?([\w+-]+)\s*-\*-|" # look for Emacs' -*- mode -*-
+    r"vim:.*?(?:syntax|filetype|ft)=(\w+)"   # look for VIM's syntax=<n>
+    )
 
 def get_mimetype(filename, content=None, mime_map=MIME_MAP):
     """Guess the most probable MIME type of a file with the given name.
@@ -436,7 +428,7 @@ def is_binary(data):
     return '\0' in data[:1000]
 
 def detect_unicode(data):
-    """Detect different unicode charsets by looking for BOMs (Byte Order Mark).
+    """Detect different unicode charsets by looking for BOMs (Byte Order Marks).
 
     Operate obviously only on `str` objects.
     """
@@ -600,7 +592,7 @@ class Content(object):
 
 
 class Mimeview(Component):
-    """Generic HTML renderer for data, typically source code."""
+    """A generic class to prettify data, typically source code."""
 
     renderers = ExtensionPoint(IHTMLPreviewRenderer)
     annotators = ExtensionPoint(IHTMLPreviewAnnotator)
@@ -668,9 +660,8 @@ class Mimeview(Component):
         candidates = list(self.get_supported_conversions(mimetype))
         candidates = [c for c in candidates if key in (c[0], c[4])]
         if not candidates:
-            raise TracError(
-                _("No available MIME conversions from %(old)s to %(new)s",
-                  old=mimetype, new=key))
+            raise TracError(_('No available MIME conversions from %(old)s '
+                              'to %(new)s', old=mimetype, new=key))
 
         # First successful conversion wins
         for ck, name, ext, input_mimettype, output_mimetype, quality, \
@@ -679,9 +670,8 @@ class Mimeview(Component):
             if not output:
                 continue
             return (output[0], output[1], ext)
-        raise TracError(
-            _("No available MIME conversions from %(old)s to %(new)s",
-              old=mimetype, new=key))
+        raise TracError(_('No available MIME conversions from %(old)s to '
+                          '%(new)s', old=mimetype, new=key))
 
     def get_annotation_types(self):
         """Generator that returns all available annotation types."""
@@ -726,7 +716,7 @@ class Mimeview(Component):
             qr = renderer.get_quality_ratio(mimetype)
             if qr > 0:
                 candidates.append((qr, renderer))
-        candidates.sort(lambda x, y: cmp(y[0], x[0]))
+        candidates.sort(lambda x,y: cmp(y[0], x[0]))
         
         # Wrap file-like object so that it can be read multiple times
         if hasattr(content, 'read'):
@@ -735,6 +725,7 @@ class Mimeview(Component):
         # First candidate which renders successfully wins.
         # Also, we don't want to expand tabs more than once.
         expanded_content = None
+        errors = []
         for qr, renderer in candidates:
             if force_source and not getattr(renderer, 'returns_source', False):
                 continue # skip non-source renderers in force_source mode
@@ -742,9 +733,9 @@ class Mimeview(Component):
                 content.reset()
             try:
                 ann_names = annotations and ', '.join(annotations) or \
-                           'no annotations'
-                self.log.debug('Trying to render HTML preview using %s [%s]',
-                               renderer.__class__.__name__, ann_names)
+                           'No annotations'
+                self.log.debug('Trying to render HTML preview using %s [%s]'
+                               % (renderer.__class__.__name__, ann_names))
 
                 # check if we need to perform a tab expansion
                 rendered_content = content
@@ -783,14 +774,10 @@ class Mimeview(Component):
                     return tag.div(class_='code')(tag.pre(result)).generate()
 
             except Exception, e:
-                if context.req:
-                    from trac.web.chrome import add_warning
-                    add_warning(context.req,
-                        _("HTML preview using %(renderer)s failed (%(err)s)",
-                          renderer=renderer.__class__.__name__,
-                          err=exception_to_unicode(e)))
-                self.log.warning('HTML preview using %s failed (%s)',
-                        renderer, exception_to_unicode(e,traceback=True))
+                self.log.warning('HTML preview using %s failed (%s)' %
+                                 (renderer, e), exc_info=True)
+                errors.append((renderer, e))
+        return errors
 
     def _render_source(self, context, stream, annotations, marks=None):
         from trac.web.chrome import add_warning
@@ -817,10 +804,11 @@ class Mimeview(Component):
             try:
                 data = (annotator, annotator.get_annotation_data(context))
             except TracError, e:
-                self.log.warning("Can't use annotator '%s': %s", a, e.message)
-                add_warning(context.req, tag.strong(
-                    tag_("Can't use %(annotator)s annotator: %(error)s",
-                         annotator=tag.em(a), error=tag.pre(e.message))))
+                self.log.warning("Can't use annotator '%s': %s" %
+                                 (a, e.message))
+                add_warning(context.req, tag.strong("Can't use ", tag.em(a),
+                                               " annotator:") +
+                                    tag.pre(e.message))
                 data = (None, None)
             annotator_datas.append(data)
 
@@ -873,18 +861,6 @@ class Mimeview(Component):
                 return utf
         return self.default_charset
 
-    @property
-    def mime_map(self):
-        # Extend default extension to MIME type mappings with configured ones
-        if not self._mime_map:
-            self._mime_map = MIME_MAP.copy()
-            for mapping in self.config['mimeviewer'].getlist('mime_map'):
-                if ':' in mapping:
-                    assocations = mapping.split(':')
-                    for keyword in assocations: # Note: [0] kept on purpose
-                        self._mime_map[keyword] = assocations[0]
-        return self._mime_map
-
     def get_mimetype(self, filename, content=None):
         """Infer the MIME type from the `filename` or the `content`.
 
@@ -894,8 +870,16 @@ class Mimeview(Component):
         charset information (i.e. "<mimetype>; charset=..."),
         or `None` if detection failed.
         """
+        # Extend default extension to MIME type mappings with configured ones
+        if not self._mime_map:
+            self._mime_map = MIME_MAP.copy()
+            for mapping in self.config['mimeviewer'].getlist('mime_map'):
+                if ':' in mapping:
+                    assocations = mapping.split(':')
+                    for keyword in assocations: # Note: [0] kept on purpose
+                        self._mime_map[keyword] = assocations[0]
 
-        mimetype = get_mimetype(filename, content, self.mime_map)
+        mimetype = get_mimetype(filename, content, self._mime_map)
         charset = None
         if mimetype:
             charset = self.get_charset(content, mimetype)
@@ -943,7 +927,7 @@ class Mimeview(Component):
                 types[mimetype] = (mode, int(quality))
             except (TypeError, ValueError):
                 self.log.warning("Invalid mapping '%s' specified in '%s' "
-                                 "option.", mapping, option)
+                                 "option." % (mapping, option))
         return types
     
     def preview_data(self, context, content, length, mimetype, filename,
@@ -962,7 +946,10 @@ class Mimeview(Component):
         else:
             result = self.render(context, mimetype, content, filename, url,
                                  annotations, force_source=force_source)
-            data['rendered'] = result
+            if isinstance(result, list):
+                data['errors'] = result
+            else:
+                data['rendered'] = result
         return data
 
     def send_converted(self, req, in_type, content, selector, filename='file'):
@@ -1106,10 +1093,7 @@ class PlainTextRenderer(Component):
 
 
 class ImageRenderer(Component):
-    """Inline image display.
-    
-    This component doesn't need the `content` at all.
-    """
+    """Inline image display. Here we don't need the `content` at all."""
     implements(IHTMLPreviewRenderer)
 
     def get_quality_ratio(self, mimetype):
@@ -1124,7 +1108,7 @@ class ImageRenderer(Component):
 
 
 class WikiTextRenderer(Component):
-    """HTML renderer for files containing Trac's own Wiki formatting markup."""
+    """Render files containing Trac's own Wiki formatting markup."""
     implements(IHTMLPreviewRenderer)
 
     def get_quality_ratio(self, mimetype):

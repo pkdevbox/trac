@@ -16,7 +16,6 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 import csv
-from itertools import groupby
 from math import ceil
 from datetime import datetime, timedelta
 import re
@@ -31,45 +30,33 @@ from trac.mimeview.api import Mimeview, IContentConverter, Context
 from trac.resource import Resource
 from trac.ticket.api import TicketSystem
 from trac.util import Ranges
-from trac.util.datefmt import format_datetime, from_utimestamp, parse_date, \
-                              to_timestamp, to_utimestamp, utc
+from trac.util.compat import groupby, set
+from trac.util.datefmt import to_timestamp, utc
 from trac.util.presentation import Paginator
-from trac.util.text import empty, shorten_line, unicode_unquote
-from trac.util.translation import _, tag_
-from trac.web import arg_list_to_args, parse_arg_list, IRequestHandler
+from trac.util.text import shorten_line
+from trac.util.translation import _
+from trac.web import parse_query_string, IRequestHandler
 from trac.web.href import Href
 from trac.web.chrome import add_ctxtnav, add_link, add_script, add_stylesheet, \
-                            add_warning, INavigationContributor, Chrome
+                            INavigationContributor, Chrome
 
-from trac.wiki.api import IWikiSyntaxProvider
+from trac.wiki.api import IWikiSyntaxProvider, parse_args
 from trac.wiki.macros import WikiMacroBase # TODO: should be moved in .api
 
-class QuerySyntaxError(TracError):
+class QuerySyntaxError(Exception):
     """Exception raised when a ticket query cannot be parsed from a string."""
-
-
-class QueryValueError(TracError):
-    """Exception raised when a ticket query has bad constraint values."""
-    def __init__(self, errors):
-        TracError.__init__(self, _('Invalid query constraint value'))
-        self.errors = errors
 
 
 class Query(object):
     substitutions = ['$USER']
-    clause_re = re.compile(r'(?P<clause>\d+)_(?P<field>.+)$')
 
     def __init__(self, env, report=None, constraints=None, cols=None,
                  order=None, desc=0, group=None, groupdesc=0, verbose=0,
                  rows=None, page=None, max=None, format=None):
         self.env = env
         self.id = report # if not None, it's the corresponding saved query
-        constraints = constraints or []
-        if isinstance(constraints, dict):
-            constraints = [constraints]
-        self.constraints = constraints
-        synonyms = TicketSystem(self.env).get_field_synonyms()
-        self.order = synonyms.get(order, order)     # 0.11 compatibility
+        self.constraints = constraints or {}
+        self.order = order
         self.desc = desc
         self.group = group
         self.groupdesc = groupdesc
@@ -114,47 +101,34 @@ class Query(object):
         if verbose and 'description' not in rows: # 0.10 compatibility
             rows.append('description')
         self.fields = TicketSystem(self.env).get_ticket_fields()
-        self.time_fields = set(f['name'] for f in self.fields
-                               if f['type'] == 'time')
-        field_names = set(f['name'] for f in self.fields)
+        field_names = [f['name'] for f in self.fields]
         self.cols = [c for c in cols or [] if c in field_names or 
-                     c == 'id']
+                     c in ('id', 'time', 'changetime')]
         self.rows = [c for c in rows if c in field_names]
         if self.order != 'id' and self.order not in field_names:
-            self.order = 'priority'
+            # TODO: fix after adding time/changetime to the api.py
+            if order == 'created':
+                order = 'time'
+            elif order == 'modified':
+                order = 'changetime'
+            if order in ('time', 'changetime'):
+                self.order = order
+            else:
+                self.order = 'priority'
 
         if self.group not in field_names:
             self.group = None
 
-        constraint_cols = {}
-        for clause in self.constraints:
-            for k, v in clause.iteritems():
-                constraint_cols.setdefault(k, []).append(v)
-        self.constraint_cols = constraint_cols
-
-    _clause_splitter = re.compile(r'(?<!\\)&')
-    _item_splitter = re.compile(r'(?<!\\)\|')
-    
-    @classmethod
     def from_string(cls, env, string, **kw):
+        filters = string.split('&')
         kw_strs = ['order', 'group', 'page', 'max', 'format']
         kw_arys = ['rows']
         kw_bools = ['desc', 'groupdesc', 'verbose']
         kw_synonyms = {'row': 'rows'}
-        # i18n TODO - keys will be unicode
-        synonyms = TicketSystem(env).get_field_synonyms()
-        constraints = [{}]
+        constraints = {}
         cols = []
-        report = None
-        def as_str(s):
-            if isinstance(s, unicode):
-                return s.encode('utf-8')
-            return s
-        for filter_ in cls._clause_splitter.split(string):
-            if filter_ == 'or':
-                constraints.append({})
-                continue
-            filter_ = filter_.replace(r'\&', '&').split('=', 1)
+        for filter_ in filters:
+            filter_ = filter_.split('=')
             if len(filter_) != 2:
                 raise QuerySyntaxError(_('Query filter requires field and ' 
                                          'constraints separated by a "="'))
@@ -171,26 +145,29 @@ class Query(object):
             if not field:
                 raise QuerySyntaxError(_('Query filter requires field name'))
             field = kw_synonyms.get(field, field)
-            # add mode of comparison and remove escapes
-            processed_values = [mode + val.replace(r'\|', '|')
-                                for val in cls._item_splitter.split(values)]
-            if field in kw_strs:
-                kw[as_str(field)] = processed_values[0]
-            elif field in kw_arys:
-                kw.setdefault(as_str(field), []).extend(processed_values)
-            elif field in kw_bools:
-                kw[as_str(field)] = True
-            elif field == 'col':
-                cols.extend(synonyms.get(value, value)
-                            for value in processed_values)
-            elif field == 'report':
-                report = processed_values[0]
-            else:
-                constraints[-1].setdefault(synonyms.get(field, field), 
-                                           []).extend(processed_values)
-        constraints = filter(None, constraints)
+            processed_values = []
+            for val in values.split('|'):
+                val = mode + val # add mode of comparison
+                processed_values.append(val)
+            try:
+                if isinstance(field, unicode):
+                    field = field.encode('utf-8')
+                if field in kw_strs:
+                    kw[field] = processed_values[0]
+                elif field in kw_arys:
+                    kw.setdefault(field, []).extend(processed_values)
+                elif field in kw_bools:
+                    kw[field] = True
+                elif field == 'col':
+                    cols.extend(processed_values)
+                else:
+                    constraints.setdefault(field, []).extend(processed_values)
+            except UnicodeError:
+                pass # field must be a str, see `get_href()`
+        report = constraints.pop('report', None)
         report = kw.pop('report', report)
         return cls(env, report, constraints=constraints, cols=cols, **kw)
+    from_string = classmethod(from_string)
 
     def get_columns(self):
         if not self.cols:
@@ -211,9 +188,11 @@ class Query(object):
             if col in cols:
                 cols.remove(col)
                 cols.append(col)
+        # TODO: fix after adding time/changetime to the api.py
+        cols += ['time', 'changetime']
 
         def sort_columns(col1, col2):
-            constrained_fields = self.constraint_cols.keys()
+            constrained_fields = self.constraints.keys()
             if 'id' in (col1, col2):
                 # Ticket ID is always the first column
                 return col1 == 'id' and -1 or 1
@@ -232,22 +211,15 @@ class Query(object):
         
         # Semi-intelligently remove columns that are restricted to a single
         # value by a query constraint.
-        for col in [k for k in self.constraint_cols.keys()
+        for col in [k for k in self.constraints.keys()
                     if k != 'id' and k in cols]:
-            constraints = self.constraint_cols[col]
-            for constraint in constraints:
-                if not (len(constraint) == 1 and constraint[0]
-                        and not constraint[0][0] in '!~^$' and col in cols
-                        and col not in self.time_fields):
-                    break
-            else:
+            constraint = self.constraints[col]
+            if len(constraint) == 1 and constraint[0] \
+                    and not constraint[0][0] in '!~^$' and col in cols:
                 cols.remove(col)
-            if col == 'status' and 'resolution' in cols:
-                for constraint in constraints:
-                    if 'closed' in constraint:
-                        break
-                else:
-                    cols.remove('resolution')
+            if col == 'status' and not 'closed' in constraint \
+                    and 'resolution' in cols:
+                cols.remove('resolution')
         if self.group in cols:
             cols.remove(self.group)
 
@@ -274,7 +246,7 @@ class Query(object):
 
         cnt = 0
         try:
-            cursor.execute(count_sql, args)
+            cursor.execute(count_sql, args);
         except:
             db.rollback()
             raise
@@ -288,7 +260,6 @@ class Query(object):
             db = self.env.get_db_cnx()
         cursor = db.cursor()
 
-        self.num_items = 0
         sql, args = self.get_sql(req, cached_ids)
         self.num_items = self._count(sql, args, db)
 
@@ -331,8 +302,8 @@ class Query(object):
                     result['href'] = req.href.ticket(val)
                 elif val is None:
                     val = '--'
-                elif name in self.time_fields:
-                    val = from_utimestamp(val)
+                elif name in ('changetime', 'time'):
+                    val = datetime.fromtimestamp(int(val or 0), utc)
                 elif field and field['type'] == 'checkbox':
                     try:
                         val = bool(int(val))
@@ -390,14 +361,7 @@ class Query(object):
         if max == self.items_per_page:
             max = None
 
-        constraints = []
-        for clause in self.constraints:
-            constraints.extend(clause.iteritems())
-            constraints.append(("or", empty))
-        del constraints[-1:]
-        
-        return href.query(constraints,
-                          report=id,
+        return href.query(report=id,
                           order=order, desc=desc and 1 or None,
                           group=self.group or None,
                           groupdesc=self.groupdesc and 1 or None,
@@ -405,7 +369,7 @@ class Query(object):
                           row=self.rows,
                           max=max,
                           page=page,
-                          format=format)
+                          format=format, **self.constraints)
 
     def to_string(self):
         """Return a user readable and editable representation of the query.
@@ -413,7 +377,7 @@ class Query(object):
         Note: for now, this is an "exploded" query href, but ideally should be
         expressed in TracQuery language.
         """
-        query_string = unicode_unquote(self.get_href(Href('')))
+        query_string = self.get_href(Href(''))
         if query_string and '?' in query_string:
             query_string = query_string.split('?', 1)[1]
         return 'query:?' + query_string.replace('&', '\n&\n')
@@ -421,7 +385,6 @@ class Query(object):
     def get_sql(self, req=None, cached_ids=None):
         """Return a (sql, params) tuple for the query."""
         self.get_columns()
-        db = self.env.get_db_cnx()
 
         enum_columns = ('resolution', 'priority', 'severity')
         # Build the list of actual columns to query
@@ -435,7 +398,7 @@ class Query(object):
         if self.rows:
             add_cols('reporter', *self.rows)
         add_cols('status', 'priority', 'time', 'changetime', self.order)
-        cols.extend([c for c in self.constraint_cols if not c in cols])
+        cols.extend([c for c in self.constraints.keys() if not c in cols])
 
         custom_fields = [f['name'] for f in self.fields if 'custom' in f]
 
@@ -443,15 +406,14 @@ class Query(object):
         sql.append("SELECT " + ",".join(['t.%s AS %s' % (c, c) for c in cols
                                          if c not in custom_fields]))
         sql.append(",priority.value AS priority_value")
-        for k in [db.quote(k) for k in cols if k in custom_fields]:
+        for k in [k for k in cols if k in custom_fields]:
             sql.append(",%s.value AS %s" % (k, k))
         sql.append("\nFROM ticket AS t")
 
         # Join with ticket_custom table as necessary
         for k in [k for k in cols if k in custom_fields]:
-            qk = db.quote(k)
-            sql.append("\n  LEFT OUTER JOIN ticket_custom AS %s ON " \
-                       "(id=%s.ticket AND %s.name='%s')" % (qk, qk, qk, k))
+           sql.append("\n  LEFT OUTER JOIN ticket_custom AS %s ON " \
+                      "(id=%s.ticket AND %s.name='%s')" % (k, k, k, k))
 
         # Join with the enum table for proper sorting
         for col in [c for c in enum_columns
@@ -466,67 +428,19 @@ class Query(object):
             sql.append("\n  LEFT OUTER JOIN %s ON (%s.name=%s)"
                        % (col, col, col))
 
-        def get_timestamp(date):
-            if date:
-                try:
-                    return to_utimestamp(parse_date(date, req.tz))
-                except TracError, e:
-                    errors.append(unicode(e))
-            return None
-
         def get_constraint_sql(name, value, mode, neg):
             if name not in custom_fields:
-                col = 't.' + name
+                name = 't.' + name
             else:
-                col = '%s.value' % db.quote(name)
+                name = name + '.value'
             value = value[len(mode) + neg:]
 
-            if name in self.time_fields:
-                if ';' in value:
-                    (start, end) = [each.strip() for each in 
-                                    value.split(';', 1)]
-                else:
-                    (start, end) = (value.strip(), '')
-                col_cast = db.cast(col, 'int64')
-                start = get_timestamp(start)
-                end = get_timestamp(end)
-                if start is not None and end is not None:
-                    return ("%s(%s>=%%s AND %s<%%s)" % (neg and 'NOT ' or '',
-                                                        col_cast, col_cast),
-                            (start, end))
-                elif start is not None:
-                    return ("%s%s>=%%s" % (neg and 'NOT ' or '', col_cast),
-                            (start, ))
-                elif end is not None:
-                    return ("%s%s<%%s" % (neg and 'NOT ' or '', col_cast),
-                            (end, ))
-                else:
-                    return None
-                
-            if mode == '~' and name == 'keywords':
-                words = value.split()
-                clauses, args = [], []
-                for word in words:
-                    cneg = ''
-                    if word.startswith('-'):
-                        cneg = 'NOT '
-                        word = word[1:]
-                        if not word:
-                            continue
-                    clauses.append("COALESCE(%s,'') %s%s" % (col, cneg,
-                                                             db.like()))
-                    args.append('%' + db.like_escape(word) + '%')
-                if not clauses:
-                    return None
-                return ((neg and 'NOT ' or '')
-                        + '(' + ' AND '.join(clauses) + ')', args)
-
             if mode == '':
-                return ("COALESCE(%s,'')%s=%%s" % (col, neg and '!' or ''),
-                        (value, ))
-
+                return ("COALESCE(%s,'')%s=%%s" % (name, neg and '!' or ''),
+                        value)
             if not value:
                 return None
+            db = self.env.get_db_cnx()
             value = db.like_escape(value)
             if mode == '~':
                 value = '%' + value + '%'
@@ -534,101 +448,94 @@ class Query(object):
                 value = value + '%'
             elif mode == '$':
                 value = '%' + value
-            return ("COALESCE(%s,'') %s%s" % (col, neg and 'NOT ' or '',
+            return ("COALESCE(%s,'') %s%s" % (name, neg and 'NOT ' or '',
                                               db.like()),
-                    (value, ))
+                    value)
 
-        def get_clause_sql(constraints):
-            db = self.env.get_db_cnx()
-            clauses = []
-            for k, v in constraints.iteritems():
-                if req:
-                    v = [val.replace('$USER', req.authname) for val in v]
-                # Determine the match mode of the constraint (contains,
-                # starts-with, negation, etc.)
-                neg = v[0].startswith('!')
-                mode = ''
-                if len(v[0]) > neg and v[0][neg] in ('~', '^', '$'):
-                    mode = v[0][neg]
-
-                # Special case id ranges
-                if k == 'id':
-                    ranges = Ranges()
-                    for r in v:
-                        r = r.replace('!', '')
-                        try:
-                            ranges.appendrange(r)
-                        except Exception:
-                            errors.append(_('Invalid ticket id list: '
-                                            '%(value)s', value=r))
-                    ids = []
-                    id_clauses = []
-                    for a, b in ranges.pairs:
-                        if a == b:
-                            ids.append(str(a))
-                        else:
-                            id_clauses.append('id BETWEEN %s AND %s')
-                            args.append(a)
-                            args.append(b)
-                    if ids:
-                        id_clauses.append('id IN (%s)' % (','.join(ids)))
-                    if id_clauses:
-                        clauses.append('%s(%s)' % (neg and 'NOT ' or '',
-                                                   ' OR '.join(id_clauses)))
-                # Special case for exact matches on multiple values
-                elif not mode and len(v) > 1 and k not in self.time_fields:
-                    if k not in custom_fields:
-                        col = 't.' + k
-                    else:
-                        col = '%s.value' % db.quote(k)
-                    clauses.append("COALESCE(%s,'') %sIN (%s)"
-                                   % (col, neg and 'NOT ' or '',
-                                      ','.join(['%s' for val in v])))
-                    args.extend([val[neg:] for val in v])
-                elif v:
-                    constraint_sql = [get_constraint_sql(k, val, mode, neg)
-                                      for val in v]
-                    constraint_sql = filter(None, constraint_sql)
-                    if not constraint_sql:
-                        continue
-                    if neg:
-                        clauses.append("(" + " AND ".join(
-                            [item[0] for item in constraint_sql]) + ")")
-                    else:
-                        clauses.append("(" + " OR ".join(
-                            [item[0] for item in constraint_sql]) + ")")
-                    for item in constraint_sql:
-                        args.extend(item[1])
-            return " AND ".join(clauses)
-
+        clauses = []
         args = []
-        errors = []
-        clauses = filter(None, (get_clause_sql(c) for c in self.constraints))
+        for k, v in self.constraints.items():
+            if req:
+                v = [val.replace('$USER', req.authname) for val in v]
+            # Determine the match mode of the constraint (contains,
+            # starts-with, negation, etc.)
+            neg = v[0].startswith('!')
+            mode = ''
+            if len(v[0]) > neg and v[0][neg] in ('~', '^', '$'):
+                mode = v[0][neg]
+
+            # Special case id ranges
+            if k == 'id':
+                ranges = Ranges()
+                for r in v:
+                    r = r.replace('!', '')
+                    ranges.appendrange(r)
+                ids = []
+                id_clauses = []
+                for a,b in ranges.pairs:
+                    if a == b:
+                        ids.append(str(a))
+                    else:
+                        id_clauses.append('id BETWEEN %s AND %s')
+                        args.append(a)
+                        args.append(b)
+                if ids:
+                    id_clauses.append('id IN (%s)' % (','.join(ids)))
+                if id_clauses:
+                    clauses.append('%s(%s)' % (neg and 'NOT ' or '',
+                                               ' OR '.join(id_clauses)))
+            # Special case for exact matches on multiple values
+            elif not mode and len(v) > 1:
+                if k not in custom_fields:
+                    col = 't.' + k
+                else:
+                    col = k + '.value'
+                clauses.append("COALESCE(%s,'') %sIN (%s)"
+                               % (col, neg and 'NOT ' or '',
+                                  ','.join(['%s' for val in v])))
+                args += [val[neg:] for val in v]
+            elif len(v) > 1:
+                constraint_sql = filter(None,
+                                        [get_constraint_sql(k, val, mode, neg)
+                                         for val in v])
+                if not constraint_sql:
+                    continue
+                if neg:
+                    clauses.append("(" + " AND ".join(
+                        [item[0] for item in constraint_sql]) + ")")
+                else:
+                    clauses.append("(" + " OR ".join(
+                        [item[0] for item in constraint_sql]) + ")")
+                args += [item[1] for item in constraint_sql]
+            elif len(v) == 1:
+                constraint_sql = get_constraint_sql(k, v[0], mode, neg)
+                if constraint_sql:
+                    clauses.append(constraint_sql[0])
+                    args.append(constraint_sql[1])
+
+        clauses = filter(None, clauses)
         if clauses:
             sql.append("\nWHERE ")
-            sql.append(" OR ".join('(%s)' % c for c in clauses))
+            sql.append(" AND ".join(clauses))
             if cached_ids:
                 sql.append(" OR ")
-                sql.append("id in (%s)" %
-                           (','.join([str(id) for id in cached_ids])))
+                sql.append("id in (%s)" % (','.join(
+                                                [str(id) for id in cached_ids])))
             
         sql.append("\nORDER BY ")
         order_cols = [(self.order, self.desc)]
         if self.group and self.group != self.order:
             order_cols.insert(0, (self.group, self.groupdesc))
-
         for name, desc in order_cols:
-            if name in enum_columns:
+            if name in custom_fields or name in enum_columns:
                 col = name + '.value'
-            elif name in custom_fields:
-                col = '%s.value' % db.quote(name)
             else:
                 col = 't.' + name
             desc = desc and ' DESC' or ''
             # FIXME: This is a somewhat ugly hack.  Can we also have the
             #        column type for this?  If it's an integer, we do first
             #        one, if text, we do 'else'
-            if name == 'id' or name in self.time_fields:
+            if name in ('id', 'time', 'changetime'):
                 sql.append("COALESCE(%s,0)=0%s," % (col, desc))
             else:
                 sql.append("COALESCE(%s,'')=''%s," % (col, desc))
@@ -651,59 +558,33 @@ class Query(object):
         if self.order != 'id':
             sql.append(",t.id")  
 
-        if errors:
-            raise QueryValueError(errors)
         return "".join(sql), args
-
-    @staticmethod
-    def get_modes():
-        modes = {}
-        modes['text'] = [
-            {'name': _("contains"), 'value': "~"},
-            {'name': _("doesn't contain"), 'value': "!~"},
-            {'name': _("begins with"), 'value': "^"},
-            {'name': _("ends with"), 'value': "$"},
-            {'name': _("is"), 'value': ""},
-            {'name': _("is not"), 'value': "!"},
-        ]
-        modes['textarea'] = [
-            {'name': _("contains"), 'value': "~"},
-            {'name': _("doesn't contain"), 'value': "!~"},
-        ]
-        modes['select'] = [
-            {'name': _("is"), 'value': ""},
-            {'name': _("is not"), 'value': "!"},
-        ]
-        modes['id'] = [
-            {'name': _("is"), 'value': ""},
-            {'name': _("is not"), 'value': "!"},
-        ]
-        return modes
 
     def template_data(self, context, tickets, orig_list=None, orig_time=None,
                       req=None):
-        clauses = []
-        for clause in self.constraints:
-            constraints = {}
-            for k, v in clause.items():
-                constraint = {'values': [], 'mode': ''}
-                for val in v:
-                    neg = val.startswith('!')
-                    if neg:
-                        val = val[1:]
-                    mode = ''
-                    if val[:1] in ('~', '^', '$') \
-                                        and not val in self.substitutions:
-                        mode, val = val[:1], val[1:]
-                    constraint['mode'] = (neg and '!' or '') + mode
-                    constraint['values'].append(val)
-                constraints[k] = constraint
-            clauses.append(constraints)
+        constraints = {}
+        for k, v in self.constraints.items():
+            constraint = {'values': [], 'mode': ''}
+            for val in v:
+                neg = val.startswith('!')
+                if neg:
+                    val = val[1:]
+                mode = ''
+                if val[:1] in ('~', '^', '$') \
+                                    and not val in self.substitutions:
+                    mode, val = val[:1], val[1:]
+                constraint['mode'] = (neg and '!' or '') + mode
+                constraint['values'].append(val)
+            constraints[k] = constraint
 
         cols = self.get_columns()
-        labels = TicketSystem(self.env).get_ticket_field_labels()
-        wikify = set(f['name'] for f in self.fields 
-                     if f['type'] == 'text' and f.get('format') == 'wiki')
+        labels = dict([(f['name'], f['label']) for f in self.fields])
+        wikify = set([f['name'] for f in self.fields 
+                      if f['type'] == 'text' and f.get('format') == 'wiki'])
+
+        # TODO: remove after adding time/changetime to the api.py
+        labels['changetime'] = _('Modified')
+        labels['time'] = _('Created')
 
         headers = [{
             'name': col, 'label': labels.get(col, _('Ticket')),
@@ -712,14 +593,33 @@ class Query(object):
                                   desc=(col == self.order and not self.desc))
         } for col in cols]
 
-        fields = {'id': {'type': 'id', 'label': _("Ticket")}}
+        fields = {}
         for field in self.fields:
-            name = field['name']
-            if name == 'owner' and field['type'] == 'select':
+            if field['name'] == 'owner' and field['type'] == 'select':
                 # Make $USER work when restrict_owner = true
-                field = field.copy()
                 field['options'].insert(0, '$USER')
-            fields[name] = field
+            field_data = {}
+            field_data.update(field)
+            del field_data['name']
+            fields[field['name']] = field_data
+
+        modes = {}
+        modes['text'] = [
+            {'name': _("contains"), 'value': "~"},
+            {'name': _("doesn't contain"), 'value': "!~"},
+            {'name': _("begins with"), 'value': "^"},
+            {'name': _("ends with"), 'value': "$"},
+            {'name': _("is"), 'value': ""},
+            {'name': _("is not"), 'value': "!"}
+        ]
+        modes['textarea'] = [
+            {'name': _("contains"), 'value': "~"},
+            {'name': _("doesn't contain"), 'value': "!~"},
+        ]
+        modes['select'] = [
+            {'name': _("is"), 'value': ""},
+            {'name': _("is not"), 'value': "!"}
+        ]
 
         groups = {}
         groupsequence = []
@@ -785,10 +685,11 @@ class Query(object):
                 'context': context,
                 'col': cols,
                 'row': self.rows,
-                'clauses': clauses,
+                'constraints': constraints,
+                'labels': labels,
                 'headers': headers,
                 'fields': fields,
-                'modes': self.get_modes(),
+                'modes': modes,
                 'tickets': tickets,
                 'groups': groupsequence or [(None, tickets)],
                 'last_group_is_partial': last_group_is_partial,
@@ -873,21 +774,23 @@ class QueryModule(Component):
                       
             self.log.debug('QueryModule: Using default query: %s', str(qstring))
             if qstring.startswith('?'):
-                arg_list = parse_arg_list(qstring[1:])
-                args = arg_list_to_args(arg_list)
-                constraints = self._get_constraints(arg_list=arg_list)
+                ticket_fields = [f['name'] for f in
+                                 TicketSystem(self.env).get_ticket_fields()]
+                ticket_fields.append('id')
+                args = parse_query_string(qstring[1:])
+                constraints = dict([(k, args.getlist(k)) for k in args 
+                                    if k in ticket_fields])
             else:
                 constraints = Query.from_string(self.env, qstring).constraints
                 # Substitute $USER, or ensure no field constraints that depend
                 # on $USER are used if we have no username.
-                for clause in constraints:
-                    for field, vals in clause.items():
-                        for (i, val) in enumerate(vals):
-                            if user:
-                                vals[i] = val.replace('$USER', user)
-                            elif val.endswith('$USER'):
-                                del clause[field]
-                                break
+                for field, vals in constraints.items():
+                    for (i, val) in enumerate(vals):
+                        if user:
+                            vals[i] = val.replace('$USER', user)
+                        elif val.endswith('$USER'):
+                            del constraints[field]
+                            break
 
         cols = args.get('col')
         if isinstance(cols, basestring):
@@ -934,89 +837,43 @@ class QueryModule(Component):
 
     # Internal methods
 
-    remove_re = re.compile(r'rm_filter_\d+_(.+)_(\d+)$')
-    add_re = re.compile(r'add_(\d+)$')
+    def _get_constraints(self, req):
+        constraints = {}
+        ticket_fields = [f['name'] for f in
+                         TicketSystem(self.env).get_ticket_fields()]
+        ticket_fields.append('id')
 
-    def _get_constraints(self, req=None, arg_list=[]):
-        fields = TicketSystem(self.env).get_ticket_fields()
-        synonyms = TicketSystem(self.env).get_field_synonyms()
-        fields = dict((f['name'], f) for f in fields)
-        fields['id'] = {'type': 'id'}
-        fields.update((k, fields[v]) for k, v in synonyms.iteritems())
-        
-        clauses = []
-        if req is not None:
-            # For clients without JavaScript, we remove constraints here if
-            # requested
-            remove_constraints = {}
-            for k in req.args:
-                match = self.remove_re.match(k)
-                if match:
-                    field = match.group(1)
-                    if fields[field]['type'] == 'radio':
-                        index = -1
-                    else:
-                        index = int(match.group(2))
-                    remove_constraints[k[10:match.end(1)]] = index
-            
-            # Get constraints from form fields, and add a constraint if
-            # requested for clients without JavaScript
-            add_num = None
-            constraints = {}
-            for k, vals in req.args.iteritems():
-                match = self.add_re.match(k)
-                if match:
-                    add_num = match.group(1)
-                    continue
-                match = Query.clause_re.match(k)
-                if not match:
-                    continue
-                field = match.group('field')
-                clause_num = int(match.group('clause'))
-                if field not in fields:
-                    continue
-                if not isinstance(vals, (list, tuple)):
-                    vals = [vals]
-                if vals:
-                    mode = req.args.get(k + '_mode')
-                    if mode:
-                        vals = [mode + x for x in vals]
-                    if fields[field]['type'] == 'time':
-                        ends = req.args.getlist(k + '_end')
-                        if ends:
-                            vals = [start + ';' + end 
-                                    for (start, end) in zip(vals, ends)]
-                    if k in remove_constraints:
-                        idx = remove_constraints[k]
-                        if idx >= 0:
-                            del vals[idx]
-                            if not vals:
-                                continue
-                        else:
+        # For clients without JavaScript, we remove constraints here if
+        # requested
+        remove_constraints = {}
+        to_remove = [k[10:] for k in req.args.keys()
+                     if k.startswith('rm_filter_')]
+        if to_remove: # either empty or containing a single element
+            match = re.match(r'(\w+?)_(\d+)$', to_remove[0])
+            if match:
+                remove_constraints[match.group(1)] = int(match.group(2))
+            else:
+                remove_constraints[to_remove[0]] = -1
+
+        for field in [k for k in req.args.keys() if k in ticket_fields]:
+            vals = req.args[field]
+            if not isinstance(vals, (list, tuple)):
+                vals = [vals]
+            if vals:
+                mode = req.args.get(field + '_mode')
+                if mode:
+                    vals = [mode + x for x in vals]
+                if field in remove_constraints:
+                    idx = remove_constraints[field]
+                    if idx >= 0:
+                        del vals[idx]
+                        if not vals:
                             continue
-                    field = synonyms.get(field, field)
-                    clause = constraints.setdefault(clause_num, {})
-                    clause.setdefault(field, []).extend(vals)
-            if add_num is not None:
-                field = req.args.get('add_filter_' + add_num,
-                                     req.args.get('add_clause_' + add_num))
-                if field:
-                    clause = constraints.setdefault(int(add_num), {})
-                    modes = Query.get_modes().get(fields[field]['type'])
-                    mode = modes and modes[0]['value'] or ''
-                    clause.setdefault(field, []).append(mode)
-            clauses.extend(each[1] for each in sorted(constraints.iteritems()))
-        
-        # Get constraints from query string
-        clauses.append({})
-        for field, val in arg_list or req.arg_list:
-            if field == "or":
-                clauses.append({})
-            elif field in fields:
-                clauses[-1].setdefault(field, []).append(val)
-        clauses = filter(None, clauses)
-        
-        return clauses
+                    else:
+                        continue
+                constraints[field] = vals
+
+        return constraints
 
     def display_html(self, req, query):
         db = self.env.get_db_cnx()
@@ -1027,29 +884,34 @@ class QueryModule(Component):
         query_time = int(req.session.get('query_time', 0))
         query_time = datetime.fromtimestamp(query_time, utc)
         query_constraints = unicode(query.constraints)
-        try:
-            if query_constraints != req.session.get('query_constraints') \
-                    or query_time < orig_time - timedelta(hours=1):
-                tickets = query.execute(req, db)
-                # New or outdated query, (re-)initialize session vars
-                req.session['query_constraints'] = query_constraints
-                req.session['query_tickets'] = ' '.join([str(t['id'])
-                                                         for t in tickets])
-            else:
-                orig_list = [int(id) for id
-                             in req.session.get('query_tickets', '').split()]
-                tickets = query.execute(req, db, orig_list)
-                orig_time = query_time
-        except QueryValueError, e:
-            tickets = []
-            for error in e.errors:
-                add_warning(req, error)
+        if query_constraints != req.session.get('query_constraints') \
+                or query_time < orig_time - timedelta(hours=1):
+            tickets = query.execute(req, db)
+            # New or outdated query, (re-)initialize session vars
+            req.session['query_constraints'] = query_constraints
+            req.session['query_tickets'] = ' '.join([str(t['id'])
+                                                     for t in tickets])
+        else:
+            orig_list = [int(id) for id
+                         in req.session.get('query_tickets', '').split()]
+            tickets = query.execute(req, db, orig_list)
+            orig_time = query_time
 
         context = Context.from_request(req, 'query')
         owner_field = [f for f in query.fields if f['name'] == 'owner']
         if owner_field:
             TicketSystem(self.env).eventually_restrict_owner(owner_field[0])
         data = query.template_data(context, tickets, orig_list, orig_time, req)
+
+        # For clients without JavaScript, we add a new constraint here if
+        # requested
+        constraints = data['constraints']
+        if 'add' in req.args:
+            field = req.args.get('add_filter')
+            if field:
+                constraint = constraints.setdefault(field, {})
+                constraint.setdefault('values', []).append('')
+                # FIXME: '' not always correct (e.g. checkboxes)
 
         req.session['query_href'] = query.get_href(context.href)
         req.session['query_time'] = to_timestamp(orig_time)
@@ -1107,21 +969,24 @@ class QueryModule(Component):
                     if col in ('cc', 'reporter'):
                         value = Chrome(self.env).format_emails(context(ticket),
                                                                value)
-                    elif col in query.time_fields:
-                        value = format_datetime(value, tzinfo=req.tz)
                     values.append(unicode(value).encode('utf-8'))
                 writer.writerow(values)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
 
     def export_rss(self, req, query):
-        context = Context.from_request(req, 'query', absurls=True)
-        query_href = query.get_href(context.href)
         if 'description' not in query.rows:
             query.rows.append('description')
         db = self.env.get_db_cnx()
         results = query.execute(req, db)
+        query_href = req.abs_href.query(group=query.group,
+                                        groupdesc=(query.groupdesc and 1
+                                                   or None),
+                                        row=query.rows,
+                                        page=req.args.get('page'), 
+                                        max=req.args.get('max'),
+                                        **query.constraints)
         data = {
-            'context': context,
+            'context': Context.from_request(req, 'query', absurls=True),
             'results': results,
             'query_href': query_href
         }
@@ -1148,12 +1013,11 @@ class QueryModule(Component):
                              href=query.get_href(formatter.context.href),
                              class_='query')
             except QuerySyntaxError, e:
-                return tag.em(_('[Error: %(error)s]', error=unicode(e)), 
-                              class_='error')
+                return tag.em(_('[Error: %(error)s]', error=e), class_='error')
 
 
 class TicketQueryMacro(WikiMacroBase):
-    """Wiki macro listing tickets that match certain criteria.
+    """Macro that lists tickets that match certain criteria.
     
     This macro accepts a comma-separated list of keyed parameters,
     in the form "key=value".
@@ -1161,12 +1025,8 @@ class TicketQueryMacro(WikiMacroBase):
     If the key is the name of a field, the value must use the syntax 
     of a filter specifier as defined in TracQuery#QueryLanguage.
     Note that this is ''not'' the same as the simplified URL syntax 
-    used for `query:` links starting with a `?` character. Commas (`,`)
-    can be included in field values by escaping them with a backslash (`\`).
+    used for `query:` links starting with a `?` character.
 
-    Groups of field constraints to be OR-ed together can be separated by a
-    litteral `or` argument.
-    
     In addition to filters, several other named parameters can be used
     to control how the results are presented. All of them are optional.
 
@@ -1202,38 +1062,19 @@ class TicketQueryMacro(WikiMacroBase):
     The `rows` parameter can be used to specify which field(s) should 
     be viewed as a row, e.g. `rows=description|summary`
 
-    For compatibility with Trac 0.10, if there's a last positional parameter
+    For compatibility with Trac 0.10, if there's a second positional parameter
     given to the macro, it will be used to specify the `format`.
     Also, using "&" as a field separator still works (except for `order`)
     but is deprecated.
     """
 
-    _comma_splitter = re.compile(r'(?<!\\),')
-    
-    @staticmethod
-    def parse_args(content):
-        """Parse macro arguments and translate them to a query string."""
-        clauses = [{}]
-        argv = []
-        kwargs = {}
-        for arg in TicketQueryMacro._comma_splitter.split(content):
-            arg = arg.replace(r'\,', ',')
-            m = re.match(r'\s*[^=]+=', arg)
-            if m:
-                kw = arg[:m.end() - 1].strip()
-                value = arg[m.end():]
-                if kw in ('order', 'max', 'format', 'col'):
-                    kwargs[kw] = value
-                else:
-                    clauses[-1][kw] = value
-            elif arg.strip() == 'or':
-                clauses.append({})
-            else:
-                argv.append(arg)
-        clauses = filter(None, clauses)
-
+    def expand_macro(self, formatter, name, content):
+        req = formatter.req
+        query_string = ''
+        argv, kwargs = parse_args(content, strict=False)
         if len(argv) > 0 and not 'format' in kwargs: # 0.10 compatibility hack
             kwargs['format'] = argv[0]
+
         if 'order' not in kwargs:
             kwargs['order'] = 'id'
         if 'max' not in kwargs:
@@ -1241,23 +1082,11 @@ class TicketQueryMacro(WikiMacroBase):
 
         format = kwargs.pop('format', 'list').strip().lower()
         if format in ('list', 'compact'): # we need 'status' and 'summary'
-            if 'col' in kwargs:
-                kwargs['col'] = 'status|summary|' + kwargs['col']
-            else:
-                kwargs['col'] = 'status|summary'
+            kwargs['col'] = '|'.join(['status', 'summary', 
+                                      kwargs.get('col', '')])
 
-        query_string = '&or&'.join('&'.join('%s=%s' % item
-                                            for item in clause.iteritems())
-                                   for clause in clauses)
-        return query_string, kwargs, format
-    
-    def expand_macro(self, formatter, name, content):
-        req = formatter.req
-        query_string, kwargs, format = self.parse_args(content)
-        if query_string:
-            query_string += '&'
-        query_string += '&'.join('%s=%s' % item
-                                 for item in kwargs.iteritems())
+        query_string = '&'.join(['%s=%s' % item
+                                 for item in kwargs.iteritems()])
         query = Query.from_string(self.env, query_string)
 
         if format == 'count':
@@ -1302,8 +1131,7 @@ class TicketQueryMacro(WikiMacroBase):
                           "%(query)s", groupvalue=v, groupname=query.group,
                           query=q.to_string())
                 # produce the href for the query corresponding to the group
-                for constraint in q.constraints:
-                    constraint[str(query.group)] = v
+                q.constraints[str(query.group)] = v
                 q.order = order
                 href = q.get_href(formatter.context)
                 groups.append((v, [t for t in g], href, title))
@@ -1322,10 +1150,8 @@ class TicketQueryMacro(WikiMacroBase):
         else:
             if query.group:
                 return tag.div(
-                    [(tag.p(tag_('%(groupvalue)s %(groupname)s tickets:',
-                                 groupvalue=tag.a(v, href=href, class_='query',
-                                                  title=title),
-                                 groupname=query.group)),
+                    [(tag.p(tag.a(query.group, ' ', v, href=href,
+                                  class_='query', title=title)),
                       tag.dl([(tag.dt(ticket_anchor(t)),
                                tag.dd(t['summary'])) for t in g],
                              class_='wiki compact'))

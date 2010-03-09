@@ -18,6 +18,7 @@
 from StringIO import StringIO
 from datetime import datetime
 import re
+from time import localtime, strftime, time
 
 from genshi.builder import tag
 
@@ -25,22 +26,22 @@ from trac import __version__
 from trac.attachment import AttachmentModule
 from trac.config import ExtensionOption
 from trac.core import *
-from trac.db.util import with_transaction
 from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import *
 from trac.search import ISearchSource, search_to_sql, shorten_result
-from trac.util.datefmt import parse_date, utc, to_utimestamp, \
+from trac.util.compat import set, sorted
+from trac.util.datefmt import parse_date, utc, to_timestamp, to_datetime, \
                               get_date_format_hint, get_datetime_format_hint, \
-                              format_date, format_datetime, from_utimestamp
-from trac.util.text import CRLF
+                              format_date, format_datetime
+from trac.util.text import shorten_line, CRLF, to_unicode
 from trac.util.translation import _
 from trac.ticket import Milestone, Ticket, TicketSystem, group_milestones
-from trac.ticket.query import QueryModule
+from trac.ticket.query import Query, QueryModule
 from trac.timeline.api import ITimelineEventProvider
 from trac.web import IRequestHandler, RequestDone
-from trac.web.chrome import add_link, add_notice, add_script, add_stylesheet, \
-                            add_warning, Chrome, INavigationContributor
+from trac.web.chrome import add_link, add_notice, add_stylesheet, \
+                            add_warning, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import format_to
 
@@ -55,17 +56,15 @@ class ITicketGroupStatsProvider(Interface):
 class TicketGroupStats(object):
     """Encapsulates statistics on a group of tickets."""
 
-    def __init__(self, title, unit, units=None):
+    def __init__(self, title, unit):
         """Creates a new TicketGroupStats object.
         
         `title` is the display name of this group of stats (e.g.
           'ticket status').
-        `unit` and `units` are used to display the units for these stats 
-        (e.g. 'hour' and 'hours').
+        `unit` is the display name of the units for these stats (e.g. 'hour').
         """
         self.title = title
         self.unit = unit
-        self.units = units or unit
         self.count = 0
         self.qry_args = {}
         self.intervals = []
@@ -205,7 +204,7 @@ class DefaultTicketGroupStatsProvider(Component):
             for s, cnt in cursor:
                 status_cnt[s] = cnt
 
-        stat = TicketGroupStats(_('ticket status'), _('ticket'), _('tickets'))
+        stat = TicketGroupStats('ticket status', 'ticket')
         remaining_statuses = set(all_statuses)
         groups =  self._get_ticket_groups()
         catch_all_group = None
@@ -329,20 +328,14 @@ class RoadmapModule(Component):
         return req.path_info == '/roadmap'
 
     def process_request(self, req):
+        milestone_realm = Resource('milestone')
         req.perm.require('MILESTONE_VIEW')
 
-        show = req.args.getlist('show')
-        if 'all' in show:
-            show = ['completed']
+        showall = req.args.get('show') == 'all'
 
         db = self.env.get_db_cnx()
-        milestones = Milestone.select(self.env, 'completed' in show, db)
-        if 'noduedate' in show:
-            milestones = [m for m in milestones
-                          if m.due is not None or m.completed]
-        milestones = [m for m in milestones
+        milestones = [m for m in Milestone.select(self.env, showall, db)
                       if 'MILESTONE_VIEW' in req.perm(m.resource)]
-
         stats = []
         queries = []
 
@@ -363,7 +356,8 @@ class RoadmapModule(Component):
         username = None
         if req.authname and req.authname != 'anonymous':
             username = req.authname
-        icshref = req.href.roadmap(show=show, user=username, format='ics')
+        icshref = req.href.roadmap(show=req.args.get('show'), user=username,
+                                   format='ics')
         add_link(req, 'alternate', icshref, _('iCalendar'), 'text/calendar',
                  'ics')
 
@@ -371,9 +365,8 @@ class RoadmapModule(Component):
             'milestones': milestones,
             'milestone_stats': stats,
             'queries': queries,
-            'show': show,
+            'showall': showall,
         }
-        add_stylesheet(req, 'common/css/roadmap.css')
         return 'roadmap.html', data, None
 
     # Internal methods
@@ -399,8 +392,7 @@ class RoadmapModule(Component):
             elif status == 'assigned' or status == 'reopened':
                 return 'IN-PROCESS'
             elif status == 'closed':
-                if ticket['resolution'] == 'fixed':
-                    return 'COMPLETED'
+                if ticket['resolution'] == 'fixed': return 'COMPLETED'
                 else: return 'CANCELLED'
             else: return ''
 
@@ -413,8 +405,7 @@ class RoadmapModule(Component):
                  + ':' + escape_value(value)
             firstline = 1
             while text:
-                if not firstline:
-                    text = ' ' + text
+                if not firstline: text = ' ' + text
                 else: firstline = 0
                 buf.write(text[:75] + CRLF)
                 text = text[75:]
@@ -436,7 +427,7 @@ class RoadmapModule(Component):
                    % __version__)
         write_prop('METHOD', 'PUBLISH')
         write_prop('X-WR-CALNAME',
-                   self.env.project_name + ' - ' + _('Roadmap'))
+                   self.config.get('project', 'name') + ' - ' + _('Roadmap'))
         for milestone in milestones:
             uid = '<%s/milestone/%s@%s>' % (req.base_path, milestone.name,
                                             host)
@@ -445,8 +436,9 @@ class RoadmapModule(Component):
                 write_prop('UID', uid)
                 write_utctime('DTSTAMP', milestone.due)
                 write_date('DTSTART', milestone.due)
-                write_prop('SUMMARY', _('Milestone %(name)s',
-                                        name=milestone.name))
+                write_prop('SUMMARY', _('Milestone %(name)s') % {
+                    'name': milestone.name
+                })
                 write_prop('URL', req.base_url + '/milestone/' +
                            milestone.name)
                 if milestone.description:
@@ -464,9 +456,9 @@ class RoadmapModule(Component):
                 if milestone.due:
                     write_prop('RELATED-TO', uid)
                     write_date('DUE', milestone.due)
-                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s',
-                                        num=ticket.id,
-                                        summary=ticket['summary']))
+                write_prop('SUMMARY', _('Ticket #%(num)s: %(summary)s') % {
+                    'num': ticket.id, 'summary': ticket['summary']
+                })
                 write_prop('URL', req.abs_href.ticket(ticket.id))
                 write_prop('DESCRIPTION', ticket['description'])
                 priority = get_priority(ticket)
@@ -481,7 +473,7 @@ class RoadmapModule(Component):
                                    (ticket.id,))
                     row = cursor.fetchone()
                     if row:
-                        write_utctime('COMPLETED', from_utimestamp(row[0]))
+                        write_utctime('COMPLETED', to_datetime(row[0], utc))
                 write_prop('END', 'VTODO')
         write_prop('END', 'VCALENDAR')
 
@@ -490,6 +482,7 @@ class RoadmapModule(Component):
         req.end_headers()
         req.write(ics_str)
         raise RequestDone
+
 
 
 class MilestoneModule(Component):
@@ -525,7 +518,7 @@ class MilestoneModule(Component):
 
     def get_timeline_filters(self, req):
         if 'MILESTONE_VIEW' in req.perm:
-            yield ('milestone', _('Milestones reached'))
+            yield ('milestone', _('Milestones'))
 
     def get_timeline_events(self, req, start, stop, filters):
         if 'milestone' in filters:
@@ -535,11 +528,11 @@ class MilestoneModule(Component):
             # TODO: creation and (later) modifications should also be reported
             cursor.execute("SELECT completed,name,description FROM milestone "
                            "WHERE completed>=%s AND completed<=%s",
-                           (to_utimestamp(start), to_utimestamp(stop)))
+                           (to_timestamp(start), to_timestamp(stop)))
             for completed, name, description in cursor:
                 milestone = milestone_realm(id=name)
                 if 'MILESTONE_VIEW' in req.perm(milestone):
-                    yield('milestone', from_utimestamp(completed),
+                    yield('milestone', datetime.fromtimestamp(completed, utc),
                           '', (milestone, description)) # FIXME: author?
 
             # Attachments
@@ -573,15 +566,8 @@ class MilestoneModule(Component):
         add_link(req, 'up', req.href.roadmap(), _('Roadmap'))
 
         db = self.env.get_db_cnx() # TODO: db can be removed
+        milestone = Milestone(self.env, milestone_id, db)
         action = req.args.get('action', 'view')
-        try:
-            milestone = Milestone(self.env, milestone_id, db)
-        except ResourceNotFound:
-            if 'MILESTONE_CREATE' not in req.perm('milestone', milestone_id):
-                raise
-            milestone = Milestone(self.env, None, db)
-            milestone.name = milestone_id
-            action = 'edit' # rather than 'new' so that it works for POST/save
 
         if req.method == 'POST':
             if req.args.has_key('cancel'):
@@ -592,7 +578,7 @@ class MilestoneModule(Component):
             elif action == 'edit':
                 return self._do_save(req, db, milestone)
             elif action == 'delete':
-                self._do_delete(req, milestone)
+                self._do_delete(req, db, milestone)
         elif action in ('new', 'edit'):
             return self._render_editor(req, db, milestone)
         elif action == 'delete':
@@ -605,13 +591,14 @@ class MilestoneModule(Component):
 
     # Internal methods
 
-    def _do_delete(self, req, milestone):
+    def _do_delete(self, req, db, milestone):
         req.perm(milestone.resource).require('MILESTONE_DELETE')
 
         retarget_to = None
         if req.args.has_key('retarget'):
             retarget_to = req.args.get('target') or None
         milestone.delete(retarget_to, req.authname)
+        db.commit()
         add_notice(req, _('The milestone "%(name)s" has been deleted.',
                           name=milestone.name))
         req.redirect(req.href.roadmap())
@@ -641,22 +628,20 @@ class MilestoneModule(Component):
             warnings.append(msg)
 
         # -- check the name
-        # If the name has changed, check that the milestone doesn't already
-        # exist
-        # FIXME: the whole .exists business needs to be clarified
-        #        (#4130) and should behave like a WikiPage does in
-        #        this respect.
-        try:
-            new_milestone = Milestone(self.env, new_name, db)
-            if new_milestone.name == old_name:
-                pass        # Creation or no name change
-            elif new_milestone.name:
-                warn(_('Milestone "%(name)s" already exists, please '
-                       'choose another name.', name=new_milestone.name))
-            else:
-                warn(_('You must provide a name for the milestone.'))
-        except ResourceNotFound:
-            milestone.name = new_name
+        if new_name:
+            if new_name != old_name:
+                # check that the milestone doesn't already exists
+                # FIXME: the whole .exists business needs to be clarified
+                #        (#4130) and should behave like a WikiPage does in
+                #        this respect.
+                try:
+                    other_milestone = Milestone(self.env, new_name, db)
+                    warn(_('Milestone "%(name)s" already exists, please '
+                           'choose another name', name=new_name))
+                except ResourceNotFound:
+                    milestone.name = new_name
+        else:
+            warn(_('You must provide a name for the milestone.'))
 
         # -- check completed date
         if 'completed' in req.args:
@@ -675,16 +660,15 @@ class MilestoneModule(Component):
             milestone.update()
             # eventually retarget opened tickets associated with the milestone
             if 'retarget' in req.args and completed:
-                @with_transaction(self.env)
-                def retarget(db):
-                    cursor = db.cursor()
-                    cursor.execute("UPDATE ticket SET milestone=%s WHERE "
-                                   "milestone=%s and status != 'closed'",
-                                   (retarget_to, old_name))
+                cursor = db.cursor()
+                cursor.execute("UPDATE ticket SET milestone=%s WHERE "
+                               "milestone=%s and status != 'closed'",
+                                (retarget_to, old_name))
                 self.env.log.info('Tickets associated with milestone %s '
                                   'retargeted to %s' % (old_name, retarget_to))
         else:
             milestone.insert()
+        db.commit()
 
         add_notice(req, _('Your changes have been saved.'))
         req.redirect(req.href.milestone(milestone.name))
@@ -720,7 +704,6 @@ class MilestoneModule(Component):
         else:
             req.perm(milestone.resource).require('MILESTONE_CREATE')
 
-        Chrome(self.env).add_wiki_toolbars(req)
         return 'milestone_edit.html', data, None
 
     def _render_view(self, req, db, milestone):
@@ -799,8 +782,6 @@ class MilestoneModule(Component):
                     percent = float(gstat.count) / float(max_count) * 100
                 gs_dict['percent_of_max_total'] = percent
 
-        add_stylesheet(req, 'common/css/roadmap.css')
-        add_script(req, 'common/js/folding.js')
         return 'milestone_view.html', data, None
 
     # IWikiSyntaxProvider methods
@@ -870,10 +851,10 @@ class MilestoneModule(Component):
         for name, due, completed, description in cursor:
             milestone = milestone_realm(id=name)
             if 'MILESTONE_VIEW' in req.perm(milestone):
-                dt = (completed and from_utimestamp(completed) or
-                      due and from_utimestamp(due) or datetime.now(utc))
                 yield (get_resource_url(self.env, milestone, req.href),
-                       get_resource_name(self.env, milestone), dt,
+                       get_resource_name(self.env, milestone),
+                       datetime.fromtimestamp(
+                           completed or due or time(), utc),
                        '', shorten_result(description, terms))
         
         # Attachments

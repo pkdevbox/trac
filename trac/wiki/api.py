@@ -16,14 +16,22 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
+import time
+import urllib
 import re
+from StringIO import StringIO
 
 from genshi.builder import tag
 
-from trac.cache import cached
 from trac.config import BoolOption
 from trac.core import *
 from trac.resource import IResourceManager
+from trac.util import reversed
+from trac.util.html import html
 from trac.util.translation import _
 from trac.wiki.parser import WikiParser
 
@@ -67,49 +75,22 @@ class IWikiPageManipulator(Interface):
 
 
 class IWikiMacroProvider(Interface):
-    """Extension point interface for components that provide Wiki macros
-
-    New Wiki processors can also be added that way. (''since 0.12'')
-    """
+    """Extension point interface for components that provide Wiki macros."""
 
     def get_macros():
-        """Return an iterable that provides the names of the provided macros.
-        """
+        """Return an iterable that provides the names of the provided macros."""
 
     def get_macro_description(name):
-        """Return a plain text description of the macro with the specified
-        name."""
+        """Return a plain text description of the macro with the specified name.
+        """
 
     def render_macro(req, name, content):
         """Return the HTML output of the macro (deprecated)"""
 
-    def expand_macro(formatter, name, content, args=None):
+    def expand_macro(formatter, name, content):
         """Called by the formatter when rendering the parsed wiki text.
 
-        This form is preferred over `render_macro`, as you get the
-        formatter, which knows the current `.context` (and the `.req`,
-        but ideally you shouldn't use it in your macros). (''since 0.11'')
-
-        `name` is the name by which the macro has been called; remember
-        that via `get_macros`, multiple names could be associated to this
-        macros. Note that the macro names are case sensitive.
-        
-        `content` is the content of the macro call. When called using macro
-        syntax (`[[Macro(content)]]`), this is the string contained between
-        parentheses, usually containing macro arguments. When called using wiki
-        processor syntax (`{{{!#Macro ...}}}`), it is the content of the
-        processor block, that is, the text starting on the line following the
-        macro name.
-
-        `args` will be a dictionary containing the named parameters which you
-        can specify when calling the macro using the wiki processor syntax:
-        `{{{#!Macro arg1=value1 arg2="value 2"`. In this example, `args` will
-        be `{'arg1': 'value1', 'arg2': 'value 2'}`).
-        If no named parameters are given, `args` will be `{}`. That makes it
-        possible to differentiate with a call using the macro syntax, in which
-        case `args` will be `None` (see `parse_args` for a convenient way to
-        extract arguments and name parameters from the `content` inside the
-        parentheses, in the latter situation). (''since 0.12'')
+        (since 0.11)
         """
 
 
@@ -176,13 +157,15 @@ def parse_args(args, strict=True):
 
 
 class WikiSystem(Component):
-    """Wiki system manager."""
+    """Represents the wiki system."""
 
-    implements(IWikiSyntaxProvider, IResourceManager)
+    implements(IWikiChangeListener, IWikiSyntaxProvider, IResourceManager)
 
     change_listeners = ExtensionPoint(IWikiChangeListener)
     macro_providers = ExtensionPoint(IWikiMacroProvider)
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
+
+    INDEX_UPDATE_INTERVAL = 5 # seconds
 
     ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
         """Enable/disable highlighting CamelCase links to missing pages
@@ -200,12 +183,26 @@ class WikiSystem(Component):
         For public sites where anonymous users can edit the wiki it is
         recommended to leave this option disabled (which is the default).""")
 
-    @cached
-    def pages(self, db):
-        """Return the names of all existing wiki pages."""
-        cursor = db.cursor()
-        cursor.execute("SELECT DISTINCT name FROM wiki")
-        return set(row[0] for row in cursor)
+    def __init__(self):
+        self._index = None
+        self._last_index_update = 0
+        self._index_lock = threading.RLock()
+
+    def _update_index(self):
+        self._index_lock.acquire()
+        try:
+            now = time.time()
+            if now > self._last_index_update + WikiSystem.INDEX_UPDATE_INTERVAL:
+                self.log.debug('Updating wiki page index')
+                db = self.env.get_db_cnx()
+                cursor = db.cursor()
+                cursor.execute("SELECT DISTINCT name FROM wiki")
+                self._index = {}
+                for (name,) in cursor:
+                    self._index[name] = True
+                self._last_index_update = now
+        finally:
+            self._index_lock.release()
 
     # Public API
 
@@ -215,13 +212,35 @@ class WikiSystem(Component):
         If the `prefix` parameter is given, only names that start with that
         prefix are included.
         """
-        for page in self.pages():
+        self._update_index()
+        # Note: use of keys() is intentional since iterkeys() is prone to
+        # errors with concurrent modification
+        for page in self._index.keys():
             if not prefix or page.startswith(prefix):
                 yield page
 
     def has_page(self, pagename):
         """Whether a page with the specified name exists."""
-        return pagename.rstrip('/') in self.pages()
+        self._update_index()
+        return self._index.has_key(pagename.rstrip('/'))
+
+    # IWikiChangeListener methods
+
+    def wiki_page_added(self, page):
+        if not self.has_page(page.name):
+            self.log.debug('Adding page %s to index' % page.name)
+            self._index[page.name] = True
+
+    def wiki_page_changed(self, page, version, t, comment, author, ipnr):
+        pass
+
+    def wiki_page_deleted(self, page):
+        if self.has_page(page.name):
+            self.log.debug('Removing page %s from index' % page.name)
+            del self._index[page.name]
+
+    def wiki_page_version_deleted(self, page):
+        pass
 
     # IWikiSyntaxProvider methods
 
@@ -231,9 +250,9 @@ class WikiSystem(Component):
 
     PAGE_SPLIT_RE = re.compile(r"([a-z])([A-Z])(?=[a-z])")
 
-    Lu = ''.join(unichr(c) for c in range(0, 0x10000) if unichr(c).isupper())
-    Ll = ''.join(unichr(c) for c in range(0, 0x10000) if unichr(c).islower())
-
+    Lu = ''.join([unichr(c) for c in range(0, 0x10000) if unichr(c).isupper()])
+    Ll = ''.join([unichr(c) for c in range(0, 0x10000) if unichr(c).islower()])
+    
     def format_page_name(self, page, split=False):
         if split or self.split_page_names:
             return self.PAGE_SPLIT_RE.sub(r"\1 \2", page)
@@ -269,8 +288,7 @@ class WikiSystem(Component):
 
         # MoinMoin's ["internal free link"] 
         def internal_free_link(fmt, m, fullmatch): 
-            return self._format_link(fmt, 'wiki', m[2:-2], m[2:-2].lstrip('/'),
-                                     False) 
+            return self._format_link(fmt, 'wiki', m[2:-2], m[2:-2], False) 
         yield (r"!?\[(?:%s)\]" % WikiParser.QUOTED_STRING, internal_free_link) 
 
     def get_link_resolvers(self):
@@ -286,16 +304,7 @@ class WikiSystem(Component):
             pagename, version = pagename.split('@', 1)
         if version and query:
             query = '&' + query[1:]
-        pagename = pagename.rstrip('/') or 'WikiStart'
-        referrer = ''
-        if formatter.resource and formatter.resource.realm == 'wiki':
-            referrer = formatter.resource.id
-        if pagename.startswith('/'):
-            pagename = pagename.lstrip('/')
-        elif pagename.startswith('.'):
-            pagename = self._resolve_relative_name(pagename, referrer)
-        else:
-            pagename = self._resolve_scoped_name(pagename, referrer)
+        pagename = pagename.strip('/') or 'WikiStart'
         if 'WIKI_VIEW' in formatter.perm('wiki', pagename, version):
             href = formatter.href.wiki(pagename, version=version) + query \
                    + fragment
@@ -310,46 +319,10 @@ class WikiSystem(Component):
                 else:
                     return tag.a(label + '?', class_='missing wiki')
         elif ignore_missing and not self.has_page(pagename):
-            return original_label or label
+            return label
         else:
             return tag.a(label, class_='forbidden wiki',
                          title=_("no permission to view this wiki page"))
-
-    def _resolve_relative_name(self, pagename, referrer):
-        base = referrer.split('/')
-        components = pagename.split('/')
-        for i, comp in enumerate(components):
-            if comp == '..':
-                if base:
-                    base.pop()
-            elif comp and comp != '.':
-                base.extend(components[i:])
-                break
-        return '/'.join(base)
-    
-    def _resolve_scoped_name(self, pagename, referrer):
-        referrer = referrer.split('/')
-        if len(referrer) == 1:           # Non-hierarchical referrer
-            return pagename
-        # Test for pages with same name, higher in the hierarchy
-        for i in range(len(referrer) - 1, 0, -1):
-            name = '/'.join(referrer[:i]) + '/' + pagename
-            if self.has_page(name):
-                return name
-        if self.has_page(pagename):
-            return pagename
-        # If we are on First/Second/Third, and pagename is Second/Other,
-        # resolve to First/Second/Other instead of First/Second/Second/Other
-        # See http://trac.edgewall.org/ticket/4507#comment:12
-        if '/' in pagename:
-            (first, rest) = pagename.split('/', 1)
-            for (i, part) in enumerate(referrer):
-                if first == part:
-                    anchor = '/'.join(referrer[:i + 1])
-                    if self.has_page(anchor):
-                        return anchor + '/' + rest
-        # Assume the user wants a sibling of referrer
-        return '/'.join(referrer[:-1]) + '/' + pagename
 
     # IResourceManager methods
 

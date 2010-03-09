@@ -22,7 +22,6 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.db.pool import ConnectionPool
 from trac.util.text import unicode_passwd
-from trac.util.translation import _
 
 
 def get_column_names(cursor):
@@ -83,12 +82,12 @@ class DatabaseManager(Component):
         self._cnx_pool = None
 
     def init_db(self):
-        connector, args = self.get_connector()
+        connector, args = self._get_connector()
         connector.init_db(**args)
 
     def get_connection(self):
         if not self._cnx_pool:
-            connector, args = self.get_connector()
+            connector, args = self._get_connector()
             self._cnx_pool = ConnectionPool(5, connector, **args)
         return self._cnx_pool.get_cnx(self.timeout or None)
 
@@ -104,13 +103,13 @@ class DatabaseManager(Component):
         @param dest: base filename to write to.
         Returns the file actually written.
         """
-        connector, args = self.get_connector()
+        connector, args = self._get_connector()
         if not dest:
             backup_dir = self.backup_dir
             if backup_dir[0] != "/":
                 backup_dir = os.path.join(self.env.path, backup_dir)
             db_str = self.config.get('trac', 'database')
-            db_name, db_path = db_str.split(":", 1)
+            db_name, db_path = db_str.split(":",1)
             dest_name = '%s.%i.%d.bak' % (db_name, self.env.get_version(),
                                           int(time.time()))
             dest = os.path.join(backup_dir, dest_name)
@@ -120,7 +119,7 @@ class DatabaseManager(Component):
             os.makedirs(backup_dir)
         return connector.backup(dest)
 
-    def get_connector(self):
+    def _get_connector(self): ### FIXME: Make it public?
         scheme, args = _parse_db_str(self.connection_uri)
         candidates = [
             (priority, connector)
@@ -129,8 +128,7 @@ class DatabaseManager(Component):
             if scheme_ == scheme
         ]
         if not candidates:
-            raise TracError(_('Unsupported database type "%(scheme)s"',
-                              scheme=scheme))
+            raise TracError('Unsupported database type "%s"' % scheme)
         priority, connector = max(candidates)
         if priority < 0:
             raise TracError(connector.error)
@@ -147,8 +145,6 @@ class DatabaseManager(Component):
             args['log'] = self.log
         return connector, args
 
-    _get_connector = get_connector  # For 0.11 compatibility
-
 
 def _parse_db_str(db_str):
     scheme, rest = db_str.split(':', 1)
@@ -159,9 +155,8 @@ def _parse_db_str(db_str):
             host = None
             path = rest
         else:
-            raise TracError(_('Unknown scheme "%(scheme)s"; database '
-                              'connection string must start with {scheme}:/',
-                              scheme=scheme))
+            raise TracError('Unknown scheme "%s"; database connection string '
+                            'must start with {scheme}:/' % scheme)
     else:
         if not rest.startswith('//'):
             host = None

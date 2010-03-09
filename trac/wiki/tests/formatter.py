@@ -1,4 +1,6 @@
 import os
+import inspect
+import StringIO
 import unittest
 import difflib
 from datetime import datetime
@@ -66,15 +68,6 @@ class NoneMacro(WikiMacroBase):
     def expand_macro(self, formatter, name, content):
         return None
 
-class WikiProcessorSampleMacro(WikiMacroBase):
-    def expand_macro(self, formatter, name, content, args):
-        if args is None:
-            return 'Called as a macro: ' + content
-        else:
-            return 'Called as a processor with params: <dl>%s</dl>' % \
-                ''.join('<dt>%s</dt><dd>%s</dd>' % kv for kv in args.items()) \
-                + content
-
 class SampleResolver(Component):
     """A dummy macro returning a div block, used by the unit test."""
 
@@ -99,8 +92,6 @@ class SampleResolver(Component):
 
 class WikiTestCase(unittest.TestCase):
 
-    generate_opts = {}
-
     def __init__(self, input, correct, file, line, setup=None, teardown=None,
                  context=None):
         unittest.TestCase.__init__(self, 'test')
@@ -122,11 +113,7 @@ class WikiTestCase(unittest.TestCase):
             context = Context.from_request(req, 'wiki', 'WikiStart')
         self.context = context
 
-        all_test_components = [
-                HelloWorldMacro, DivHelloWorldMacro, TableHelloWorldMacro, 
-                DivCodeMacro, DivCodeElementMacro, DivCodeStreamMacro, 
-                NoneMacro, WikiProcessorSampleMacro, SampleResolver]
-        self.env = EnvironmentStub(enable=['trac.*'] + all_test_components)
+        self.env = EnvironmentStub()
         # -- macros support
         self.env.path = ''
         # -- intertrac support
@@ -161,7 +148,7 @@ class WikiTestCase(unittest.TestCase):
     def test(self):
         """Testing WikiFormatter"""
         formatter = self.formatter()
-        v = unicode(formatter.generate(**self.generate_opts)).replace('\r','')
+        v = unicode(formatter.generate()).replace('\r','')
         try:
             self.assertEquals(self.correct, v)
         except AssertionError, e:
@@ -201,11 +188,6 @@ class OneLinerTestCase(WikiTestCase):
     def formatter(self):
         return InlineHtmlFormatter(self.env, self.context, self.input)
 
-class EscapeNewLinesTestCase(WikiTestCase):
-    generate_opts = {'escape_newlines': True}
-    def formatter(self):
-        return HtmlFormatter(self.env, self.context, self.input)
-
 
 def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
     suite = unittest.TestSuite()
@@ -222,23 +204,15 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
             continue
         next_line += len(test.split('\n')) - 1
         blocks = test.split('-' * 30 + '\n')
-        page_escape_nl = oneliner = None
-        if len(blocks) < 4:
-            blocks.extend([None,] * (4 - len(blocks)))
-        input, page, oneliner, page_escape_nl = blocks[:4]
-        if page:
-            page = WikiTestCase(input, page, file, line, setup, teardown,
-                                context)
+        if len(blocks) != 3:
+            continue
+        input, page, oneliner = blocks
+        tc = WikiTestCase(input, page, file, line, setup, teardown, context)
+        suite.addTest(tc)
         if oneliner:
-            oneliner = OneLinerTestCase(input, oneliner[:-1], file, line,
-                                        setup, teardown, context)
-        if page_escape_nl:
-            page_escape_nl = EscapeNewLinesTestCase(input, page_escape_nl,
-                                                    file, line, setup,
-                                                    teardown, context)
-        for tc in [page, oneliner, page_escape_nl]:
-            if tc:
-                suite.addTest(tc)
+            tc = OneLinerTestCase(input, oneliner[:-1], file, line,
+                                  setup, teardown, context)
+            suite.addTest(tc)
     return suite
 
 if __name__ == '__main__':

@@ -66,7 +66,7 @@ class ExtensionPoint(property):
         """Return a list of components that declare to implement the extension
         point interface.
         """
-        extensions = ComponentMeta._registry.get(self.interface, ())
+        extensions = ComponentMeta._registry.get(self.interface, [])
         return filter(None, [component.compmgr[cls] for cls in extensions])
 
     def __repr__(self):
@@ -82,10 +82,10 @@ class ComponentMeta(type):
     _components = []
     _registry = {}
 
-    def __new__(mcs, name, bases, d):
+    def __new__(cls, name, bases, d):
         """Create the component class."""
 
-        new_class = type.__new__(mcs, name, bases, d)
+        new_class = type.__new__(cls, name, bases, d)
         if name == 'Component':
             # Don't put the Component base class in the registry
             return new_class
@@ -121,11 +121,11 @@ class ComponentMeta(type):
 
         ComponentMeta._components.append(new_class)
         registry = ComponentMeta._registry
-        for cls in new_class.__mro__:
-            for interface in cls.__dict__.get('_implements', ()):
-                classes = registry.setdefault(interface, [])
-                if new_class not in classes:
-                    classes.append(new_class)
+        for interface in d.get('_implements', []):
+            registry.setdefault(interface, []).append(new_class)
+        for base in [base for base in bases if hasattr(base, '_implements')]:
+            for interface in base._implements:
+                registry.setdefault(interface, []).append(new_class)
 
         return new_class
 
@@ -157,7 +157,6 @@ class Component(object):
             compmgr.component_activated(self)
         return self
 
-    @staticmethod
     def implements(*interfaces):
         """Can be used in the class definiton of `Component` subclasses to
         declare the extension points that are extended.
@@ -172,6 +171,7 @@ class Component(object):
                'implements() can only be used in a class definition'
 
         locals_.setdefault('_implements', []).extend(interfaces)
+    implements = staticmethod(implements)
 
 
 implements = Component.implements
@@ -195,7 +195,9 @@ class ComponentManager(object):
         """Activate the component instance for the given class, or return the
         existing instance if the component has already been activated.
         """
-        if not self.is_enabled(cls):
+        if cls not in self.enabled:
+            self.enabled[cls] = self.is_component_enabled(cls)
+        if not self.enabled[cls]:
             return None
         component = self.components.get(cls)
         if not component:
@@ -208,12 +210,6 @@ class ComponentManager(object):
                                 (cls, e))
         return component
 
-    def is_enabled(self, cls):
-        """Return whether the given component class is enabled."""
-        if cls not in self.enabled:
-            self.enabled[cls] = self.is_component_enabled(cls)
-        return self.enabled[cls]
-    
     def disable_component(self, component):
         """Force a component to be disabled.
         
@@ -233,9 +229,7 @@ class ComponentManager(object):
         """Can be overridden by sub-classes to veto the activation of a
         component.
 
-        If this method returns `False`, the component was disabled explicitly.
-        If it returns `None`, the component was neither enabled nor disabled
-        explicitly. In both cases, the component with the given class will not
-        be available.
+        If this method returns False, the component with the given class will
+        not be available.
         """
         return True

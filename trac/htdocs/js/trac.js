@@ -35,27 +35,6 @@
     });
   }
   
-  $.fn.getAbsolutePos = function() {
-    return this.map(function() {
-      var left = this.offsetLeft;
-      var top = this.offsetTop;
-      var parent = this.offsetParent;
-      while (parent) {
-        left += parent.offsetLeft;
-        top += parent.offsetTop;
-        parent = parent.offsetParent;
-      }
-      return {left: left, top: top};
-    });
-  }
-  
-  $.fn.scrollToTop = function() {
-    return this.each(function() {
-      scrollTo(0, $(this).getAbsolutePos()[0].top);
-      return false;
-    });
-  }
-  
   $.loadStyleSheet = function(href, type) {
     type = type || "text/css";
     $(document).ready(function() {
@@ -68,21 +47,10 @@
     });
   }
   
-  $.template = function(str) { 
-    var args = arguments, kwargs = arguments[arguments.length-1];
-    return str.replace(/\${?(\w+)}?/g, function(_, k) {
-      if (k.length == 1 && k >= '0' && k <= '9')
-        return args[k-'0'];
-      else
-        return kwargs[k];
-    }); 
-  }
-  
   // Used for dynamically updating the height of a textarea
   window.resizeTextArea = function (id, rows) {
     var textarea = $("#" + id).get(0);
     if (!textarea || textarea.rows == undefined) return;
-    $(textarea).height("");
     textarea.rows = rows;
   }
   

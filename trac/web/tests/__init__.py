@@ -14,7 +14,7 @@
 import unittest
 
 from trac.web.tests import api, auth, cgi_frontend, chrome, href, session, \
-                           wikisyntax, main
+                           wikisyntax
 
 try:
     import neo_cgi
@@ -33,7 +33,6 @@ def suite():
     suite.addTest(href.suite())
     suite.addTest(session.suite())
     suite.addTest(wikisyntax.suite())
-    suite.addTest(main.suite())
     return suite
 
 if __name__ == '__main__':

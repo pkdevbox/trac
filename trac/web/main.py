@@ -18,7 +18,6 @@
 
 import cgi
 import dircache
-import fnmatch
 import gc
 import locale
 import os
@@ -29,12 +28,8 @@ try:
 except ImportError:
     import dummy_threading as threading
 
-try:
-    from babel import Locale
-except ImportError:
-    Locale = None
 from genshi.core import Markup
-from genshi.builder import Fragment, tag
+from genshi.builder import Fragment
 from genshi.output import DocType
 from genshi.template import TemplateLoader
 
@@ -42,34 +37,19 @@ from trac import __version__ as TRAC_VERSION
 from trac.config import ExtensionOption, Option, OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
-from trac.loader import get_plugin_info, match_plugins_to_frames
-from trac.perm import PermissionCache, PermissionError
+from trac.perm import PermissionCache, PermissionError, PermissionSystem
 from trac.resource import ResourceNotFound
-from trac.util import arity, get_frame_info, get_last_traceback, hex_entropy, \
-                      read_file, translation
-from trac.util.compat import any, partial
+from trac.util import get_lines_from_file, get_last_traceback, hex_entropy, \
+                      arity
+from trac.util.compat import partial, reversed
 from trac.util.datefmt import format_datetime, http_date, localtz, timezone
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode
-from trac.util.translation import tag_, _
+from trac.util.translation import _
 from trac.web.api import *
 from trac.web.chrome import Chrome
 from trac.web.clearsilver import HDFWrapper
 from trac.web.href import Href
 from trac.web.session import Session
-
-
-class FakeSession(dict):
-    sid = None
-    def save(self):
-        pass
-
-
-class FakePerm(dict):
-    def require(self, *args):
-        return False
-    def __call__(self, *args):
-        return self
-
 
 def populate_hdf(hdf, env, req=None):
     """Populate the HDF data set with various information, such as common URLs,
@@ -127,10 +107,7 @@ def populate_hdf(hdf, env, req=None):
 
 
 class RequestDispatcher(Component):
-    """Web request dispatcher.
-    
-    This component dispatches incoming requests to registered handlers.
-    """
+    """Component responsible for dispatching requests to registered handlers."""
 
     authenticators = ExtensionPoint(IAuthenticator)
     handlers = ExtensionPoint(IRequestHandler)
@@ -177,7 +154,6 @@ class RequestDispatcher(Component):
             'hdf': self._get_hdf,
             'perm': self._get_perm,
             'session': self._get_session,
-            'locale': self._get_locale,
             'tz': self._get_timezone,
             'form_token': self._get_form_token
         })
@@ -197,7 +173,7 @@ class RequestDispatcher(Component):
                     # pre-process any incoming request, whether a handler
                     # was found or not
                     chosen_handler = self._pre_process_request(req,
-                                                            chosen_handler)
+                                                               chosen_handler)
                 except TracError, e:
                     raise HTTPInternalError(e)
                 if not chosen_handler:
@@ -213,9 +189,9 @@ class RequestDispatcher(Component):
                 req.callbacks['chrome'] = partial(chrome.prepare_request,
                                                   handler=chosen_handler)
 
-                # Protect against CSRF attacks: we validate the form token
-                # for all POST requests with a content-type corresponding
-                # to form submissions
+                # Protect against CSRF attacks: we validate the form token for
+                # all POST requests with a content-type corresponding to form
+                # submissions
                 if req.method == 'POST':
                     ctype = req.get_header('Content-Type')
                     if ctype:
@@ -223,13 +199,8 @@ class RequestDispatcher(Component):
                     if ctype in ('application/x-www-form-urlencoded',
                                  'multipart/form-data') and \
                             req.args.get('__FORM_TOKEN') != req.form_token:
-                        if self.env.secure_cookies and req.scheme == 'http':
-                            msg = _('Secure cookies are enabled, you must '
-                                    'use https to submit forms.')
-                        else:
-                            msg = _('Do you have cookies enabled?')
-                        raise HTTPBadRequest(_('Missing or invalid form token.'
-                                               ' %(msg)s', msg=msg))
+                        raise HTTPBadRequest('Missing or invalid form token. '
+                                             'Do you have cookies enabled?')
 
                 # Process the request and render the template
                 resp = chosen_handler.process_request(req)
@@ -253,8 +224,7 @@ class RequestDispatcher(Component):
                             req.send(out.getvalue(), 'text/plain')
                         else:
                             output = chrome.render_template(req, template,
-                                                            data,
-                                                            content_type)
+                                                            data, content_type)
                             # Give the session a chance to persist changes
                             req.session.save()
                             req.send(output, content_type or 'text/html')
@@ -289,31 +259,10 @@ class RequestDispatcher(Component):
         return hdf
 
     def _get_perm(self, req):
-        if isinstance(req.session, FakeSession):
-            return FakePerm()
-        else:
-            return PermissionCache(self.env, self.authenticate(req))
+        return PermissionCache(self.env, self.authenticate(req))
 
     def _get_session(self, req):
-        try:
-            return Session(self.env, req)
-        except TracError, e:
-            self.log.error("can't retrieve session: %s",
-                           exception_to_unicode(e))
-            return FakeSession()
-
-    def _get_locale(self, req):
-        if Locale:
-            available = [locale_id.replace('_', '-') for locale_id in
-                         translation.get_available_locales()]
-
-            preferred = req.session.get('language', req.languages)
-            if not isinstance(preferred, list):
-                preferred = [preferred]
-            negociated = Locale.negotiate(preferred, available, sep='-') 
-            self.log.debug("Negociated locale: %s -> %s", 
-                           preferred, negociated) 
-            return negociated 
+        return Session(self.env, req)
 
     def _get_timezone(self, req):
         try:
@@ -467,11 +416,9 @@ def dispatch_request(environ, start_response):
         env_error = e
 
     req = Request(environ, start_response)
-    translation.make_activable(lambda: req.locale, env and env.path or None)
     try:
         return _dispatch_request(req, env, env_error)
     finally:
-        translation.deactivate()
         if env and not run_once:
             env.shutdown(threading._get_ident())
             # Now it's a good time to do some clean-ups
@@ -487,7 +434,6 @@ def dispatch_request(environ, start_response):
             ##if uncollectable:
             ##    del gc.garbage[:]
             ##    env.log.warn("%d uncollectable objects found.", uncollectable)
-
 
 def _dispatch_request(req, env, env_error):
     resp = []
@@ -516,7 +462,7 @@ def _dispatch_request(req, env, env_error):
             if 'error' in e.reason.lower():
                 title = e.reason
             else:
-                title = _('Error: %(message)s', message=e.reason)
+                title = 'Error: %s' % e.reason
         # The message is based on the e.detail, which can be an Exception
         # object, but not a TracError one: when creating HTTPException,
         # a TracError.message is directly assigned to e.detail
@@ -529,11 +475,10 @@ def _dispatch_request(req, env, env_error):
         data = {'title': title, 'type': 'TracError', 'message': message,
                 'frames': [], 'traceback': None}
         if e.code == 403 and req.authname == 'anonymous':
-            # TRANSLATOR: ... not logged in, you may want to 'do so' now (link)
-            do_so = tag.a(_("do so"), href=req.href.login())
-            req.chrome['notices'].append(
-                tag_("You are currently not logged in. You may want to "
-                     "%(do_so)s now.", do_so=do_so))
+            req.chrome['notices'].append(Markup(
+                _('You are currently not logged in. You may want to '
+                  '<a href="%(href)s">do so</a> now.',
+                  href=req.href.login())))
         try:
             req.send_error(sys.exc_info(), status=e.code, env=env, data=data)
         except RequestDone:
@@ -549,40 +494,35 @@ def _dispatch_request(req, env, env_error):
             message = "%s: %s" % (e.__class__.__name__, to_unicode(e))
             traceback = get_last_traceback()
 
-            frames, plugins, faulty_plugins = [], [], []
-            tracker = 'http://trac.edgewall.org'
-            th = 'http://trac-hacks.org'
+            frames = []
             has_admin = False
             try:
                 has_admin = 'TRAC_ADMIN' in req.perm
             except Exception, e:
                 pass
             if has_admin and not isinstance(e, MemoryError):
-                # Collect frame and plugin information
-                frames = get_frame_info(exc_info[2])
-                if env:
-                    plugins = [p for p in get_plugin_info(env)
-                               if any(c['enabled']
-                                      for m in p['modules'].itervalues()
-                                      for c in m['components'].itervalues())]
-                    match_plugins_to_frames(plugins, frames)
-                
-                    # Identify the tracker where the bug should be reported
-                    faulty_plugins = [p for p in plugins if 'frame_idx' in p]
-                    faulty_plugins.sort(key=lambda p: p['frame_idx'])
-                    if faulty_plugins:
-                        info = faulty_plugins[0]['info']
-                        if 'trac' in info:
-                            tracker = info['trac']
-                        elif info.get('home_page', '').startswith(th):
-                            tracker = th
+                tb = exc_info[2]
+                while tb:
+                    tb_hide = tb.tb_frame.f_locals.get('__traceback_hide__')
+                    if tb_hide in ('before', 'before_and_this'):
+                        del frames[:]
+                        tb_hide = tb_hide[6:]
+                    if not tb_hide:
+                        filename = tb.tb_frame.f_code.co_filename
+                        lineno = tb.tb_lineno - 1
+                        before, line, after = get_lines_from_file(filename,
+                                                                  lineno, 5)
+                        frames += [{'traceback': tb, 'filename': filename,
+                                    'lineno': lineno, 'line': line,
+                                    'lines_before': before, 'lines_after': after,
+                                    'function': tb.tb_frame.f_code.co_name,
+                                    'vars': tb.tb_frame.f_locals}]
+                    tb = tb.tb_next
 
             data = {'title': 'Internal Error',
                     'type': 'internal', 'message': message,
                     'traceback': traceback, 'frames': frames,
-                    'shorten_line': shorten_line,
-                    'plugins': plugins, 'faulty_plugins': faulty_plugins,
-                    'tracker': tracker}
+                    'shorten_line': shorten_line}
 
             try:
                 req.send_error(exc_info, status=500, env=env, data=data)
@@ -592,7 +532,6 @@ def _dispatch_request(req, env, env_error):
         finally:
             del exc_info
     return resp
-
 
 def send_project_index(environ, start_response, parent_dir=None,
                        env_paths=None):
@@ -609,8 +548,7 @@ def send_project_index(environ, start_response, parent_dir=None,
     else:
         template = 'index.html'
 
-    data = {'trac': {'version': TRAC_VERSION, 'time': format_datetime()},
-            'req': req}
+    data = {'trac': {'version': TRAC_VERSION, 'time': format_datetime()}}
     if req.environ.get('trac.template_vars'):
         for pair in req.environ['trac.template_vars'].split(','):
             key, val = pair.split('=')
@@ -649,19 +587,6 @@ def send_project_index(environ, start_response, parent_dir=None,
     except RequestDone:
         pass
 
-
-def get_tracignore_patterns(env_parent_dir):
-    """Return the list of patterns from env_parent_dir/.tracignore or a
-    default pattern of `".*"` if the file doesn't exist.
-    """
-    path = os.path.join(env_parent_dir, '.tracignore')
-    try:
-        lines = [line.strip() for line in read_file(path).splitlines()]
-    except IOError:
-        return ['.*']
-    return [line for line in lines if line and not line.startswith('#')]
-
-
 def get_environments(environ, warn=False):
     """Retrieve canonical environment name to path mapping.
 
@@ -674,14 +599,9 @@ def get_environments(environ, warn=False):
         env_parent_dir = os.path.normpath(env_parent_dir)
         paths = dircache.listdir(env_parent_dir)[:]
         dircache.annotate(env_parent_dir, paths)
-
-        # Filter paths that match the .tracignore patterns
-        ignore_patterns = get_tracignore_patterns(env_parent_dir)
-        paths = [path[:-1] for path in paths if path[-1] == '/'
-                 and not any(fnmatch.fnmatch(path[:-1], pattern)
-                             for pattern in ignore_patterns)]
-        env_paths.extend(os.path.join(env_parent_dir, project) \
-                         for project in paths)
+        env_paths += [os.path.join(env_parent_dir, project) \
+                      for project in paths 
+                      if project[-1] == '/' and project != '.egg-cache/']
     envs = {}
     for env_path in env_paths:
         env_path = os.path.normpath(env_path)

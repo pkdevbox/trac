@@ -24,7 +24,7 @@ from trac.core import *
 from trac.notification import EMAIL_LOOKALIKE_PATTERN
 
 class WikiParser(Component):
-    """Wiki text parser."""
+    """wiki subsystem dedicated to the Wiki text parsing."""
 
     # Some constants used for clarifying the Wiki regexps:
 
@@ -35,14 +35,14 @@ class WikiParser(Component):
     STRIKE_TOKEN = "~~"
     SUBSCRIPT_TOKEN = ",,"
     SUPERSCRIPT_TOKEN = r"\^"
-    INLINE_TOKEN = "`" # must be a single char (see P<definition> below)
+    INLINE_TOKEN = "`"
     STARTBLOCK_TOKEN = r"\{\{\{"
     STARTBLOCK = "{{{"
     ENDBLOCK_TOKEN = r"\}\}\}"
     ENDBLOCK = "}}}"
     
-    LINK_SCHEME = r"[a-zA-Z][a-zA-Z0-9+-.]*" # as per RFC 2396
-    INTERTRAC_SCHEME = r"[a-zA-Z.+-]*?" # no digits (for shorthand links)
+    LINK_SCHEME = r"[\w.+-]+" # as per RFC 2396
+    INTERTRAC_SCHEME = r"[a-zA-Z.+-]*?" # no digits (support for shorthand links)
 
     QUOTED_STRING = r"'[^']+'|\"[^\"]+\""
 
@@ -53,9 +53,6 @@ class WikiParser(Component):
     LHREF_RELATIVE_TARGET = r"[/#][^\s\]]*|\.\.?(?:[/#][^\s\]]*)?"
 
     XML_NAME = r"[\w:](?<!\d)[\w:.-]*?" # See http://www.w3.org/TR/REC-xml/#id 
-
-    PROCESSOR = r"(\s*)#\!([\w+-][\w+-/]*)"
-    PROCESSOR_PARAM = r'''(?P<proc_pname>\w+)=(?P<proc_pval>".*?"|'.*?'|\w+)'''
 
     # Sequence of regexps used by the engine
 
@@ -78,53 +75,41 @@ class WikiParser(Component):
     _post_rules = [
         # e-mails
         r"(?P<email>!?%s)" % EMAIL_LOOKALIKE_PATTERN,
-        # <wiki:Trac bracket links>
-        r"(?P<shrefbr>!?<(?P<snsbr>%s):(?P<stgtbr>[^>]+)>)" % LINK_SCHEME,
+        # > ...
+        r"(?P<citation>^(?P<cdepth>>(?: *>)*))",
         # &, < and > to &amp;, &lt; and &gt;
         r"(?P<htmlescape>[&<>])",
-        # wiki:TracLinks or intertrac:wiki:TracLinks
-        r"(?P<shref>!?((?P<sns>%s):(?P<stgt>%s:(?:%s)|%s|%s(?:%s*%s)?)))" \
-        % (LINK_SCHEME, LINK_SCHEME, QUOTED_STRING, QUOTED_STRING,
+        # wiki:TracLinks
+        r"(?P<shref>!?((?P<sns>%s):(?P<stgt>%s|%s(?:%s*%s)?)))" \
+        % (LINK_SCHEME, QUOTED_STRING,
            SHREF_TARGET_FIRST, SHREF_TARGET_MIDDLE, SHREF_TARGET_LAST),
         # [wiki:TracLinks with optional label] or [/relative label]
         (r"(?P<lhref>!?\[(?:"
          r"(?P<rel>%s)|" % LHREF_RELATIVE_TARGET + # ./... or /...
-         r"(?P<lns>%s):(?P<ltgt>%s:(?:%s)|%s|[^\]\s]*))" % \
-         (LINK_SCHEME, LINK_SCHEME, QUOTED_STRING, QUOTED_STRING) +
-         # wiki:TracLinks or wiki:"trac links" or intertrac:wiki:"trac links"
+         r"(?P<lns>%s):(?P<ltgt>%s|[^\]\s]*))" % \
+         (LINK_SCHEME, QUOTED_STRING) + # wiki:TracLinks or wiki:"trac links"
          r"(?:\s+(?P<label>%s|[^\]]+))?\])" % QUOTED_STRING), # optional label
-        # [=#anchor] creation
-        (r"(?P<anchor>!?\[=#(?P<anchorname>%s)" % XML_NAME +
-         "(?P<anchorlabel>\s+[^\]]*)?\])"),
         # [[macro]] call
-        (r"(?P<macro>!?\[\[(?P<macroname>[\w/+-]+\??|\?)"
+        (r"(?P<macro>!?\[\[(?P<macroname>[\w/+-]+)"
          r"(\]\]|\((?P<macroargs>.*?)\)\]\]))"),
         # == heading == #hanchor
-        r"(?P<heading>^\s*(?P<hdepth>={1,6})\s(?P<htext>.*?)"
-        r"(?P<hanchor>#%s)?\s*$)" % XML_NAME,
+        r"(?P<heading>^\s*(?P<hdepth>=+)\s.*\s(?P=hdepth)\s*"
+        r"(?P<hanchor>#%s)?(?:\s|$))" % XML_NAME,
         #  * list
-        r"(?P<list>^(?P<ldepth>\s*)"
-        r"(?:[-*]|(?P<lstart>\d+|[a-zA-Z]|[ivxIVX]{1,5})\.)\s)",
+        r"(?P<list>^(?P<ldepth>\s+)(?:[-*]|\d+\.|[a-zA-Z]\.|[ivxIVX]{1,5}\.) )",
         # definition:: 
-        r"(?P<definition>^\s+"
-        r"((?:%s[^%s]*%s|%s(?:%s{,2}[^%s])*?%s|[^%s%s:]|:[^:])+::)(?:\s+|$))"
+        r"(?P<definition>^\s+((?:%s[^%s]*%s|%s(?:%s{,2}[^%s])*?%s|[^%s%s:]|:[^:])+::)(?:\s+|$))"
         % (INLINE_TOKEN, INLINE_TOKEN, INLINE_TOKEN,
            STARTBLOCK_TOKEN, ENDBLOCK[0], ENDBLOCK[0], ENDBLOCK_TOKEN,
            INLINE_TOKEN, STARTBLOCK[0]),
-        # |- row separator
-        r"(?P<table_row_sep>!?\s*\|-+\s*"
-        r"(?P<table_row_params>%s\s*)*)" % PROCESSOR_PARAM,
         # (leading space)
         r"(?P<indent>^(?P<idepth>\s+)(?=\S))",
         # || table ||
-        r"(?P<table_cell>!?(?P<table_cell_sep>=?(?:\|\|)+=?)"
-        r"(?P<table_cell_last>\s*\\?$)?)",
-        ]
+        r"(?P<last_table_cell>\|\|\s*$)",
+        r"(?P<table_cell>\|\|)"]
 
-    _processor_re = re.compile(PROCESSOR)
-    _startblock_re = re.compile(r"\s*%s(?:%s|\s*$)" %
-                                (STARTBLOCK, PROCESSOR))
-    _processor_param_re = re.compile(PROCESSOR_PARAM)
+    _processor_re = re.compile('#\!([\w+-][\w+-/]*)')
+    _processor_param_re = re.compile(r'''(\w+)=(".*?"|'.*?'|\w+)''')
     _anchor_re = re.compile('[^\w:.-]+', re.UNICODE)
 
     def __init__(self):

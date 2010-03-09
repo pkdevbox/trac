@@ -3,34 +3,22 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:xi="http://www.w3.org/2001/XInclude"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
-      py:with="parent = attachments and attachments.parent or attachment.resource.parent">
+      xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
+  <xi:include href="macros.html" />
   <head>
-    <title py:choose="mode">
-      <py:when test="'new'">${name_of(parent)} &ndash; Attachment</py:when>
-      <py:when test="'list'">${name_of(parent)} &ndash; Attachments</py:when>
-      <py:otherwise><i18n:msg params="filename, parent">${attachment.filename} on ${name_of(parent)} &ndash; Attachment</i18n:msg></py:otherwise>
-    </title>
-    <py:if test="preview">
-      <script type="text/javascript" src="${chrome.htdocs_location}js/folding.js"></script>
-      <script type="text/javascript">
-        jQuery(document).ready(function($) {
-          $('#preview table.code').enableCollapsibleColumns($('#preview table.code thead th.content'));
-        });
-      </script>
-    </py:if>
+    <title>Attachment</title>
   </head>
 
-  <body>
+  <body py:with="parent = attachments and attachments.parent or
+                          attachment.resource.parent">
     <div py:choose="mode" id="content" class="attachment">
       <py:when test="'new'">
         <h1>Add Attachment to <a href="${url_of(parent)}">${name_of(parent)}</a></h1>
         <form id="attachment" method="post" enctype="multipart/form-data" action="">
           <div class="field">
             <label>File<py:if test="max_size >= 0"> (size limit
-                  ${pretty_size(max_size)})</py:if>:<br />
+                  ${pretty_size(max_size, format='%d')})</py:if>:<br />
               <input type="file" name="attachment" /></label>
           </div>
           <fieldset>
@@ -59,8 +47,8 @@
             <input type="hidden" name="action" value="new" />
             <input type="hidden" name="realm" value="$parent.realm" />
             <input type="hidden" name="id" value="$parent.id" />
-            <input type="submit" value="${_('Add attachment')}" />
-            <input type="submit" name="cancel" value="${_('Cancel')}" />
+            <input type="submit" value="Add attachment" />
+            <input type="submit" name="cancel" value="Cancel" />
           </div>
         </form>
       </py:when>
@@ -73,8 +61,8 @@
           <form method="post" action="">
             <div id="delete">
               <input type="hidden" name="action" value="delete" />
-              <input type="submit" name="cancel" value="${_('Cancel')}" />
-              <input type="submit" value="${_('Delete attachment')}" />
+              <input type="submit" name="cancel" value="Cancel" />
+              <input type="submit" value="Delete attachment" />
             </div>
           </form>
         </div>
@@ -83,8 +71,7 @@
       <py:when test="'list'">
         <h1><a href="${url_of(parent)}">${name_of(parent)}</a></h1>
         <py:with vars="context = context(parent)">
-          <xi:include href="list_of_attachments.html"
-                      py:with="alist = attachments; add_button_title = _('Attach another file')"/>
+          ${list_of_attachments(attachments, add_button_title=_("Attach another file"))}
         </py:with>
       </py:when>
 
@@ -93,9 +80,8 @@
         <table id="info" summary="Description">
           <tbody>
             <tr>
-              <th scope="col" i18n:msg="file,size,author,date">
-                File $attachment.filename,
-                <span title="${_('%(size)s bytes', size=attachment.size)}">${pretty_size(attachment.size)}</span>
+              <th scope="col">
+                File $attachment.filename, ${sizeinfo(attachment.size)}
                 (added by ${authorinfo(attachment.author)},  ${dateinfo(attachment.date)} ago)
               </th>
             </tr>
@@ -108,7 +94,7 @@
         </table>
 
         <div py:if="preview" id="preview" class="searchable">
-          <xi:include href="preview_file.html" py:with="preview = preview"/>
+          ${preview_file(preview)}
         </div>
 
         <py:if test="attachment and 'ATTACHMENT_DELETE' in perm(attachment.resource)">

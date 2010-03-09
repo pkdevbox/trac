@@ -16,14 +16,15 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 #
 
+from trac import __version__
 from trac.core import *
 from trac.config import *
 from trac.notification import NotifyEmail
 from trac.util import md5
-from trac.util.datefmt import to_utimestamp
-from trac.util.text import CRLF, wrap, obfuscate_email_address
+from trac.util.datefmt import to_timestamp
+from trac.util.text import CRLF, wrap, to_unicode, obfuscate_email_address
 
-from genshi.template.text import NewTextTemplate
+from genshi.template.text import TextTemplate
 
 class TicketNotificationSystem(Component):
 
@@ -131,13 +132,12 @@ class TicketNotifyEmail(NotifyEmail):
                         changes_body += '  * %s:  %s%s' % (field, chg, CRLF)
                     if newv:
                         change_data[field] = {'oldvalue': old, 'newvalue': new}
-        
-        ticket_values = ticket.values.copy()
-        ticket_values['description'] = wrap(
-            ticket_values.get('description', ''), self.COLS,
+            
+        self.ticket['description'] = wrap(
+            self.ticket.values.get('description', ''), self.COLS,
             initial_indent=' ', subsequent_indent=' ', linesep=CRLF)
-        ticket_values['new'] = self.newticket
-        ticket_values['link'] = link
+        self.ticket['new'] = self.newticket
+        self.ticket['link'] = link
         
         subject = self.format_subj(summary)
         if not self.newticket:
@@ -146,7 +146,7 @@ class TicketNotifyEmail(NotifyEmail):
             'ticket_props': self.format_props(),
             'ticket_body_hdr': self.format_hdr(),
             'subject': subject,
-            'ticket': ticket_values,
+            'ticket': ticket.values,
             'changes_body': changes_body,
             'changes_descr': changes_descr,
             'change': change_data
@@ -155,8 +155,7 @@ class TicketNotifyEmail(NotifyEmail):
 
     def format_props(self):
         tkt = self.ticket
-        fields = [f for f in tkt.fields 
-                  if f['name'] not in ('summary', 'cc', 'time', 'changetime')]
+        fields = [f for f in tkt.fields if f['name'] not in ('summary', 'cc')]
         width = [0, 0, 0, 0]
         i = 0
         for f in [f['name'] for f in fields if f['type'] != 'textarea']:
@@ -186,9 +185,9 @@ class TicketNotifyEmail(NotifyEmail):
             if fname in ['owner', 'reporter']:
                 fval = obfuscate_email_address(fval)
             if f['type'] == 'textarea' or '\n' in unicode(fval):
-                big.append((f['label'], CRLF.join(fval.splitlines())))
+                big.append((fname.capitalize(), CRLF.join(fval.splitlines())))
             else:
-                txt += format[i % 2] % (f['label'], fval)
+                txt += format[i % 2] % (fname.capitalize(), fval)
                 i += 1
         if i % 2:
             txt += CRLF
@@ -217,11 +216,11 @@ class TicketNotifyEmail(NotifyEmail):
 
     def format_subj(self, summary):
         template = self.config.get('notification','ticket_subject_template')
-        template = NewTextTemplate(template.encode('utf8'))
+        template = TextTemplate(template.encode('utf8'))
                                                 
         prefix = self.config.get('notification', 'smtp_subject_prefix')
         if prefix == '__default__': 
-            prefix = '[%s]' % self.env.project_name
+            prefix = '[%s]' % self.config.get('project', 'name')
         
         data = {
             'prefix': prefix,
@@ -261,7 +260,7 @@ class TicketNotifyEmail(NotifyEmail):
         if notify_updater:
             cursor.execute("SELECT DISTINCT author,ticket FROM ticket_change "
                            "WHERE ticket=%s", (tktid,))
-            for author, ticket in cursor:
+            for author,ticket in cursor:
                 torecipients.append(author)
 
         # Suppress the updater from the recipients
@@ -291,8 +290,8 @@ class TicketNotifyEmail(NotifyEmail):
 
     def get_message_id(self, rcpt, modtime=None):
         """Generate a predictable, but sufficiently unique message ID."""
-        s = '%s.%08d.%d.%s' % (self.env.project_url.encode('utf-8'),
-                               int(self.ticket.id), to_utimestamp(modtime),
+        s = '%s.%08d.%d.%s' % (self.config.get('project', 'url'),
+                               int(self.ticket.id), to_timestamp(modtime),
                                rcpt.encode('ascii', 'ignore'))
         dig = md5(s).hexdigest()
         host = self.from_email[self.from_email.find('@') + 1:]
@@ -304,7 +303,7 @@ class TicketNotifyEmail(NotifyEmail):
         hdrs = {}
         hdrs['Message-ID'] = self.get_message_id(dest, self.modtime)
         hdrs['X-Trac-Ticket-ID'] = str(self.ticket.id)
-        hdrs['X-Trac-Ticket-URL'] = self.data['ticket']['link']
+        hdrs['X-Trac-Ticket-URL'] = self.ticket['link']
         if not self.newticket:
             msgid = self.get_message_id(dest)
             hdrs['In-Reply-To'] = msgid

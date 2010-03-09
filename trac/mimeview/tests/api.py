@@ -14,7 +14,6 @@
 import doctest
 import unittest
 from StringIO import StringIO
-import sys
 
 from trac.core import *
 from trac.test import EnvironmentStub
@@ -22,7 +21,7 @@ from trac.mimeview import api
 from trac.mimeview.api import get_mimetype, IContentConverter, Mimeview, \
                               _group_lines
 from genshi import Stream, Namespace
-from genshi.core import Attrs, TEXT, START, END
+from genshi.core import Attrs, TEXT, START, END, START_NS, END_NS
 from genshi.input import HTMLParser
 
 
@@ -33,10 +32,8 @@ class GetMimeTypeTestCase(unittest.TestCase):
         self.assertEqual('text/plain', get_mimetype('README.txt', None))
         
     def test_from_suffix_using_mimetypes(self):
-        image_png = 'image/png'
-        if sys.version_info >= (2, 7):
-            image_png = 'image/x-png'
-        self.assertEqual(image_png, get_mimetype('doc/trac_logo.png', None))
+        self.assertEqual('image/png',
+                         get_mimetype('doc/trac_logo.png', None))
         
     def test_from_content_using_CONTENT_RE(self):
         self.assertEqual('text/x-python',
@@ -75,12 +72,18 @@ class GetMimeTypeTestCase(unittest.TestCase):
 class MimeviewTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.env = EnvironmentStub(default_data=False,
-            enable=['%s.%s' % (self.__module__, c)
-                    for c in ['Converter0', 'Converter1', 'Converter2']])
+        self.env = EnvironmentStub(default_data=True)
+
+        # Make sure we have no external components hanging around in the
+        # component registry
+        from trac.core import ComponentMeta
+        self.old_registry = ComponentMeta._registry
+        ComponentMeta._registry = {}
 
     def tearDown(self):
-        pass
+        # Restore the original component registry
+        from trac.core import ComponentMeta
+        ComponentMeta._registry = self.old_registry
 
     def test_get_supported_conversions(self):
         class Converter0(Component):
@@ -105,6 +108,9 @@ class MimeviewTestCase(unittest.TestCase):
         self.assertEqual(Converter2(self.env), conversions[2][-1])
 
 class GroupLinesTestCase(unittest.TestCase):
+    
+    if not hasattr(unittest.TestCase, "assertTrue"):
+        assertTrue = unittest.TestCase.failUnless   # Python 2.3 compatibility
 
     def test_empty_stream(self):
         # FIXME: this currently fails

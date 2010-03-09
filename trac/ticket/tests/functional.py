@@ -116,7 +116,7 @@ class TestTicketRSSFormat(FunctionalTestCaseSetup):
 class TestTicketSearch(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Test ticket search"""
-        summary = random_sentence(4)
+        summary = random_sentence(5)
         ticketid = self._tester.create_ticket(summary)
         self._tester.go_to_front()
         tc.follow('Search')
@@ -164,13 +164,14 @@ class TestTicketHistory(FunctionalTwillTestCaseSetup):
 
 class TestTicketHistoryDiff(FunctionalTwillTestCaseSetup):
     def runTest(self):
-        """Test ticket history (diff)"""
+        """Test ticket history"""
         name = 'TestTicketHistoryDiff'
         ticketid = self._tester.create_ticket(name)
         self._tester.go_to_ticket(ticketid)
+        tc.formvalue
         tc.formvalue('propertyform', 'description', random_sentence(6))
         tc.submit('submit')
-        tc.find('Description<[^>]*>\\s*modified \\(<[^>]*>diff', 's')
+        tc.find('description<[^>]*>\\s*modified \\(<[^>]*>diff', 's')
         tc.follow('diff')
         tc.find('Changes\\s*between\\s*<[^>]*>Initial Version<[^>]*>\\s*and' \
                 '\\s*<[^>]*>Version 1<[^>]*>\\s*of\\s*<[^>]*>Ticket #' , 's')
@@ -186,11 +187,11 @@ class TestTicketQueryLinks(FunctionalTwillTestCaseSetup):
         self._tester.go_to_query()
         # We don't have the luxury of javascript, so this is a multi-step
         # process
-        tc.formvalue('query', 'add_filter_0', 'summary')
-        tc.submit('add_0')
-        tc.formvalue('query', '0_owner', 'nothing')
-        tc.submit('rm_filter_0_owner_0')
-        tc.formvalue('query', '0_summary', 'TestTicketQueryLinks')
+        tc.formvalue('query', 'add_filter', 'summary')
+        tc.submit('add')
+        tc.formvalue('query', 'owner', 'nothing')
+        tc.submit('rm_filter_owner_0')
+        tc.formvalue('query', 'summary', 'TestTicketQueryLinks')
         tc.submit('update')
         query_url = b.get_url()
         for i in range(count):
@@ -209,29 +210,6 @@ class TestTicketQueryLinks(FunctionalTwillTestCaseSetup):
 
         tc.find('title="Ticket #%s">Previous Ticket' % ticket_ids[1])
         tc.find('class="missing">Next Ticket &rarr;')
-
-
-class TestTicketQueryOrClause(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Test ticket query with an or clauses"""
-        count = 3
-        ticket_ids = [self._tester.create_ticket(
-                        summary='TestTicketQueryOrClause%s' % i,
-                        info={'keywords': str(i)})
-                      for i in range(count)]
-        self._tester.go_to_query()
-        tc.formvalue('query', '0_owner', '')
-        tc.submit('rm_filter_0_owner_0')
-        tc.formvalue('query', 'add_filter_0', 'summary')
-        tc.submit('add_0')
-        tc.formvalue('query', '0_summary', 'TestTicketQueryOrClause1')
-        tc.formvalue('query', 'add_clause_1', 'keywords')
-        tc.submit('add_1')
-        tc.formvalue('query', '1_keywords', '2')
-        tc.submit('update')
-        tc.notfind('TestTicketQueryOrClause0')
-        for i in [1, 2]:
-            tc.find('TestTicketQueryOrClause%s' % i)
 
 
 class TestTimelineTicketDetails(FunctionalTwillTestCaseSetup):
@@ -305,8 +283,7 @@ class TestAdminComponentDefault(FunctionalTwillTestCaseSetup):
         tc.find('type="radio" name="default" value="%s" checked="checked"' % \
                 name)
         tc.go(self._tester.url + '/newticket')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (name, name))
+        tc.find('<option selected="selected">%s</option>' % name)
 
 
 class TestAdminComponentDetail(FunctionalTwillTestCaseSetup):
@@ -512,8 +489,7 @@ class TestAdminMilestoneDefault(FunctionalTwillTestCaseSetup):
                 name)
         # verify it is the default on the newticket page.
         tc.go(self._tester.url + '/newticket')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (name, name))
+        tc.find('<option selected="selected">%s</option>' % name)
 
 
 class TestAdminPriority(FunctionalTwillTestCaseSetup):
@@ -848,8 +824,7 @@ class TestAdminVersionDefault(FunctionalTwillTestCaseSetup):
                 name)
         # verify it is the default on the newticket page.
         tc.go(self._tester.url + '/newticket')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (name, name))
+        tc.find('<option selected="selected">%s</option>' % name)
 
 
 class TestNewReport(FunctionalTwillTestCaseSetup):
@@ -970,7 +945,7 @@ class RegressionTestTicket5022(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Test for regression of http://trac.edgewall.org/ticket/5022
         """
-        summary = 'RegressionTestTicket5022'
+        summary='RegressionTestTicket5022'
         ticket_id = self._tester.create_ticket(summary=summary)
         tc.go(self._tester.url + '/newticket?id=%s' % ticket_id)
         tc.notfind(summary)
@@ -1133,7 +1108,7 @@ class RegressionTestTicket5602(FunctionalTwillTestCaseSetup):
         tc.go(self._tester.url + "/roadmap")
         tc.follow(milestone)
 
-        tc.follow("Closed ticket:")
+        tc.follow("Closed tickets:")
         tc.find("Resolution:[ \t\n]+fixed")
 
         tc.back()
@@ -1197,7 +1172,7 @@ class RegressionTestTicket6048(FunctionalTwillTestCaseSetup):
         tc.submit('submit')
 
         self._tester.go_to_ticket(ticket_id)
-        tc.find('Error: Invalid ticket number')
+        tc.find('Error: Invalid Ticket Number')
         tc.find('Ticket %s does not exist.' % ticket_id)
 
         # Remove the DeleteTicket plugin
@@ -1279,7 +1254,7 @@ class RegressionTestTicket6912a(FunctionalTwillTestCaseSetup):
         try:
             self._tester.create_component(name='RegressionTestTicket6912a',
                                           user='')
-        except twill.utils.ClientForm.ItemNotFoundError, e:
+        except twill.utils.mechanize.ClientForm.ItemNotFoundError, e:
             raise twill.errors.TwillAssertionError(e)
 
 
@@ -1291,7 +1266,7 @@ class RegressionTestTicket6912b(FunctionalTwillTestCaseSetup):
         tc.follow('RegressionTestTicket6912b')
         try:
             tc.formvalue('modcomp', 'owner', '')
-        except twill.utils.ClientForm.ItemNotFoundError, e:
+        except twill.utils.mechanize.ClientForm.ItemNotFoundError, e:
             raise twill.errors.TwillAssertionError(e)
         tc.formvalue('modcomp', 'save', 'Save')
         tc.submit()
@@ -1314,7 +1289,7 @@ class RegressionTestTicket8247(FunctionalTwillTestCaseSetup):
         tc.formvalue('milestone_table', 'sel', name)
         tc.submit('remove')
         tc.go(ticket_url)
-        tc.find('<strong>Milestone</strong>[ \n\t]*<em>%s</em> deleted' % name)
+        tc.find('<strong>milestone</strong>[ \n\t]*<em>%s</em> deleted' % name)
         tc.find('Changed <a.*</a> ago by admin')
         tc.notfind('anonymous')
 
@@ -1339,19 +1314,6 @@ class RegressionTestTicket8861(FunctionalTwillTestCaseSetup):
         tc.find('Milestone: <em>%s</em>' % (name + '__'))
 
 
-class RegressionTestTicket9084(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Test for regression of http://trac.edgewall.org/ticket/9084"""
-        ticketid = self._tester.create_ticket()
-        self._tester.add_comment(ticketid)
-        self._tester.go_to_ticket(ticketid)
-        tc.formvalue('reply-to-comment-1', 'replyto', '1')
-        tc.submit('Reply')
-        tc.formvalue('propertyform', 'comment', random_sentence(3))
-        tc.submit('Submit changes')
-        tc.notfind('AssertionError')
-
-
 def functionalSuite(suite=None):
     if not suite:
         import trac.tests.functional.testcases
@@ -1368,7 +1330,6 @@ def functionalSuite(suite=None):
     suite.addTest(TestTicketHistory())
     suite.addTest(TestTicketHistoryDiff())
     suite.addTest(TestTicketQueryLinks())
-    suite.addTest(TestTicketQueryOrClause())
     suite.addTest(TestTimelineTicketDetails())
     suite.addTest(TestAdminComponent())
     suite.addTest(TestAdminComponentDuplicates())
@@ -1438,7 +1399,6 @@ def functionalSuite(suite=None):
     suite.addTest(RegressionTestTicket6912b())
     suite.addTest(RegressionTestTicket8247())
     suite.addTest(RegressionTestTicket8861())
-    suite.addTest(RegressionTestTicket9084())
 
     return suite
 

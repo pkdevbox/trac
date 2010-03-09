@@ -1,8 +1,7 @@
 import doctest
 import unittest
 
-import trac.wiki.api
-import trac.wiki.formatter
+from trac.wiki import api
 from trac.wiki.tests import formatter, macros, model, wikisyntax
 from trac.wiki.tests.functional import functionalSuite
 
@@ -13,8 +12,7 @@ def suite():
     suite.addTest(macros.suite())
     suite.addTest(model.suite())
     suite.addTest(wikisyntax.suite())
-    suite.addTest(doctest.DocTestSuite(trac.wiki.api))
-    suite.addTest(doctest.DocTestSuite(trac.wiki.formatter))
+    suite.addTest(doctest.DocTestSuite(api))
     return suite
 
 if __name__ == '__main__':

@@ -10,6 +10,8 @@
 #
 # Author: Matthew Good <matt@matt-good.net>
 
+"""Syntax highlighting based on Pygments."""
+
 from datetime import datetime
 import os
 from pkg_resources import resource_filename
@@ -17,10 +19,9 @@ import re
 
 from trac.core import *
 from trac.config import ListOption, Option
-from trac.env import ISystemInfoProvider
 from trac.mimeview.api import IHTMLPreviewRenderer, Mimeview
 from trac.prefs import IPreferencePanelProvider
-from trac.util import get_pkginfo
+from trac.util import get_module_path, get_pkginfo
 from trac.util.datefmt import http_date, localtz
 from trac.util.translation import _
 from trac.web import IRequestHandler
@@ -42,10 +43,9 @@ __all__ = ['PygmentsRenderer']
 
 
 class PygmentsRenderer(Component):
-    """HTML renderer for syntax highlighting based on Pygments."""
+    """Syntax highlighting based on Pygments."""
 
-    implements(ISystemInfoProvider, IHTMLPreviewRenderer,
-               IPreferencePanelProvider, IRequestHandler)
+    implements(IHTMLPreviewRenderer, IPreferencePanelProvider, IRequestHandler)
 
     default_style = Option('mimeviewer', 'pygments_default_style', 'trac',
         """The default style to use for Pygments syntax highlighting.""")
@@ -53,7 +53,7 @@ class PygmentsRenderer(Component):
     pygments_modes = ListOption('mimeviewer', 'pygments_modes',
         '', doc=
         """List of additional MIME types known by Pygments.
-
+        
         For each, a tuple `mimetype:mode:quality` has to be
         specified, where `mimetype` is the MIME type,
         `mode` is the corresponding Pygments mode to be used
@@ -83,18 +83,15 @@ class PygmentsRenderer(Component):
 </html>"""
 
     def __init__(self):
-        self._types = None
-
-    # ISystemInfoProvider methods
-    
-    def get_system_info(self):
         version = get_pkginfo(pygments).get('version')
         # if installed from source, fallback to the hardcoded version info
         if not version and hasattr(pygments, '__version__'):
             version = pygments.__version__
-        yield 'Pygments', version
-    
-    # IHTMLPreviewRenderer methods
+        self.env.systeminfo.append(('Pygments',version))
+                                        
+        self._types = None
+
+    # IHTMLPreviewRenderer implementation
 
     def get_quality_ratio(self, mimetype):
         # Extend default MIME type to mode mappings with configured ones
@@ -120,10 +117,10 @@ class PygmentsRenderer(Component):
             raise Exception("No Pygments lexer found for mime-type '%s'."
                             % mimetype)
 
-    # IPreferencePanelProvider methods
+    # IPreferencePanelProvider implementation
 
     def get_preference_panels(self, req):
-        yield ('pygments', _('Syntax Highlighting'))
+        yield ('pygments', _('Pygments Theme'))
 
     def render_preference_panel(self, req, panel):
         styles = list(get_all_styles())
@@ -141,7 +138,7 @@ class PygmentsRenderer(Component):
             'styles': styles
         }
 
-    # IRequestHandler methods
+    # IRequestHandler implementation
 
     def match_request(self, req):
         match = re.match(r'/pygments/(\w+)\.css', req.path_info)
@@ -199,42 +196,34 @@ class GenshiHtmlFormatter(HtmlFormatter):
     of writing markup as strings to an output file.
     """
 
-    def _chunk(self, tokens):
-        """Groups tokens with the same CSS class in the token stream
-        and yields them one by one, along with the CSS class, with the
-        values chunked together."""
-
-        last_class = None
-        text = []
-        for ttype, value in tokens:
-            c = self._get_css_class(ttype)
-            if c == 'n':
-                c = ''
-            if c == last_class:
-                text.append(value)
-                continue
-
-            # If no value, leave the old <span> open.
-            if value:
-                yield last_class, u''.join(text)
-                text = [value]
-                last_class = c
-
-        if text:
-            yield last_class, u''.join(text)
-
     def generate(self, tokens):
         pos = (None, -1, -1)
         span = QName('span')
         class_ = QName('class')
 
         def _generate():
-            for c, text in self._chunk(tokens):
-                if c:
-                    attrs = Attrs([(class_, c)])
-                    yield START, (span, attrs), pos
-                    yield TEXT, text, pos
-                    yield END, span, pos
-                else:
-                    yield TEXT, text, pos
+            attrs = lc = None
+            text = []
+
+            for ttype, value in tokens:
+                c = self._get_css_class(ttype)
+                if c == 'n':
+                    c = ''
+                if c == lc:
+                    text.append(value)
+                elif value: # if no value, leave old span open
+                    if text:
+                        yield TEXT, u''.join(text), pos
+                    if attrs:
+                        yield END, span, pos
+                        attrs = None
+                    text = [value]
+                    lc = c
+                    if c:
+                        attrs = Attrs([(class_, c)])
+                        yield START, (span, attrs), pos
+            if text:
+                yield TEXT, u''.join(text), pos
+            if attrs:
+                yield END, span, pos
         return Stream(_generate())

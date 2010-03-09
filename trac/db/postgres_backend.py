@@ -14,59 +14,41 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-import re, os
-
-from genshi import Markup
+import re, sys, os, time
 
 from trac.core import *
 from trac.config import Option
 from trac.db.api import IDatabaseConnector, _parse_db_str
-from trac.db.util import ConnectionWrapper, IterableCursor
+from trac.db.util import ConnectionWrapper
 from trac.util import get_pkginfo
 from trac.util.compat import close_fds
-from trac.util.text import to_unicode, empty
+from trac.util.text import to_unicode
 from trac.util.translation import _
 
 has_psycopg = False
+has_pgsql = False
+PGSchemaError = None
 try:
     import psycopg2 as psycopg
     import psycopg2.extensions
     from psycopg2 import ProgrammingError as PGSchemaError
-    from psycopg2.extensions import register_type, UNICODE, \
-                                    register_adapter, AsIs, QuotedString
-
-    register_type(UNICODE)
-    register_adapter(Markup, lambda markup: QuotedString(unicode(markup)))
-    register_adapter(type(empty), lambda empty: AsIs("''"))
-
+    psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
     has_psycopg = True
 except ImportError:
-    pass
+    try:
+        from pyPgSQL import PgSQL
+        from pyPgSQL.libpq import OperationalError as PGSchemaError
+        has_pgsql = True
+    except ImportError:
+        pass
+
 
 _like_escape_re = re.compile(r'([/_%])')
 
-# Mapping from "abstract" SQL types to DB-specific types
-_type_map = {
-    'int64': 'bigint',
-}
-
-
-def assemble_pg_dsn(path, user=None, password=None, host=None, port=None):
-    """Quote the parameters and assemble the DSN."""
-
-    dsn = {'dbname': path, 'user': user, 'password': password, 'host': host,
-           'port': port}
-    return ' '.join(["%s='%s'" % (k,v) for k,v in dsn.iteritems() if v])
-
 
 class PostgreSQLConnector(Component):
-    """Database connector for PostgreSQL.
-    
-    Database URLs should be of the form:
-    {{{
-    postgres://user[:password]@host[:port]/database[?schema=my_schema]
-    }}}
-    """
+    """PostgreSQL database support."""
+
     implements(IDatabaseConnector)
 
     pg_dump_path = Option('trac', 'pg_dump_path', 'pg_dump',
@@ -77,7 +59,7 @@ class PostgreSQLConnector(Component):
         self.error = None
 
     def get_supported_schemes(self):
-        if not has_psycopg:
+        if not (has_psycopg or has_pgsql):
             self.error = _("Cannot load Python bindings for PostgreSQL")
         yield ('postgres', self.error and -1 or 1)
 
@@ -86,9 +68,19 @@ class PostgreSQLConnector(Component):
         cnx = PostgreSQLConnection(path, log, user, password, host, port,
                                    params)
         if not self._version:
-            self._version = get_pkginfo(psycopg).get('version',
-                                                     psycopg.__version__)
-            self.env.systeminfo.append(('psycopg2', self._version))
+            if has_psycopg:
+                self._version = get_pkginfo(psycopg).get('version',
+                                                         psycopg.__version__)
+                name = 'psycopg2'
+            elif has_pgsql:
+                import pyPgSQL
+                self._version = get_pkginfo(pyPgSQL).get('version',
+                                                         pyPgSQL.__version__)
+                name = 'pyPgSQL'
+            else:
+                name = 'unknown postgreSQL driver'
+                self._version = '?'
+            self.env.systeminfo.append((name, self._version))
         return cnx
 
     def init_db(self, path, log=None, user=None, password=None, host=None,
@@ -110,7 +102,6 @@ class PostgreSQLConnector(Component):
         coldefs = []
         for column in table.columns:
             ctype = column.type
-            ctype = _type_map.get(ctype, ctype)
             if column.auto_increment:
                 ctype = 'SERIAL'
             if len(table.key) == 1 and column.name in table.key:
@@ -128,23 +119,6 @@ class PostgreSQLConnector(Component):
                      '_'.join(index.columns), table.name,
                      '","'.join(index.columns))
 
-    def alter_column_types(self, table, columns):
-        """Yield SQL statements altering the type of one or more columns of
-        a table.
-        
-        Type changes are specified as a `columns` dict mapping column names
-        to `(from, to)` SQL type tuples.
-        """
-        alterations = []
-        for name, (from_, to) in sorted(columns.iteritems()):
-            to = _type_map.get(to, to)
-            if to != _type_map.get(from_, from_):
-                alterations.append((name, to))
-        if alterations:
-            yield "ALTER TABLE %s %s" % (table,
-                ', '.join("ALTER COLUMN %s TYPE %s" % each
-                          for each in alterations))
-
     def backup(self, dest_file):
         try:
             from subprocess import Popen, PIPE
@@ -153,23 +127,22 @@ class PostgreSQLConnector(Component):
                             'is required for pre-upgrade backup support')
         db_url = self.env.config.get('trac', 'database')
         scheme, db_prop = _parse_db_str(db_url)
-        db_params = db_prop.setdefault('params', {})
+        db_prop.setdefault('params', {})
         db_name = os.path.basename(db_prop['path'])
 
         args = [self.pg_dump_path, '-C', '--inserts', '-x', '-Z', '8']
         if 'user' in db_prop:
             args.extend(['-U', db_prop['user']])
-        if 'host' in db_params:
-            host = db_params['host']
+        if 'host' in db_prop['params']:
+            host = db_prop['params']['host']
         else:
-            host = db_prop.get('host')
-        if host:
-            args.extend(['-h', host])
-            if '/' not in host:
-                args.extend(['-p', str(db_prop.get('port', '5432'))])
+            host = db_prop.get('host', 'localhost')
+        args.extend(['-h', host])
+        if '/' not in host:
+            args.extend(['-p', str(db_prop.get('port', '5432'))])
 
-        if 'schema' in db_params:
-            args.extend(['-n', '"%s"' % db_params['schema']])
+        if 'schema' in db_prop['params']:
+            args.extend(['-n', '"%s"' % db_prop['params']['schema']])
 
         dest_file += ".gz"
         args.extend(['-f', dest_file, db_name])
@@ -197,11 +170,27 @@ class PostgreSQLConnection(ConnectionWrapper):
             path = path[1:]
         if 'host' in params:
             host = params['host']
-        
-        cnx = psycopg.connect(assemble_pg_dsn(path, user, password, host,
-                                              port))
-
-        cnx.set_client_encoding('UNICODE')
+        if has_psycopg:
+            dsn = []
+            if path:
+                dsn.append('dbname=' + path)
+            if user:
+                dsn.append('user=' + user)
+            if password:
+                dsn.append('password=' + password)
+            if host:
+                dsn.append('host=' + host)
+            if port:
+                dsn.append('port=' + str(port))
+            cnx = psycopg.connect(' '.join(dsn))
+            cnx.set_client_encoding('UNICODE')
+        elif has_pgsql:
+            # Don't use chatty, inefficient server-side cursors.
+            # http://pypgsql.sourceforge.net/pypgsql-faq.html#id2787367
+            PgSQL.fetchReturnsList = 1
+            PgSQL.noPostgresCursor = 1
+            cnx = PgSQL.connect('', user, password, host, path, port, 
+                                client_encoding='utf-8', unicode_results=True)
         try:
             self.schema = None
             if 'schema' in params:
@@ -214,26 +203,19 @@ class PostgreSQLConnection(ConnectionWrapper):
 
     def cast(self, column, type):
         # Temporary hack needed for the union of selects in the search module
-        return 'CAST(%s AS %s)' % (column, _type_map.get(type, type))
+        return 'CAST(%s AS %s)' % (column, type)
 
     def concat(self, *args):
         return '||'.join(args)
 
     def like(self):
-        """Return a case-insensitive LIKE clause."""
+        # Temporary hack needed for the case-insensitive string matching in the
+        # search module
         return "ILIKE %s ESCAPE '/'"
 
     def like_escape(self, text):
         return _like_escape_re.sub(r'/\1', text)
 
-    def quote(self, identifier):
-        """Return the quoted identifier."""
-        return '"%s"' % identifier
-
     def get_last_id(self, cursor, table, column='id'):
         cursor.execute("SELECT CURRVAL('%s_%s_seq')" % (table, column))
         return cursor.fetchone()[0]
-
-    def cursor(self):
-        return IterableCursor(self.cnx.cursor(), self.log)
-

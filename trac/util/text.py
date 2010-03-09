@@ -21,21 +21,11 @@
 import __builtin__
 import locale
 import os
-import re
 import sys
 from urllib import quote, quote_plus, unquote, urlencode
 
 
 CRLF = '\r\n'
-
-class Empty(unicode):
-    """A special tag object evaluating to the empty string"""
-    __slots__ = []
-
-empty = Empty()
-
-del Empty # shouldn't be used outside of Trac core
-
 
 # -- Unicode
 
@@ -74,7 +64,7 @@ def to_unicode(text, charset=None):
         except UnicodeError:
             return unicode(text, locale.getpreferredencoding(), 'replace')
 
-def exception_to_unicode(e, traceback=False):
+def exception_to_unicode(e, traceback=""):
     message = '%s: %s' % (e.__class__.__name__, to_unicode(e))
     if traceback:
         from trac.util import get_last_traceback
@@ -82,19 +72,13 @@ def exception_to_unicode(e, traceback=False):
         message = '\n%s\n%s' % (to_unicode('\n'.join(traceback_only)), message)
     return message
 
-_js_quote = {'\\': '\\\\', '"': '\\"', '\b': '\\b', '\f': '\\f',
-             '\n': '\\n', '\r': '\\r', '\t': '\\t', "'": "\\'"}
-for i in range(0x20):
-    _js_quote.setdefault(chr(i), '\\u%04x' % i)
-_js_quote_re = re.compile(r'[\x00-\x1f\\"\b\f\n\r\t\']')
-
 def javascript_quote(text):
     """Quote strings for inclusion in javascript"""
     if not text:
         return ''
-    def replace(match):
-        return _js_quote[match.group(0)]
-    return _js_quote_re.sub(replace, text)
+    return text.replace('\\', '\\\\').replace('\r', '\\r') \
+               .replace('\n', '\\n').replace('"', '\\"') \
+               .replace("'", "\\'")
 
 def unicode_quote(value, safe='/'):
     """A unicode aware version of urllib.quote"""
@@ -112,23 +96,11 @@ def unicode_unquote(value):
     return unquote(value).decode('utf-8')
 
 def unicode_urlencode(params):
-    """A unicode aware version of urllib.urlencode.
-    
-    Values set to `empty` are converted to the key alone, without the
-    equal sign.
-    """
+    """A unicode aware version of urllib.urlencode"""
     if isinstance(params, dict):
-        params = params.iteritems()
-    l = []
-    for k, v in params:
-        k = quote_plus(str(k))
-        if v is empty:
-            l.append(k)
-        elif isinstance(v, unicode):
-            l.append(k + '=' + quote_plus(v.encode('utf-8')))
-        else:
-            l.append(k + '=' + quote_plus(str(v)))
-    return '&'.join(l)
+        params = params.items()
+    return urlencode([(k, isinstance(v, unicode) and v.encode('utf-8') or v)
+                      for k, v in params])
 
 def to_utf8(text, charset='iso-8859-15'):
     """Convert a string to UTF-8, assuming the encoding is either UTF-8, ISO
@@ -165,14 +137,8 @@ def console_print(out, *args, **kwargs):
     if kwargs.get('newline', True):
         out.write('\n')
 
-def printout(*args, **kwargs):
-    console_print(sys.stdout, *args, **kwargs)
-
-def printerr(*args, **kwargs):
-    console_print(sys.stderr, *args, **kwargs)
-
 def raw_input(prompt):
-    printout(prompt, newline=False)
+    console_print(sys.stdout, prompt, newline=False)
     return to_unicode(__builtin__.raw_input(), sys.stdin.encoding)
 
 # -- Plain text formatting
@@ -248,37 +214,13 @@ def obfuscate_email_address(address):
                    (address[-1] == '>' and '>' or '')
     return address
 
-def breakable_path(path):
-    """Make a path breakable after path separators, and conversely, avoid
-    breaking at spaces.
-    """
-    if not path:
-        return path
-    prefix = ''
-    if path.startswith('/'):    # Avoid breaking after a leading /
-        prefix = '/'
-        path = path[1:]
-    return prefix + path.replace('/', u'/\u200b').replace('\\', u'\\\u200b') \
-                        .replace(' ', u'\u00a0')
-
-def normalize_whitespace(text, to_space=u'\u00a0', remove=u'\u200b'):
-    """Normalize whitespace in a string, by replacing special spaces by normal
-    spaces and removing zero-width spaces."""
-    if not text:
-        return text
-    for each in to_space:
-        text = text.replace(each, ' ')
-    for each in remove:
-        text = text.replace(each, '')
-    return text
-
 # -- Conversion
 
 def pretty_size(size, format='%.1f'):
     if size is None:
         return ''
 
-    jump = 1024
+    jump = 512
     if size < jump:
         return '%d bytes' % size
 
@@ -291,10 +233,8 @@ def pretty_size(size, format='%.1f'):
     return (format + ' %s') % (size, units[i - 1])
 
 def expandtabs(s, tabstop=8, ignoring=None):
-    if '\t' not in s:
-        return s
-    if ignoring is None:
-        return s.expandtabs(tabstop)
+    if '\t' not in s: return s
+    if ignoring is None: return s.expandtabs(tabstop)
 
     outlines = []
     for line in s.split('\n'):
@@ -305,9 +245,9 @@ def expandtabs(s, tabstop=8, ignoring=None):
         s = []
         for c in line:
             if c == '\t':
-                n = tabstop - p % tabstop
-                s.append(' ' * n)
-                p += n
+                n = tabstop-p%tabstop
+                s.append(' '*n)
+                p+=n
             elif not ignoring or c not in ignoring:
                 p += 1
                 s.append(c)
