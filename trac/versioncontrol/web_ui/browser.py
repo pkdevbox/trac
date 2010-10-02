@@ -28,6 +28,7 @@ from trac.mimeview.api import Mimeview, is_binary, \
 from trac.perm import IPermissionRequestor
 from trac.resource import Resource, ResourceNotFound
 from trac.util import embedded_numbers
+from trac.util.compat import any
 from trac.util.datefmt import http_date, to_datetime, utc
 from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
@@ -329,7 +330,7 @@ class BrowserModule(Component):
 
         path = req.args.get('path', '/')
         rev = req.args.get('rev', '')
-        if rev.lower() in ('', 'head'):
+        if rev in ('', 'HEAD'):
             rev = None
         order = req.args.get('order', 'name').lower()
         desc = req.args.has_key('desc')
@@ -503,15 +504,12 @@ class BrowserModule(Component):
                             timerange = TimeRange(youngest.date)
                         else:
                             timerange.insert(youngest.date)
-                    raw_href = self._get_download_href(context.href, repos,
-                                                       None, None)
-                    entry = (reponame, repoinfo, repos, youngest, None,
-                             raw_href)
+                    entry = (reponame, repoinfo, repos, youngest, None)
                 else:
-                    entry = (reponame, repoinfo, None, None, u"\u2013", None)
+                    entry = (reponame, repoinfo, None, None, u"\u2013")
             except TracError, err:
                 entry = (reponame, repoinfo, None, None,
-                         exception_to_unicode(err), None)
+                         exception_to_unicode(err))
             if entry[-1] is not None:   # Check permission in case of error
                 root = Resource('repository', reponame).child('source', '/')
                 if 'BROWSER_VIEW' not in context.perm(root):
@@ -520,15 +518,15 @@ class BrowserModule(Component):
 
         # Ordering of repositories
         if order == 'date':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return (youngest and youngest.date or to_datetime(0),
                         embedded_numbers(reponame.lower()))
         elif order == 'author':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return (youngest and youngest.author.lower() or '',
                         embedded_numbers(reponame.lower()))
         else:
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return embedded_numbers(reponame.lower())
 
         repositories = sorted(repositories, key=repo_order, reverse=desc)
@@ -538,16 +536,13 @@ class BrowserModule(Component):
 
     def _render_dir(self, req, repos, node, rev, order, desc):
         req.perm(node.resource).require('BROWSER_VIEW')
-        download_href = self._get_download_href
 
         # Entries metadata
         class entry(object):
-            _copy = 'name rev kind isdir path content_length'.split()
-            __slots__ = _copy + ['raw_href']
+            __slots__ = 'name rev kind isdir path content_length'.split()
             def __init__(self, node):
-                for f in entry._copy:
+                for f in entry.__slots__:
                     setattr(self, f, getattr(node, f))
-                self.raw_href = download_href(req.href, repos, node, rev)
                 
         entries = [entry(n) for n in node.get_entries()
                    if n.can_view(req.perm)]
@@ -595,8 +590,16 @@ class BrowserModule(Component):
         entries = sorted(entries, key=browse_order, reverse=desc)
 
         # ''Zip Archive'' alternate link
-        zip_href = self._get_download_href(req.href, repos, node, rev)
-        if zip_href:
+        path = node.path.strip('/')
+        if repos.reponame:
+            path = repos.reponame + '/' + path
+        if any(fnmatchcase(path, p.strip('/'))
+               for p in self.downloadable_paths):
+            zip_href = req.href.changeset(rev or repos.youngest_rev, 
+                                          repos.reponame or None, node.path,
+                                          old=rev,
+                                          old_path=repos.reponame or '/',
+                                          format='zip')
             add_link(req, 'alternate', zip_href, _('Zip Archive'),
                      'application/zip', 'zip')
 
@@ -688,21 +691,6 @@ class BrowserModule(Component):
                 'annotate': force_source,
                 }
 
-    def _get_download_href(self, href, repos, node, rev):
-        """Return the URL for downloading a file, or a directory as a ZIP."""
-        if node is not None and node.isfile:
-            return href.export(rev or 'HEAD', repos.reponame or None,
-                               node.path)
-        path = npath = '' if node is None else node.path.strip('/')
-        if repos.reponame:
-            path = (repos.reponame + '/' + npath).rstrip('/')
-        if any(fnmatchcase(path, p.strip('/'))
-               for p in self.downloadable_paths):
-            return href.changeset(rev or repos.youngest_rev, 
-                                  repos.reponame or None, npath,
-                                  old=rev, old_path=repos.reponame or '/',
-                                  format='zip')
-
     # public methods
     
     def render_properties(self, mode, context, props):
@@ -767,13 +755,9 @@ class BrowserModule(Component):
         elif '@' in export:
             path, rev = export.split('@', 1)
         else:
-            rev, path = None, export
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if raw_href:
-            return tag.a(label, class_='export', href=raw_href + fragment,
-                         title=title)
-        return tag.a(label, class_='missing export')
+            rev, path = 'HEAD', export
+        return tag.a(label, class_='export',
+                     href=formatter.href.export(rev, path) + fragment)
 
     def _format_browser_link(self, formatter, ns, path, label):
         path, query, fragment = formatter.split_link(path)
@@ -781,36 +765,15 @@ class BrowserModule(Component):
         match = self.PATH_LINK_RE.match(path)
         if match:
             path, rev, marks = match.groups()
-        href = formatter.href
-        src_href = href.browser(path, rev=rev, marks=marks) + query + fragment
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if not node:
-            return tag.a(label, class_='missing source')
-        link = tag.a(label, class_='source', href=src_href)
-        if raw_href:
-            link = tag(link, tag.a(u'\u200b', href=raw_href + fragment,
-                                   title=title,
-                                   class_='trac-rawlink' if node.isfile
-                                          else 'trac-ziplink'))
-        return link
+        return tag.a(label, class_='source',
+                     href=(formatter.href.browser(path, rev=rev, marks=marks) +
+                           query + fragment))
 
     PATH_LINK_RE = re.compile(r"([^@#:]*)"     # path
                               r"[@:]([^#:]+)?" # rev
                               r"(?::(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*))?" # marks
                               )
 
-    def _get_link_info(self, path, rev, href, perm):
-        rm = RepositoryManager(self.env)
-        reponame, repos, npath = rm.get_repository_by_path(path)
-        node = get_allowed_node(repos, npath, rev, perm)
-        if node is not None:
-            raw_href = self._get_download_href(href, repos, node, rev)
-            title = _("Download") if node.isfile \
-                    else _("Download as Zip archive")
-            return (node, raw_href, title)
-        return (None, None, None)
-        
     # IHTMLPreviewAnnotator methods
 
     def get_annotation_type(self):

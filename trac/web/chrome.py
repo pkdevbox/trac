@@ -15,7 +15,6 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 import datetime
-from functools import partial
 import itertools
 import os.path
 import pkg_resources
@@ -41,6 +40,7 @@ from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
                       pathjoin, translation
+from trac.util.compat import any, partial
 from trac.util.html import escape, plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode, \
@@ -84,16 +84,14 @@ def add_stylesheet(req, filename, mimetype='text/css', media=None):
     will be based off the application root path. If it is relative, the link
     will be based off the `/chrome/` path.
     """
-    if filename.startswith('http://') or filename.startswith('https://'):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        filename = filename[7:]
     else:
         href = req.href
         if not filename.startswith('/'):
             href = href.chrome
-        href = href(filename)
-    add_link(req, 'stylesheet', href, mimetype=mimetype, media=media)
+    add_link(req, 'stylesheet', href(filename), mimetype=mimetype, media=media)
 
 def add_script(req, filename, mimetype='text/javascript'):
     """Add a reference to an external javascript file to the template.
@@ -106,16 +104,15 @@ def add_script(req, filename, mimetype='text/javascript'):
     if filename in scriptset:
         return False # Already added that script
 
-    if filename.startswith('http://') or filename.startswith('https://'):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        path = filename[7:]
     else:
         href = req.href
         if not filename.startswith('/'):
             href = href.chrome
-        href = href(filename)
-    script = {'href': href, 'type': mimetype}
+        path = filename
+    script = {'href': href(path), 'type': mimetype}
 
     req.chrome.setdefault('scripts', []).append(script)
     scriptset.add(filename)
@@ -211,14 +208,14 @@ class INavigationContributor(Interface):
         """
 
     def get_navigation_items(req):
-        """Should return an iterable object over the list of navigation items
-        to add, each being a tuple in the form (category, name, text).
+        """Should return an iterable object over the list of navigation items to
+        add, each being a tuple in the form (category, name, text).
         """
 
 
 class ITemplateProvider(Interface):
     """Extension point interface for components that provide their own
-    Genshi templates and accompanying static resources.
+    ClearSilver templates and accompanying static resources.
     """
 
     def get_htdocs_dirs():
@@ -337,8 +334,8 @@ class Chrome(Component):
     # A dictionary of default context data for templates
     _default_context_data = {
         '_': translation.gettext,
-        'all': all,
-        'any': any,
+        'all': compat.all,
+        'any': compat.any,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,

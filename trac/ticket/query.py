@@ -30,7 +30,6 @@ from trac.db import get_column_names
 from trac.mimeview.api import Mimeview, IContentConverter, Context
 from trac.resource import Resource
 from trac.ticket.api import TicketSystem
-from trac.ticket.model import Milestone, group_milestones
 from trac.util import Ranges, as_bool
 from trac.util.datefmt import format_datetime, from_utimestamp, parse_date, \
                               to_timestamp, to_utimestamp, utc
@@ -437,7 +436,7 @@ class Query(object):
         add_cols('status', 'priority', 'time', 'changetime', self.order)
         cols.extend([c for c in self.constraint_cols if not c in cols])
 
-        custom_fields = [f['name'] for f in self.fields if f.get('custom')]
+        custom_fields = [f['name'] for f in self.fields if 'custom' in f]
 
         sql = []
         sql.append("SELECT " + ",".join(['t.%s AS %s' % (c, c) for c in cols
@@ -719,16 +718,6 @@ class Query(object):
                 # Make $USER work when restrict_owner = true
                 field = field.copy()
                 field['options'].insert(0, '$USER')
-            if name == 'milestone':
-                milestones = [Milestone(self.env, opt)
-                              for opt in field['options']]
-                milestones = [m for m in milestones
-                              if 'MILESTONE_VIEW' in req.perm(m.resource)]
-                groups = group_milestones(milestones, True)
-                field['options'] = []
-                field['optgroups'] = [
-                    {'label': label, 'options': [m.name for m in milestones]}
-                    for (label, milestones) in groups]
             fields[name] = field
 
         groups = {}
@@ -1076,7 +1065,7 @@ class QueryModule(Component):
                self.env.is_component_enabled(ReportModule):
             data['report_href'] = req.href.report()
             add_ctxtnav(req, _('Available Reports'), req.href.report())
-            add_ctxtnav(req, _('Custom Query'), req.href.query())
+            add_ctxtnav(req, _('Custom Query'))
             if query.id:
                 cursor = db.cursor()
                 cursor.execute("SELECT title,description FROM report "
@@ -1096,8 +1085,7 @@ class QueryModule(Component):
         data['all_textareas'] = query.get_all_textareas()
 
         properties = dict((name, dict((key, field[key])
-                                      for key in ('type', 'label', 'options',
-                                                  'optgroups')
+                                      for key in ('type', 'label', 'options')
                                       if key in field))
                           for name, field in data['fields'].iteritems())
         add_script_data(req, {'properties': properties,

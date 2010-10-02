@@ -15,11 +15,9 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 try:
-    from base64 import b64decode, b64encode
+    from base64 import b64decode
 except ImportError:
     from base64 import decodestring as b64decode
-    from base64 import encodestring as b64encode
-from hashlib import md5, sha1
 import os
 import re
 import sys
@@ -32,7 +30,7 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
-from trac.util import hex_entropy, md5crypt
+from trac.util import hex_entropy, md5, md5crypt
 from trac.util.concurrency import threading
 from trac.util.translation import _, tag_
 
@@ -258,7 +256,6 @@ class PasswordFileAuthentication(HTTPAuthentication):
         finally:
             self._lock.release()
 
-
 class BasicAuthentication(PasswordFileAuthentication):
 
     def __init__(self, htpasswd, realm):
@@ -287,7 +284,7 @@ class BasicAuthentication(PasswordFileAuthentication):
                 print >> sys.stderr, 'Warning: invalid password line in %s: ' \
                                      '%s' % (filename, line)
                 continue
-            if '$' in h or h.startswith('{SHA}') or self.crypt:
+            if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
                 print >> sys.stderr, 'Warning: cannot parse password for ' \
@@ -301,9 +298,6 @@ class BasicAuthentication(PasswordFileAuthentication):
         the_hash = self.hash.get(user)
         if the_hash is None:
             return False
-
-        if the_hash.startswith('{SHA}'):
-            return b64encode(sha1(password).digest()) == the_hash[5:]
 
         if not '$' in the_hash:
             return self.crypt(password, the_hash[:2]) == the_hash

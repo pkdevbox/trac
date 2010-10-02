@@ -114,11 +114,6 @@ class ReportModule(Component):
             template, data, content_type = self._render_list(req)
             if content_type: # i.e. alternate format
                 return template, data, content_type
-            if action == 'clear':
-                if 'query_href' in req.session:
-                    del req.session['query_href']
-                if 'query_tickets' in req.session:
-                    del req.session['query_tickets']
         else:
             template, data, content_type = self._render_view(req, id)
             if content_type: # i.e. alternate format
@@ -137,7 +132,6 @@ class ReportModule(Component):
                 self.env.is_component_enabled(QueryModule):
             add_ctxtnav(req, _('Custom Query'), href=req.href.query())
             data['query_href'] = req.href.query()
-            data['saved_query_href'] = req.session.get('query_href')
         else:
             data['query_href'] = None
 
@@ -254,7 +248,7 @@ class ReportModule(Component):
         
         db = self.env.get_db_cnx()
         cursor = db.cursor()
-        cursor.execute("SELECT id, title, description FROM report ORDER BY %s%s"
+        cursor.execute("SELECT id, title FROM report ORDER BY %s%s"
                        % (sort == 'title' and 'title' or 'id',
                           not asc and ' DESC' or ''))
         rows = list(cursor)
@@ -282,10 +276,9 @@ class ReportModule(Component):
         add_link(req, 'alternate', report_href(format='tab'),
                  _('Tab-delimited Text'), 'text/plain')
         
-        reports = [(id, title, description, 
-                    'REPORT_MODIFY' in req.perm('report', id),
+        reports = [(id, title, 'REPORT_MODIFY' in req.perm('report', id),
                     'REPORT_DELETE' in req.perm('report', id))
-                   for id, title, description in rows]
+                   for id, title in rows]
         data = {'reports': reports, 'sort': sort, 'asc': asc}
 
         return 'report_list.html', data, None

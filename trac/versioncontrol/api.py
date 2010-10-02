@@ -111,9 +111,9 @@ class DbRepositoryProvider(Component):
         """Retrieve repositories specified in the repository DB table."""
         db = self.env.get_db_cnx()
         cursor = db.cursor()
-        cursor.execute("""
-            SELECT id, name, value FROM repository WHERE name IN (%s)
-            """ % ",".join("'%s'" % each for each in self.repository_attrs))
+        cursor.execute("SELECT id,name,value FROM repository "
+                       "WHERE name IN (%s)" % ",".join(
+                           "'%s'" % each for each in self.repository_attrs))
         repos = {}
         for id, name, value in cursor:
             if value is not None:
@@ -209,10 +209,10 @@ class DbRepositoryProvider(Component):
         def do_add(db):
             id = rm.get_repository_id(reponame)
             cursor = db.cursor()
-            cursor.executemany("""
-                INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)
-                """, [(id, 'dir', dir),
-                      (id, 'type', type_ or '')])
+            cursor.executemany("INSERT INTO repository (id, name, value) "
+                               "VALUES (%s, %s, %s)",
+                               [(id, 'dir', dir),
+                                (id, 'type', type_ or '')])
         rm.reload_repositories()
     
     def add_alias(self, reponame, target):
@@ -226,10 +226,10 @@ class DbRepositoryProvider(Component):
         def do_add(db):
             id = rm.get_repository_id(reponame)
             cursor = db.cursor()
-            cursor.executemany("""
-                INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)
-                """, [(id, 'dir', None),
-                      (id, 'alias', target)])
+            cursor.executemany("INSERT INTO repository (id, name, value) "
+                               "VALUES (%s, %s, %s)",
+                               [(id, 'dir', None),
+                                (id, 'alias', target)])
         rm.reload_repositories()
     
     def remove_repository(self, reponame):
@@ -263,17 +263,13 @@ class DbRepositoryProvider(Component):
                 if k == 'dir' and not os.path.isabs(v):
                     raise TracError(_("The repository directory must be "
                                       "absolute"))
-                cursor.execute("""
-                    UPDATE repository SET value=%s WHERE id=%s AND name=%s
-                    """, (v, id, k))
-                cursor.execute("""
-                    SELECT value FROM repository WHERE id=%s AND name=%s
-                    """, (id, k))
+                cursor.execute("UPDATE repository SET value=%s "
+                               "WHERE id=%s AND name=%s", (v, id, k))
+                cursor.execute("SELECT value FROM repository "
+                               "WHERE id=%s AND name=%s", (id, k))
                 if not cursor.fetchone():
-                    cursor.execute("""
-                        INSERT INTO repository (id, name, value)
-                        VALUES (%s, %s, %s)
-                        """, (id, k, v))
+                    cursor.execute("INSERT INTO repository (id, name, value) "
+                                   "VALUES (%s, %s, %s)", (id, k, v))
         rm.reload_repositories()
 
 
@@ -482,17 +478,15 @@ class RepositoryManager(Component):
         @self.env.with_transaction()
         def do_get(db):
             cursor = db.cursor()
-            cursor.execute("""
-                SELECT id FROM repository WHERE name='name' AND value=%s
-                """, (reponame,))
+            cursor.execute("SELECT id FROM repository "
+                           "WHERE name='name' AND value=%s", (reponame,))
             for id, in cursor:
                 repo_id[0] = id
                 return
-            cursor.execute("SELECT COALESCE(MAX(id), 0) FROM repository")
+            cursor.execute("SELECT COALESCE(MAX(id),0) FROM repository")
             id = cursor.fetchone()[0] + 1
-            cursor.execute("""
-                INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)
-                """, (id, 'name', reponame))
+            cursor.execute("INSERT INTO repository (id, name, value) "
+                           "VALUES (%s,%s,%s)", (id, 'name', reponame))
             repo_id[0] = id
         return repo_id[0]
     
@@ -855,31 +849,34 @@ class Repository(object):
     youngest_rev = property(lambda x: x.get_youngest_rev())
 
     def previous_rev(self, rev, path=''):
-        """Return the revision immediately preceding the specified revision.
-
-        If `path` is given, filter out ancestor revisions having no changes
-        below `path`.
-
-        In presence of multiple parents, this follows the first parent.
-        """
+        """Return the revision immediately preceding the specified revision."""
         raise NotImplementedError
 
     def next_rev(self, rev, path=''):
-        """Return the revision immediately following the specified revision.
-
-        If `path` is given, filter out descendant revisions having no changes
-        below `path`.
-
-        In presence of multiple children, this follows the first child.
-        """
+        """Return the revision immediately following the specified revision."""
         raise NotImplementedError
 
     def rev_older_than(self, rev1, rev2):
         """Provides a total order over revisions.
         
-        Return `True` if `rev1` is an ancestor of `rev2`.
+        Return `True` if `rev1` is older than `rev2`, i.e. if `rev1`
+        comes before `rev2` in the revision sequence.
         """
         raise NotImplementedError
+
+    def get_youngest_rev_in_cache(self, db):
+        """Return the youngest revision currently cached.
+        
+        The way revisions are sequenced is version control specific.
+        By default, one assumes that the revisions are sequenced in time
+        (... which is ''not'' correct for most VCS, including Subversion).
+
+        (Deprecated, will not be used anymore in Trac 0.12)
+        """
+        cursor = db.cursor()
+        cursor.execute("SELECT rev FROM revision ORDER BY time DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row and row[0] or None
 
     def get_path_history(self, path, rev=None, limit=None):
         """Retrieve all the revisions containing this path.
@@ -1109,10 +1106,6 @@ class Changeset(object):
         the branch name and `head` a flag set if the changeset is a head
         for this branch (i.e. if it has no children changeset).
         """
-        return []
-
-    def get_tags(self):
-        """Yield tags associated with this changeset."""
         return []
 
     def can_view(self, perm):

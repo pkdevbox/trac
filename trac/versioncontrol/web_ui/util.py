@@ -23,8 +23,7 @@ from trac.util.datefmt import datetime, utc
 from trac.util.translation import tag_, _
 from trac.versioncontrol.api import Changeset, NoSuchNode, NoSuchChangeset
 
-__all__ = ['get_changes', 'get_path_links', 'get_existing_node',
-           'get_allowed_node']
+__all__ = ['get_changes', 'get_path_links', 'get_existing_node']
 
 def get_changes(repos, revs, log=None):
     changes = {}
@@ -72,12 +71,3 @@ def get_existing_node(req, repos, path, rev):
             tag.p(tag_("You can %(search)s in the repository history to see "
                        "if that path existed but was later removed",
                        search=search_a))))
-
-def get_allowed_node(repos, path, rev, perm):
-    if repos is not None:
-        try:
-            node = repos.get_node(path, rev)
-        except (NoSuchNode, NoSuchChangeset):
-            return None
-        if node.can_view(perm):
-            return node

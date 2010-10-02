@@ -72,13 +72,6 @@ export HELP
 
 # ` (keep emacs font-lock happy)
 
-define HELP_CFG
- It looks like you don't have a Makefile.cfg file yet.
- You can get started by doing `cp Makefile.cfg.sample Makefile.cfg'
- and then adapt it to your environment.
-endef
-export HELP_CFG
-
 # ----------------------------------------------------------------------------
 #
 # Main targets
@@ -92,12 +85,8 @@ else
 all: help
 endif
 
-help: Makefile.cfg
+help:
 	@echo "$$HELP"
-
-
-Makefile.cfg:
-	@echo "$$HELP_CFG"
 
 status:
 	@echo -n "Python version: "
@@ -118,7 +107,7 @@ clean: clean-bytecode clean-figleaf clean-coverage
 clean-bytecode:
 	find -name \*.py[co] -exec rm {} \;
 
-Makefile: ;
+Makefile Makefile.cfg: ;
 
 # ----------------------------------------------------------------------------
 #
