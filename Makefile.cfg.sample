@@ -18,8 +18,7 @@ python.27 =
 # ----------------------------------------------------------------------------
 # Database Backends (select with `db=` on the `make` command line)
 
-# db URIs
-sqlite.uri = sqlite:test.db
+# db URIs 
 mysql.uri = mysql://tracuser:tracpassword@localhost/trac
 postgres.uri = postgres://tracuser:tracpassword@localhost:5432/trac?schema=tractest
 

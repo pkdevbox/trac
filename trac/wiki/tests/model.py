@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import with_statement
-
 from datetime import datetime
 import os.path
 import shutil
@@ -47,6 +45,7 @@ class WikiPageTestCase(unittest.TestCase):
         self.env = EnvironmentStub()
         self.env.path = os.path.join(tempfile.gettempdir(), 'trac-tempenv')
         os.mkdir(self.env.path)
+        self.db = self.env.get_db_cnx()
 
     def tearDown(self):
         shutil.rmtree(self.env.path)
@@ -65,10 +64,10 @@ class WikiPageTestCase(unittest.TestCase):
 
     def test_existing_page(self):
         t = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            ('TestPage', 1, to_utimestamp(t), 'joe', '::1', 'Bla bla', 
-             'Testing', 0))
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ('TestPage', 1, to_utimestamp(t), 'joe', '::1',
+                        'Bla bla', 'Testing', 0))
 
         page = WikiPage(self.env, 'TestPage')
         self.assertEqual(True, page.exists)
@@ -103,23 +102,23 @@ class WikiPageTestCase(unittest.TestCase):
         self.assertEqual('Testing', page.comment)
         self.assertEqual(t, page.time)
 
-        self.assertEqual(
-            [(1, to_utimestamp(t), 'joe', '::1', 'Bla bla', 'Testing', 0)],
-            self.env.db_query("""
-                SELECT version, time, author, ipnr, text, comment, readonly
-                FROM wiki WHERE name=%s
-                """, ('TestPage',)))
+        cursor = self.db.cursor()
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual((1, to_utimestamp(t), 'joe', '::1', 'Bla bla',
+                          'Testing', 0),
+                         cursor.fetchone())
 
         listener = TestWikiChangeListener(self.env)
         self.assertEqual(page, listener.added[0])
 
     def test_update_page(self):
+        cursor = self.db.cursor()
         t = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
         t2 = datetime(2002, 1, 1, 1, 1, 1, 0, utc)
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            ('TestPage', 1, to_utimestamp(t), 'joe', '::1', 'Bla bla',
-             'Testing', 0))
+        cursor.execute("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ('TestPage', 1, to_utimestamp(t), 'joe', '::1',
+                        'Bla bla', 'Testing', 0))
 
         page = WikiPage(self.env, 'TestPage')
         page.text = 'Bla'
@@ -132,16 +131,13 @@ class WikiPageTestCase(unittest.TestCase):
         self.assertEqual('Changing', page.comment)
         self.assertEqual(t2, page.time)
 
-        with self.env.db_query as db:
-            rows = db("""
-               SELECT version, time, author, ipnr, text, comment, readonly
-               FROM wiki WHERE name=%s
-               """, ('TestPage',))
-            self.assertEqual(2, len(rows))
-            self.assertEqual((1, to_utimestamp(t), 'joe', '::1', 'Bla bla',
-                              'Testing', 0), rows[0])
-            self.assertEqual((2, to_utimestamp(t2), 'kate', '192.168.0.101', 
-                              'Bla', 'Changing', 0), rows[1])
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual((1, to_utimestamp(t), 'joe', '::1', 'Bla bla',
+                          'Testing', 0),
+                         cursor.fetchone())
+        self.assertEqual((2, to_utimestamp(t2), 'kate', '192.168.0.101', 'Bla',
+                          'Changing', 0), cursor.fetchone())
 
         listener = TestWikiChangeListener(self.env)
         self.assertEqual((page, 2, t2, 'Changing', 'kate', '192.168.0.101'),
@@ -155,66 +151,68 @@ class WikiPageTestCase(unittest.TestCase):
         self.assertEqual((1, t, 'joe', 'Testing', '::1'), history[1])
 
     def test_delete_page(self):
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            ('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0))
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'Testing',
+                        0))
 
         page = WikiPage(self.env, 'TestPage')
         page.delete()
 
         self.assertEqual(False, page.exists)
 
-        self.assertEqual([], self.env.db_query("""
-            SELECT version, time, author, ipnr, text, comment, readonly
-            FROM wiki WHERE name=%s
-            """, ('TestPage',)))
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual(None, cursor.fetchone())
 
         listener = TestWikiChangeListener(self.env)
         self.assertEqual(page, listener.deleted[0])
 
     def test_delete_page_version(self):
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            [('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0),
-             ('TestPage', 2, 43, 'kate', '192.168.0.11', 'Bla', 'Changing', 0)])
+        cursor = self.db.cursor()
+        cursor.executemany("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                           [('TestPage', 1, 42, 'joe', '::1', 'Bla bla',
+                            'Testing', 0),
+                            ('TestPage', 2, 43, 'kate', '192.168.0.101', 'Bla',
+                            'Changing', 0)])
 
         page = WikiPage(self.env, 'TestPage')
         page.delete(version=2)
 
         self.assertEqual(True, page.exists)
-        self.assertEqual(
-            [(1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0)],
-            self.env.db_query("""
-                SELECT version, time, author, ipnr, text, comment, readonly
-                FROM wiki WHERE name=%s
-                """, ('TestPage',)))
+
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual((1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0),
+                         cursor.fetchone())
+        self.assertEqual(None, cursor.fetchone())
 
         listener = TestWikiChangeListener(self.env)
         self.assertEqual(page, listener.deleted_version[0])
 
     def test_delete_page_last_version(self):
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            ('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0))
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'Testing',
+                        0))
 
         page = WikiPage(self.env, 'TestPage')
         page.delete(version=1)
 
         self.assertEqual(False, page.exists)
 
-        self.assertEqual([], self.env.db_query("""
-            SELECT version, time, author, ipnr, text, comment, readonly
-            FROM wiki WHERE name=%s
-            """, ('TestPage',)))
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual(None, cursor.fetchone())
 
         listener = TestWikiChangeListener(self.env)
         self.assertEqual(page, listener.deleted[0])
 
     def test_rename_page(self):
+        cursor = self.db.cursor()
         data = (1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0)
-        self.env.db_transaction(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            ('TestPage',) + data)
+        cursor.execute("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                       ('TestPage',) + data)
         attachment = Attachment(self.env, 'wiki', 'TestPage')
         attachment.insert('foo.txt', StringIO(), 0, 1)
         
@@ -222,24 +220,22 @@ class WikiPageTestCase(unittest.TestCase):
         page.rename('PageRenamed')
         self.assertEqual('PageRenamed', page.name)
         
-        self.assertEqual([data], self.env.db_query("""
-            SELECT version, time, author, ipnr, text, comment, readonly
-            FROM wiki WHERE name=%s
-            """, ('PageRenamed',)))
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('PageRenamed',))
+        self.assertEqual(data, cursor.fetchone())
+        self.assertEqual(None, cursor.fetchone())
         
         attachments = Attachment.select(self.env, 'wiki', 'PageRenamed')
         self.assertEqual('foo.txt', attachments.next().filename)
         self.assertRaises(StopIteration, attachments.next)
-        Attachment.delete_all(self.env, 'wiki', 'PageRenamed')
+        Attachment.delete_all(self.env, 'wiki', 'PageRenamed', self.db)
 
         old_page = WikiPage(self.env, 'TestPage')
         self.assertEqual(False, old_page.exists)
         
-        
-        self.assertEqual([], self.env.db_query("""
-            SELECT version, time, author, ipnr, text, comment, readonly
-            FROM wiki WHERE name=%s
-            """, ('TestPage',)))
+        cursor.execute("SELECT version,time,author,ipnr,text,comment,"
+                       "readonly FROM wiki WHERE name=%s", ('TestPage',))
+        self.assertEqual(None, cursor.fetchone())
         
         listener = TestWikiChangeListener(self.env)
         self.assertEqual((page, 'TestPage'), listener.renamed[0])

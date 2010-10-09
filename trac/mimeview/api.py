@@ -811,7 +811,7 @@ class Mimeview(Component):
                 annotators[atype] = annotator
 
         if isinstance(stream, list):
-            stream = HTMLParser(StringIO(u'\n'.join(stream)))
+            stream = HTMLParser(StringIO('\n'.join(stream)))
         elif isinstance(stream, unicode):
             text = stream
             def linesplitter():

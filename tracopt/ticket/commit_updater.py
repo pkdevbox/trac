@@ -35,8 +35,6 @@
 # IN THE SOFTWARE.
 # ----------------------------------------------------------------------------
 
-from __future__ import with_statement
-
 from datetime import datetime
 import re
 
@@ -48,6 +46,7 @@ from trac.perm import PermissionCache
 from trac.resource import Resource
 from trac.ticket import Ticket
 from trac.ticket.notification import TicketNotifyEmail
+from trac.util.compat import any
 from trac.util.datefmt import utc
 from trac.util.text import exception_to_unicode
 from trac.versioncontrol import IRepositoryChangeListener, RepositoryManager
@@ -212,7 +211,8 @@ In [%s]:
             try:
                 self.log.debug("Updating ticket #%d", tkt_id)
                 ticket = [None]
-                with self.env.db_transaction as db:
+                @self.env.with_transaction()
+                def do_update(db):
                     ticket[0] = Ticket(self.env, tkt_id, db)
                     for cmd in cmds:
                         cmd(ticket[0], changeset, perm(ticket[0].resource))

@@ -132,13 +132,15 @@ class VersionControlAdmin(Component):
                 return
             repositories = [repos]
         
+        db = self.env.get_db_cnx()
         for repos in sorted(repositories, key=lambda r: r.reponame):
             printout(_('Resyncing repository history for %(reponame)s... ',
                        reponame=repos.reponame or '(default)'))
             repos.sync(self._sync_feedback, clean=clean)
-            for cnt, in self.env.db_query(
-                    "SELECT count(rev) FROM revision WHERE repos=%s",
-                    (repos.id,)):
+            cursor = db.cursor()
+            cursor.execute("SELECT count(rev) FROM revision WHERE repos=%s",
+                           (repos.id,))
+            for cnt, in cursor:
                 printout(ngettext('%(num)s revision cached.',
                                   '%(num)s revisions cached.', num=cnt))
         printout(_('Done.'))

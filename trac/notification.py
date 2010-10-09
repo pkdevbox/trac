@@ -211,6 +211,7 @@ class Notify(object):
     def __init__(self, env):
         self.env = env
         self.config = env.config
+        self.db = env.get_db_cnx()
 
         from trac.web.chrome import Chrome
         self.template = Chrome(self.env).load_template(self.template_name,
@@ -277,7 +278,7 @@ class NotifyEmail(Notify):
         self._ignore_domains = [x.strip() for x in domains.lower().split(',')]
         # Get the email addresses of all known users
         self.email_map = {}
-        for username, name, email in self.env.get_known_users():
+        for username, name, email in self.env.get_known_users(self.db):
             if email:
                 self.email_map[username] = email
                 
@@ -398,7 +399,7 @@ class NotifyEmail(Notify):
         # don't translate the e-mail stream
         t = deactivate()
         try:
-            body = stream.render('text', encoding='utf-8')
+            body = stream.render('text')
         finally:
             reactivate(t)
         projname = self.env.project_name

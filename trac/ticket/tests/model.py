@@ -1,5 +1,3 @@
-from __future__ import with_statement
-
 from datetime import datetime, timedelta
 import os.path
 from StringIO import StringIO
@@ -319,11 +317,14 @@ class TicketTestCase(unittest.TestCase):
         t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
         ticket.save_changes('jane', 'Testing', t1)
         t2 = datetime(2001, 1, 1, 1, 1, 2, 0, utc)
-        self.env.db_transaction("""
-            INSERT INTO attachment (type, id, filename, size, time,
-                                    description, author, ipnr)
-            VALUES ('ticket',%s,'file.txt',1234,%s, 'My file','mark','')
-            """, (str(tkt_id), to_utimestamp(t2)))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO attachment (type,id,filename,size,time,"
+                       "                        description,author,ipnr) "
+                       "VALUES ('ticket',%s,'file.txt',1234,%s,"
+                       "        'My file','mark','')",
+                       (str(tkt_id), to_utimestamp(t2)))
+        db.commit()
         t3 = datetime(2001, 1, 1, 1, 1, 3, 0, utc)
         ticket.save_changes('jim', 'Other', t3)
         log = ticket.get_changelog()
@@ -407,7 +408,7 @@ class TicketCommentTestCase(unittest.TestCase):
         ticket.save_changes(author, comment, when, cnum=cnum)
     
     def _find_change(self, ticket, cnum):
-        (ts, author, comment) = ticket._find_change(cnum)
+        (ts, author, comment) = ticket._find_change(cnum, self.db)
         return from_utimestamp(ts)
     
     def assertChange(self, ticket, cnum, date, author, **fields):
@@ -419,6 +420,7 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
+        self.db = self.env.get_db_cnx()
         self.created = datetime(2001, 1, 1, 1, 0, 0, 0, utc)
         self._insert_ticket('Test ticket', self.created,
                             owner='john', keywords='a, b, c')
@@ -468,8 +470,11 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
         
     def test_modify_missing_cnum(self):
         """Editing a comment with no cnum in oldvalue"""
-        self.env.db_transaction(
-            "UPDATE ticket_change SET oldvalue='' WHERE oldvalue='3'")
+        cursor = self.db.cursor()
+        cursor.execute("UPDATE ticket_change SET oldvalue='' "
+                       "WHERE oldvalue='3'")
+        self.db.commit()
+
         ticket = Ticket(self.env, self.id)
         t = self.created + timedelta(seconds=30)
         ticket.modify_comment(self._find_change(ticket, 3),
@@ -482,9 +487,11 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
         
     def test_modify_missing_comment(self):
         """Editing a comment where the comment field is missing"""
-        self.env.db_transaction("""
-            DELETE FROM ticket_change WHERE field='comment' AND oldvalue='1.2'
-            """)
+        cursor = self.db.cursor()
+        cursor.execute("DELETE FROM ticket_change "
+                       "WHERE field='comment' AND oldvalue='1.2'")
+        self.db.commit()
+
         ticket = Ticket(self.env, self.id)
         t = self.created + timedelta(seconds=40)
         ticket.modify_comment(self._find_change(ticket, 2),
@@ -499,11 +506,14 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
         """Editing a comments when all cnums are missing and one comment
         field is missing
         """
-        with self.env.db_transaction as db:
-            db("UPDATE ticket_change SET oldvalue='' WHERE oldvalue='1'")
-            db("""DELETE FROM ticket_change
-                  WHERE field='comment' AND oldvalue='1.2'""")
-            db("UPDATE ticket_change SET oldvalue='' WHERE oldvalue='3'")
+        cursor = self.db.cursor()
+        cursor.execute("UPDATE ticket_change SET oldvalue='' "
+                       "WHERE oldvalue='1'")
+        cursor.execute("DELETE FROM ticket_change "
+                       "WHERE field='comment' AND oldvalue='1.2'")
+        cursor.execute("UPDATE ticket_change SET oldvalue='' "
+                       "WHERE oldvalue='3'")
+        self.db.commit()
 
         # Modify after missing comment
         ticket = Ticket(self.env, self.id)
@@ -543,8 +553,10 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
             _comment1=dict(author='joe', old='New comment 1',
                            new=str(to_utimestamp(t2))))
         
-        self.env.db_transaction(
-            "DELETE FROM ticket_change WHERE field='_comment0'")
+        cursor = self.db.cursor()
+        cursor.execute("DELETE FROM ticket_change "
+                       "WHERE field='_comment0'")
+        self.db.commit()
 
         t3 = self.created + timedelta(seconds=90)
         ticket.modify_comment(self._find_change(ticket, 1),
@@ -578,6 +590,7 @@ class TicketCommentDeleteTestCase(TicketCommentTestCase):
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
         self.env.config.set('ticket-custom', 'foo', 'text')
+        self.db = self.env.get_db_cnx()
         self.created = datetime(2001, 1, 1, 1, 0, 0, 0, utc)
         self._insert_ticket('Test ticket', self.created,
                             owner='john', keywords='a, b, c', foo='initial')
@@ -627,10 +640,11 @@ class TicketCommentDeleteTestCase(TicketCommentTestCase):
         # Make oldvalue on keywords for change 4 inconsistent. This should
         # result in no change in oldvalue when deleting change 3. The
         # oldvalue of foo should change normally.
-        self.env.db_transaction("""
-            UPDATE ticket_change SET oldvalue='1, 2'
-            WHERE field='keywords' AND oldvalue='a, b'
-            """)
+        cursor = self.db.cursor()
+        cursor.execute("UPDATE ticket_change SET oldvalue='1, 2' "
+                       "WHERE field='keywords' AND oldvalue='a, b'")
+        self.db.commit()
+
         ticket = Ticket(self.env, self.id)
         self.assertChange(ticket, 4, self.t4, 'joe',
             comment=dict(author='joe', old='4', new='Comment 4'),
@@ -719,6 +733,7 @@ class MilestoneTestCase(unittest.TestCase):
         self.env = EnvironmentStub(default_data=True)
         self.env.path = os.path.join(tempfile.gettempdir(), 'trac-tempenv')
         os.mkdir(self.env.path)
+        self.db = self.env.get_db_cnx()
 
     def tearDown(self):
         shutil.rmtree(self.env.path)
@@ -751,7 +766,9 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertEqual('', milestone.description)
 
     def test_existing_milestone(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         milestone = Milestone(self.env, 'Test')
         self.assertEqual(True, milestone.exists)
@@ -765,34 +782,39 @@ class MilestoneTestCase(unittest.TestCase):
         milestone.name = 'Test'
         milestone.insert()
 
-        self.assertEqual([('Test', 0, 0, '')], self.env.db_query("""
-            SELECT name, due, completed, description FROM milestone
-            WHERE name='Test'
-            """))
+        cursor = self.db.cursor()
+        cursor.execute("SELECT name,due,completed,description FROM milestone "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', 0, 0, ''), cursor.fetchone())
         
         # Use the same model object to update the milestone
         milestone.description = 'Some text'
         milestone.update()
-        self.assertEqual([('Test', 0, 0, 'Some text')], self.env.db_query("""
-            SELECT name, due, completed, description FROM milestone
-            WHERE name='Test'
-            """))
+        cursor.execute("SELECT name,due,completed,description FROM milestone "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', 0, 0, 'Some text'), cursor.fetchone())
 
     def test_create_milestone_without_name(self):
         milestone = Milestone(self.env)
         self.assertRaises(TracError, milestone.insert)
 
     def test_delete_milestone(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         milestone = Milestone(self.env, 'Test')
         milestone.delete()
         self.assertEqual(False, milestone.exists)
-        self.assertEqual([], 
-            self.env.db_query("SELECT * FROM milestone WHERE name='Test'"))
+
+        cursor = self.db.cursor()
+        cursor.execute("SELECT * FROM milestone WHERE name='Test'")
+        self.assertEqual(None, cursor.fetchone())
 
     def test_delete_milestone_retarget_tickets(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         tkt1 = Ticket(self.env)
         tkt1.populate({'summary': 'Foo', 'milestone': 'Test'})
@@ -809,7 +831,9 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertEqual('Other', Ticket(self.env, tkt2.id)['milestone'])
 
     def test_update_milestone(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         milestone = Milestone(self.env, 'Test')
         t1 = datetime(2001, 01, 01, tzinfo=utc)
@@ -819,19 +843,25 @@ class MilestoneTestCase(unittest.TestCase):
         milestone.description = 'Foo bar'
         milestone.update()
 
-        self.assertEqual(
-            [('Test', to_utimestamp(t1), to_utimestamp(t2), 'Foo bar')],
-            self.env.db_query("SELECT * FROM milestone WHERE name='Test'"))
+        cursor = self.db.cursor()
+        cursor.execute("SELECT * FROM milestone WHERE name='Test'")
+        self.assertEqual(('Test', to_utimestamp(t1), to_utimestamp(t2),
+                          'Foo bar'),
+                         cursor.fetchone())
 
     def test_update_milestone_without_name(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         milestone = Milestone(self.env, 'Test')
         milestone.name = None
         self.assertRaises(TracError, milestone.update)
 
     def test_update_milestone_update_tickets(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor = self.db.cursor()
+        cursor.execute("INSERT INTO milestone (name) VALUES ('Test')")
+        cursor.close()
 
         tkt1 = Ticket(self.env)
         tkt1.populate({'summary': 'Foo', 'milestone': 'Test'})
@@ -869,8 +899,10 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertRaises(StopIteration, attachments.next)
         
     def test_select_milestones(self):
-        self.env.db_transaction("INSERT INTO milestone (name) VALUES (%s)",
-                                [('1.0',), ('2.0',)])
+        cursor = self.db.cursor()
+        cursor.executemany("INSERT INTO milestone (name) VALUES (%s)",
+                           [('1.0',), ('2.0',)])
+        cursor.close()
 
         milestones = list(Milestone.select(self.env))
         self.assertEqual('1.0', milestones[0].name)
@@ -920,6 +952,7 @@ class ComponentTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
+        self.db = self.env.get_db_cnx()
 
     def tearDown(self):
         self.env.reset_db()
@@ -941,20 +974,24 @@ class ComponentTestCase(unittest.TestCase):
         component.name = 'Test'
         component.insert()
         
-        self.assertEqual([('Test', None, None)], self.env.db_query("""
-            SELECT name, owner, description FROM component 
-            WHERE name='Test'"""))
+        cursor = self.db.cursor()
+        cursor.execute("SELECT name,owner,description FROM component "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', None, None), cursor.fetchone())
         
         # Use the same model object to update the component
         component.owner = 'joe'
         component.update()
-        self.assertEqual([('Test', 'joe', None)], self.env.db_query(
-            "SELECT name, owner, description FROM component WHERE name='Test'"))
+        cursor.execute("SELECT name,owner,description FROM component "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', 'joe', None), cursor.fetchone())
+
 
 class VersionTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
+        self.db = self.env.get_db_cnx()
 
     def tearDown(self):
         self.env.reset_db()
@@ -976,14 +1013,17 @@ class VersionTestCase(unittest.TestCase):
         version.name = 'Test'
         version.insert()
         
-        self.assertEqual([('Test', 0, None)], self.env.db_query(
-            "SELECT name, time, description FROM version WHERE name='Test'"))
+        cursor = self.db.cursor()
+        cursor.execute("SELECT name,time,description FROM version "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', 0, None), cursor.fetchone())
         
         # Use the same model object to update the version
         version.description = 'Some text'
         version.update()
-        self.assertEqual([('Test', 0, 'Some text')], self.env.db_query(
-            "SELECT name, time, description FROM version WHERE name='Test'"))
+        cursor.execute("SELECT name,time,description FROM version "
+                       "WHERE name='Test'")
+        self.assertEqual(('Test', 0, 'Some text'), cursor.fetchone())
 
 
 def suite():

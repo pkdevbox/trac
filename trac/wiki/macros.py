@@ -14,7 +14,6 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from fnmatch import fnmatchcase
 from itertools import groupby
 import inspect
 import os
@@ -27,6 +26,7 @@ from genshi.core import Markup
 from trac.core import *
 from trac.resource import Resource, ResourceNotFound, get_resource_name, \
                           get_resource_summary, get_resource_url
+from trac.util.compat import any, rpartition
 from trac.util.datefmt import format_date, from_utimestamp
 from trac.util.html import escape
 from trac.util.presentation import separated
@@ -89,13 +89,6 @@ class TitleIndexMacro(WikiMacroBase):
        only toplevel pages will be shown, if set to 1, only immediate
        children pages will be shown, etc. If not set, or set to -1,
        all pages in the hierarchy will be shown.
-     - `include=page1:page*2`: include only pages that match an item in the
-        colon-separated list of pages. If the list is empty, or if no `include`
-        argument is given, include all pages.
-     - `exclude=page1:page*2`: exclude pages that match an item in the colon-
-        separated list of pages.
-    
-    The `include` and `exclude` lists accept shell-style patterns.
     """
 
     SPLIT_RE = re.compile(r"([/ 0-9.]+)")
@@ -109,13 +102,6 @@ class TitleIndexMacro(WikiMacroBase):
         start = prefix and prefix.count('/') or 0
         format = kw.get('format', '')
 
-        def parse_list(name):
-            return [inc.strip() for inc in kw.get(name, '').split(':')
-                    if inc.strip()]
-
-        includes = parse_list('include') or ['*']
-        excludes = parse_list('exclude')
-
         if hideprefix:
             omitprefix = lambda page: page[len(prefix):]
         else:
@@ -123,11 +109,9 @@ class TitleIndexMacro(WikiMacroBase):
 
         wiki = formatter.wiki
 
-        pages = sorted(page for page in wiki.get_pages(prefix)
+        pages = sorted(page for page in wiki.get_pages(prefix) \
                        if (depth < 0 or depth >= page.count('/') - start)
-                       and 'WIKI_VIEW' in formatter.perm('wiki', page)
-                       and any(fnmatchcase(page, inc) for inc in includes)
-                       and not any(fnmatchcase(page, exc) for exc in excludes))
+                       and 'WIKI_VIEW' in formatter.perm('wiki', page))
 
         if format == 'compact':
             return tag(
@@ -206,7 +190,7 @@ class TitleIndexMacro(WikiMacroBase):
                 tag.li(isinstance(elt, tuple) and 
                        tag(tag.a(elt[0], href=formatter.href.wiki(elt[0])),
                            render_hierarchy(elt[1][0:])) or
-                       tag.a(elt.rpartition('/')[2],
+                       tag.a(rpartition(elt, '/')[2],
                              href=formatter.href.wiki(elt)))
                 for elt in group)
         
@@ -248,20 +232,25 @@ class RecentChangesMacro(WikiMacroBase):
                 if len(argv) > 1:
                     limit = int(argv[1])
 
-        sql = """SELECT name, max(version) AS max_version, 
-                        max(time) AS max_time FROM wiki"""
+        cursor = formatter.db.cursor()
+
+        sql = 'SELECT name, ' \
+              '  max(version) AS max_version, ' \
+              '  max(time) AS max_time ' \
+              'FROM wiki'
         args = []
         if prefix:
-            sql += " WHERE name LIKE %s"
+            sql += ' WHERE name LIKE %s'
             args.append(prefix + '%')
-        sql += " GROUP BY name ORDER BY max_time DESC"
+        sql += ' GROUP BY name ORDER BY max_time DESC'
         if limit:
-            sql += " LIMIT %s"
+            sql += ' LIMIT %s'
             args.append(limit)
+        cursor.execute(sql, args)
 
         entries_per_date = []
         prevdate = None
-        for name, version, ts in self.env.db_query(sql, args):
+        for name, version, ts in cursor:
             if not 'WIKI_VIEW' in formatter.perm('wiki', name, version):
                 continue
             date = format_date(from_utimestamp(ts))

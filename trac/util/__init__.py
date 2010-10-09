@@ -396,7 +396,10 @@ def get_lines_from_file(filename, lineno, context=0, globals=None):
     if not lines:
         import linecache
         linecache.checkcache(filename)
-        lines = linecache.getlines(filename, globals)
+        if arity(linecache.getlines) >= 2:
+            lines = linecache.getlines(filename, globals)
+        else:   # Python 2.4
+            lines = linecache.getlines(filename)
 
     if not 0 <= lineno < len(lines):
         return (), None, ()
@@ -914,7 +917,7 @@ def as_bool(s):
     try:
         return bool(int(s))
     except (TypeError, ValueError):
-        return s.lower() in ('true', 'yes', 'on')
+        return bool(s and s.lower() in ('true', 'yes', 'on'))
 
 def pathjoin(*args):
     """Strip `/` from the arguments and join them with a single `/`."""

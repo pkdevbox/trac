@@ -15,11 +15,9 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 
 try:
-    from base64 import b64decode, b64encode
+    from base64 import b64decode
 except ImportError:
     from base64 import decodestring as b64decode
-    from base64 import encodestring as b64encode
-from hashlib import md5, sha1
 import os
 import re
 import sys
@@ -32,7 +30,7 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
-from trac.util import hex_entropy, md5crypt
+from trac.util import hex_entropy, md5, md5crypt
 from trac.util.concurrency import threading
 from trac.util.translation import _, tag_
 
@@ -152,10 +150,13 @@ class LoginModule(Component):
                _('Already logged in as %(user)s.', user=req.authname)
 
         cookie = hex_entropy()
-        self.env.db_transaction("""
-            INSERT INTO auth_cookie (cookie, name, ipnr, time) 
-            VALUES (%s, %s, %s, %s)
-            """, (cookie, remote_user, req.remote_addr, int(time.time())))
+        @self.env.with_transaction()
+        def store_session_cookie(db):
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO auth_cookie (cookie,name,ipnr,time) "
+                           "VALUES (%s, %s, %s, %s)",
+                           (cookie, remote_user, req.remote_addr,
+                            int(time.time())))
         req.authname = remote_user
         req.outcookie['trac_auth'] = cookie
         req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
@@ -176,9 +177,12 @@ class LoginModule(Component):
 
         # While deleting this cookie we also take the opportunity to delete
         # cookies older than 10 days
-        self.env.db_transaction(
-            "DELETE FROM auth_cookie WHERE name=%s OR time < %s",
-            (req.authname, int(time.time()) - 86400 * 10))
+        @self.env.with_transaction()
+        def delete_session_cookie(db):
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM auth_cookie "
+                           "WHERE name=%s OR time < %s",
+                           (req.authname, int(time.time()) - 86400 * 10))
         self._expire_cookie(req)
         custom_redirect = self.config['metanav'].get('logout.redirect')
         if custom_redirect:
@@ -198,17 +202,23 @@ class LoginModule(Component):
             req.outcookie['trac_auth']['secure'] = True
 
     def _get_name_for_cookie(self, req, cookie):
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
         if self.check_ip:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s AND ipnr=%s"
-            args = (cookie.value, req.remote_addr)
+            cursor.execute("SELECT name FROM auth_cookie "
+                           "WHERE cookie=%s AND ipnr=%s",
+                           (cookie.value, req.remote_addr))
         else:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s"
-            args = (cookie.value,)
-        for name, in self.env.db_query(sql, args):
-            return name
-        # The cookie is invalid (or has been purged from the database),
-        # so tell the user agent to drop it as it is invalid
-        self._expire_cookie(req)
+            cursor.execute("SELECT name FROM auth_cookie WHERE cookie=%s",
+                           (cookie.value,))
+        row = cursor.fetchone()
+        if not row:
+            # The cookie is invalid (or has been purged from the database), so
+            # tell the user agent to drop it as it is invalid
+            self._expire_cookie(req)
+            return None
+
+        return row[0]
 
     def _redirect_back(self, req):
         """Redirect the user back to the URL she came from."""
@@ -246,7 +256,6 @@ class PasswordFileAuthentication(HTTPAuthentication):
         finally:
             self._lock.release()
 
-
 class BasicAuthentication(PasswordFileAuthentication):
 
     def __init__(self, htpasswd, realm):
@@ -275,7 +284,7 @@ class BasicAuthentication(PasswordFileAuthentication):
                 print >> sys.stderr, 'Warning: invalid password line in %s: ' \
                                      '%s' % (filename, line)
                 continue
-            if '$' in h or h.startswith('{SHA}') or self.crypt:
+            if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
                 print >> sys.stderr, 'Warning: cannot parse password for ' \
@@ -289,9 +298,6 @@ class BasicAuthentication(PasswordFileAuthentication):
         the_hash = self.hash.get(user)
         if the_hash is None:
             return False
-
-        if the_hash.startswith('{SHA}'):
-            return b64encode(sha1(password).digest()) == the_hash[5:]
 
         if not '$' in the_hash:
             return self.crypt(password, the_hash[:2]) == the_hash

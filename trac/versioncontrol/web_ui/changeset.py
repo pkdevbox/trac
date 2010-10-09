@@ -18,8 +18,6 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-from __future__ import with_statement
-
 from itertools import groupby
 import os
 import posixpath
@@ -36,6 +34,7 @@ from trac.resource import Resource, ResourceNotFound
 from trac.search import ISearchSource, search_to_sql, shorten_result
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import content_disposition, embedded_numbers, pathjoin
+from trac.util.compat import any
 from trac.util.datefmt import from_utimestamp, pretty_timedelta
 from trac.util.text import exception_to_unicode, to_unicode, \
                            unicode_urlencode, shorten_line, CRLF
@@ -948,6 +947,12 @@ class ChangesetModule(Component):
                                         stop_rev=rev_a)
             
         elif field == 'description':
+            branch_markup = []
+            for name, head in cset.get_branches():
+                class_ = 'branch'
+                if head:
+                    class_ += ' head'
+                branch_markup.append(tag.span(name, class_=class_))
             if self.wiki_format_messages:
                 markup = ''
                 if self.timeline_long_messages: # override default flavor
@@ -997,7 +1002,7 @@ class ChangesetModule(Component):
             if message:
                 markup += format_to(self.env, None, context(cset_resource),
                                     message)
-            return markup
+            return tag(branch_markup, markup)
 
         single = rev_a == rev_b
         if not repos_for_uid[0]:
@@ -1015,21 +1020,11 @@ class ChangesetModule(Component):
             drev_b = cset.repos.display_rev(rev_b)
             title = tag(title, tag.em('[%s-%s]' % (drev_a, drev_b)))
         if field == 'title':
-            labels = []
-            for name, head in cset.get_branches():
-                if not head and name in ('default', 'master'):
-                    continue
-                class_ = 'branch'
-                if head:
-                    class_ += ' head'
-                labels.append(tag.span(name, class_=class_))
-            for name in cset.get_tags():
-                labels.append(tag.span(name, class_='tag'))
-            return title if not labels else tag(title, labels)
+            return title
         elif field == 'summary':
             return _("%(title)s: %(message)s",
                      title=title, message=shorten_line(message))
-
+        
     # IWikiSyntaxProvider methods
 
     CHANGESET_ID = r"(?:\d+|[a-fA-F\d]{8,})" # only "long enough" hexa ids
@@ -1141,25 +1136,24 @@ class ChangesetModule(Component):
         rm = RepositoryManager(self.env)
         repositories = dict((repos.params['id'], repos)
                             for repos in rm.get_real_repositories())
-        with self.env.db_query as db:
-            sql, args = search_to_sql(db, ['rev', 'message', 'author'], terms)
-            for id, rev, ts, author, log in db("""
-                    SELECT repos, rev, time, author, message 
-                    FROM revision WHERE """ + sql,
-                    args):
-                try:
-                    rev = int(rev)
-                except ValueError:
-                    pass
-                repos = repositories.get(id)
-                if not repos:
-                    continue # revisions for a no longer active repository
-                cset = repos.resource.child('changeset', rev)
-                if 'CHANGESET_VIEW' in req.perm(cset):
-                    yield (req.href.changeset(rev, repos.reponame or None),
-                           '[%s]: %s' % (rev, shorten_line(log)),
-                           from_utimestamp(ts), author,
-                           shorten_result(log, terms))
+        db = self.env.get_db_cnx()
+        sql, args = search_to_sql(db, ['rev', 'message', 'author'], terms)
+        cursor = db.cursor()
+        cursor.execute("SELECT repos,rev,time,author,message "
+                       "FROM revision WHERE " + sql, args)
+        for id, rev, ts, author, log in cursor:
+            try:
+                rev = int(rev)
+            except ValueError:
+                pass
+            repos = repositories.get(id)
+            if not repos:
+                continue # revisions for a no longer active repository
+            cset = repos.resource.child('changeset', rev)
+            if 'CHANGESET_VIEW' in req.perm(cset):
+                yield (req.href.changeset(rev, repos.reponame or None),
+                       '[%s]: %s' % (rev, shorten_line(log)),
+                       from_utimestamp(ts), author, shorten_result(log, terms))
 
 
 class AnyDiffModule(Component):

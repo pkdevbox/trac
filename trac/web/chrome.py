@@ -15,7 +15,6 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
 import datetime
-from functools import partial
 import itertools
 import os.path
 import pkg_resources
@@ -41,6 +40,7 @@ from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
                       pathjoin, translation
+from trac.util.compat import any, partial
 from trac.util.html import escape, plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode, \
@@ -84,18 +84,16 @@ def add_stylesheet(req, filename, mimetype='text/css', media=None):
     will be based off the application root path. If it is relative, the link
     will be based off the `/chrome/` path.
     """
-    if filename.startswith('http://') or filename.startswith('https://'):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        filename = filename[7:]
     else:
         href = req.href
         if not filename.startswith('/'):
             href = href.chrome
-        href = href(filename)
-    add_link(req, 'stylesheet', href, mimetype=mimetype, media=media)
+    add_link(req, 'stylesheet', href(filename), mimetype=mimetype, media=media)
 
-def add_script(req, filename, mimetype='text/javascript', charset='utf-8'):
+def add_script(req, filename, mimetype='text/javascript'):
     """Add a reference to an external javascript file to the template.
     
     If the filename is absolute (i.e. starts with a slash), the generated link
@@ -106,16 +104,15 @@ def add_script(req, filename, mimetype='text/javascript', charset='utf-8'):
     if filename in scriptset:
         return False # Already added that script
 
-    if filename.startswith('http://') or filename.startswith('https://'):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        path = filename[7:]
     else:
         href = req.href
         if not filename.startswith('/'):
             href = href.chrome
-        href = href(filename)
-    script = {'href': href, 'type': mimetype, 'charset': charset}
+        path = filename
+    script = {'href': href(path), 'type': mimetype}
 
     req.chrome.setdefault('scripts', []).append(script)
     scriptset.add(filename)
@@ -211,14 +208,14 @@ class INavigationContributor(Interface):
         """
 
     def get_navigation_items(req):
-        """Should return an iterable object over the list of navigation items
-        to add, each being a tuple in the form (category, name, text).
+        """Should return an iterable object over the list of navigation items to
+        add, each being a tuple in the form (category, name, text).
         """
 
 
 class ITemplateProvider(Interface):
     """Extension point interface for components that provide their own
-    Genshi templates and accompanying static resources.
+    ClearSilver templates and accompanying static resources.
     """
 
     def get_htdocs_dirs():
@@ -266,17 +263,6 @@ class Chrome(Component):
         environments `templates` directory, but the latter take precedence.
         
         (''since 0.11'')""")
- 
-    shared_htdocs_dir = PathOption('inherit', 'htdocs_dir', '',
-        """Path to the //shared htdocs directory//.
-        
-        Static resources in that directory are mapped to /chrome/shared
-        under the environment URL, in addition to common and site locations.
-        
-        This can be useful in site.html for common interface customization
-        of multiple Trac environments.
-        
-        (''since 0.13'')""")
 
     auto_reload = BoolOption('trac', 'auto_reload', False,
         """Automatically reload template files after modification.""")
@@ -289,7 +275,19 @@ class Chrome(Component):
         memory.""")
 
     htdocs_location = Option('trac', 'htdocs_location', '',
-        """Base URL of the core static resources.""")
+        """Base URL for serving the core static resources below 
+        `/chrome/common/`.
+
+        It can be left empty, and Trac will simply serve those resources
+        itself.
+
+        Advanced users can use this together with
+        [TracAdmin trac-admin ... deploy <deploydir>] to allow serving the
+        static resources for Trac directly from the web server.
+        Note however that this only applies to the `<deploydir>/htdocs/common`
+        directory, the other deployed resources (i.e. those from plugins) 
+        will not be made available this way and additional rewrite 
+        rules will be needed in the web server.""")
 
     metanav_order = ListOption('trac', 'metanav',
                                'login,logout,prefs,help,about', doc=
@@ -303,10 +301,18 @@ class Chrome(Component):
            listed by IDs. See also TracNavigation.""")
 
     logo_link = Option('header_logo', 'link', '',
-        """URL to link to from header logo.""")
+        """URL to link to, from the header logo.""")
 
     logo_src = Option('header_logo', 'src', 'site/your_project_logo.png',
-        """URL of the image to use as header logo.""")
+        """URL of the image to use as header logo.
+        It can be absolute, server relative or relative.
+
+        If relative, it is relative to one of the `/chrome` locations:
+        `site/your-logo.png` if `your-logo.png` is located in the `htdocs`
+        folder within your TracEnvironment;
+        `common/your-logo.png` if `your-logo.png` is located in the
+        folder mapped to the [#trac-section htdocs_location] URL. 
+        Only specifying `your-logo.png` is equivalent to the latter.""")
 
     logo_alt = Option('header_logo', 'alt', 
         "(please configure the [header_logo] section in trac.ini)",
@@ -348,8 +354,8 @@ class Chrome(Component):
     # A dictionary of default context data for templates
     _default_context_data = {
         '_': translation.gettext,
-        'all': all,
-        'any': any,
+        'all': compat.all,
+        'any': compat.any,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
@@ -469,7 +475,6 @@ class Chrome(Component):
 
     def get_htdocs_dirs(self):
         return [('common', pkg_resources.resource_filename('trac', 'htdocs')),
-                ('shared', self.shared_htdocs_dir), 
                 ('site', self.env.get_htdocs_dir())]
 
     def get_templates_dirs(self):
@@ -787,7 +792,6 @@ class Chrome(Component):
             self.templates = TemplateLoader(
                 self.get_all_templates_dirs(), auto_reload=self.auto_reload,
                 max_cache_size=self.genshi_cache_size,
-                default_encoding="utf-8",
                 variable_lookup='lenient', callback=lambda template:
                 Translator(translation.get_translations()).setup(template))
 
@@ -861,7 +865,7 @@ class Chrome(Component):
 
         try:
             buffer = StringIO()
-            stream.render(method, doctype=doctype, out=buffer, encoding="utf-8")
+            stream.render(method, doctype=doctype, out=buffer)
             return buffer.getvalue().translate(_translate_nop,
                                                _invalid_control_chars)
         except Exception, e:

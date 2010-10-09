@@ -17,6 +17,7 @@
 
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
+import inspect
 import re
 
 from genshi.builder import tag
@@ -27,7 +28,8 @@ from trac.mimeview.api import Mimeview, is_binary, \
                               IHTMLPreviewAnnotator, Context
 from trac.perm import IPermissionRequestor
 from trac.resource import Resource, ResourceNotFound
-from trac.util import embedded_numbers
+from trac.util import as_bool, embedded_numbers
+from trac.util.compat import any
 from trac.util.datefmt import http_date, to_datetime, utc
 from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
@@ -329,7 +331,7 @@ class BrowserModule(Component):
 
         path = req.args.get('path', '/')
         rev = req.args.get('rev', '')
-        if rev.lower() in ('', 'head'):
+        if rev in ('', 'HEAD'):
             rev = None
         order = req.args.get('order', 'name').lower()
         desc = req.args.has_key('desc')
@@ -381,7 +383,8 @@ class BrowserModule(Component):
 
         repo_data = dir_data = file_data = None
         if not reponame and path == '/':
-            repo_data = self._render_repository_index(context, order, desc)
+            repo_data = self._render_repository_index(
+                                        context, all_repositories, order, desc)
         if node:
             if node.isdir:
                 dir_data = self._render_dir(req, repos, node, rev, order, desc)
@@ -478,7 +481,7 @@ class BrowserModule(Component):
 
     # Internal methods
 
-    def _render_repository_index(self, context, order, desc):
+    def _render_repository_index(self, context, all_repositories, order, desc):
         # Color scale for the age column
         timerange = custom_colorizer = None
         if self.color_scale:
@@ -486,7 +489,7 @@ class BrowserModule(Component):
 
         rm = RepositoryManager(self.env)
         repositories = []
-        for reponame, repoinfo in rm.get_all_repositories().items():
+        for reponame, repoinfo in all_repositories.iteritems():
             if not reponame or repoinfo.get('hidden') in _TRUE_VALUES:
                 continue
             try:
@@ -503,15 +506,12 @@ class BrowserModule(Component):
                             timerange = TimeRange(youngest.date)
                         else:
                             timerange.insert(youngest.date)
-                    raw_href = self._get_download_href(context.href, repos,
-                                                       None, None)
-                    entry = (reponame, repoinfo, repos, youngest, None,
-                             raw_href)
+                    entry = (reponame, repoinfo, repos, youngest, None)
                 else:
-                    entry = (reponame, repoinfo, None, None, u"\u2013", None)
+                    entry = (reponame, repoinfo, None, None, u"\u2013")
             except TracError, err:
                 entry = (reponame, repoinfo, None, None,
-                         exception_to_unicode(err), None)
+                         exception_to_unicode(err))
             if entry[-1] is not None:   # Check permission in case of error
                 root = Resource('repository', reponame).child('source', '/')
                 if 'BROWSER_VIEW' not in context.perm(root):
@@ -520,15 +520,15 @@ class BrowserModule(Component):
 
         # Ordering of repositories
         if order == 'date':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return (youngest and youngest.date or to_datetime(0),
                         embedded_numbers(reponame.lower()))
         elif order == 'author':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return (youngest and youngest.author.lower() or '',
                         embedded_numbers(reponame.lower()))
         else:
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return embedded_numbers(reponame.lower())
 
         repositories = sorted(repositories, key=repo_order, reverse=desc)
@@ -538,16 +538,13 @@ class BrowserModule(Component):
 
     def _render_dir(self, req, repos, node, rev, order, desc):
         req.perm(node.resource).require('BROWSER_VIEW')
-        download_href = self._get_download_href
 
         # Entries metadata
         class entry(object):
-            _copy = 'name rev kind isdir path content_length'.split()
-            __slots__ = _copy + ['raw_href']
+            __slots__ = 'name rev kind isdir path content_length'.split()
             def __init__(self, node):
-                for f in entry._copy:
+                for f in entry.__slots__:
                     setattr(self, f, getattr(node, f))
-                self.raw_href = download_href(req.href, repos, node, rev)
                 
         entries = [entry(n) for n in node.get_entries()
                    if n.can_view(req.perm)]
@@ -595,8 +592,16 @@ class BrowserModule(Component):
         entries = sorted(entries, key=browse_order, reverse=desc)
 
         # ''Zip Archive'' alternate link
-        zip_href = self._get_download_href(req.href, repos, node, rev)
-        if zip_href:
+        path = node.path.strip('/')
+        if repos.reponame:
+            path = repos.reponame + '/' + path
+        if any(fnmatchcase(path, p.strip('/'))
+               for p in self.downloadable_paths):
+            zip_href = req.href.changeset(rev or repos.youngest_rev, 
+                                          repos.reponame or None, node.path,
+                                          old=rev,
+                                          old_path=repos.reponame or '/',
+                                          format='zip')
             add_link(req, 'alternate', zip_href, _('Zip Archive'),
                      'application/zip', 'zip')
 
@@ -688,21 +693,6 @@ class BrowserModule(Component):
                 'annotate': force_source,
                 }
 
-    def _get_download_href(self, href, repos, node, rev):
-        """Return the URL for downloading a file, or a directory as a ZIP."""
-        if node is not None and node.isfile:
-            return href.export(rev or 'HEAD', repos.reponame or None,
-                               node.path)
-        path = npath = '' if node is None else node.path.strip('/')
-        if repos.reponame:
-            path = (repos.reponame + '/' + npath).rstrip('/')
-        if any(fnmatchcase(path, p.strip('/'))
-               for p in self.downloadable_paths):
-            return href.changeset(rev or repos.youngest_rev, 
-                                  repos.reponame or None, npath,
-                                  old=rev, old_path=repos.reponame or '/',
-                                  format='zip')
-
     # public methods
     
     def render_properties(self, mode, context, props):
@@ -767,13 +757,9 @@ class BrowserModule(Component):
         elif '@' in export:
             path, rev = export.split('@', 1)
         else:
-            rev, path = None, export
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if raw_href:
-            return tag.a(label, class_='export', href=raw_href + fragment,
-                         title=title)
-        return tag.a(label, class_='missing export')
+            rev, path = 'HEAD', export
+        return tag.a(label, class_='export',
+                     href=formatter.href.export(rev, path) + fragment)
 
     def _format_browser_link(self, formatter, ns, path, label):
         path, query, fragment = formatter.split_link(path)
@@ -781,36 +767,15 @@ class BrowserModule(Component):
         match = self.PATH_LINK_RE.match(path)
         if match:
             path, rev, marks = match.groups()
-        href = formatter.href
-        src_href = href.browser(path, rev=rev, marks=marks) + query + fragment
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if not node:
-            return tag.a(label, class_='missing source')
-        link = tag.a(label, class_='source', href=src_href)
-        if raw_href:
-            link = tag(link, tag.a(u'\u200b', href=raw_href + fragment,
-                                   title=title,
-                                   class_='trac-rawlink' if node.isfile
-                                          else 'trac-ziplink'))
-        return link
+        return tag.a(label, class_='source',
+                     href=(formatter.href.browser(path, rev=rev, marks=marks) +
+                           query + fragment))
 
     PATH_LINK_RE = re.compile(r"([^@#:]*)"     # path
                               r"[@:]([^#:]+)?" # rev
                               r"(?::(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*))?" # marks
                               )
 
-    def _get_link_info(self, path, rev, href, perm):
-        rm = RepositoryManager(self.env)
-        reponame, repos, npath = rm.get_repository_by_path(path)
-        node = get_allowed_node(repos, npath, rev, perm)
-        if node is not None:
-            raw_href = self._get_download_href(href, repos, node, rev)
-            title = _("Download") if node.isfile \
-                    else _("Download as Zip archive")
-            return (node, raw_href, title)
-        return (None, None, None)
-        
     # IHTMLPreviewAnnotator methods
 
     def get_annotation_type(self):
@@ -829,29 +794,35 @@ class BrowserModule(Component):
         yield "RepositoryIndex"
 
     def get_macro_description(self, name):
-        return """
+        return inspect.cleandoc("""
         Display the list of available repositories.
 
-        Can be given a ''format'' argument (defaults to ''compact'')
-         - ''compact'' will produce a comma-separated list of
-           repository prefix names 
-         - ''list'' will produce a description list of
-           repository prefix names 
-         - ''table'' will produce a table view, similar to the 
-           one visible in the ''Browse View'' page
+        Can be given the following named arguments:
         
-        Can be given a ''glob'' argument, which will do a glob-style
-        filtering on the repository names (defaults to '*')
+          ''format''::
+            Select the rendering format:
+            - ''compact'' produces a comma-separated list of repository prefix
+              names (default)
+            - ''list'' produces a description list of repository prefix names 
+            - ''table'' produces a table view, similar to the one visible in
+              the ''Browse View'' page
+          ''glob''::
+            Do a glob-style filtering on the repository names (defaults to '*')
+          ''order''::
+            Order repositories by the given column (one of "name", "date" or
+            "author")
+          ''desc''::
+            When set to 1, order by descending order
 
-        (since 0.12)
-        """
+        (''since 0.12'')
+        """)
 
     def expand_macro(self, formatter, name, content):
         args, kwargs = parse_args(content)
         format = kwargs.get('format', 'compact')
         glob = kwargs.get('glob', '*')
         order = kwargs.get('order')
-        desc = kwargs.get('desc', 0)
+        desc = as_bool(kwargs.get('desc', 0))
 
         rm = RepositoryManager(self.env)
         all_repos = dict(rdata for rdata in rm.get_all_repositories().items()
@@ -862,25 +833,35 @@ class BrowserModule(Component):
                                                  order, desc)
 
             add_stylesheet(formatter.req, 'common/css/browser.css')
-            data = {'repo': repo, 'desc': desc and 1 or None,
-                    'reponame': None, 'path': '/', 'stickyrev': None}
+            wiki_format_messages = self.config['changeset'] \
+                                       .getbool('wiki_format_messages')
+            data = {'repo': repo, 'order': order, 'desc': desc and 1 or None,
+                    'reponame': None, 'path': '/', 'stickyrev': None,
+                    'wiki_format_messages': wiki_format_messages}
             from trac.web.chrome import Chrome
             return Chrome(self.env).render_template(
                     formatter.req, 'repository_index.html', data, None,
                     fragment=True)
+
+        def get_repository(reponame):
+            try:
+                return rm.get_repository(reponame)
+            except TracError:
+                return
+
+        all_repos = [(reponame, get_repository(reponame))
+                     for reponame in all_repos]
+        all_repos = sorted(((reponame, repos) for reponame, repos in all_repos
+                            if repos
+                            and repos.params.get('hidden') not in _TRUE_VALUES
+                            and repos.can_view(formatter.perm)),
+                           reverse=desc)
 
         def repolink(reponame, repos):
             label = reponame or _('(default)')
             return Markup(tag.a(label, 
                           title=_('View repository %(repo)s', repo=label),
                           href=formatter.href.browser(repos.reponame or None)))
-
-        all_repos = dict((reponame, rm.get_repository(reponame))
-                         for reponame in all_repos)
-        all_repos = sorted((reponame, repos) for reponame, repos in all_repos
-                           if repos
-                           and repos.params.get('hidden') not in _TRUE_VALUE
-                           and repos.can_view(formatter.perm))
 
         if format == 'list':
             return tag.dl([
