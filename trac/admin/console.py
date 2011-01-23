@@ -12,8 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import cmd
 import locale
 import os.path
@@ -46,8 +44,11 @@ def find_readline_lib():
     linked to the readline module.
     """
     import readline
-    with open(readline.__file__, "rb") as f:
+    f = open(readline.__file__, "rb")
+    try:
         data = f.read()
+    finally:
+        f.close()
     import re
     m = re.search('\0([^\0]*libreadline[^\0]*)\0', data)
     if m:

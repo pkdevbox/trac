@@ -14,14 +14,10 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import with_statement
-
 try:
-    from base64 import b64decode, b64encode
+    from base64 import b64decode
 except ImportError:
     from base64 import decodestring as b64decode
-    from base64 import encodestring as b64encode
-from hashlib import md5, sha1
 import os
 import re
 import sys
@@ -34,7 +30,7 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
-from trac.util import hex_entropy, md5crypt
+from trac.util import hex_entropy, md5, md5crypt
 from trac.util.concurrency import threading
 from trac.util.translation import _, tag_
 
@@ -84,8 +80,7 @@ class LoginModule(Component):
         if req.remote_user:
             authname = req.remote_user
         elif req.incookie.has_key('trac_auth'):
-            authname = self._get_name_for_cookie(req,
-                                                 req.incookie['trac_auth'])
+            authname = self._get_name_for_cookie(req, req.incookie['trac_auth'])
 
         if not authname:
             return None
@@ -154,23 +149,17 @@ class LoginModule(Component):
         assert req.authname in ('anonymous', remote_user), \
                _('Already logged in as %(user)s.', user=req.authname)
 
-        with self.env.db_transaction as db:
+        cookie = hex_entropy()
+        @self.env.with_transaction()
+        def store_session_cookie(db):
+            cursor = db.cursor()
             # Delete cookies older than 10 days
-            db("DELETE FROM auth_cookie WHERE time < %s",
-               (int(time.time()) - 86400 * 10,))
-            # Insert a new cookie if we haven't already got one
-            cookie = None
-            trac_auth = req.incookie.get('trac_auth')
-            if trac_auth is not None:
-                name = self._cookie_to_name(req, trac_auth)
-                cookie = trac_auth.value if name == remote_user else None
-            if cookie is None:
-                cookie = hex_entropy()
-                db("""
-                    INSERT INTO auth_cookie (cookie, name, ipnr, time)
-                         VALUES (%s, %s, %s, %s)
-                   """, (cookie, remote_user, req.remote_addr,
-                         int(time.time())))
+            cursor.execute("DELETE FROM auth_cookie WHERE time < %s",
+                           (int(time.time()) - 86400 * 10,))
+            cursor.execute("INSERT INTO auth_cookie (cookie,name,ipnr,time) "
+                           "VALUES (%s, %s, %s, %s)",
+                           (cookie, remote_user, req.remote_addr,
+                            int(time.time())))
         req.authname = remote_user
         req.outcookie['trac_auth'] = cookie
         req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
@@ -189,12 +178,15 @@ class LoginModule(Component):
             # Not logged in
             return
 
-        if 'trac_auth' in req.incookie:
-            self.env.db_transaction("DELETE FROM auth_cookie WHERE cookie=%s",
-                                    (req.incookie['trac_auth'].value,))
-        else:
-            self.env.db_transaction("DELETE FROM auth_cookie WHERE name=%s",
-                                    (req.authname,))
+        @self.env.with_transaction()
+        def delete_session_cookie(db):
+            cursor = db.cursor()
+            if 'trac_auth' in req.incookie:
+                cursor.execute("DELETE FROM auth_cookie WHERE cookie=%s",
+                               (req.incookie['trac_auth'].value,))
+            else:
+                cursor.execute("DELETE FROM auth_cookie WHERE name=%s",
+                               (req.authname,))
         self._expire_cookie(req)
         custom_redirect = self.config['metanav'].get('logout.redirect')
         if custom_redirect:
@@ -213,32 +205,30 @@ class LoginModule(Component):
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
 
-    def _cookie_to_name(self, req, cookie):
-        # This is separated from _get_name_for_cookie(), because the latter is
-        # overridden in AccountManager.
-        if self.check_ip:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s AND ipnr=%s"
-            args = (cookie.value, req.remote_addr)
-        else:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s"
-            args = (cookie.value,)
-        for name, in self.env.db_query(sql, args):
-            return name
-
     def _get_name_for_cookie(self, req, cookie):
-        name = self._cookie_to_name(req, cookie)
-        if name is None:
-            # The cookie is invalid (or has been purged from the database),
-            # so tell the user agent to drop it as it is invalid
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        if self.check_ip:
+            cursor.execute("SELECT name FROM auth_cookie "
+                           "WHERE cookie=%s AND ipnr=%s",
+                           (cookie.value, req.remote_addr))
+        else:
+            cursor.execute("SELECT name FROM auth_cookie WHERE cookie=%s",
+                           (cookie.value,))
+        row = cursor.fetchone()
+        if not row:
+            # The cookie is invalid (or has been purged from the database), so
+            # tell the user agent to drop it as it is invalid
             self._expire_cookie(req)
-        return name
+            return None
+
+        return row[0]
 
     def _redirect_back(self, req):
         """Redirect the user back to the URL she came from."""
         referer = self._referer(req)
-        if referer and referer.startswith(('http://', 'https://')) \
-                and not (referer == req.base_url or \
-                         referer.startswith(req.base_url.rstrip('/') + '/')):
+        if referer and not (referer == req.base_url or \
+                referer.startswith(req.base_url.rstrip('/') + '/')):
             # only redirect to referer if it is from the same site
             referer = None
         if referer and referer.rstrip('/') == req.base_url.rstrip('/') \
@@ -265,12 +255,14 @@ class PasswordFileAuthentication(HTTPAuthentication):
         self._lock = threading.Lock()
 
     def check_reload(self):
-        with self._lock:
+        self._lock.acquire()
+        try:
             mtime = os.stat(self.filename).st_mtime
             if mtime > self.mtime:
                 self.mtime = mtime
                 self.load(self.filename)
-
+        finally:
+            self._lock.release()
 
 class BasicAuthentication(PasswordFileAuthentication):
 
@@ -300,7 +292,7 @@ class BasicAuthentication(PasswordFileAuthentication):
                 print >> sys.stderr, 'Warning: invalid password line in %s: ' \
                                      '%s' % (filename, line)
                 continue
-            if '$' in h or h.startswith('{SHA}') or self.crypt:
+            if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
                 print >> sys.stderr, 'Warning: cannot parse password for ' \
@@ -314,9 +306,6 @@ class BasicAuthentication(PasswordFileAuthentication):
         the_hash = self.hash.get(user)
         if the_hash is None:
             return False
-
-        if the_hash.startswith('{SHA}'):
-            return b64encode(sha1(password).digest()) == the_hash[5:]
 
         if not '$' in the_hash:
             return self.crypt(password, the_hash[:2]) == the_hash

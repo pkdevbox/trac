@@ -133,7 +133,8 @@ trac:report:1
 """ # '
 
 def report_setup(tc):
-    pass # TBD
+    db = tc.env.get_db_cnx()
+    # TBD
 
 
 MILESTONE_TEST_CASES = """

@@ -1,30 +1,20 @@
-=====
-Index
-=====
+================================
 Welcome to Trac's documentation!
---------------------------------
+================================
 
-:Release: |release|
+:Release: |version|
 :Date: |today|
+
+Contents:
 
 .. toctree::
    :maxdepth: 1
-
-   api/index
-   dev/testing
-
-.. toctree::
-   :hidden:
-
-   glossary
-
-.. ifconfig:: devel
-
-   .. toctree::
-      :hidden:
-
-      todo
-
+   
+   guide/index.rst
+   admin/index.rst
+   install/index.rst
+   api/env
+   dev/testing.rst
 
 Indices and tables
 ==================
@@ -32,8 +22,4 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-* :doc:`glossary`
 
-.. ifconfig:: devel
-
-   * :doc:`todo`

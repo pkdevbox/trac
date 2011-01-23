@@ -16,7 +16,7 @@ import sys
 
 from setuptools import setup, find_packages
 
-min_python = (2, 5)
+min_python = (2, 4)
 if sys.version_info < min_python:
     print "Trac requires Python %d.%d or later" % min_python
     sys.exit(1)
@@ -55,7 +55,7 @@ except ImportError:
 
 setup(
     name = 'Trac',
-    version = '0.13',
+    version = '0.12.2',
     description = 'Integrated SCM, wiki, issue tracker and project environment',
     long_description = """
 Trac is a minimalistic web-based software project management and bug/issue
@@ -123,6 +123,7 @@ facilities.
         trac.mimeview.patch = trac.mimeview.patch
         trac.mimeview.pygments = trac.mimeview.pygments[Pygments]
         trac.mimeview.rst = trac.mimeview.rst[reST]
+        trac.mimeview.silvercity = trac.mimeview.silvercity[SilverCity]
         trac.mimeview.txtl = trac.mimeview.txtl[Textile]
         trac.prefs = trac.prefs.web_ui
         trac.search = trac.search.web_ui
@@ -146,7 +147,6 @@ facilities.
         trac.wiki.web_api = trac.wiki.web_api
         tracopt.mimeview.enscript = tracopt.mimeview.enscript
         tracopt.mimeview.php = tracopt.mimeview.php
-        tracopt.mimeview.silvercity = tracopt.mimeview.silvercity[SilverCity]
         tracopt.perm.authz_policy = tracopt.perm.authz_policy
         tracopt.perm.config_perm_provider = tracopt.perm.config_perm_provider
         tracopt.ticket.commit_updater = tracopt.ticket.commit_updater

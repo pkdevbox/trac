@@ -16,9 +16,6 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 #
 
-from __future__ import with_statement
-
-from hashlib import md5
 from unicodedata import east_asian_width
 
 from genshi.template.text import NewTextTemplate
@@ -27,6 +24,7 @@ from trac.core import *
 from trac.config import *
 from trac.notification import NotifyEmail
 from trac.ticket.api import TicketSystem
+from trac.util import md5
 from trac.util.datefmt import to_utimestamp
 from trac.util.text import CRLF, wrap, obfuscate_email_address, to_unicode
 from trac.util.translation import deactivate, reactivate
@@ -108,17 +106,15 @@ class TicketNotifyEmail(NotifyEmail):
         change_data = {}
         link = self.env.abs_href.ticket(ticket.id)
         summary = self.ticket['summary']
-        author = None
         
         if not self.newticket and modtime:  # Ticket change
             from trac.ticket.web_ui import TicketModule
             for change in TicketModule(self.env).grouped_changelog_entries(
-                                                ticket, when=modtime):
+                                                ticket, self.db, when=modtime):
                 if not change['permanent']: # attachment with same time...
                     continue
-                author = change['author']
                 change_data.update({
-                    'author': obfuscate_email_address(author),
+                    'author': obfuscate_email_address(change['author']),
                     'comment': wrap(change['comment'], self.COLS, ' ', ' ',
                                     CRLF)
                     })
@@ -176,9 +172,6 @@ class TicketNotifyEmail(NotifyEmail):
                     if newv:
                         change_data[field] = {'oldvalue': old, 'newvalue': new}
         
-        if newticket:
-            author = ticket['reporter']
-
         ticket_values = ticket.values.copy()
         ticket_values['id'] = ticket.id
         ticket_values['description'] = wrap(
@@ -199,7 +192,7 @@ class TicketNotifyEmail(NotifyEmail):
             'changes_descr': changes_descr,
             'change': change_data
             })
-        NotifyEmail.notify(self, ticket.id, subject, author)
+        NotifyEmail.notify(self, ticket.id, subject)
 
     def format_props(self):
         tkt = self.ticket
@@ -323,51 +316,50 @@ class TicketNotifyEmail(NotifyEmail):
 
         ccrecipients = self.prev_cc
         torecipients = []
-        with self.env.db_query as db:
-            # Harvest email addresses from the cc, reporter, and owner fields
-            for row in db("SELECT cc, reporter, owner FROM ticket WHERE id=%s",
-                          (tktid,)):
-                if row[0]:
-                    ccrecipients += row[0].replace(',', ' ').split() 
-                self.reporter = row[1]
-                self.owner = row[2]
-                if notify_reporter:
-                    torecipients.append(row[1])
-                if notify_owner:
-                    torecipients.append(row[2])
+        cursor = self.db.cursor()
+        
+        # Harvest email addresses from the cc, reporter, and owner fields
+        cursor.execute("SELECT cc,reporter,owner FROM ticket WHERE id=%s",
+                       (tktid,))
+        row = cursor.fetchone()
+        if row:
+            ccrecipients += row[0] and row[0].replace(',', ' ').split() or []
+            self.reporter = row[1]
+            self.owner = row[2]
+            if notify_reporter:
+                torecipients.append(row[1])
+            if notify_owner:
+                torecipients.append(row[2])
+
+        # Harvest email addresses from the author field of ticket_change(s)
+        if notify_updater:
+            cursor.execute("SELECT DISTINCT author,ticket FROM ticket_change "
+                           "WHERE ticket=%s", (tktid,))
+            for author, ticket in cursor:
+                torecipients.append(author)
+
+        # Suppress the updater from the recipients
+        updater = None
+        cursor.execute("SELECT author FROM ticket_change WHERE ticket=%s "
+                       "ORDER BY time DESC LIMIT 1", (tktid,))
+        for updater, in cursor:
+            break
+        else:
+            cursor.execute("SELECT reporter FROM ticket WHERE id=%s",
+                           (tktid,))
+            for updater, in cursor:
                 break
 
-            # Harvest email addresses from the author field of ticket_change(s)
-            if notify_updater:
-                for author, ticket in db("""
-                        SELECT DISTINCT author, ticket FROM ticket_change
-                        WHERE ticket=%s
-                        """, (tktid,)):
-                    torecipients.append(author)
-
-            # Suppress the updater from the recipients
-            updater = None
-            for updater, in db("""
-                    SELECT author FROM ticket_change WHERE ticket=%s
-                    ORDER BY time DESC LIMIT 1
-                    """, (tktid,)):
-                break
-            else:
-                for updater, in db("SELECT reporter FROM ticket WHERE id=%s",
-                                   (tktid,)):
-                    break
-
-            if not notify_updater:
-                filter_out = True
-                if notify_reporter and (updater == self.reporter):
-                    filter_out = False
-                if notify_owner and (updater == self.owner):
-                    filter_out = False
-                if filter_out:
-                    torecipients = [r for r in torecipients 
-                                    if r and r != updater]
-            elif updater:
-                torecipients.append(updater)
+        if not notify_updater:
+            filter_out = True
+            if notify_reporter and (updater == self.reporter):
+                filter_out = False
+            if notify_owner and (updater == self.owner):
+                filter_out = False
+            if filter_out:
+                torecipients = [r for r in torecipients if r and r != updater]
+        elif updater:
+            torecipients.append(updater)
 
         return (torecipients, ccrecipients)
 

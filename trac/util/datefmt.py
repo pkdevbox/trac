@@ -147,8 +147,10 @@ def format_datetime(t=None, format='%x %X', tzinfo=None):
         text = text.replace('+0000', 'Z')
         if not text.endswith('Z'):
             text = text[:-2] + ":" + text[-2:]
-    encoding = locale.getlocale(locale.LC_TIME)[1] \
-               or locale.getpreferredencoding() or sys.getdefaultencoding()
+    encoding = locale.getpreferredencoding() or sys.getdefaultencoding()
+    if sys.platform != 'win32' or sys.version_info[:2] > (2, 3):
+        encoding = locale.getlocale(locale.LC_TIME)[1] or encoding
+        # Python 2.3 on windows doesn't know about 'XYZ' alias for 'cpXYZ'
     return unicode(text, encoding, 'replace')
 
 def format_date(t=None, format='%x', tzinfo=None):
@@ -450,7 +452,6 @@ try:
                          if tz.zone != 'UTC'])
 
     def timezone(tzname):
-        """Fetch timezone instance by name or raise `KeyError`"""
         tz = get_timezone(tzname)
         if not tz:
             raise KeyError(tzname)

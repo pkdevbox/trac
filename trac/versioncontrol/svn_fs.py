@@ -233,8 +233,6 @@ class SvnCachedRepository(CachedRepository):
     """Subversion-specific cached repository, zero-pads revision numbers
     in the cache tables.
     """
-    has_linear_changesets = True
-
     def db_rev(self, rev):
         return '%010d' % rev
 
@@ -246,7 +244,7 @@ class SubversionConnector(Component):
 
     implements(ISystemInfoProvider, IRepositoryConnector)
 
-    branches = ListOption('svn', 'branches', 'trunk, branches/*', doc=
+    branches = ListOption('svn', 'branches', 'trunk,branches/*', doc=
         """Comma separated list of paths categorized as branches.
         If a path ends with '*', then all the directory entries found below 
         that path will be included. 
@@ -303,16 +301,17 @@ class SubversionConnector(Component):
         'direct-svnfs'.
         """
         params.update(tags=self.tags, branches=self.branches)
-        repos = SubversionRepository(dir, params, self.log)
-        if type != 'direct-svnfs':
-            repos = SvnCachedRepository(self.env, repos, self.log)
+        fs_repos = SubversionRepository(dir, params, self.log)
+        if type == 'direct-svnfs':
+            repos = fs_repos
+        else:
+            repos = SvnCachedRepository(self.env, fs_repos, self.log)
+            repos.has_linear_changesets = True
         return repos
 
 
 class SubversionRepository(Repository):
     """Repository implementation based on the svn.fs API."""
-
-    has_linear_changesets = True
 
     def __init__(self, path, params, log):
         self.log = log
@@ -548,6 +547,19 @@ class SubversionRepository(Repository):
 
     def rev_older_than(self, rev1, rev2):
         return self.normalize_rev(rev1) < self.normalize_rev(rev2)
+
+    def get_youngest_rev_in_cache(self, db):
+        """Get the latest stored revision by sorting the revision strings
+        numerically
+
+        (deprecated, only used for transparent migration to the new caching
+        scheme).
+        """
+        cursor = db.cursor()
+        cursor.execute("SELECT rev FROM revision "
+                       "ORDER BY -LENGTH(rev), rev DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row and row[0] or None
 
     def get_path_history(self, path, rev=None, limit=None):
         path = self.normalize_path(path)

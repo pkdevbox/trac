@@ -14,27 +14,23 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from __future__ import with_statement
-
 import os
 import urllib
 import time
 
 from trac.config import BoolOption, IntOption, Option
 from trac.core import *
+from trac.db.pool import ConnectionPool
 from trac.util.concurrency import ThreadLocal
 from trac.util.text import unicode_passwd
 from trac.util.translation import _
 
-from .pool import ConnectionPool
-from .util import ConnectionWrapper
-
-_transaction_local = ThreadLocal(wdb=None, rdb=None)
+_transaction_local = ThreadLocal(db=None)
 
 def with_transaction(env, db=None):
     """Function decorator to emulate a context manager for database
     transactions.
-
+    
     >>> def api_method(p1, p2):
     >>>     result[0] = value1
     >>>     @with_transaction(env)
@@ -42,15 +38,6 @@ def with_transaction(env, db=None):
     >>>         # implementation
     >>>         result[0] = value2
     >>>     return result[0]
-
-    :deprecated: use instead the new context manager:
-
-    >>> def api_method(p1, p2):
-    >>>     result = value1
-    >>>     with env.db_transaction as db:
-    >>>         # implementation
-    >>>         result = value2
-    >>>     return result
     
     In this example, the `implementation()` function is called automatically
     right after its definition, with a database connection as an argument.
@@ -59,110 +46,48 @@ def with_transaction(env, db=None):
     re-raised. Nested transactions are supported, and a COMMIT will only be
     issued when the outermost transaction block in a thread exits.
     
-    This mechanism is intended to replace the former practice of getting a
+    This mechanism is intended to replace the current practice of getting a
     database connection with `env.get_db_cnx()` and issuing an explicit commit
     or rollback, for mutating database accesses. Its automatic handling of
     commit, rollback and nesting makes it much more robust.
     
+    This decorator will be replaced by a context manager once python 2.4
+    support is dropped.
+
     The optional `db` argument is intended for legacy code and should not
     be used in new code.
-
-    This decorator is in turn deprecated in favor of context managers 
-    now that python 2.4 support has been dropped.
     """
     def transaction_wrapper(fn):
-        ldb = _transaction_local.wdb
+        ldb = _transaction_local.db
         if db is not None:
             if ldb is None:
-                _transaction_local.wdb = db
+                _transaction_local.db = db
                 try:
                     fn(db)
                 finally:
-                    _transaction_local.wdb = None
+                    _transaction_local.db = None
             else:
                 assert ldb is db, "Invalid transaction nesting"
                 fn(db)
         elif ldb:
             fn(ldb)
         else:
-            ldb = _transaction_local.wdb = DatabaseManager(env).get_connection()
+            ldb = _transaction_local.db = env.get_db_cnx()
             try:
                 fn(ldb)
                 ldb.commit()
-                _transaction_local.wdb = None
+                _transaction_local.db = None
             except:
-                _transaction_local.wdb = None
+                _transaction_local.db = None
                 ldb.rollback()
                 ldb = None
                 raise
     return transaction_wrapper
 
 
-class DbContextManager(object):
-    """Database Context Manager
-
-    The outermost DbContextManager will close the connection.
-    """
-
-    db = None
-
-    def __init__(self, env):
-        self.env = env
-
-    def __call__(self, query, params=None):
-        """Shortcut for directly executing a query."""
-        with self as db:
-            return db(query, params)
-
-
-class TransactionContextManager(DbContextManager):
-    """Transactioned Database Context Manager
-
-    The outermost such context manager will perform a commit upon normal exit
-    or a rollback after an exception.
-    """
-
-    def __enter__(self):
-        db = _transaction_local.wdb # outermost writable db
-        if not db:
-            db = _transaction_local.rdb # reuse wrapped connection
-            if db:
-                db = ConnectionWrapper(db.cnx, db.log)
-            else:
-                db = DatabaseManager(self.env).get_connection()
-            _transaction_local.wdb = self.db = db
-        return db
-
-    def __exit__(self, et, ev, tb): 
-        if self.db: 
-            _transaction_local.wdb = None
-            if et is None: 
-                self.db.commit()
-            else: 
-                self.db.rollback()
-            if not _transaction_local.rdb:
-                self.db.close()
-
-
-class QueryContextManager(DbContextManager):
-    """Database Context Manager for retrieving a readonly ConnectionWrapper"""
-
-    def __enter__(self):
-        db = _transaction_local.rdb # outermost readonly db
-        if not db:
-            db = _transaction_local.wdb # reuse wrapped connection
-            if db:
-                db = ConnectionWrapper(db.cnx, db.log, readonly=True)
-            else:
-                db = DatabaseManager(self.env).get_connection(readonly=True)
-            _transaction_local.rdb = self.db = db
-        return db
-
-    def __exit__(self, et, ev, tb): 
-        if self.db:
-            _transaction_local.rdb = None
-            if not _transaction_local.wdb:
-                self.db.close()
+def get_read_db(env):
+    """Get a database connection for reading only."""
+    return _transaction_local.db or DatabaseManager(env).get_connection()
 
 
 class IDatabaseConnector(Interface):
@@ -181,8 +106,8 @@ class IDatabaseConnector(Interface):
 
     def get_connection(path, log=None, **kwargs):
         """Create a new connection to the database."""
-    
-    def init_db(path, schema=None, log=None, **kwargs):
+        
+    def init_db(path, log=None, **kwargs):
         """Initialize the database."""
 
     def to_sql(table):
@@ -218,23 +143,13 @@ class DatabaseManager(Component):
 
     def init_db(self):
         connector, args = self.get_connector()
-        from trac.db_default import schema
-        args['schema'] = schema
         connector.init_db(**args)
 
-    def get_connection(self, readonly=False):
-        """Get a database connection from the pool.
-
-        If `readonly` is `True`, the returned connection will purposedly
-        lack the `rollback` and `commit` methods.
-        """
+    def get_connection(self):
         if not self._cnx_pool:
             connector, args = self.get_connector()
             self._cnx_pool = ConnectionPool(5, connector, **args)
-        db = self._cnx_pool.get_cnx(self.timeout or None)
-        if readonly:
-            db = ConnectionWrapper(db, readonly=True)
-        return db
+        return self._cnx_pool.get_cnx(self.timeout or None)
 
     def shutdown(self, tid=None):
         if self._cnx_pool:
@@ -280,13 +195,10 @@ class DatabaseManager(Component):
             raise TracError(connector.error)
 
         if scheme == 'sqlite':
-            if args['path'] == ':memory:':
-                # Special case for SQLite in-memory database, always get 
-                # the /same/ connection over
-                pass
-            elif not args['path'].startswith('/'):
-                # Special case for SQLite to support a path relative to the
-                # environment directory
+            # Special case for SQLite to support a path relative to the
+            # environment directory
+            if args['path'] != ':memory:' and \
+                   not args['path'].startswith('/'):
                 args['path'] = os.path.join(self.env.path,
                                             args['path'].lstrip('/'))
 
@@ -298,8 +210,9 @@ class DatabaseManager(Component):
 
 
 def get_column_names(cursor):
-    return [unicode(d[0], 'utf-8') if isinstance(d[0], str) else d[0]
-            for d in cursor.description] if cursor.description else []
+    return cursor.description and \
+           [(isinstance(d[0], str) and [unicode(d[0], 'utf-8')] or [d[0]])[0]
+            for d in cursor.description] or []
 
 
 def _parse_db_str(db_str):

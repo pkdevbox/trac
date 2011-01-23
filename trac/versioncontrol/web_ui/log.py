@@ -21,23 +21,23 @@ import re
 from genshi.core import Markup
 from genshi.builder import tag
 
-from trac.config import IntOption, ListOption
+from trac.config import IntOption
 from trac.core import *
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import ResourceNotFound
 from trac.util import Ranges
-from trac.util.text import wrap
+from trac.util.compat import any
+from trac.util.text import to_unicode, wrap
 from trac.util.translation import _
-from trac.versioncontrol.api import (RepositoryManager, Changeset,
-                                     NoSuchChangeset)
+from trac.versioncontrol.api import RepositoryManager, Changeset, \
+                                    NoSuchChangeset
 from trac.versioncontrol.web_ui.changeset import ChangesetModule
 from trac.versioncontrol.web_ui.util import *
 from trac.web import IRequestHandler
-from trac.web.chrome import (Chrome, INavigationContributor, add_ctxtnav,
-                             add_link, add_script, add_script_data,
-                             add_stylesheet, auth_link, web_context)
+from trac.web.chrome import add_ctxtnav, add_link, add_stylesheet, \
+                            INavigationContributor, Chrome
 from trac.wiki import IWikiSyntaxProvider, WikiParser 
-
 
 class LogModule(Component):
 
@@ -45,13 +45,8 @@ class LogModule(Component):
                IWikiSyntaxProvider)
 
     default_log_limit = IntOption('revisionlog', 'default_log_limit', 100,
-        """Default value for the limit argument in the TracRevisionLog.
-        (''since 0.11'')""")
-
-    graph_colors = ListOption('revisionlog', 'graph_colors',
-        ['#cc0', '#0c0', '#0cc', '#00c', '#c0c', '#c00'],
-        doc="""Comma-separated list of colors to use for the TracRevisionLog
-        graph display. (''since 0.13'')""")
+        """Default value for the limit argument in the TracRevisionLog
+        (''since 0.11'').""")
 
     # INavigationContributor methods
 
@@ -119,7 +114,6 @@ class LogModule(Component):
         #  * for ''show only add, delete'' we're using
         #   `Repository.get_path_history()` 
         cset_resource = repos.resource.child('changeset')
-        show_graph = False
         if mode == 'path_history':
             def history():
                 for h in repos.get_path_history(path, rev):
@@ -156,8 +150,6 @@ class LogModule(Component):
                 if expected_next_item:
                     yield (expected_next_item[0], expected_next_item[1], None)
         else:
-            show_graph = path == '/' and not verbose \
-                         and not repos.has_linear_changesets
             def history():
                 node = get_existing_node(req, repos, path, rev)
                 for h in node.get_history():
@@ -208,17 +200,6 @@ class LogModule(Component):
                     "exist at revision %(rev)s or at any previous revision.", 
                     path=path, rev=display_rev(rev)), _('Nonexistent path'))
 
-        # Generate graph data
-        graph = {}
-        if show_graph:
-            threads, vertices, columns = \
-                make_log_graph(repos, (item['rev'] for item in info))
-            graph.update(threads=threads, vertices=vertices, columns=columns,
-                         colors=self.graph_colors,
-                         line_width=0.04, dot_radius=0.1)
-            add_script(req, 'common/js/log_graph.js')
-            add_script_data(req, {'graph': graph})
-        
         def make_log_href(path, **args):
             link_rev = rev
             if rev == str(repos.youngest_rev):
@@ -270,13 +251,13 @@ class LogModule(Component):
                 extra_changes[rev] = cs
 
         data = {
-            'context': web_context(req, 'source', path, parent=repos.resource),
+            'context': Context.from_request(req, 'source', path,
+                                            parent=repos.resource),
             'reponame': repos.reponame or None, 'repos': repos,
             'path': path, 'rev': rev, 'stop_rev': stop_rev,
             'display_rev': display_rev, 'revranges': revranges,
             'mode': mode, 'verbose': verbose, 'limit' : limit,
             'items': info, 'changes': changes, 'extra_changes': extra_changes,
-            'graph': graph,
             'wiki_format_messages':
             self.config['changeset'].getbool('wiki_format_messages')
         }
@@ -285,9 +266,9 @@ class LogModule(Component):
             return 'revisionlog.txt', data, 'text/plain'
         elif format == 'rss':
             data['email_map'] = Chrome(self.env).get_email_map()
-            data['context'] = web_context(req, 'source', 
-                                          path, parent=repos.resource,
-                                          absurls=True)
+            data['context'] = Context.from_request(req, 'source', 
+                                                   path, parent=repos.resource,
+                                                   absurls=True)
             return 'revisionlog.rss', data, 'application/rss+xml'
 
         item_ranges = []
@@ -315,7 +296,7 @@ class LogModule(Component):
 
         rss_href = make_log_href(path, format='rss', revs=revs,
                                  stop_rev=stop_rev)
-        add_link(req, 'alternate', auth_link(req, rss_href), _('RSS Feed'),
+        add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
         changelog_href = make_log_href(path, format='changelog', revs=revs,
                                        stop_rev=stop_rev)
@@ -379,37 +360,41 @@ class LogModule(Component):
                 path, revs = match[:idx], match[idx+1:]
         
         rm = RepositoryManager(self.env)
-        reponame, repos, path = rm.get_repository_by_path(path)
-        if not reponame:
-            reponame = rm.get_default_repository(formatter.context)
-            if reponame is not None:
-                repos = rm.get_repository(reponame)
+        try:
+            reponame, repos, path = rm.get_repository_by_path(path)
+            if not reponame:
+                reponame = rm.get_default_repository(formatter.context)
+                if reponame is not None:
+                    repos = rm.get_repository(reponame)
 
-        if repos:
-            revranges = None
-            if any(c for c in ':-,' if c in revs):
-                revranges = self._normalize_ranges(repos, path, revs)
-                revs = None
-            if 'LOG_VIEW' in formatter.perm:
-                if revranges:
-                    href = formatter.href.log(repos.reponame or None,
-                                              path or '/', revs=str(revranges))
-                else:
-                    try:
-                        rev = repos.normalize_rev(revs)
-                    except NoSuchChangeset:
-                        rev = None
-                    href = formatter.href.log(repos.reponame or None,
-                                              path or '/', rev=rev)
-                if query and (revranges or revs):
-                    query = '&' + query[1:]
-                return tag.a(label, class_='source',
-                             href=href + query + fragment)
-            errmsg = _("No permission to view change log")
-        elif reponame:
-            errmsg = _("Repository '%(repo)s' not found", repo=reponame)
-        else:
-            errmsg = _("No default repository defined")
+            if repos:
+                revranges = None
+                if any(c for c in ':-,' if c in revs):
+                    revranges = self._normalize_ranges(repos, path, revs)
+                    revs = None
+                if 'LOG_VIEW' in formatter.perm:
+                    if revranges:
+                        href = formatter.href.log(repos.reponame or None,
+                                                  path or '/', 
+                                                  revs=str(revranges))
+                    else:
+                        try:
+                            rev = repos.normalize_rev(revs)
+                        except NoSuchChangeset:
+                            rev = None
+                        href = formatter.href.log(repos.reponame or None,
+                                                  path or '/', rev=rev)
+                    if query and (revranges or revs):
+                        query = '&' + query[1:]
+                    return tag.a(label, class_='source',
+                                 href=href + query + fragment)
+                errmsg = _("No permission to view change log")
+            elif reponame:
+                errmsg = _("Repository '%(repo)s' not found", repo=reponame)
+            else:
+                errmsg = _("No default repository defined")
+        except TracError, e:
+            errmsg = to_unicode(e)
         return tag.a(label, class_='missing source', title=errmsg)
 
     LOG_LINK_RE = re.compile(r"([^@:]*)[@:]%s?" % REV_RANGE)

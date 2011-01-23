@@ -21,7 +21,6 @@
 
 import pkg_resources
 import os
-import socket
 import sys
 from SocketServer import ThreadingMixIn
 
@@ -108,7 +107,6 @@ class TracHTTPRequestHandler(WSGIRequestHandler):
         # Disable reverse name lookups
         return self.client_address[:2][0]
 
-
 class TracHTTP11RequestHandler(TracHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
@@ -143,7 +141,7 @@ def main():
             setattr(parser.values, option.dest, int(value, 8))
         except ValueError:
             raise OptionValueError('Invalid octal umask value: %r' % value)
-
+    
     parser.add_option('-a', '--auth', action='callback', type='string',
                       metavar='DIGESTAUTH', callback=_auth_callback,
                       callback_args=(DigestAuthentication,),
@@ -189,47 +187,14 @@ def main():
                           help='run in the background as a daemon')
         parser.add_option('--pidfile', action='store',
                           dest='pidfile',
-                          help='when daemonizing, file to which to write pid')
+                          help='When daemonizing, file to which to write pid')
         parser.add_option('--umask', action='callback', type='string',
                           dest='umask', metavar='MASK', callback=_octal,
-                          help='when daemonizing, file mode creation mask '
+                          help='When daemonizing, file mode creation mask '
                           'to use, in octal notation (default 022)')
 
-        try:
-            import grp, pwd
-            
-            def _group(option, opt_str, value, parser):
-                try:
-                    value = int(value)
-                except ValueError:
-                    try:
-                        value = grp.getgrnam(value)[2]
-                    except KeyError:
-                        raise OptionValueError('group not found: %r' % value)
-                setattr(parser.values, option.dest, value)
-
-            def _user(option, opt_str, value, parser):
-                try:
-                    value = int(value)
-                except ValueError:
-                    try:
-                        value = pwd.getpwnam(value)[2]
-                    except KeyError:
-                        raise OptionValueError('user not found: %r' % value)
-                setattr(parser.values, option.dest, value)
-            
-            parser.add_option('--group', action='callback', type='string',
-                              dest='group', metavar='GROUP', callback=_group,
-                              help='the group to run as')
-            parser.add_option('--user', action='callback', type='string',
-                              dest='user', metavar='USER', callback=_user,
-                              help='the user to run as')
-        except ImportError:
-            pass
-
     parser.set_defaults(port=None, hostname='', base_path='', daemonize=False,
-                        protocol='http', http11=True, umask=022, user=None,
-                        group=None)
+                        protocol='http', http11=True, umask=022)
     options, args = parser.parse_args()
 
     if not args and not options.env_parent_dir:
@@ -277,24 +242,17 @@ def main():
 
     if options.protocol == 'http':
         def serve():
-            addr, port = server_address
-            if not addr or addr == '0.0.0.0':
-                loc = '0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
-                       % (port, port, base_path)
-            else:
-                loc = 'http://%s:%s/%s' % (addr, port, base_path)
-
-            try:
-                httpd = TracHTTPServer(server_address, wsgi_app,
-                                       options.env_parent_dir, args,
-                                       use_http_11=options.http11)
-            except socket.error, e:
-                print 'Error starting Trac server on %s' % loc
-                print e.strerror
-                sys.exit(1)
+            httpd = TracHTTPServer(server_address, wsgi_app,
+                                   options.env_parent_dir, args,
+                                   use_http_11=options.http11)
 
             print 'Server starting in PID %i.' % os.getpid()
-            print 'Serving on %s' % loc
+            addr, port = server_address
+            if not addr or addr == '0.0.0.0':
+                print 'Serving on 0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
+                       % (port, port, base_path)
+            else:
+                print 'Serving on http://%s:%s/%s' % (addr, port, base_path)
             if options.http11:
                 print 'Using HTTP/1.1 protocol version'
             httpd.serve_forever()
@@ -313,10 +271,6 @@ def main():
         if options.daemonize:
             daemon.daemonize(pidfile=options.pidfile, progname='tracd',
                              umask=options.umask)
-        if options.group is not None:
-            os.setgid(options.group)
-        if options.user is not None:
-            os.setuid(options.user)
 
         if options.autoreload:
             def modification_callback(file):
@@ -326,12 +280,10 @@ def main():
         else:
             serve()
 
-    except OSError, e:
-        print >> sys.stderr, '%s: %s' % (e.__class__.__name__, e)
+    except OSError:
         sys.exit(1)
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == '__main__':
     pkg_resources.require('Trac==%s' % VERSION)

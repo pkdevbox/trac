@@ -11,8 +11,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import doctest
 import os.path
 import random
@@ -35,28 +33,36 @@ class AtomicFileTestCase(unittest.TestCase):
             pass
     
     def test_non_existing(self):
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('test content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('test content', util.read_file(self.path))
     
     def test_existing(self):
         util.create_file(self.path, 'Some content')
         self.assertEqual('Some content', util.read_file(self.path))
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('Some new content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('Some new content', util.read_file(self.path))
     
     if util.can_rename_open_file:
         def test_existing_open_for_reading(self):
             util.create_file(self.path, 'Initial file content')
             self.assertEqual('Initial file content', util.read_file(self.path))
-            with open(self.path) as rf:
-                with util.AtomicFile(self.path) as f:
+            rf = open(self.path)
+            try:
+                f = util.AtomicFile(self.path)
+                try:
                     f.write('Replaced content')
-            self.assertEqual(True, rf.closed)
-            self.assertEqual(True, f.closed)
+                finally:
+                    f.close()
+            finally:
+                rf.close()
             self.assertEqual('Replaced content', util.read_file(self.path))
     
     # FIXME: It is currently not possible to make this test pass on all
@@ -67,9 +73,11 @@ class AtomicFileTestCase(unittest.TestCase):
     # we require Python 3.
     def _test_unicode_path(self):
         self.path = os.path.join(tempfile.gettempdir(), u'träc-témpfilè')
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('test content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('test content', util.read_file(self.path))
 
 

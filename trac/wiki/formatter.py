@@ -31,18 +31,18 @@ from genshi.util import plaintext
 from trac.core import *
 from trac.mimeview import *
 from trac.resource import get_relative_resource, get_resource_url
+from trac.wiki.api import WikiSystem, parse_args
+from trac.wiki.parser import WikiParser
 from trac.util import arity
+from trac.util.compat import all
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode, \
                            unicode_quote, unicode_quote_plus
 from trac.util.html import TracHTMLSanitizer
 from trac.util.translation import _
-from trac.wiki.api import WikiSystem, parse_args
-from trac.wiki.parser import WikiParser
 
 __all__ = ['wiki_to_html', 'wiki_to_oneliner', 'wiki_to_outline',
            'Formatter', 'format_to', 'format_to_html', 'format_to_oneliner',
-           'extract_link', 'split_url_into_path_query_fragment',
-           'concat_path_query_fragment']
+           'extract_link']
 
 
 def system_message(msg, text=None):
@@ -71,31 +71,6 @@ def split_url_into_path_query_fragment(target):
         target, query = target[:idx], target[idx:]
     return (target, query, fragment)
 
-def concat_path_query_fragment(path, query, fragment=None):
-    """Assemble `path`, `query` and `fragment` into a proper URL.
-
-    Can be used to re-assemble an URL decomposed using
-    `split_url_into_path_query_fragment` after modification.
-
-    >>> concat_path_query_fragment('/wiki/page', '?version=1')
-    '/wiki/page?version=1'
-    >>> concat_path_query_fragment('/wiki/page#a', '?version=1', '#b')
-    '/wiki/page?version=1#b'
-    >>> concat_path_query_fragment('/wiki/page?version=1#a', '?format=txt')
-    '/wiki/page?version=1&format=txt#a'
-    >>> concat_path_query_fragment('/wiki/page?version=1', '&format=txt')
-    '/wiki/page?version=1&format=txt'
-    >>> concat_path_query_fragment('/wiki/page?version=1', 'format=txt')
-    '/wiki/page?version=1&format=txt'
-    >>> concat_path_query_fragment('/wiki/page?version=1#a', '?format=txt', '#')
-    '/wiki/page?version=1&format=txt'
-    """
-    p, q, f = split_url_into_path_query_fragment(path)
-    if query:
-        q += ('&' if q else '?') + query.lstrip('?&')
-    if fragment:
-        f = fragment
-    return p + q + ('' if f == '#' else f)
 
 def _markup_to_unicode(markup):
     stream = None
@@ -376,12 +351,13 @@ class Formatter(object):
     def __init__(self, env, context):
         """Note: `req` is still temporarily used."""
         self.env = env
-        self.context = context.child()
+        self.context = context()
         self.context.set_hints(disable_warnings=True)
         self.req = context.req
         self.href = context.href
         self.resource = context.resource
         self.perm = context.perm
+        self.db = self.env.get_db_cnx() # FIXME: remove
         self.wiki = WikiSystem(self.env)
         self.wikiparser = WikiParser(self.env)
         self._anchors = {}
@@ -586,14 +562,20 @@ class Formatter(object):
                 resource = get_relative_resource(self.resource, path)
                 path = get_resource_url(self.env, resource, self.href)
                 if resource.id:
-                    target = concat_path_query_fragment(unicode(resource.id),
-                                                        query, fragment)
+                    idx = path.find('?')
+                    if idx >= 0:
+                        if query:
+                            query = path[idx:] + '&' + query.lstrip('?')
+                        else:
+                            query = path[idx:]
+                    target = unicode(resource.id) + query + fragment
                     if resource.realm == 'wiki':
                         target = '/' + target   # Avoid wiki page scoping
                     return self._make_link(resource.realm, target, match,
                                            label, fullmatch)
-            return tag.a(label, 
-                         href=concat_path_query_fragment(path, query, fragment))
+                if '?' in path and query:
+                    query = '&' + query.lstrip('?')
+            return tag.a(label, href=path + query + fragment)
         else:
             return self._make_link(ns or 'wiki', target or '', match, label,
                                    fullmatch)
@@ -1535,32 +1517,29 @@ def wiki_to_html(wikitext, env, req, db=None,
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     Formatter(env, context).format(wikitext, out, escape_newlines)
     return Markup(out.getvalue())
 
 def wiki_to_oneliner(wikitext, env, db=None, shorten=False, absurls=False,
                      req=None):
-    """:deprecated: in favor of format_to_oneliner (will be removed in 0.13)"""
+    """deprecated in favor of format_to_oneliner (will be removed in 0.13)"""
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     OneLinerFormatter(env, context).format(wikitext, out, shorten)
     return Markup(out.getvalue())
 
 def wiki_to_outline(wikitext, env, db=None,
                     absurls=False, max_depth=None, min_depth=None, req=None):
-    """:deprecated: will be removed in 0.13 and replaced by something else"""
+    """deprecated (will be removed in 0.13 and replaced by something else)"""
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     OutlineFormatter(env, context).format(wikitext, out, max_depth, min_depth)
     return Markup(out.getvalue())

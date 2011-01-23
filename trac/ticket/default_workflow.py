@@ -20,10 +20,10 @@ import pkg_resources
 
 from genshi.builder import tag
 
-from trac.config import Configuration, ConfigSection
 from trac.core import *
-from trac.env import IEnvironmentSetupParticipant
 from trac.perm import PermissionSystem
+from trac.env import IEnvironmentSetupParticipant
+from trac.config import Configuration
 from trac.ticket.api import ITicketActionController, TicketSystem
 from trac.ticket.model import Resolution
 from trac.util.text import obfuscate_email_address
@@ -98,14 +98,6 @@ class ConfigurableTicketWorkflow(Component):
     [wiki:TracIni#ticket-workflow-section trac.ini] configuration file.
     """
     
-    ticket_workflow_section = ConfigSection('ticket-workflow',
-        """The workflow for tickets is controlled by plugins. By default,
-        there's only a `ConfigurableTicketWorkflow` component in charge.
-        That component allows the workflow to be configured via this section
-        in the `trac.ini` file. See TracWorkflow for more details.
-
-        (''since 0.11'')""")
-
     def __init__(self, *args, **kwargs):
         self.actions = get_workflow_config(self.config)
         if not '_reset' in self.actions:
