@@ -34,8 +34,6 @@ try:
 except ImportError:
     has_docutils = False
 
-from genshi.core import escape
-
 from trac.core import *
 from trac.env import ISystemInfoProvider
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
@@ -65,7 +63,7 @@ if has_docutils:
     # Register "trac" role handler and directive
 
     def trac_get_reference(env, context, rawtext, target, text):
-        fulltext = target + ' ' + text if text else target
+        fulltext = text and target + ' ' + text or target
         link = extract_link(env, context, fulltext)
         uri = None
         missing = False
@@ -242,35 +240,12 @@ class ReStructuredTextRenderer(Component):
         return 0
 
     def render(self, context, mimetype, content, filename=None, rev=None):
-        # Minimize visual impact of errors
-        from docutils.writers import html4css1
-        class TracHTMLTranslator(html4css1.HTMLTranslator):
-            """Specialized translator with unobtrusive error reporting"""
-            def visit_system_message(self, node):
-                paragraph = node.children.pop(0)
-                message = escape(paragraph.astext()) if paragraph else ''
-                backrefs = node['backrefs']
-                if backrefs:
-                    span = ('<span class="system-message">%s</span>' %
-                            (''.join('<a href="#%s" title="%s">?</a>' %
-                                     (backref, message)
-                                     for backref in backrefs)))
-                else:
-                    span = ('<span class="system-message" title="%s">?</span>' %
-                            message)
-                self.body.append(span)
-            def depart_system_message(self, node):
-                pass
-        writer = html4css1.Writer()
-        writer.translator_class = TracHTMLTranslator
-
         inliner = rst.states.Inliner()
         inliner.trac = (self.env, context)
         parser = rst.Parser(inliner=inliner)
         content = content_to_unicode(self.env, content, mimetype)
-        parts = publish_parts(content, writer=writer, parser=parser,
+        parts = publish_parts(content, writer_name='html', parser=parser,
                               settings_overrides={'halt_level': 6, 
-                                                  'warning_stream': False,
                                                   'file_insertion_enabled': 0, 
                                                   'raw_enabled': 0})
         return parts['html_body']

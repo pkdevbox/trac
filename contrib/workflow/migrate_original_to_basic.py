@@ -22,9 +22,11 @@ def main():
     trac_env.config.save()
 
     # Update the ticket statuses...
-    trac_env.db_transaction("""
-        UPDATE ticket SET status = 'accepted' WHERE status = 'assigned'
-        """)
+    db = trac_env.get_db_cnx()
+    cursor = db.cursor()
+    cursor.execute("UPDATE ticket SET status = 'accepted' "
+                   "WHERE status = 'assigned'")
+    db.commit()
 
 if __name__ == '__main__':
     main()

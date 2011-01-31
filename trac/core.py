@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2010 Edgewall Software
+# Copyright (C) 2003-2009 Edgewall Software
 # Copyright (C) 2003-2004 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2004-2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -62,21 +62,20 @@ class ExtensionPoint(property):
     def __init__(self, interface):
         """Create the extension point.
         
-        :param interface: the `Interface` subclass that defines the protocol
+        @param interface: the `Interface` subclass that defines the protocol
             for the extension point
         """
         property.__init__(self, self.extensions)
         self.interface = interface
-        self.__doc__ = ("List of components that implement `%s`" %
-                        self.interface.__name__)
+        self.__doc__ = 'List of components that implement `%s`' % \
+                       self.interface.__name__
 
     def extensions(self, component):
         """Return a list of components that declare to implement the extension
         point interface.
         """
-        classes = ComponentMeta._registry.get(self.interface, ())
-        components = [component.compmgr[cls] for cls in classes]
-        return [c for c in components if c]
+        extensions = ComponentMeta._registry.get(self.interface, ())
+        return filter(None, [component.compmgr[cls] for cls in extensions])
 
     def __repr__(self):
         """Return a textual representation of the extension point."""
@@ -99,6 +98,31 @@ class ComponentMeta(type):
             # Don't put the Component base class in the registry
             return new_class
 
+        # Only override __init__ for Components not inheriting ComponentManager
+        if True not in [issubclass(x, ComponentManager) for x in bases]:
+            # Allow components to have a no-argument initializer so that
+            # they don't need to worry about accepting the component manager
+            # as argument and invoking the super-class initializer
+            init = d.get('__init__')
+            if not init:
+                # Because we're replacing the initializer, we need to make sure
+                # that any inherited initializers are also called.
+                for init in [b.__init__._original for b in new_class.mro()
+                             if issubclass(b, Component)
+                             and '__init__' in b.__dict__]:
+                    break
+            def maybe_init(self, compmgr, init=init, cls=new_class):
+                if cls not in compmgr.components:
+                    compmgr.components[cls] = self
+                    if init:
+                        try:
+                            init(self)
+                        except:
+                            del compmgr.components[cls]
+                            raise
+            maybe_init._original = init
+            new_class.__init__ = maybe_init
+
         if d.get('abstract'):
             # Don't put abstract component classes in the registry
             return new_class
@@ -113,33 +137,6 @@ class ComponentMeta(type):
 
         return new_class
 
-    def __call__(cls, *args, **kwargs):
-        """Return an existing instance of the component if it has already been
-        activated, otherwise create a new instance.
-        """
-        # If this component is also the component manager, just invoke that
-        if issubclass(cls, ComponentManager):
-            self = cls.__new__(cls)
-            self.compmgr = self
-            self.__init__(*args, **kwargs)
-            return self
-
-        # The normal case where the component is not also the component manager
-        compmgr = args[0]
-        self = compmgr.components.get(cls)
-        # Note that this check is racy, we intentionally don't use a
-        # lock in order to keep things simple and avoid the risk of
-        # deadlocks, as the impact of having temporarily two (or more)
-        # instances for a given `cls` is negligible.
-        if self is None:
-            self = cls.__new__(cls)
-            self.compmgr = compmgr
-            compmgr.component_activated(self)
-            self.__init__()
-            # Only register the instance once it is fully initialized (#9418)
-            compmgr.components[cls] = self
-        return self
-
 
 class Component(object):
     """Base class for components.
@@ -149,9 +146,28 @@ class Component(object):
     """
     __metaclass__ = ComponentMeta
 
+    def __new__(cls, *args, **kwargs):
+        """Return an existing instance of the component if it has already been
+        activated, otherwise create a new instance.
+        """
+        # If this component is also the component manager, just invoke that
+        if issubclass(cls, ComponentManager):
+            self = super(Component, cls).__new__(cls)
+            self.compmgr = self
+            return self
+
+        # The normal case where the component is not also the component manager
+        compmgr = args[0]
+        self = compmgr.components.get(cls)
+        if self is None:
+            self = super(Component, cls).__new__(cls)
+            self.compmgr = compmgr
+            compmgr.component_activated(self)
+        return self
+
     @staticmethod
     def implements(*interfaces):
-        """Can be used in the class definition of `Component` subclasses to
+        """Can be used in the class definiton of `Component` subclasses to
         declare the extension points that are extended.
         """
         import sys
@@ -209,7 +225,7 @@ class ComponentManager(object):
     def disable_component(self, component):
         """Force a component to be disabled.
         
-        :param component: can be a class or an instance.
+        The argument `component` can be a class or an instance.
         """
         if not isinstance(component, type):
             component = component.__class__

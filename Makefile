@@ -1,17 +1,12 @@
-# == Makefile for Trac related tasks (beyond those supported by setuptools) ==
+#          Makefile for testing Trac (see doc/dev/testing.rst)
 #
-# Automating testing, i18n tasks, documentation generation, ... see HELP below
+#          Some i18n tasks are also supported, see HELP below.
 # ----------------------------------------------------------------------------
 #
-# Note about customization:
-#   No changes to the present Makefile should be necessary,
-#   rather copy Makefile.cfg.sample to Makefile.cfg and adapt it
-#   to match your local environment.
+# Note that this is a GNU Makefile.
+# nmake and other abominations are not supported.
 #
-# Note that this is a GNU Makefile, nmake and other abominations are
-# not supported.
-#
-# ============================================================================
+# ----------------------------------------------------------------------------
 
 define HELP
 
@@ -73,39 +68,14 @@ define HELP
 
   [locale=...]        variable for selecting a set of locales
 
- ---------------- Documentation tasks
-
-  apidoc|sphinx       generate the Sphinx documentation (all specified formats)
-  apidoc-html         generate the Sphinx documentation in HTML format
-  apidoc-pdf          generate the Sphinx documentation in PDF format
-
-  apiref|epydoc       generate the full API reference using Epydoc
-
-  [sphinxformat=...]  list of formats for generated documentation
-  [sphinxopts=...]    variable containing extra options for Sphinx
-  [sphinxopts-html=...] variable containing extra options used for html format
-  [epydocopts=...]    variable containing extra options for Epydoc
-  [dotpath=/.../dot]  path to Graphviz' dot program (not used yet)
-                         
 endef
 export HELP
 
 # ` (keep emacs font-lock happy)
 
-define HELP_CFG
- It looks like you don't have a Makefile.cfg file yet.
- You can get started by doing `cp Makefile.cfg.sample Makefile.cfg'
- and then adapt it to your environment.
-endef
-export HELP_CFG
-
-# ============================================================================
-
 # ----------------------------------------------------------------------------
 #
 # Main targets
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: all help status clean clean-bytecode clean-mo
 
@@ -116,12 +86,8 @@ else
 all: help
 endif
 
-help: Makefile.cfg
+help:
 	@echo "$$HELP"
-
-
-Makefile.cfg:
-	@echo "$$HELP_CFG"
 
 status:
 	@echo -n "Python version: "
@@ -137,14 +103,18 @@ status:
 Trac.egg-info: status
 	python setup.py egg_info
 
-clean: clean-bytecode clean-figleaf clean-coverage clean-doc
+clean: clean-bytecode clean-figleaf clean-coverage
 
 clean-bytecode:
 	find -name \*.py[co] -exec rm {} \;
 
-Makefile: ;
+Makefile Makefile.cfg: ;
 
 # ----------------------------------------------------------------------------
+#
+# Copy Makefile.cfg.sample to Makefile.cfg and adapt to your local environment,
+# no customizations to the present Makefile should be necessary.
+#
 #
 -include Makefile.cfg
 #
@@ -154,8 +124,6 @@ Makefile: ;
 # ----------------------------------------------------------------------------
 #
 # L10N related tasks
-#
-# ----------------------------------------------------------------------------
 
 ifdef locale
     locales = $(locale)
@@ -274,8 +242,6 @@ clean-mo:
 # ----------------------------------------------------------------------------
 #
 # Testing related tasks
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: test unit-test functional-test test-wiki
 
@@ -295,8 +261,6 @@ test-wiki:
 # Coverage related tasks
 #
 # (see http://nedbatchelder.com/code/coverage/)
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: coverage clean-coverage show-coverage
 
@@ -336,8 +300,6 @@ htmlcov/index.html:
 # ** NOTE: there are still several issues with this **
 #  - as soon as a DocTestSuite is run, figleaf gets confused
 #  - functional-test-figleaf is broken (no .figleaf generated)
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: figleaf clean-figleaf show-figleaf
 
@@ -379,8 +341,6 @@ unit-test.figleaf: Trac.egg-info
 # ----------------------------------------------------------------------------
 #
 # Tracd related tasks
-#
-# ----------------------------------------------------------------------------
 
 port ?= 8000
 tracdopts ?= -r
@@ -392,8 +352,6 @@ define server-options
  $(if $(wildcard $(env)/VERSION),$(env),-e $(env))
 endef
 
-.PHONY: server
-
 server: Trac.egg-info
 ifdef env
 	python trac/web/standalone.py $(server-options)
@@ -401,50 +359,7 @@ else
 	@echo "\`env' variable was not specified. See \`make help'."
 endif
 
-
 # ----------------------------------------------------------------------------
-#
-# Documentation related tasks
-#
-# ----------------------------------------------------------------------------
-
-.PHONY: apidoc sphinx apiref epydoc clean-doc
-
-# We also try to honor the "conventional" environment variables used by Sphinx
-sphinxopts ?= $(SPHINXOPTS)
-SPHINXBUILD ?= sphinx-build
-BUILDDIR ?= build/doc
-PAPER ?= a4
-sphinxopts-latex ?= -D latex_paper_size=$(PAPER)
-sphinxformat = html
-
-sphinx: apidoc
-apidoc: $(addprefix apidoc-,$(sphinxformat))
-
-apidoc-%:
-	@$(SPHINXBUILD) -b $(*) \
-	    $(sphinxopts) $(sphinxopts-$(*)) \
-	    -d build/doc/doctree \
-	    doc $(BUILDDIR)/$(*)
-
-
-epydoc: apiref
-apiref: doc-images
-	@python doc/runepydoc.py --config=doc/epydoc.conf \
-	    $(epydocopts) $(if $(dotpath),--dotpath=$(dotpath))
-
-doc-images: $(addprefix build/,$(wildcard doc/images/*.png))
-build/doc/images/%: doc/images/% | build/doc/images
-	@cp $(<) $(@) 
-build/doc/images:
-	@mkdir -p $(@)
-
-clean-doc:
-	rm -fr build/doc
-
-
-
-# ============================================================================
 #
 # Setup environment variables
 

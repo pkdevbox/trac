@@ -18,8 +18,6 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-from __future__ import with_statement
-
 from itertools import groupby
 import os
 import posixpath
@@ -30,12 +28,13 @@ from genshi.builder import tag
 
 from trac.config import Option, BoolOption, IntOption
 from trac.core import *
-from trac.mimeview.api import Mimeview
+from trac.mimeview import Context, Mimeview
 from trac.perm import IPermissionRequestor
 from trac.resource import Resource, ResourceNotFound
 from trac.search import ISearchSource, search_to_sql, shorten_result
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import as_bool, content_disposition, embedded_numbers, pathjoin
+from trac.util.compat import any
 from trac.util.datefmt import from_utimestamp, pretty_timedelta
 from trac.util.text import exception_to_unicode, to_unicode, \
                            unicode_urlencode, shorten_line, CRLF
@@ -46,9 +45,9 @@ from trac.versioncontrol.diff import get_diff_options, diff_blocks, \
                                      unified_diff
 from trac.versioncontrol.web_ui.browser import BrowserModule
 from trac.web import IRequestHandler, RequestDone
-from trac.web.chrome import (Chrome, INavigationContributor, add_ctxtnav, 
-                             add_link, add_script, add_stylesheet, 
-                             prevnext_nav, web_context)
+from trac.web.chrome import Chrome, INavigationContributor, \
+                            add_ctxtnav, add_link, add_script, \
+                            add_stylesheet, prevnext_nav
 from trac.wiki import IWikiSyntaxProvider, WikiParser
 from trac.wiki.formatter import format_to
 
@@ -421,8 +420,8 @@ class ChangesetModule(Component):
             title = _changeset_title(rev)
 
             # Support for revision properties (#2545)
-            context = web_context(req, 'changeset', chgset.rev,
-                                  parent=repos.resource)
+            context = Context.from_request(req, 'changeset', chgset.rev,
+                                           parent=repos.resource)
             data['context'] = context
             revprops = chgset.get_properties()
             data['properties'] = browser.render_properties('revprop', context,
@@ -504,8 +503,8 @@ class ChangesetModule(Component):
         def _prop_changes(old_node, new_node):
             old_props = old_node.get_properties()
             new_props = new_node.get_properties()
-            old_ctx = web_context(req, old_node.resource)
-            new_ctx = web_context(req, new_node.resource)
+            old_ctx = Context.from_request(req, old_node.resource)
+            new_ctx = Context.from_request(req, new_node.resource)
             changed_properties = []
             if old_props != new_props:
                 for k, v in sorted(old_props.items()):
@@ -581,8 +580,8 @@ class ChangesetModule(Component):
         if self.max_diff_bytes or self.max_diff_files:
             for old_node, new_node, kind, change in get_changes():
                 if change in Changeset.DIFF_CHANGES and kind == Node.FILE \
-                        and old_node.is_viewable(req.perm) \
-                        and new_node.is_viewable(req.perm):
+                        and old_node.can_view(req.perm) \
+                        and new_node.can_view(req.perm):
                     diff_files += 1
                     diff_bytes += _estimate_changes(old_node, new_node)
         show_diffs = (not self.max_diff_files or \
@@ -605,8 +604,8 @@ class ChangesetModule(Component):
         for old_node, new_node, kind, change in get_changes():
             props = []
             diffs = []
-            show_old = old_node and old_node.is_viewable(req.perm)
-            show_new = new_node and new_node.is_viewable(req.perm)
+            show_old = old_node and old_node.can_view(req.perm)
+            show_new = new_node and new_node.can_view(req.perm)
             show_entry = change != Changeset.EDIT
             show_diff = show_diffs or (new_node and new_node.path == annotated)
 
@@ -698,7 +697,7 @@ class ChangesetModule(Component):
             new_node_info = old_node_info = ('','')
 
             if old_node:
-                if not old_node.is_viewable(req.perm):
+                if not old_node.can_view(req.perm):
                     continue
                 if mimeview.is_binary(old_node.content_type, old_node.path):
                     continue
@@ -709,7 +708,7 @@ class ChangesetModule(Component):
                 old_content = mimeview.to_unicode(old_content,
                                                   old_node.content_type)
             if new_node:
-                if not new_node.is_viewable(req.perm):
+                if not new_node.can_view(req.perm):
                     continue
                 if mimeview.is_binary(new_node.content_type, new_node.path):
                     continue
@@ -768,7 +767,7 @@ class ChangesetModule(Component):
             new_path=data['new_path'], new_rev=data['new_rev'],
             old_path=data['old_path'], old_rev=data['old_rev']):
             if kind == Node.FILE and change != Changeset.DELETE \
-                    and new_node.is_viewable(req.perm):
+                    and new_node.can_view(req.perm):
                 zipinfo = ZipInfo()
                 zipinfo.filename = new_node.path.strip('/').encode('utf-8')
                 # Note: unicode filenames are not supported by zipfile.
@@ -866,7 +865,7 @@ class ChangesetModule(Component):
                      u"\xa0\xa0-\xa0" + (repos.reponame or _('(default)')))
                     for repos in repositories
                     if not as_bool(repos.params.get('hidden'))
-                    and repos.is_viewable(req.perm)]
+                    and repos.can_view(req.perm)]
                 filters.sort()
                 add_script(req, 'common/js/timeline_multirepos.js')
                 changeset_label = _('Changesets in all repositories')
@@ -903,7 +902,7 @@ class ChangesetModule(Component):
                     for cset in changesets:
                         cset_resource = Resource('changeset', cset.rev,
                                                  parent=repos.resource)
-                        if cset.is_viewable(req.perm):
+                        if cset.can_view(req.perm):
                             repos_for_uid = [repos.reponame]
                             uid = repos.get_changeset_uid(cset.rev)
                             if uid:
@@ -948,10 +947,16 @@ class ChangesetModule(Component):
                                         stop_rev=rev_a)
             
         elif field == 'description':
+            branch_markup = []
+            for name, head in cset.get_branches():
+                class_ = 'branch'
+                if head:
+                    class_ += ' head'
+                branch_markup.append(tag.span(name, class_=class_))
             if self.wiki_format_messages:
                 markup = ''
                 if self.timeline_long_messages: # override default flavor
-                    context = context.child()
+                    context = context()
                     context.set_hints(wiki_flavor='html', 
                                       preserve_newlines=True)
             else:
@@ -995,9 +1000,9 @@ class ChangesetModule(Component):
                         files = files[:show_files] + [tag.li(u'\u2026')]
                     markup = tag(tag.ul(files, class_="changes"), markup)
             if message:
-                markup += format_to(self.env, None,
-                                    context.child(cset_resource), message)
-            return markup
+                markup += format_to(self.env, None, context(cset_resource),
+                                    message)
+            return tag(branch_markup, markup)
 
         single = rev_a == rev_b
         if not repos_for_uid[0]:
@@ -1015,21 +1020,11 @@ class ChangesetModule(Component):
             drev_b = cset.repos.display_rev(rev_b)
             title = tag(title, tag.em('[%s-%s]' % (drev_a, drev_b)))
         if field == 'title':
-            labels = []
-            for name, head in cset.get_branches():
-                if not head and name in ('default', 'master'):
-                    continue
-                class_ = 'branch'
-                if head:
-                    class_ += ' head'
-                labels.append(tag.span(name, class_=class_))
-            for name in cset.get_tags():
-                labels.append(tag.span(name, class_='tag'))
-            return title if not labels else tag(title, labels)
+            return title
         elif field == 'summary':
             return _("%(title)s: %(message)s",
                      title=title, message=shorten_line(message))
-
+        
     # IWikiSyntaxProvider methods
 
     CHANGESET_ID = r"(?:\d+|[a-fA-F\d]{8,})" # only "long enough" hexa ids
@@ -1079,7 +1074,7 @@ class ChangesetModule(Component):
             # rendering changeset link
             if repos:
                 changeset = repos.get_changeset(rev)
-                if changeset.is_viewable(formatter.perm):
+                if changeset.can_view(formatter.perm):
                     href = formatter.href.changeset(rev,
                                                     repos.reponame or None,
                                                     path)
@@ -1141,25 +1136,24 @@ class ChangesetModule(Component):
         rm = RepositoryManager(self.env)
         repositories = dict((repos.params['id'], repos)
                             for repos in rm.get_real_repositories())
-        with self.env.db_query as db:
-            sql, args = search_to_sql(db, ['rev', 'message', 'author'], terms)
-            for id, rev, ts, author, log in db("""
-                    SELECT repos, rev, time, author, message 
-                    FROM revision WHERE """ + sql,
-                    args):
-                try:
-                    rev = int(rev)
-                except ValueError:
-                    pass
-                repos = repositories.get(id)
-                if not repos:
-                    continue # revisions for a no longer active repository
-                cset = repos.resource.child('changeset', rev)
-                if 'CHANGESET_VIEW' in req.perm(cset):
-                    yield (req.href.changeset(rev, repos.reponame or None),
-                           '[%s]: %s' % (rev, shorten_line(log)),
-                           from_utimestamp(ts), author,
-                           shorten_result(log, terms))
+        db = self.env.get_db_cnx()
+        sql, args = search_to_sql(db, ['rev', 'message', 'author'], terms)
+        cursor = db.cursor()
+        cursor.execute("SELECT repos,rev,time,author,message "
+                       "FROM revision WHERE " + sql, args)
+        for id, rev, ts, author, log in cursor:
+            try:
+                rev = int(rev)
+            except ValueError:
+                pass
+            repos = repositories.get(id)
+            if not repos:
+                continue # revisions for a no longer active repository
+            cset = repos.resource.child('changeset', rev)
+            if 'CHANGESET_VIEW' in req.perm(cset):
+                yield (req.href.changeset(rev, repos.reponame or None),
+                       '[%s]: %s' % (rev, shorten_line(log)),
+                       from_utimestamp(ts), author, shorten_result(log, terms))
 
 
 class AnyDiffModule(Component):
@@ -1187,11 +1181,11 @@ class AnyDiffModule(Component):
                 entries.extend((e.isdir, e.name, 
                                 '/' + pathjoin(repos.reponame, e.path))
                                for e in repos.get_node(path).get_entries()
-                               if e.is_viewable(req.perm))
+                               if e.can_view(req.perm))
             if not reponame:
                 entries.extend((True, repos.reponame, '/' + repos.reponame)
                                for repos in rm.get_real_repositories()
-                               if repos.is_viewable(req.perm))
+                               if repos.can_view(req.perm))
 
             elem = tag.ul(
                 [tag.li(isdir and tag.b(path) or path)

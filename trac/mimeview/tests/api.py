@@ -33,10 +33,8 @@ class GetMimeTypeTestCase(unittest.TestCase):
         self.assertEqual('text/plain', get_mimetype('README.txt', None))
         
     def test_from_suffix_using_mimetypes(self):
-        image_png = 'image/png'
-        if sys.version_info >= (2, 7):
-            image_png = 'image/x-png'
-        self.assertEqual(image_png, get_mimetype('doc/trac_logo.png', None))
+        accepted = ('image/png', 'image/x-png')
+        self.assertTrue(get_mimetype('doc/trac_logo.png', None) in accepted)
         
     def test_from_content_using_CONTENT_RE(self):
         self.assertEqual('text/x-python',
@@ -126,7 +124,7 @@ class GroupLinesTestCase(unittest.TestCase):
         self.assertEquals(lines[0].events, [(TEXT, "test", (None, -1, -1))])
 
     def test_simplespan(self):
-        input = HTMLParser(StringIO(u"<span>test</span>"), encoding=None)
+        input = HTMLParser(StringIO("<span>test</span>"))
         lines = list(_group_lines(input))
         self.assertEquals(len(lines), 1)
         self.assertTrue(isinstance(lines[0], Stream))
@@ -168,8 +166,7 @@ class GroupLinesTestCase(unittest.TestCase):
         If the text element does not end with a newline, it's not properly
         closed.
         """
-        input = HTMLParser(StringIO(u'<span class="c">a\nb</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">a\nb</span>'))
         expected = ['<span class="c">a</span>',
                     '<span class="c">b</span>',
                    ]
@@ -183,8 +180,7 @@ class GroupLinesTestCase(unittest.TestCase):
         Same as test_newline above, but make sure it behaves properly wrt
         the trailing \\n, especially given it's inside an element.
         """
-        input = HTMLParser(StringIO(u'<span class="c">a\nb\n</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">a\nb\n</span>'))
         expected = ['<span class="c">a</span>',
                     '<span class="c">b</span>',
                    ]
@@ -197,8 +193,7 @@ class GroupLinesTestCase(unittest.TestCase):
         """
         ditto.
         """
-        input = HTMLParser(StringIO(u'<span class="c">\n\n\na</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">\n\n\na</span>'))
         expected = ['<span class="c"></span>',
                     '<span class="c"></span>',
                     '<span class="c"></span>',
