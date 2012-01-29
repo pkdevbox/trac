@@ -1,45 +1,25 @@
 ================================
-Trac |version| API Documentation
+Welcome to Trac's documentation!
 ================================
 
-:Release: |release|
+:Release: |version|
 :Date: |today|
 
-*This is work in progress. The API is not yet fully covered, but what
-you'll find here should be accurate, otherwise it's a bug and you're
-welcome to open a ticket for reporting the problem.*
-
-Content
-=======
+Contents:
 
 .. toctree::
    :maxdepth: 1
-
-   api/index
-   dev/testing
-
-.. toctree::
-   :hidden:
-
-   glossary
-
-.. ifconfig:: devel
-
-   .. toctree::
-      :hidden:
-
-      todo
-
+   
+   guide/index.rst
+   admin/index.rst
+   install/index.rst
+   api/env
+   dev/testing.rst
 
 Indices and tables
 ==================
 
-* :ref:`General Index <genindex>`
+* :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-* :doc:`glossary`
-
-.. ifconfig:: devel
-
-   * :doc:`todo`
 

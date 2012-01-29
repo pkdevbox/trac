@@ -16,8 +16,6 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
-from __future__ import with_statement
-
 import os
 import pkg_resources
 import sys
@@ -128,7 +126,8 @@ _first_lock = threading.Lock()
             
 def handler(req):
     global _first
-    with _first_lock:
+    try:
+        _first_lock.acquire()
         if _first: 
             _first = False
             options = req.get_options()
@@ -142,6 +141,8 @@ def handler(req):
             if egg_cache:
                 pkg_resources.set_extraction_path(egg_cache)
             reload(sys.modules['trac.web'])
+    finally:
+        _first_lock.release()
     pkg_resources.require('Trac==%s' % VERSION)
     gateway = ModPythonGateway(req, req.get_options())
     from trac.web.main import dispatch_request

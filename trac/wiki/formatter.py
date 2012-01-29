@@ -31,18 +31,18 @@ from genshi.util import plaintext
 from trac.core import *
 from trac.mimeview import *
 from trac.resource import get_relative_resource, get_resource_url
+from trac.wiki.api import WikiSystem, parse_args
+from trac.wiki.parser import WikiParser
 from trac.util import arity
+from trac.util.compat import all
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode, \
-                           unicode_quote, unicode_quote_plus, unquote_label
+                           unicode_quote, unicode_quote_plus
 from trac.util.html import TracHTMLSanitizer
 from trac.util.translation import _
-from trac.wiki.api import WikiSystem, parse_args, unquote_label
-from trac.wiki.parser import WikiParser, parse_processor_args
 
 __all__ = ['wiki_to_html', 'wiki_to_oneliner', 'wiki_to_outline',
            'Formatter', 'format_to', 'format_to_html', 'format_to_oneliner',
-           'extract_link', 'split_url_into_path_query_fragment',
-           'concat_path_query_fragment']
+           'extract_link']
 
 
 def system_message(msg, text=None):
@@ -71,31 +71,6 @@ def split_url_into_path_query_fragment(target):
         target, query = target[:idx], target[idx:]
     return (target, query, fragment)
 
-def concat_path_query_fragment(path, query, fragment=None):
-    """Assemble `path`, `query` and `fragment` into a proper URL.
-
-    Can be used to re-assemble an URL decomposed using
-    `split_url_into_path_query_fragment` after modification.
-
-    >>> concat_path_query_fragment('/wiki/page', '?version=1')
-    '/wiki/page?version=1'
-    >>> concat_path_query_fragment('/wiki/page#a', '?version=1', '#b')
-    '/wiki/page?version=1#b'
-    >>> concat_path_query_fragment('/wiki/page?version=1#a', '?format=txt')
-    '/wiki/page?version=1&format=txt#a'
-    >>> concat_path_query_fragment('/wiki/page?version=1', '&format=txt')
-    '/wiki/page?version=1&format=txt'
-    >>> concat_path_query_fragment('/wiki/page?version=1', 'format=txt')
-    '/wiki/page?version=1&format=txt'
-    >>> concat_path_query_fragment('/wiki/page?version=1#a', '?format=txt', '#')
-    '/wiki/page?version=1&format=txt'
-    """
-    p, q, f = split_url_into_path_query_fragment(path)
-    if query:
-        q += ('&' if q else '?') + query.lstrip('?&')
-    if fragment:
-        f = fragment
-    return p + q + ('' if f == '#' else f)
 
 def _markup_to_unicode(markup):
     stream = None
@@ -134,13 +109,11 @@ class WikiProcessor(object):
         self.error = None
         self.macro_provider = None
 
-        # FIXME: move these tables outside of __init__
         builtin_processors = {'html': self._html_processor,
                               'htmlcomment': self._htmlcomment_processor,
                               'default': self._default_processor,
                               'comment': self._comment_processor,
                               'div': self._div_processor,
-                              'rtl': self._rtl_processor,
                               'span': self._span_processor,
                               'Span': self._span_processor,
                               'td': self._td_processor,
@@ -148,11 +121,6 @@ class WikiProcessor(object):
                               'tr': self._tr_processor,
                               'table': self._table_processor,
                               }
-
-        self.inline_check = {'html': self._html_is_inline,
-                                'htmlcomment': True, 'comment': True,
-                                'span': True, 'Span': True,
-                                }.get(name)
 
         self._sanitizer = TracHTMLSanitizer(formatter.wiki.safe_schemes)
         
@@ -167,8 +135,6 @@ class WikiProcessor(object):
                         else:
                             self.processor = self._legacy_macro_processor
                         self.macro_provider = macro_provider
-                        self.inline_check = getattr(macro_provider, 'is_inline',
-                                                    False)
                         break
         if not self.processor:
             # Find a matching mimeview renderer
@@ -187,20 +153,6 @@ class WikiProcessor(object):
             self.processor = self._default_processor
             self.error = "No macro or processor named '%s' found" % name
 
-    # inline checks
-
-    def _html_is_inline(self, text):
-        if text:
-            tag = text[1:].lstrip()
-            idx = tag.find(' ')
-            if idx > -1:
-                tag = tag[:idx]
-            return tag.lower() in ('a', 'span', 'bdo', 'img',
-                                   'big', 'small', 'font',
-                                   'tt', 'i', 'b', 'u', 's', 'strike',
-                                   'em', 'strong', 'dfn', 'code', 'q',
-                                   'samp', 'kbd', 'var', 'cite', 'abbr',
-                                   'acronym', 'sub', 'sup')
     # builtin processors
 
     def _comment_processor(self, text):
@@ -243,15 +195,10 @@ class WikiProcessor(object):
     def _div_processor(self, text):
         if not self.args:
             self.args = {}
-        self.args.setdefault('class', 'wikipage')
+        if 'class' not in self.args:
+            self.args['class'] = 'wikipage'
         return self._elt_processor('div', format_to_html, text)
     
-    def _rtl_processor(self, text):
-        if not self.args:
-            self.args = {}
-        self.args['class'] = ('rtl ' + self.args.get('class', '')).rstrip()
-        return self._elt_processor('div', format_to_html, text)
-
     def _span_processor(self, text):
         if self.args is None:
             args, self.args = parse_args(text, strict=True)
@@ -275,7 +222,8 @@ class WikiProcessor(object):
     def _table_processor(self, text):
         if not self.args:
             self.args = {}
-        self.args.setdefault('class', 'wiki')
+        if 'class' not in self.args:
+            self.args['class'] = 'wiki'
         try:
             return self._elt_processor('table', self._format_table, text)
         except ProcessorError, e:
@@ -308,7 +256,7 @@ class WikiProcessor(object):
             raise ProcessorError(_("!#%(name)s must contain at least one table"
                                    " cell (and table cells only)",
                                    name=self.name))
-        return Markup(match.group(1 if self.name == 'table' else 2))
+        return Markup(match.group(self.name == 'table' and 1 or 2))
 
     def _format_row(self, env, context, text):
         if text:
@@ -354,42 +302,36 @@ class WikiProcessor(object):
                                   self.error)
         else:
             text = self.processor(text)
-        return text or ''
-
-    def is_inline(self, text):
-        if callable(self.inline_check):
-            return self.inline_check(text)
-        else:
-            return self.inline_check
-
-    def ensure_inline(self, text):
-        content_for_span = None
-        interrupt_paragraph = False
-        if isinstance(text, Element):
-            tagname = text.tag.lower()
-            if tagname == 'div':
-                class_ = text.attrib.get('class', '')
-                if class_ and 'code' in class_:
-                    content_for_span = text.children
-                else:
+        if not text:
+            return ''
+        if in_paragraph:
+            content_for_span = None
+            interrupt_paragraph = False
+            if isinstance(text, Element):
+                tagname = text.tag.lower()
+                if tagname == 'div':
+                    class_ = text.attrib.get('class', '')
+                    if class_ and 'code' in class_:
+                        content_for_span = text.children
+                    else:
+                        interrupt_paragraph = True
+                elif tagname == 'table':
                     interrupt_paragraph = True
-            elif tagname == 'table':
-                interrupt_paragraph = True
-        else:
-            # FIXME: do something smarter for Streams
-            text = _markup_to_unicode(text)
-            match = re.match(self._code_block_re, text)
-            if match:
-                if match.group(1) and 'code' in match.group(1):
-                    content_for_span = match.group(2)
-                else:
+            else:
+                # FIXME: do something smarter for Streams
+                text = _markup_to_unicode(text)
+                match = re.match(self._code_block_re, text)
+                if match:
+                    if match.group(1) and 'code' in match.group(1):
+                        content_for_span = match.group(2)
+                    else:
+                        interrupt_paragraph = True
+                elif re.match(self._block_elem_re, text):
                     interrupt_paragraph = True
-            elif re.match(self._block_elem_re, text):
-                interrupt_paragraph = True
-        if content_for_span:
-            text = tag.span(class_='code-block')(*content_for_span)
-        elif interrupt_paragraph:
-            text = "</p>%s<p>" % _markup_to_unicode(text)
+            if content_for_span:
+                text = tag.span(class_='code-block')(*content_for_span)
+            elif interrupt_paragraph:
+                text = "</p>%s<p>" % _markup_to_unicode(text)
         return text
 
 
@@ -409,12 +351,13 @@ class Formatter(object):
     def __init__(self, env, context):
         """Note: `req` is still temporarily used."""
         self.env = env
-        self.context = context.child()
+        self.context = context()
         self.context.set_hints(disable_warnings=True)
         self.req = context.req
         self.href = context.href
         self.resource = context.resource
         self.perm = context.perm
+        self.db = self.env.get_db_cnx() # FIXME: remove
         self.wiki = WikiSystem(self.env)
         self.wikiparser = WikiParser(self.env)
         self._anchors = {}
@@ -567,26 +510,32 @@ class Formatter(object):
     # HTML escape of &, < and >
 
     def _htmlescape_formatter(self, match, fullmatch):
-        return "&amp;" if match == "&" else "&lt;" if match == "<" else "&gt;"
+        return match == "&" and "&amp;" or match == "<" and "&lt;" or "&gt;"
 
     # Short form (shref) and long form (lhref) of TracLinks
 
+    def _unquote(self, text):
+        if text and text[0] in "'\"" and text[0] == text[-1]:
+            return text[1:-1]
+        else:
+            return text
+
     def _shrefbr_formatter(self, match, fullmatch):
         ns = fullmatch.group('snsbr')
-        target = unquote_label(fullmatch.group('stgtbr'))
+        target = self._unquote(fullmatch.group('stgtbr'))
         match = match[1:-1]
         return '&lt;%s&gt;' % \
                 self._make_link(ns, target, match, match, fullmatch)
 
     def _shref_formatter(self, match, fullmatch):
         ns = fullmatch.group('sns')
-        target = unquote_label(fullmatch.group('stgt'))
+        target = self._unquote(fullmatch.group('stgt'))
         return self._make_link(ns, target, match, match, fullmatch)
 
     def _lhref_formatter(self, match, fullmatch):
         rel = fullmatch.group('rel')
         ns = fullmatch.group('lns')
-        target = unquote_label(fullmatch.group('ltgt'))
+        target = self._unquote(fullmatch.group('ltgt'))
         label = fullmatch.group('label')
         return self._make_lhref_link(match, fullmatch, rel, ns, target, label)
 
@@ -600,7 +549,7 @@ class Formatter(object):
             else: # e.g. `[search:]` 
                 label = ns
         else:
-            label = unquote_label(label)
+            label = self._unquote(label)
         if rel:
             if not label:
                 label = self.wiki.make_label_from_target(rel)
@@ -613,14 +562,20 @@ class Formatter(object):
                 resource = get_relative_resource(self.resource, path)
                 path = get_resource_url(self.env, resource, self.href)
                 if resource.id:
-                    target = concat_path_query_fragment(unicode(resource.id),
-                                                        query, fragment)
+                    idx = path.find('?')
+                    if idx >= 0:
+                        if query:
+                            query = path[idx:] + '&' + query.lstrip('?')
+                        else:
+                            query = path[idx:]
+                    target = unicode(resource.id) + query + fragment
                     if resource.realm == 'wiki':
                         target = '/' + target   # Avoid wiki page scoping
                     return self._make_link(resource.realm, target, match,
                                            label, fullmatch)
-            return tag.a(label, 
-                         href=concat_path_query_fragment(path, query, fragment))
+                if '?' in path and query:
+                    query = '&' + query.lstrip('?')
+            return tag.a(label, href=path + query + fragment)
         else:
             return self._make_link(ns or 'wiki', target or '', match, label,
                                    fullmatch)
@@ -753,7 +708,7 @@ class Formatter(object):
         fullmatch = WikiParser._creolelink_re.match(macro_or_link)
         return self._lhref_formatter(match, fullmatch)
     
-    def _macro_formatter(self, match, fullmatch, macro, only_inline=False):
+    def _macro_formatter(self, match, fullmatch, macro=None):
         name = fullmatch.group('macroname')
         if name.lower() == 'br':
             return '<br />'
@@ -762,7 +717,7 @@ class Formatter(object):
         else:
             args = fullmatch.group('macroargs')
         try:
-            return macro.ensure_inline(macro.process(args))
+            return macro.process(args, in_paragraph=True)
         except Exception, e:
             self.env.log.error('Macro %s(%s) failed: %s' % 
                     (name, args, exception_to_unicode(e, traceback=True)))
@@ -833,7 +788,7 @@ class Formatter(object):
         listid = match[ldepth]
         self.in_list_item = True
         class_ = start = None
-        if listid in WikiParser.BULLET_CHARS:
+        if listid in '-*':
             type_ = 'ul'
         else:
             type_ = 'ol'
@@ -868,9 +823,9 @@ class Formatter(object):
             self.close_indentation() # FIXME: why not lists in quotes?
             self._list_stack.append((new_type, depth))
             self._set_tab(depth)
-            class_attr = ' class="%s"' % lclass if lclass else ''
-            start_attr = ' start="%s"' % start if start else ''
-            self.out.write('<' + new_type + class_attr + start_attr + '><li>')
+            class_attr = (lclass and ' class="%s"' % lclass) or ''
+            start_attr = (start and ' start="%s"' % start) or ''
+            self.out.write('<'+new_type+class_attr+start_attr+'><li>')
         def close_item():
             self.flush_tags()
             self.out.write('</li>')
@@ -908,7 +863,7 @@ class Formatter(object):
     # Definition Lists
 
     def _definition_formatter(self, match, fullmatch):
-        tmp = '</dd>' if self.in_def_list else '<dl class="wiki">'
+        tmp = self.in_def_list and '</dd>' or '<dl class="wiki">'
         definition = match[:match.find('::')]
         tmp += '<dt>%s</dt><dd>' % format_to_oneliner(self.env, self.context,
                                                       definition)
@@ -932,7 +887,7 @@ class Formatter(object):
                         self.in_list_item = True
                         self._set_list_depth(idepth)
                         return ''
-            elif idepth <= ldepth + (3 if ltype == 'ol' else 2):
+            elif idepth <= ldepth + (ltype == 'ol' and 3 or 2):
                 self.in_list_item = True
                 return ''
         if not self.in_def_list:
@@ -944,7 +899,7 @@ class Formatter(object):
 
     def _get_quote_depth(self):
         """Return the space offset associated to the deepest opened quote."""
-        return self._quote_stack[-1] if self._quote_stack else 0
+        return self._quote_stack and self._quote_stack[-1] or 0
 
     def _set_quote_depth(self, depth, citation=False):
         def open_quote(depth):
@@ -954,7 +909,7 @@ class Formatter(object):
             def open_one_quote(d):
                 self._quote_stack.append(d)
                 self._set_tab(d)
-                class_attr = ' class="citation"' if citation else ''
+                class_attr = citation and ' class="citation"' or ''
                 self.out.write('<blockquote%s>' % class_attr + os.linesep)
             if citation:
                 for d in range(quote_depth+1, depth+1):
@@ -1098,7 +1053,12 @@ class Formatter(object):
     # Code blocks
 
     def parse_processor_args(self, line):
-        return parse_processor_args(line)
+        args = WikiParser._processor_param_re.split(line)
+        del args[::3]
+        keys = [str(k) for k in args[::2]] # used as keyword parameters
+        values = [(v and v[0] in '"\'' and [v[1:-1]] or [v])[0]
+                  for v in args[1::2]]
+        return dict(zip(keys, values))
 
     def handle_code_block(self, line, startmatch=None):
         if startmatch:
@@ -1106,7 +1066,7 @@ class Formatter(object):
             if self.in_code_block == 1:
                 name = startmatch.group(2)
                 if name:
-                    args = parse_processor_args(line[startmatch.end():])
+                    args = self.parse_processor_args(line[startmatch.end():])
                     self.code_processor = WikiProcessor(self, name, args)
                 else:
                     self.code_processor = None
@@ -1140,7 +1100,7 @@ class Formatter(object):
             if match:
                 self.code_prefix = match.group(1)
                 name = match.group(2)
-                args = parse_processor_args(line[match.end():])
+                args = self.parse_processor_args(line[match.end():])
                 self.code_processor = WikiProcessor(self, name, args)
             else:
                 self.code_buf.append(line)
@@ -1341,15 +1301,15 @@ class OneLinerFormatter(Formatter):
     def _linebreak_wc_formatter(self, match, fullmatch):
         return ' '
 
-    def _macro_formatter(self, match, fullmatch, macro):
+    def _macro_formatter(self, match, fullmatch, macro=None):
         name = fullmatch.group('macroname')
         if name.lower() == 'br':
             return ' '
-        args = fullmatch.group('macroargs')
-        if macro.is_inline(args):
-            return Formatter._macro_formatter(self, match, fullmatch, macro)
+        elif name == 'comment':
+            return ''
         else:
-            return '[[%s%s]]' % (name, '(...)' if args else '')
+            args = fullmatch.group('macroargs')
+            return '[[%s%s]]' % (name,  args and '(...)' or '')
 
     def format(self, text, out, shorten=False):
         if not text:
@@ -1400,13 +1360,8 @@ class OutlineFormatter(Formatter):
     flavor = 'outline'
     
     # Avoid the possible side-effects of rendering WikiProcessors
-    def _macro_formatter(self, match, fullmatch, macro):
-        name = fullmatch.group('macroname')
-        if name.lower() == 'br':
-            return ' '
-        args = fullmatch.group('macroargs')
-        if macro.is_inline(args):
-            return Formatter._macro_formatter(self, match, fullmatch, macro)
+
+    def _macro_formatter(self, match, fullmatch, macro=None):
         return ''
 
     def handle_code_block(self, line, startmatch=None):
@@ -1566,32 +1521,29 @@ def wiki_to_html(wikitext, env, req, db=None,
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     Formatter(env, context).format(wikitext, out, escape_newlines)
     return Markup(out.getvalue())
 
 def wiki_to_oneliner(wikitext, env, db=None, shorten=False, absurls=False,
                      req=None):
-    """:deprecated: in favor of format_to_oneliner (will be removed in 0.13)"""
+    """deprecated in favor of format_to_oneliner (will be removed in 0.13)"""
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     OneLinerFormatter(env, context).format(wikitext, out, shorten)
     return Markup(out.getvalue())
 
 def wiki_to_outline(wikitext, env, db=None,
                     absurls=False, max_depth=None, min_depth=None, req=None):
-    """:deprecated: will be removed in 0.13 and replaced by something else"""
+    """deprecated (will be removed in 0.13 and replaced by something else)"""
     if not wikitext:
         return Markup()
     abs_ref, href = (req or env).abs_href, (req or env).href
-    from trac.web.chrome import web_context
-    context = web_context(req, absurls=absurls)
+    context = Context.from_request(req, absurls=absurls)
     out = StringIO()
     OutlineFormatter(env, context).format(wikitext, out, max_depth, min_depth)
     return Markup(out.getvalue())

@@ -35,8 +35,6 @@
 # IN THE SOFTWARE.
 # ----------------------------------------------------------------------------
 
-from __future__ import with_statement
-
 from datetime import datetime
 import re
 
@@ -48,9 +46,9 @@ from trac.perm import PermissionCache
 from trac.resource import Resource
 from trac.ticket import Ticket
 from trac.ticket.notification import TicketNotifyEmail
+from trac.util.compat import any
 from trac.util.datefmt import utc
 from trac.util.text import exception_to_unicode
-from trac.util.translation import cleandoc_
 from trac.versioncontrol import IRepositoryChangeListener, RepositoryManager
 from trac.versioncontrol.web_ui.changeset import ChangesetModule
 from trac.wiki.formatter import format_to_html
@@ -212,12 +210,14 @@ In [%s]:
         for tkt_id, cmds in tickets.iteritems():
             try:
                 self.log.debug("Updating ticket #%d", tkt_id)
-                with self.env.db_transaction as db:
-                    ticket = Ticket(self.env, tkt_id, db)
+                ticket = [None]
+                @self.env.with_transaction()
+                def do_update(db):
+                    ticket[0] = Ticket(self.env, tkt_id, db)
                     for cmd in cmds:
-                        cmd(ticket, changeset, perm(ticket.resource))
-                    ticket.save_changes(changeset.author, comment, date, db)
-                self._notify(ticket, date)
+                        cmd(ticket[0], changeset, perm(ticket[0].resource))
+                    ticket[0].save_changes(changeset.author, comment, date, db)
+                self._notify(ticket[0], date)
             except Exception, e:
                 self.log.error("Unexpected error while processing ticket "
                                "#%s: %s", tkt_id, exception_to_unicode(e))
@@ -257,8 +257,6 @@ In [%s]:
 
 
 class CommitTicketReferenceMacro(WikiMacroBase):
-    _domain = 'messages'
-    _description = cleandoc_(
     """Insert a changeset message into the output.
     
     This macro must be called using wiki processor syntax as follows:
@@ -270,7 +268,7 @@ class CommitTicketReferenceMacro(WikiMacroBase):
     where the arguments are the following:
      - `repository`: the repository containing the changeset
      - `revision`: the revision of the desired changeset
-    """)
+    """
     
     def expand_macro(self, formatter, name, content, args={}):
         reponame = args.get('repository') or ''
@@ -292,7 +290,7 @@ class CommitTicketReferenceMacro(WikiMacroBase):
                              "ticket)", class_='hint')
         if ChangesetModule(self.env).wiki_format_messages:
             return tag.div(format_to_html(self.env,
-                formatter.context.child('changeset', rev, parent=resource),
+                formatter.context('changeset', rev, parent=resource),
                 message, escape_newlines=True), class_='message')
         else:
             return tag.pre(message, class_='message')

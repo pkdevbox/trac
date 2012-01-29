@@ -30,10 +30,7 @@ class HrefTestCase(unittest.TestCase):
         self.assertEqual('/base/sub', href('/sub/'))
         self.assertEqual('/base/sub/other', href('sub', 'other'))
         self.assertEqual('/base/sub/other', href('sub', None, 'other'))
-        self.assertEqual('/base/sub/other', href('sub', '', 'other'))
-        self.assertEqual('/base/sub/other', href('sub', '', '', 'other'))
-        self.assertEqual('/base/sub/other', href('', 'sub', 'other'))
-        self.assertEqual('/base/sub/other/', href('sub', 'other', ''))
+        self.assertEqual('/base/sub//other', href('sub', '', 'other'))  # ???
         self.assertEqual('/base/with%20special%26chars',
                          href('with special&chars'))
         assert href('page', param='value', other='other value', more=None) in [
@@ -67,10 +64,7 @@ class HrefTestCase(unittest.TestCase):
         self.assertEqual('/sub', href('/sub/'))
         self.assertEqual('/sub/other', href('sub', 'other'))
         self.assertEqual('/sub/other', href('sub', None, 'other'))
-        self.assertEqual('/sub/other', href('sub', '', 'other'))
-        self.assertEqual('/sub/other', href('sub', '', '', 'other'))
-        self.assertEqual('/sub/other', href('', 'sub', 'other'))
-        self.assertEqual('/sub/other/', href('sub', 'other', ''))
+        self.assertEqual('/sub//other', href('sub', '', 'other'))       # ???
         self.assertEqual('/with%20special%26chars',
                          href('with special&chars'))
         assert href('page', param='value', other='other value', more=None) in [

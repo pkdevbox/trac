@@ -28,9 +28,10 @@
       var ${key}=${to_json(value)};
       </py:for>
     </script>
-    <py:for each="script in chrome.scripts">
-      ${script.prefix}<script type="${script.type}" charset="${script.charset}" src="${script.href}"></script>${script.suffix}
-    </py:for>
+    <script py:for="script in chrome.scripts" type="${script.type}" src="${script.href}"></script>
+    ${Markup('&lt;!--[if lt IE 7]&gt;')}
+    <script type="text/javascript" src="${chrome.htdocs_location}js/ie_pre7_hacks.js"></script>
+    ${Markup('&lt;![endif]--&gt;')}
     ${select("*[local-name() != 'title']|text()|comment()")}
   </head></py:match>
 
@@ -47,9 +48,7 @@
       var ${key}=${to_json(value)};
       </py:for>
     </script>
-    <py:for each="script in chrome.late_scripts">
-      ${script.prefix}<script type="${script.type}" charset="${script.charset}" src="${script.href}"></script>${script.suffix}
-    </py:for>
+    <script py:for="script in chrome.late_scripts" type="${script.type}" src="${script.href}"></script>
 
     <div id="altlinks" py:if="'alternate' in chrome.links">
       <h3>Download in other formats:</h3>

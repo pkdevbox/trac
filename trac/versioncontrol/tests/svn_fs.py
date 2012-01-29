@@ -27,7 +27,7 @@ from StringIO import StringIO
 try:
     from svn import core, repos
     has_svn = True
-except ImportError:
+except:
     has_svn = False
 
 from trac.test import EnvironmentStub, TestSetup

@@ -50,11 +50,6 @@ span:hover .anchor {
  visibility: visible;
 }
 
-h1:target, h2:target, h3:target, h4:target, h5:target, h6:target,
-span:target {
- background: #ffb;
-}
-
 @media screen {
  a.ext-link .icon {
   background: url(../extlink.gif) left center no-repeat;
@@ -64,7 +59,7 @@ span:target {
   background: url(../envelope.png) left center no-repeat;
   padding-left: 16px;
  }
- a.trac-rawlink, a.trac-ziplink {
+ a.trac-rawlink {
   background: url('../download.png') right center no-repeat;
   padding-right: 16px;
   border-bottom: none;
@@ -77,16 +72,11 @@ input, select { vertical-align: middle }
 input[type=button], input[type=submit], input[type=reset] {
  background: #eee;
  color: #222;
- border: 1px outset #eee;
- border-radius: .3em;
- box-shadow: .1em .1em .4em 0 #888;
- padding: .1em .5em .2em;
- text-shadow: .1em .1em #ddd;
+ border: 1px outset #ccc;
+ padding: .1em .5em;
 }
 input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
- background: #f6f6f6;
- box-shadow: .1em .1em .6em 0 #999;
- text-shadow: .1em .1em #fcfcfc;
+ background: #ccb;
 }
 input[type=button][disabled], input[type=submit][disabled],
 input[type=reset][disabled] {
@@ -100,12 +90,7 @@ input[type=text]:focus, input.textwidget:focus, textarea:focus {
  border: 1px solid #886;
 }
 option { border-bottom: 1px dotted #d7d7d7 }
-fieldset {
- border: 1px solid #d7d7d7;
- border-radius: .5em;
- padding: .5em;
- margin: 1em 0;
-}
+fieldset { border: 1px solid #d7d7d7; padding: .5em; margin: 1em 0 }
 p.hint, span.hint { color: #666; font-size: 85%; font-style: italic; margin: .5em 0;
   padding-left: 1em;
 }
@@ -117,21 +102,15 @@ fieldset.iefix {
 }
 * html fieldset.iefix { width: 98% }
 fieldset.iefix p { margin: 0 }
-legend {
- color: #999;
- margin-left: .6em;
- padding: 0 .25em;
- font-size: 90%;
- font-weight: bold;
-}
+legend { color: #999; padding: 0 .25em; font-size: 90%; font-weight: bold }
 label.disabled { color: #d7d7d7 }
 .buttons { margin: .5em .5em .5em 0 }
 .buttons form, .buttons form div { display: inline }
 .buttons input { margin: 1em .5em .1em 0 }
 .inlinebuttons input { 
  font-size: 70%;
- border: 1px dotted #ccc;
- box-shadow: none;
+ border-width: 1px;
+ border-style: dotted;
  margin: 0 .1em;
  padding: 0.1em;
  background: none;
@@ -320,9 +299,7 @@ fieldset > legend.foldable :link, fieldset > legend.foldable :visited {
 /* Page preferences form */
 #prefs {
  background: #f7f7f0;
- border: 1px outset #eee;
- border-radius: 1em;
- box-shadow: .2em .2em .7em 0 #777;
+ border: 1px outset #998;
  float: right;
  font-size: 9px;
  padding: .8em;
@@ -358,7 +335,7 @@ fieldset > legend.foldable :link, fieldset > legend.foldable :visited {
  width: 100%;
 }
 #info th, #info td { font-size: 85%; padding: 2px .5em; vertical-align: top }
-#info th { font-weight: bold; text-align: left }
+#info th { font-weight: bold; text-align: left; white-space: nowrap }
 #info td.message { width: 100% }
 #info .message ul { padding: 0; margin: 0 2em }
 #info .message p { margin: 0; padding: 0 }
@@ -474,23 +451,10 @@ div.trac-grip {
 .attachment #preview { margin-top: 1em }
 
 /* Styles for the list of attachments. */
-#attachments > div.attachments {
- border: 1px outset #996;
- border-radius: .5em;
- padding: 1em;
-}
-#attachments dl.attachments { margin-left: 2em; padding: 0 }
+#attachments > div { border: 1px outset #996; padding: 1em }
+#attachments .attachments { margin-left: 2em; padding: 0 }
 #attachments dt { display: list-item; list-style: square; }
 #attachments dd { font-style: italic; margin-left: 0; padding-left: 0; }
-#attachments p {
- margin-left: 2em;
- font-size: 90%;
- color: #666;
-}
-#attachments > div.attachments > p {
- float: right;
- margin: .4em 0;
-}
 
 /* Styles for tabular listings such as those used for displaying directory
    contents and report results. */
@@ -564,7 +528,7 @@ table.listing tbody tr.focus { background: #ddf !important }
 .suggestions li { background: #fff; cursor: pointer; padding: 2px 5px }
 .suggestions li.selected { background: #b9b9b9 }
 
-/* Styles for the error page */
+/* Styles for the error page (and rst errors) */
 #content.error .message, div.system-message {
  background: #fdc;
  border: 2px solid #d00;
@@ -580,23 +544,12 @@ table.listing tbody tr.focus { background: #ddf !important }
 div.system-message p { margin: 0; }
 div.system-message p.system-message-title { font-weight: bold; }
 
-/* rst errors are less emphasized */
-span.system-message {
- float: left;
- background: #fdc;
- padding: 0.2em;
- margin: 1px;
- border-radius: 0.25em;
-}
-
-/* whole-page admonitions in theme.html */
 #warning.system-message, .warning.system-message { background: #ffb; border: 1px solid #000; }
 #warning.system-message li { list-style-type: square; }
 
 #notice.system-message, .notice.system-message { background: #dfd; border: 1px solid #000; }
 #notice.system-message li { list-style-type: square; }
 
-/* error.html page */
 #content.error form.newticket { display: inline; }
 #content.error form.newticket textarea { display: none; }
 
@@ -678,6 +631,4 @@ span.system-message {
    display: none;
  }
  form.printableform { display: block }
- div.code pre { white-space: pre-wrap }
- :link, :visited { border-bottom: none }
 }

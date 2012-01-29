@@ -37,7 +37,6 @@ def execute(hdf, txt, env):
 from trac.wiki.macros import WikiMacroBase
 
 class HelloWorldMacro(WikiMacroBase):
-    _description = cleandoc_(
     """Simple HelloWorld macro.
 
     Note that the name of the class is meaningful:
@@ -47,7 +46,7 @@ class HelloWorldMacro(WikiMacroBase):
     The documentation of the class (i.e. what you're reading)
     will become the documentation of the macro, as shown by
     the !MacroList macro (usually used in the TracWikiMacros page).
-    """)
+    """
 
     def expand_macro(self, formatter, name, args):
         """Return some output that will be displayed in the Wiki content.

@@ -16,12 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import re
-
 from trac.util.text import unicode_quote, unicode_urlencode
-
-
-slashes_re = re.compile(r'/{2,}')
 
 
 class Href(object):
@@ -124,10 +119,9 @@ class Href(object):
     >>> href.browser('/trunk/README.txt', format='txt')
     '/trac/browser/trunk/README.txt?format=txt'
     
-    The ``path_safe`` argument specifies the characters that don't
-    need to be quoted in the path arguments. Likewise, the
-    ``query_safe`` argument specifies the characters that don't need
-    to be quoted in the query string:
+    The path_safe argument specifies the characters that don't need to be
+    quoted in the path arguments. Likewise, the query_safe argument specifies
+    the characters that don't need to be quoted in the query string:
 
     >>> href = Href('')
     >>> href.milestone('<look,here>', param='<here,too>')
@@ -170,13 +164,13 @@ class Href(object):
         path = '/'.join(unicode_quote(unicode(arg).strip('/'), self.path_safe)
                         for arg in args if arg is not None)
         if path:
-            href += '/' + slashes_re.sub('/', path).lstrip('/')
+            href += '/' + path
         elif not href:
             href = '/'
 
         # assemble the query string
         for k, v in kw.items():
-            add_param(k[:-1] if k.endswith('_') else k, v)
+            add_param(k.endswith('_') and k[:-1] or k, v)
         if params:
             href += '?' + unicode_urlencode(params, self.query_safe)
 

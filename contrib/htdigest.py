@@ -17,11 +17,15 @@
 
 import errno
 import fileinput
-from getpass import getpass
-from hashlib import md5
-from optparse import OptionParser
 import sys
+from optparse import OptionParser
+from getpass import getpass
 
+# The md5 module is deprecated in Python 2.5
+try:
+    from hashlib import md5
+except ImportError:
+    from md5 import md5
 
 def ask_pass():
     pass1 = getpass('New password: ')

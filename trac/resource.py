@@ -53,7 +53,7 @@ class IResourceManager(Interface):
                        `'default'`, `'compact'` or `'summary'`.
         :param context: an optional rendering context to allow rendering rich
                         output (like markup containing links)
-        :type context: `ResourceContext`
+        :type context: `Context`
 
         Additional keyword arguments can be given as extra information for
         some formats. 
@@ -203,7 +203,7 @@ class Resource(object):
         Optional keyword arguments can be given to override `id` and
         `version`.
         """
-        return Resource(self if realm is False else realm, id, version, parent)
+        return Resource(realm is False and self or realm, id, version, parent)
 
     # -- methods for retrieving children Resource identifiers
     
@@ -354,14 +354,14 @@ def get_relative_resource(resource, path=''):
     if path in (None, '', '.'):
         return resource
     else:
-        base = unicode(resource.id if path[0] != '/' else '').split('/')
+        base = unicode(path[0] != '/' and resource.id or '').split('/')
         for comp in path.split('/'):
             if comp == '..':
                 if base:
                     base.pop()
             elif comp and comp != '.':
                 base.append(comp)
-        return resource(id='/'.join(base) if base else None)
+        return resource(id=base and '/'.join(base) or None)
 
 def get_relative_url(env, resource, href, path='', **kwargs):
     """Build an URL relative to a resource given as reference.

@@ -14,18 +14,10 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import with_statement
-
-from functools import partial
 import os
 import pkg_resources
 import re
 import shutil
-
-try:
-    from babel.core import Locale
-except ImportError:
-    Locale = None
 
 from genshi import HTML
 from genshi.builder import tag
@@ -34,10 +26,10 @@ from trac.admin.api import IAdminPanelProvider
 from trac.core import *
 from trac.loader import get_plugin_info, get_plugins_dir
 from trac.perm import PermissionSystem, IPermissionRequestor
-from trac.util.datefmt import all_timezones
+from trac.util.compat import partial
 from trac.util.text import exception_to_unicode, \
                             unicode_to_base64, unicode_from_base64
-from trac.util.translation import _, get_available_locales, ngettext
+from trac.util.translation import _, ngettext
 from trac.web import HTTPNotFound, IRequestHandler
 from trac.web.chrome import add_notice, add_stylesheet, \
                             add_warning, Chrome, INavigationContributor, \
@@ -128,9 +120,12 @@ class AdminModule(Component):
             data = {}
             cstmpl, ct = provider.process_admin_request(req, cat_id, panel_id,
                                                         path_info)
-            output = cstmpl.render()
+            if isinstance(cstmpl, basestring):
+                output = req.hdf.render(cstmpl)
+            else:
+                output = cstmpl.render()
 
-            title = _("Untitled")
+            title = 'Untitled'
             for panel in panels:
                 if (panel[0], panel[2]) == (cat_id, panel_id):
                     title = panel[3]
@@ -212,49 +207,19 @@ class BasicsAdminPanel(Component):
     def render_admin_panel(self, req, cat, page, path_info):
         req.perm.require('TRAC_ADMIN')
 
-        if Locale:
-            locales = [Locale.parse(locale)
-                       for locale in  get_available_locales()]
-            languages = sorted((str(locale), locale.display_name)
-                               for locale in locales)
-        else:
-            locales, languages = [], []
-
         if req.method == 'POST':
             for option in ('name', 'url', 'descr'):
                 self.config.set('project', option, req.args.get(option))
-
-            default_timezone = req.args.get('default_timezone')
-            if default_timezone not in all_timezones:
-                default_timezone = ''
-            self.config.set('trac', 'default_timezone', default_timezone)
-
-            default_language = req.args.get('default_language')
-            if default_language not in locales:
-                default_language = ''
-            self.config.set('trac', 'default_language', default_language)
-
-            default_date_format = req.args.get('default_date_format')
-            if default_date_format != 'iso8601':
-                default_date_format = ''
-            self.config.set('trac', 'default_date_format', default_date_format)
-
             _save_config(self.config, req, self.log)
             req.redirect(req.href.admin(cat, page))
 
-        default_timezone = self.config.get('trac', 'default_timezone')
-        default_language = self.config.get('trac', 'default_language')
-        default_date_format = self.config.get('trac', 'default_date_format')
-
         data = {
-            'default_timezone': default_timezone,
-            'timezones': all_timezones,
-            'default_language': default_language.replace('-', '_'),
-            'languages': languages,
-            'default_date_format': default_date_format,
+            'name': self.env.project_name,
+            'description': self.env.project_description,
+            'url': self.env.project_url
         }
         Chrome(self.env).add_textarea_grips(req)
-        return 'admin_basics.html', data
+        return 'admin_basics.html', {'project': data}
 
 
 class LoggingAdminPanel(Component):
@@ -412,7 +377,7 @@ class PermissionAdminPanel(Component):
             elif req.args.get('remove') and req.args.get('sel'):
                 req.perm.require('PERMISSION_REVOKE')
                 sel = req.args.get('sel')
-                sel = sel if isinstance(sel, list) else [sel]
+                sel = isinstance(sel, list) and sel or [sel]
                 for key in sel:
                     subject, action = key.split(':', 1)
                     subject = unicode_from_base64(subject)
@@ -487,10 +452,14 @@ class PluginAdminPanel(Component):
         except AttributeError:
             # OS_BINARY not available on every platform
             pass
-        with os.fdopen(os.open(target_path, flags, 0666), 'w') as target_file:
+        target_file = os.fdopen(os.open(target_path, flags, 0666), 'w')
+        try:
             shutil.copyfileobj(upload.file, target_file)
             self.log.info('Plugin %s installed to %s', plugin_filename,
                           target_path)
+        finally:
+            target_file.close()
+
         # TODO: Validate that the uploaded file is actually a valid Trac plugin
 
         # Make the environment reset itself on the next request
@@ -524,9 +493,9 @@ class PluginAdminPanel(Component):
             must_enable = component in enabled
             if is_enabled != must_enable:
                 self.config.set('components', component,
-                                'disabled' if is_enabled else 'enabled')
+                                is_enabled and 'disabled' or 'enabled')
                 self.log.info('%sabling component %s',
-                              'Dis' if is_enabled else 'En', component)
+                              is_enabled and 'Dis' or 'En', component)
                 if must_enable:
                     added.append(component)
                 else:

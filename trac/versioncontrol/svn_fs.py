@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2011 Edgewall Software
+# Copyright (C) 2005-2009 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2005-2007 Christian Boos <cboos@neuf.fr>
 # All rights reserved.
@@ -16,35 +16,31 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Christian Boos <cboos@neuf.fr>
 
-"""
+"""Filesystem access to Subversion repositories.
 
-Note about Unicode
-------------------
+'''Note about Unicode:'''
 
 The Subversion bindings are not unicode-aware and they expect to
 receive UTF-8 encoded `string` parameters,
 
-On the other hand, all paths manipulated by Trac are `unicode`
-objects.
+On the other hand, all paths manipulated by Trac are `unicode` objects.
 
 Therefore:
 
- * before being handed out to SVN, the Trac paths have to be encoded
-   to UTF-8, using `_to_svn()`
-
+ * before being handed out to SVN, the Trac paths have to be encoded to
+   UTF-8, using `_to_svn()`
  * before being handed out to Trac, a SVN path has to be decoded from
    UTF-8, using `_from_svn()`
 
 Whenever a value has to be stored as utf8, we explicitly mark the
 variable name with "_utf8", in order to avoid any possible confusion.
 
-Warning: 
-  `SubversionNode.get_content()` returns an object from which one can
-  read a stream of bytes. NO guarantees can be given about what that
-  stream of bytes represents. It might be some text, encoded in some
-  way or another.  SVN properties *might* give some hints about the
-  content, but they actually only reflect the beliefs of whomever set
-  those properties...
+Warning:
+  `SubversionNode.get_content()` returns an object from which one can read
+  a stream of bytes. NO guarantees can be given about what that stream of
+  bytes represents. It might be some text, encoded in some way or another.
+  SVN properties __might__ give some hints about the content, but they
+  actually only reflect the beliefs of whomever set those properties...
 """
 
 import os.path
@@ -117,7 +113,7 @@ def _is_path_within_scope(scope, fullpath):
     """Check whether the given `fullpath` is within the given `scope`"""
     if scope == '/':
         return fullpath is not None
-    fullpath = fullpath.lstrip('/') if fullpath else ''
+    fullpath = fullpath and fullpath.lstrip('/') or ''
     scope = scope.strip('/')
     return (fullpath + '/').startswith(scope + '/')
 
@@ -237,8 +233,6 @@ class SvnCachedRepository(CachedRepository):
     """Subversion-specific cached repository, zero-pads revision numbers
     in the cache tables.
     """
-    has_linear_changesets = True
-
     def db_rev(self, rev):
         return '%010d' % rev
 
@@ -250,7 +244,7 @@ class SubversionConnector(Component):
 
     implements(ISystemInfoProvider, IRepositoryConnector)
 
-    branches = ListOption('svn', 'branches', 'trunk, branches/*', doc=
+    branches = ListOption('svn', 'branches', 'trunk,branches/*', doc=
         """Comma separated list of paths categorized as branches.
         If a path ends with '*', then all the directory entries found below 
         that path will be included. 
@@ -296,9 +290,9 @@ class SubversionConnector(Component):
         prio = 1
         if self.error:
             prio = -1
-        yield ("direct-svnfs", prio * 4)
-        yield ("svnfs", prio * 4)
-        yield ("svn", prio * 2)
+        yield ("direct-svnfs", prio*4)
+        yield ("svnfs", prio*4)
+        yield ("svn", prio*2)
 
     def get_repository(self, type, dir, params):
         """Return a `SubversionRepository`.
@@ -307,16 +301,17 @@ class SubversionConnector(Component):
         'direct-svnfs'.
         """
         params.update(tags=self.tags, branches=self.branches)
-        repos = SubversionRepository(dir, params, self.log)
-        if type != 'direct-svnfs':
-            repos = SvnCachedRepository(self.env, repos, self.log)
+        fs_repos = SubversionRepository(dir, params, self.log)
+        if type == 'direct-svnfs':
+            repos = fs_repos
+        else:
+            repos = SvnCachedRepository(self.env, fs_repos, self.log)
+            repos.has_linear_changesets = True
         return repos
 
 
 class SubversionRepository(Repository):
     """Repository implementation based on the svn.fs API."""
-
-    has_linear_changesets = True
 
     def __init__(self, path, params, log):
         self.log = log
@@ -360,12 +355,11 @@ class SubversionRepository(Repository):
             self.scope = '/'
         assert self.scope[0] == '/'
         # we keep root_path_utf8 for  RA 
-        ra_prefix = 'file:///' if os.name == 'nt' else 'file://'
+        ra_prefix = os.name == 'nt' and 'file:///' or 'file://'
         self.ra_url_utf8 = ra_prefix + root_path_utf8
         self.clear()
 
     def clear(self, youngest_rev=None):
-        """Reset notion of `youngest` and `oldest`"""
         self.youngest = None
         if youngest_rev is not None:
             self.youngest = self.normalize_rev(youngest_rev)
@@ -375,7 +369,6 @@ class SubversionRepository(Repository):
         self.close()
 
     def has_node(self, path, rev=None, pool=None):
-        """Check if `path` exists at `rev` (or latest if unspecified)"""
         if not pool:
             pool = self.pool
         rev = self.normalize_rev(rev)
@@ -385,15 +378,9 @@ class SubversionRepository(Repository):
         return node_type in _kindmap
 
     def normalize_path(self, path):
-        """Take any path specification and produce a path suitable for 
-        the rest of the API
-        """
         return _normalize_path(path)
 
     def normalize_rev(self, rev):
-        """Take any revision specification and produce a revision suitable
-        for the rest of the API
-        """
         if rev is None or isinstance(rev, basestring) and \
                rev.lower() in ('', 'head', 'latest', 'youngest'):
             return self.youngest_rev
@@ -407,18 +394,11 @@ class SubversionRepository(Repository):
             raise NoSuchChangeset(rev)
 
     def close(self):
-        """Dispose of low-level resources associated to this repository."""
         if self.pool:
             self.pool.destroy()
         self.repos = self.fs_ptr = self.pool = None
 
     def get_base(self):
-        """Retrieve the base path corresponding to the Subversion
-        repository itself. 
-
-        This is the same as the `.path` property minus the
-        intra-repository scope, if one was specified.
-        """
         return self.base
         
     def _get_tags_or_branches(self, paths):
@@ -432,12 +412,12 @@ class SubversionRepository(Repository):
                                        embedded_numbers(n.path.lower())):
                         if node.kind == Node.DIRECTORY:
                             yield node
-                except Exception: # no right (TODO: use a specific Exception)
+                except: # no right (TODO: should use a specific Exception here)
                     pass
             else:
                 try:
                     yield self.get_node(path)
-                except Exception: # no right
+                except: # no right
                     pass
 
     def get_quickjump_entries(self, rev):
@@ -451,9 +431,6 @@ class SubversionRepository(Repository):
             yield 'tags', n.path, n.created_path, n.created_rev
 
     def get_path_url(self, path, rev):
-        """Retrieve the "native" URL from which this repository is reachable
-        from Subversion clients.
-        """
         url = self.params.get('url', '').rstrip('/')
         if url:
             if not path or path == '/':
@@ -461,23 +438,19 @@ class SubversionRepository(Repository):
             return url + '/' + path.lstrip('/')
     
     def get_changeset(self, rev):
-        """Produce a `SubversionChangeset` from given revision
-        specification"""
         rev = self.normalize_rev(rev)
         return SubversionChangeset(self, rev, self.scope, self.pool)
 
     def get_changeset_uid(self, rev):
-        """Build a value identifying the `rev` in this repository."""
         return (self.uuid, rev)
 
     def get_node(self, path, rev=None):
-        """Produce a `SubversionNode` from given path and optionally revision
-        specifications. No revision given means use the latest.
-        """
         path = path or ''
         if path and path[-1] == '/':
             path = path[:-1]
+
         rev = self.normalize_rev(rev) or self.youngest_rev
+
         return SubversionNode(path, rev, self, self.pool)
 
     def _get_node_revs(self, path, last=None, first=None):
@@ -497,9 +470,8 @@ class SubversionRepository(Repository):
         """`path` is a unicode path in the scope.
 
         Generator yielding `(path, rev)` pairs, where `path` is an `unicode`
-        object. Must start with `(path, created rev)`.
-
-        (wraps ``fs.node_history``)
+        object.
+        Must start with `(path, created rev)`.
         """
         path_utf8 = _to_svn(pool(), self.scope, path)
         if start < end:
@@ -536,7 +508,6 @@ class SubversionRepository(Repository):
     
 
     def get_oldest_rev(self):
-        """Gives an approximation of the oldest revision."""
         if self.oldest is None:
             self.oldest = 1
             # trying to figure out the oldest rev for scoped repository
@@ -546,10 +517,6 @@ class SubversionRepository(Repository):
         return self.oldest
 
     def get_youngest_rev(self):
-        """Retrieve the latest revision in the repository.
-
-        (wraps ``fs.youngest_rev``)
-        """
         if not self.youngest:
             self.youngest = fs.youngest_rev(self.fs_ptr, self.pool())
             if self.scope != '/':
@@ -559,17 +526,10 @@ class SubversionRepository(Repository):
         return self.youngest
 
     def previous_rev(self, rev, path=''):
-        """Return revision immediately preceeding `rev`, eventually below 
-        given `path` or globally.
-        """
-        # FIXME optimize for non-scoped
         rev = self.normalize_rev(rev)
         return self._previous_rev(rev, path)
 
     def next_rev(self, rev, path='', find_initial_rev=False):
-        """Return revision immediately following `rev`, eventually below 
-        given `path` or globally.
-        """
         rev = self.normalize_rev(rev)
         next = rev + 1
         youngest = self.youngest_rev
@@ -586,13 +546,22 @@ class SubversionRepository(Repository):
         return None
 
     def rev_older_than(self, rev1, rev2):
-        """Check relative order between two revision specifications."""
         return self.normalize_rev(rev1) < self.normalize_rev(rev2)
 
-    def get_path_history(self, path, rev=None, limit=None):
-        """Retrieve creation and deletion events that happened on
-        given `path`.
+    def get_youngest_rev_in_cache(self, db):
+        """Get the latest stored revision by sorting the revision strings
+        numerically
+
+        (deprecated, only used for transparent migration to the new caching
+        scheme).
         """
+        cursor = db.cursor()
+        cursor.execute("SELECT rev FROM revision "
+                       "ORDER BY -LENGTH(rev), rev DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row and row[0] or None
+
+    def get_path_history(self, path, rev=None, limit=None):
         path = self.normalize_path(path)
         rev = self.normalize_rev(rev)
         expect_deletion = False
@@ -635,11 +604,6 @@ class SubversionRepository(Repository):
 
     def get_changes(self, old_path, old_rev, new_path, new_rev,
                     ignore_ancestry=0):
-        """Determine differences between two arbitrary pairs of paths
-        and revisions.
-
-        (wraps ``repos.svn_repos_dir_delta``)
-        """
         old_node = new_node = None
         old_rev = self.normalize_rev(old_rev)
         new_rev = self.normalize_rev(new_rev)
@@ -742,21 +706,16 @@ class SubversionNode(Node):
         Node.__init__(self, repos, path, rev, _kindmap[node_type])
 
     def get_content(self):
-        """Retrieve raw content as a "read()"able object."""
         if self.isdir:
             return None
         s = core.Stream(fs.file_contents(self.root, self._scoped_path_utf8,
                                          self.pool()))
-        # The stream object needs to reference the pool to make sure the pool
-        # is not destroyed before the former.
+        # Make sure the stream object references the pool to make sure the pool
+        # is not destroyed before the stream object.
         s._pool = self.pool
         return s
 
     def get_entries(self):
-        """Yield `SubversionNode` corresponding to entries in this directory.
-
-        (wraps ``fs.dir_entries``)
-        """
         if self.isfile:
             return
         pool = Pool(self.pool)
@@ -767,7 +726,6 @@ class SubversionNode(Node):
                                  self.root)
 
     def get_history(self, limit=None):
-        """Yield change events that happened on this path"""
         newer = None # 'newer' is the previously seen history tuple
         older = None # 'older' is the currently examined history tuple
         pool = Pool(self.pool)
@@ -791,9 +749,6 @@ class SubversionNode(Node):
             yield newer
 
     def get_annotations(self):
-        """Return a list the last changed revision for each line.
-        (wraps ``client.blame2``)
-        """
         annotations = []
         if self.isfile:
             def blame_receiver(line_no, revision, author, date, line, pool):
@@ -818,10 +773,6 @@ class SubversionNode(Node):
 #        # FIXME: redo it with fs.node_history
 
     def get_properties(self):
-        """Return `dict` of node properties at current revision.
-
-        (wraps ``fs.node_proplist``)
-        """
         props = fs.node_proplist(self.root, self._scoped_path_utf8, self.pool())
         for name, value in props.items():
             # Note that property values can be arbitrary binary values
@@ -830,28 +781,16 @@ class SubversionNode(Node):
         return props
 
     def get_content_length(self):
-        """Retrieve byte size of a file.
-
-        Return `None` for a folder. (wraps ``fs.file_length``)
-        """
         if self.isdir:
             return None
         return fs.file_length(self.root, self._scoped_path_utf8, self.pool())
 
     def get_content_type(self):
-        """Retrieve mime-type property of a file.
-
-        Return `None` for a folder. (wraps ``fs.revision_prop``)
-        """
         if self.isdir:
             return None
         return self._get_prop(core.SVN_PROP_MIME_TYPE)
 
     def get_last_modified(self):
-        """Retrieve timestamp of last modification, in micro-seconds.
-
-        (wraps ``fs.revision_prop``)
-        """
         _date = fs.revision_prop(self.fs_ptr, self.created_rev,
                                  core.SVN_PROP_REVISION_DATE, self.pool())
         if not _date:
@@ -863,10 +802,7 @@ class SubversionNode(Node):
                             self.pool())
 
     def get_branch_origin(self):
-        """Return the revision in which the node's path was created.
-
-        (wraps ``fs.revision_root_revision(fs.closest_copy)``)
-        """
+        """Return the revision in which the node's path was created"""
         root_and_path = fs.closest_copy(self.root, self._scoped_path_utf8)
         if root_and_path:
             return fs.revision_root_revision(root_and_path[0])
@@ -930,9 +866,6 @@ class SubversionChangeset(Changeset):
         Changeset.__init__(self, repos, rev, message, author, date)
 
     def get_properties(self):
-        """Retrieve `dict` of Subversion properties for this revision
-        (revprops)
-        """
         props = fs.revision_proplist(self.fs_ptr, self.rev, self.pool())
         properties = {}
         for k, v in props.iteritems():
@@ -945,10 +878,6 @@ class SubversionChangeset(Changeset):
         return properties
 
     def get_changes(self):
-        """Retrieve file changes for a given revision.
-
-        (wraps ``repos.svn_repos_replay``)
-        """
         pool = Pool(self.pool)
         tmp = Pool(pool)
         root = fs.revision_root(self.fs_ptr, self.rev, pool())
