@@ -22,6 +22,7 @@ from trac.config import Option, PathOption
 from trac.core import *
 from trac.perm import IPermissionPolicy
 from trac.util import read_file
+from trac.util.compat import any
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
 from trac.versioncontrol.api import RepositoryManager
@@ -62,7 +63,7 @@ def parse(authz, modules):
     for line in authz.splitlines():
         lineno += 1
         line = to_unicode(line.strip())
-        if not line or line.startswith(('#', ';')):
+        if not line or line.startswith('#') or line.startswith(';'):
             continue
         if line.startswith('[') and line.endswith(']'):
             section = line[1:-1]
@@ -83,7 +84,7 @@ def parse(authz, modules):
             aliases[name] = value.strip()
         else:
             parts = section.split(':', 1)
-            module, path = parts[0] if len(parts) > 1 else '', parts[-1]
+            module, path = len(parts) > 1 and parts[0] or '', parts[-1]
             if module in modules:
                 sections.setdefault((module, path), []).append((name, value))
 
@@ -149,7 +150,7 @@ class AuthzSourcePolicy(Component):
     # IPermissionPolicy methods
 
     def check_permission(self, action, username, resource, perm):
-        realm = resource.realm if resource else None
+        realm = resource and resource.realm or None
         if (realm, action) in self._handled_perms:
             authz, users = self._get_authz_info()
             if authz is None:
@@ -160,7 +161,7 @@ class AuthzSourcePolicy(Component):
             else:
                 usernames = (username, '$authenticated', '*')
             if resource is None:
-                return True if users & set(usernames) else None
+                return users & set(usernames) and True or None
 
             rm = RepositoryManager(self.env)
             try:

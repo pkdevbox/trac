@@ -12,8 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 from ConfigParser import ConfigParser
 from copy import deepcopy
 import os.path
@@ -21,14 +19,13 @@ import os.path
 from trac.admin import AdminCommandError, IAdminCommandProvider
 from trac.core import *
 from trac.util import AtomicFile, as_bool
-from trac.util.compat import cleandoc
+from trac.util.compat import any
 from trac.util.text import printout, to_unicode, CRLF
 from trac.util.translation import _, N_
 
-__all__ = ['Configuration', 'ConfigSection', 'Option', 'BoolOption',
-           'IntOption', 'FloatOption', 'ListOption', 'ChoiceOption',
-           'PathOption', 'ExtensionOption', 'OrderedExtensionsOption',
-           'ConfigurationError']
+__all__ = ['Configuration', 'Option', 'BoolOption', 'IntOption', 'FloatOption',
+           'ListOption', 'ChoiceOption', 'PathOption', 'ExtensionOption',
+           'OrderedExtensionsOption', 'ConfigurationError']
 
 # Retained for backward-compatibility, use as_bool() instead
 _TRUE_VALUES = ('yes', 'true', 'enabled', 'on', 'aye', '1', 1, True)
@@ -51,7 +48,7 @@ class Configuration(object):
     the last modification time of the configuration file, and reparses it
     when the file has changed.
     """
-    def __init__(self, filename, params={}):
+    def __init__(self, filename):
         self.filename = filename
         self.parser = ConfigParser()
         self._old_sections = {}
@@ -234,7 +231,8 @@ class Configuration(object):
 
         # At this point, all the strings in `sections` are UTF-8 encoded `str`
         try:
-            with AtomicFile(self.filename, 'w') as fileobj:
+            fileobj = AtomicFile(self.filename, 'w')
+            try:
                 fileobj.write('# -*- coding: utf-8 -*-\n\n')
                 for section, options in sections:
                     fileobj.write('[%s]\n' % section)
@@ -246,6 +244,8 @@ class Configuration(object):
                                              .replace('\n', '\n ')
                             fileobj.write('%s = %s\n' % (key_str, val_str))
                     fileobj.write('\n')
+            finally:
+                fileobj.close()
             self._old_sections = deepcopy(self.parser._sections)
         except Exception:
             # Revert all changes to avoid inconsistencies
@@ -356,7 +356,7 @@ class Section(object):
     __iter__ = iterate
     
     def __repr__(self):
-        return '<%s [%s]>' % (self.__class__.__name__, self.name)
+        return '<Section [%s]>' % (self.name)
 
     def get(self, key, default=''):
         """Return the value of the specified option.
@@ -378,7 +378,7 @@ class Section(object):
             else:
                 if default is not _use_default:
                     option = Option.registry.get((self.name, key))
-                    value = option.default if option else _use_default
+                    value = option and option.default or _use_default
                 else:
                     value = _use_default
         if value is _use_default:
@@ -509,62 +509,8 @@ class Section(object):
             self.config.parser.remove_option(_to_utf8(self.name), _to_utf8(key))
 
 
-def _get_registry(cls, compmgr=None):
-    """Return the descriptor registry.
-    
-    If `compmgr` is specified, only return descriptors for components that
-    are enabled in the given `ComponentManager`.
-    """
-    if compmgr is None:
-        return cls.registry
-
-    from trac.core import ComponentMeta
-    components = {}
-    for comp in ComponentMeta._components:
-        for attr in comp.__dict__.itervalues():
-            if isinstance(attr, cls):
-                components[attr] = comp
-
-    return dict(each for each in cls.registry.iteritems()
-                if each[1] not in components
-                   or compmgr.is_enabled(components[each[1]]))
-
-
-class ConfigSection(object):
-    """Descriptor for configuration sections."""
-    
-    registry = {}
-    
-    @staticmethod
-    def get_registry(compmgr=None):
-        """Return the section registry, as a `dict` mapping section names to
-        `ConfigSection` objects.
-        
-        If `compmgr` is specified, only return sections for components that are
-        enabled in the given `ComponentManager`.
-        """
-        return _get_registry(ConfigSection, compmgr)
-
-    def __init__(self, name, doc, doc_domain='tracini'):
-        """Create the configuration section."""
-        self.name = name
-        self.registry[self.name] = self
-        self.__doc__ = cleandoc(doc)
-        self.doc_domain = doc_domain
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        config = getattr(instance, 'config', None)
-        if config and isinstance(config, Configuration):
-            return config[self.name]
-
-    def __repr__(self):
-        return '<%s [%s]>' % (self.__class__.__name__, self.name)
-
-
 class Option(object):
-    """Descriptor for configuration options."""
+    """Descriptor for configuration options on `Configurable` subclasses."""
 
     registry = {}
     accessor = Section.get
@@ -577,10 +523,21 @@ class Option(object):
         If `compmgr` is specified, only return options for components that are
         enabled in the given `ComponentManager`.
         """
-        return _get_registry(Option, compmgr)
-
-    def __init__(self, section, name, default=None, doc='',
-                 doc_domain='tracini'):
+        if compmgr is None:
+            return Option.registry
+        
+        from trac.core import ComponentMeta
+        components = {}
+        for cls in ComponentMeta._components:
+            for attr in cls.__dict__.itervalues():
+                if isinstance(attr, Option):
+                    components[attr] = cls
+        
+        return dict(each for each in Option.registry.items()
+                    if each[1] not in components
+                       or compmgr.is_enabled(components[each[1]]))
+    
+    def __init__(self, section, name, default=None, doc=''):
         """Create the configuration option.
         
         @param section: the name of the configuration section this option
@@ -593,8 +550,7 @@ class Option(object):
         self.name = name
         self.default = default
         self.registry[(self.section, self.name)] = self
-        self.__doc__ = cleandoc(doc)
-        self.doc_domain = doc_domain
+        self.__doc__ = doc
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -604,6 +560,7 @@ class Option(object):
             section = config[self.section]
             value = self.accessor(section, self.name, self.default)
             return value
+        return None
 
     def __set__(self, instance, value):
         raise AttributeError, 'can\'t set attribute'
@@ -634,8 +591,8 @@ class ListOption(Option):
     """
 
     def __init__(self, section, name, default=None, sep=',', keep_empty=False,
-                 doc='', doc_domain='tracini'):
-        Option.__init__(self, section, name, default, doc, doc_domain)
+                 doc=''):
+        Option.__init__(self, section, name, default, doc)
         self.sep = sep
         self.keep_empty = keep_empty
 
@@ -650,9 +607,8 @@ class ChoiceOption(Option):
     The default value is the first choice in the list.
     """
     
-    def __init__(self, section, name, choices, doc='', doc_domain='tracini'):
-        Option.__init__(self, section, name, _to_utf8(choices[0]), doc,
-                        doc_domain)
+    def __init__(self, section, name, choices, doc=''):
+        Option.__init__(self, section, name, _to_utf8(choices[0]), doc)
         self.choices = set(_to_utf8(choice).strip() for choice in choices)
 
     def accessor(self, section, name, default):
@@ -674,9 +630,8 @@ class PathOption(Option):
 
 class ExtensionOption(Option):
 
-    def __init__(self, section, name, interface, default=None, doc='',
-                 doc_domain='tracini'):
-        Option.__init__(self, section, name, default, doc, doc_domain)
+    def __init__(self, section, name, interface, default=None, doc=''):
+        Option.__init__(self, section, name, default, doc)
         self.xtnpt = ExtensionPoint(interface)
 
     def __get__(self, instance, owner):
@@ -701,9 +656,8 @@ class OrderedExtensionsOption(ListOption):
     interface are returned, with those specified by the option ordered first."""
 
     def __init__(self, section, name, interface, default=None,
-                 include_missing=True, doc='', doc_domain='tracini'):
-        ListOption.__init__(self, section, name, default, doc=doc,
-                            doc_domain=doc_domain)
+                 include_missing=True, doc=''):
+        ListOption.__init__(self, section, name, default, doc=doc)
         self.xtnpt = ExtensionPoint(interface)
         self.include_missing = include_missing
 

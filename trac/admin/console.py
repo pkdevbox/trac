@@ -12,8 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import cmd
 import locale
 import os.path
@@ -32,8 +30,7 @@ from trac.util import translation
 from trac.util.html import html
 from trac.util.text import console_print, exception_to_unicode, printout, \
                            printerr, raw_input, to_unicode
-from trac.util.translation import _, get_negotiated_locale, has_babel, \
-                                  cleandoc_
+from trac.util.translation import _, get_negotiated_locale, has_babel
 from trac.versioncontrol.api import RepositoryManager
 from trac.wiki.admin import WikiAdmin
 from trac.wiki.macros import WikiMacroBase
@@ -47,8 +44,11 @@ def find_readline_lib():
     linked to the readline module.
     """
     import readline
-    with open(readline.__file__, "rb") as f:
+    f = open(readline.__file__, "rb")
+    try:
         data = f.read()
+    finally:
+        f.close()
     import re
     m = re.search('\0([^\0]*libreadline[^\0]*)\0', data)
     if m:
@@ -149,7 +149,7 @@ Type:  '?' or 'help' for help on commands.
         if not self.__env:
             try:
                 self._init_env()
-            except Exception:
+            except:
                 return False
         return True
 
@@ -313,7 +313,7 @@ Type:  '?' or 'help' for help on commands.
                     )
                 printout(_("Invoking trac-admin without command starts "
                            "interactive mode.\n"))
-            env = self.env if self.env_check() else None
+            env = self.env_check() and self.env or None
             self.print_doc(self.all_docs(env), short=True)
 
 
@@ -505,8 +505,6 @@ Congratulations!
         
 
 class TracAdminHelpMacro(WikiMacroBase):
-    _domain = 'messages'
-    _description = cleandoc_(
     """Display help for trac-admin commands.
 
     Examples:
@@ -516,7 +514,7 @@ class TracAdminHelpMacro(WikiMacroBase):
     [[TracAdminHelp(wiki export)]]  # the "wiki export" command
     [[TracAdminHelp(upgrade)]]      # the upgrade command
     }}}
-    """)
+    """
 
     def expand_macro(self, formatter, name, content):
         if content:

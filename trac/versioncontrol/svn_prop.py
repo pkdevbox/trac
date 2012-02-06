@@ -20,7 +20,6 @@ import posixpath
 
 from genshi.builder import tag
 
-from trac.config import ConfigSection
 from trac.core import *
 from trac.versioncontrol.api import NoSuchNode, RepositoryManager
 from trac.versioncontrol.svn_fs import _path_within_scope
@@ -31,45 +30,7 @@ from trac.util.translation import _, tag_
 
 
 class SubversionPropertyRenderer(Component):
-
     implements(IPropertyRenderer)
-
-    svn_externals_section = ConfigSection('svn:externals',
-        """The TracBrowser for Subversion can interpret the `svn:externals`
-        property of folders. By default, it only turns the URLs into links as
-        Trac can't browse remote repositories.
-
-        However, if you have another Trac instance (or an other repository
-        browser like [http://www.viewvc.org/ ViewVC]) configured to browse the
-        target repository, then you can instruct Trac which other repository
-        browser to use for which external URL. This mapping is done in the
-        `[svn:externals]` section of the TracIni.
-        
-        Example:
-        {{{
-        [svn:externals]
-        1 = svn://server/repos1                       http://trac/proj1/browser/$path?rev=$rev
-        2 = svn://server/repos2                       http://trac/proj2/browser/$path?rev=$rev
-        3 = http://theirserver.org/svn/eng-soft       http://ourserver/viewvc/svn/$path/?pathrev=25914
-        4 = svn://anotherserver.com/tools_repository  http://ourserver/tracs/tools/browser/$path?rev=$rev
-        }}}
-        With the above, the
-        `svn://anotherserver.com/tools_repository/tags/1.1/tools` external will
-        be mapped to `http://ourserver/tracs/tools/browser/tags/1.1/tools?rev=`
-        (and `rev` will be set to the appropriate revision number if the
-        external additionally specifies a revision, see the
-        [http://svnbook.red-bean.com/en/1.4/svn.advanced.externals.html SVN Book on externals]
-        for more details).
-        
-        Note that the number used as a key in the above section is purely used
-        as a place holder, as the URLs themselves can't be used as a key due to
-        various limitations in the configuration file parser.
-        
-        Finally, the relative URLs introduced in
-        [http://subversion.apache.org/docs/release-notes/1.5.html#externals Subversion 1.5]
-        are not yet supported.
-
-        (''since 0.11'')""")
 
     def __init__(self):
         self._externals_map = {}
@@ -79,8 +40,8 @@ class SubversionPropertyRenderer(Component):
     def match_property(self, name, mode):
         if name in ('svn:externals', 'svn:needs-lock'):
             return 4
-        return 2 if name in ('svn:mergeinfo', 'svnmerge-blocked',
-                             'svnmerge-integrated') else 0
+        return name in ('svn:mergeinfo', 'svnmerge-blocked',
+                        'svnmerge-integrated') and 2 or 0
     
     def render_property(self, name, mode, context, props):
         if name == 'svn:externals':
@@ -92,7 +53,7 @@ class SubversionPropertyRenderer(Component):
 
     def _render_externals(self, prop):
         if not self._externals_map:
-            for dummykey, value in self.svn_externals_section.options():
+            for dummykey, value in self.config.options('svn:externals'):
                 value = value.split()
                 if len(value) != 2:
                     self.log.warn("svn:externals entry %s doesn't contain "
@@ -124,7 +85,7 @@ class SubversionPropertyRenderer(Component):
                 base_url, pref = posixpath.split(base_url)
                 prefix.append(pref)
             href = self._externals_map.get(base_url)
-            revstr = ' at revision ' + rev if rev else ''
+            revstr = rev and ' at revision '+rev or ''
             if not href and (url.startswith('http://') or 
                              url.startswith('https://')):
                 href = url.replace('%', '%%')
@@ -175,8 +136,8 @@ class SubversionMergePropertyRenderer(Component):
     # IPropertyRenderer methods
 
     def match_property(self, name, mode):
-        return 4 if name in ('svn:mergeinfo', 'svnmerge-blocked',
-                             'svnmerge-integrated') else 0
+        return name in ('svn:mergeinfo', 'svnmerge-blocked',
+                        'svnmerge-integrated') and 4 or 0
     
     def render_property(self, name, mode, context, props):
         """Parse svn:mergeinfo and svnmerge-* properties, converting branch
@@ -184,8 +145,8 @@ class SubversionMergePropertyRenderer(Component):
         and eligible revisions.
         """
         has_eligible = name in ('svnmerge-integrated', 'svn:mergeinfo')
-        revs_label = _('blocked') if name.endswith('blocked') else _('merged')
-        revs_cols = 2 if has_eligible else None
+        revs_label = (_('merged'), _('blocked'))[name.endswith('blocked')]
+        revs_cols = has_eligible and 2 or None
         reponame = context.resource.parent.id
         target_path = context.resource.id
         repos = RepositoryManager(self.env).get_repository(reponame)
@@ -249,12 +210,12 @@ class SubversionMergePropertyRenderer(Component):
         if not rows:
             return None
         rows.sort()
-        has_deleted = rows[-1][0] if rows else None
+        has_deleted = rows and rows[-1][0] or None
         return tag(has_deleted and tag.a(_('(toggle deleted branches)'),
                                          class_='trac-toggledeleted',
                                          href='#'),
                    tag.table(tag.tbody(
-                       [tag.tr(row, class_='trac-deleted' if deleted else None)
+                       [tag.tr(row, class_=deleted and 'trac-deleted' or None)
                         for deleted, spath, row in rows]), class_='props'))
 
 
@@ -318,8 +279,8 @@ class SubversionMergePropertyDiffRenderer(Component):
     # IPropertyDiffRenderer methods
 
     def match_property_diff(self, name):
-        return 4 if name in ('svn:mergeinfo', 'svnmerge-blocked',
-                             'svnmerge-integrated') else 0
+        return name in ('svn:mergeinfo', 'svnmerge-blocked',
+                        'svnmerge-integrated') and 4 or 0
 
     def render_property_diff(self, name, old_context, old_props,
                              new_context, new_props, options):

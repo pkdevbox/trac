@@ -42,7 +42,6 @@ class WikiParser(Component):
     STARTBLOCK = "{{{"
     ENDBLOCK_TOKEN = r"\}\}\}"
     ENDBLOCK = "}}}"
-    BULLET_CHARS = u"-*\u2022"
     
     LINK_SCHEME = r"[a-zA-Z][-a-zA-Z0-9+._]*" # as per RFC 2396 + '_'
     INTERTRAC_SCHEME = r"[a-zA-Z.+-]*?" # no digits (for shorthand links)
@@ -117,8 +116,7 @@ class WikiParser(Component):
         r"(?P<hanchor>#%s)?\s*$)" % XML_NAME,
         #  * list
         r"(?P<list>^(?P<ldepth>\s*)"
-        ur"(?:[%s]|(?P<lstart>\d+|[a-zA-Z]|[ivxIVX]{1,5})\.)\s)"
-        % (BULLET_CHARS),
+        r"(?:[-*]|(?P<lstart>\d+|[a-zA-Z]|[ivxIVX]{1,5})\.)\s)",
         # definition:: 
         r"(?P<definition>^\s+"
         r"((?:%s[^%s]*%s|%s(?:%s{,2}[^%s])*?%s|[^%s%s:]|:[^:])+::)(?:\s+|$))"
@@ -222,32 +220,3 @@ class WikiParser(Component):
         # obviously still some work to do here ;)
         return wikitext
 
-
-def parse_processor_args(processor_args):
-    """Parse a string containing parameter assignements, 
-    and return the corresponding dictionary.
-
-    Isolated keywords are interpreted as `bool` flags, `False` if the keyword
-    is prefixed with "-", `True` otherwise.
-
-    >>> parse_processor_args('ab="c de -f gh=ij" -')
-    {'ab': 'c de -f gh=ij'}
-
-    >>> sorted(parse_processor_args('ab=c de -f gh="ij klmn"').items())
-    [('ab', 'c'), ('de', True), ('f', False), ('gh', 'ij klmn')]
-    """
-    args = WikiParser._processor_param_re.split(processor_args)
-    keys = [str(k) for k in args[1::3]] # used as keyword parameters
-    values = [v[1:-1] if v[:1] + v[-1:] in ('""', "''") else v
-              for v in args[2::3]]
-    for flags in args[::3]:
-        for flag in flags.strip().split():
-            if re.match(r'-?\w+$', flag):
-                if flag[0] == '-':
-                    if len(flag) > 1:
-                        keys.append(str(flag[1:]))
-                        values.append(False)
-                else:
-                    keys.append(str(flag))
-                    values.append(True)
-    return dict(zip(keys, values))

@@ -136,7 +136,7 @@ class EnscriptRenderer(Component):
         mimetype = mimetype.split(';', 1)[0] # strip off charset
         mode = self._types[mimetype][0]
         cmdline += ' --color -h -q --language=html -p - -E%s' % mode
-        self.log.debug("Enscript command line: %s" % cmdline)
+        self.env.log.debug("Enscript command line: %s" % cmdline)
 
         np = NaivePopen(cmdline, content.encode('utf-8'), capturestderr=1)
         if np.errorlevel or np.err:
@@ -151,7 +151,7 @@ class EnscriptRenderer(Component):
         i = odata.find('<PRE>')
         beg = i > 0 and i + 6
         i = odata.rfind('</PRE>')
-        end = i if i > 0 else len(odata)
+        end = i > 0 and i or len(odata)
 
         odata = EnscriptDeuglifier().format(odata[beg:end].decode('utf-8'))
         return [Markup(line) for line in odata.splitlines()]

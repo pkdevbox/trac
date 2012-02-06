@@ -67,7 +67,7 @@
       }));
     });
     
-    // Create a <label>
+    // Convenience function for creating a <label>
     function createLabel(text, htmlFor) {
       var label = $($.htmlFormat("<label>$1</label>", text));
       if (htmlFor)
@@ -75,48 +75,35 @@
       return label;
     }
     
-    // Create an <input type="text">
+    // Convenience function for creating an <input type="text">
     function createText(name, size) {
       return $($.htmlFormat('<input type="text" name="$1" size="$2">', 
                             name, size));
     }
     
-    // Create an <input type="checkbox">
+    // Convenience function for creating an <input type="checkbox">
     function createCheckbox(name, value, id) {
       return $($.htmlFormat('<input type="checkbox" id="$1" name="$2"' +
                             ' value="$3">', id, name, value));
     }
     
-    // Create an <input type="radio">
+    // Convenience function for creating an <input type="radio">
     function createRadio(name, value, id) {
       // Workaround for IE, otherwise the radio buttons are not selectable
       return $($.htmlFormat('<input type="radio" id="$1" name="$2"' +
                             ' value="$3">', id, name, value));
     }
     
-    // Append a list of <option> to an element
-    function appendOptions(e, options) {
+    // Convenience function for creating a <select>
+    function createSelect(name, options, optional) {
+      var e = $($.htmlFormat('<select name="$1">', name));
+      if (optional)
+        $("<option>").appendTo(e);
       for (var i = 0; i < options.length; i++) {
         var opt = options[i], v = opt, t = opt;
         if (typeof opt == "object") 
           v = opt.value, t = opt.name;
         $($.htmlFormat('<option value="$1">$2</option>', v, t)).appendTo(e);
-      }
-    }
-    
-    // Create a <select>
-    function createSelect(name, options, optional, optgroups) {
-      var e = $($.htmlFormat('<select name="$1">', name));
-      if (optional)
-        $("<option>").appendTo(e);
-      appendOptions(e, options);
-      if (optgroups) {
-        for (var i = 0; i < optgroups.length; i++) {
-          var grp = optgroups[i];
-          var optgrp = $($.htmlFormat('<optgroup label="$1">', grp.label));
-          appendOptions(optgrp, grp.options);
-          optgrp.appendTo(e);
-        }
       }
       return e;
     }
@@ -197,8 +184,7 @@
         // Add the selector or text input for the actual filter value
         td = $("<td>").addClass("filter");
         if (property.type == "select") {
-          focusElement = createSelect(propertyName, property.options, true,
-                                      property.optgroups);
+          focusElement = createSelect(propertyName, property.options, true);
         } else if ((property.type == "text") || (property.type == "id")
                    || (property.type == "textarea")) {
           focusElement = createText(propertyName, 42);

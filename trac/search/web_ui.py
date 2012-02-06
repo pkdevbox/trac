@@ -21,18 +21,17 @@ from genshi.builder import tag
 
 from trac.config import IntOption, ListOption
 from trac.core import *
-from trac.mimeview import RenderingContext
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.search.api import ISearchSource
-from trac.util.datefmt import format_datetime, user_time
+from trac.util.datefmt import format_datetime
 from trac.util.html import find_element
 from trac.util.presentation import Paginator
 from trac.util.text import quote_query_string
 from trac.util.translation import _
 from trac.web import IRequestHandler
-from trac.web.chrome import (INavigationContributor, ITemplateProvider,
-                             add_link, add_stylesheet, add_warning,
-                             web_context)
+from trac.web.chrome import add_link, add_stylesheet, add_warning, \
+                            INavigationContributor, ITemplateProvider
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import extract_link
 
@@ -165,7 +164,7 @@ class SearchModule(Component):
             name = kwd
             description = _('Browse repository path %(path)s', path=kwd)
         else:
-            context = web_context(req, 'search')
+            context = Context.from_request(req, 'search')
             link = find_element(extract_link(self.env, context, kwd), 'href')
             if link is not None:
                 quickjump_href = link.attrib.get('href')
@@ -219,7 +218,7 @@ class SearchModule(Component):
         results = Paginator(results, page - 1, self.RESULTS_PER_PAGE)
         for idx, result in enumerate(results):
             results[idx] = {'href': result[0], 'title': result[1],
-                            'date': user_time(req, format_datetime, result[2]),
+                            'date': format_datetime(result[2]),
                             'author': result[3], 'excerpt': result[4]}
 
         pagedata = []    

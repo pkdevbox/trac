@@ -56,17 +56,16 @@
               autoResizeText();
           });
         </py:if>
-        $(".foldable").enableFolding(true, true);
       });
     </script>
   </head>
 
   <body>
     <div id="content" class="wiki"
-         py:with="preview_or_review = action == 'preview' and (not diff or changes[0].diffs)">
+       py:with="preview_or_review = action == 'preview' and (not diff or changes[0].diffs)">
       <div class="trac-topnav" py:if="sidebyside or preview_or_review" py:choose="">
         <a py:when="sidebyside" href="#changeinfo"
-           title="Go to Save, Preview, Review or Cancel buttons">Actions</a>
+          title="Go to Save, Preview, Review or Cancel buttons">Actions</a>
         <a py:when="diff" href="#info" title="See the diffs">Review</a>
         <a py:otherwise="" href="#info" title="See the preview">Preview</a>
         &darr;
@@ -116,7 +115,7 @@
                 Change information for future version ${page.version+1} (modified by $author):
               </th></tr>
               <tr><td class="message" xml:space="preserve">
-                ${wiki_to_html(context.child(page.resource(version=None)), comment)}
+                ${wiki_to_html(context(page.resource(version=None)), comment)}
               </td></tr>
             </tbody>
           </table>
@@ -134,7 +133,7 @@
                 <xi:include href="diff_div.html" py:with="no_id=True" />
               </div>
               <div py:otherwise="" class="wikipage" xml:space="preserve">
-                ${wiki_to_html(context.child(page.resource), page.text)}
+                ${wiki_to_html(context(page.resource), page.text)}
               </div>
             </div>
             <div py:if="not sidebyside and page.text" class="trac-nav">
@@ -151,9 +150,6 @@
         </py:when>
       </py:choose>
       <py:if test="sidebyside"><xi:include href="wiki_edit_form.html" /></py:if>
-      
-      <xi:include href="list_of_attachments.html"
-                  py:with="alist = attachments; compact = True; foldable = True"/>
     </div>
   </body>
 </html>

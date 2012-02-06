@@ -12,10 +12,9 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 from trac.core import *
+from trac.mimeview.api import Context
 from trac.resource import Resource
-from trac.util import as_int
 from trac.web.api import IRequestHandler
-from trac.web.chrome import web_context
 from trac.wiki.formatter import format_to
  
 
@@ -37,7 +36,12 @@ class WikiRenderer(Component):
             req.perm.require('TRAC_ADMIN')
         realm = req.args.get('realm', 'wiki')
         id = req.args.get('id')
-        version = as_int(req.args.get('version'), None)
+        version = req.args.get('version')
+        if version is not None:
+            try:
+                version = int(version)
+            except ValueError:
+                version = None
         text = req.args.get('text', '')
         flavor = req.args.get('flavor')
         options = {}
@@ -48,6 +52,6 @@ class WikiRenderer(Component):
             options['shorten'] = bool(int(req.args['shorten'] or 0))
         
         resource = Resource(realm, id=id, version=version)
-        context = web_context(req, resource)
+        context = Context.from_request(req, resource)
         rendered = format_to(self.env, flavor, context, text, **options)
         req.send(rendered.encode('utf-8'))

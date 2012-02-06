@@ -17,8 +17,6 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Matthew Good <trac@matt-good.net>
 
-from __future__ import with_statement
-
 import errno
 import inspect
 from itertools import izip, tee
@@ -33,22 +31,12 @@ import tempfile
 import time
 from urllib import quote, unquote, urlencode
 
-from .compat import any, md5, sha1, sorted
-from .text import exception_to_unicode, to_unicode
+from trac.util.compat import any, md5, sha1, sorted
+from trac.util.text import to_unicode
 
-# -- req, session and web utils
+# -- req/session utils
 
 def get_reporter_id(req, arg_name=None):
-    """Get most informative "reporter" identity out of a request.
-    
-    That's the `Request`'s authname if not 'anonymous', or a `Request`
-    argument, or the session name and e-mail, or only the name or only
-    the e-mail, or 'anonymous' as last resort.
-
-    :param req: a `trac.web.api.Request`
-    :param arg_name: if given, a `Request` argument which may contain 
-      the id for non-authentified users
-    """
     if req.authname != 'anonymous':
         return req.authname
     if arg_name:
@@ -61,30 +49,28 @@ def get_reporter_id(req, arg_name=None):
         return '%s <%s>' % (name, email)
     return name or email or req.authname # == 'anonymous'
 
-def content_disposition(type=None, filename=None):
-    """Generate a properly escaped Content-Disposition header."""
-    type = type or ''
-    if filename is not None:
-        if isinstance(filename, unicode):
-            filename = filename.encode('utf-8')
-        if type:
-            type += '; '
-        type += 'filename=' + quote(filename, safe='')
-    return type
-
-
-# -- os utilities
-
 if os.name == 'nt':
     from getpass import getuser
 else:
     import pwd
     def getuser():
-        """Retrieve the identity of the process owner"""
         try:
             return pwd.getpwuid(os.geteuid())[0]
         except KeyError:
             return 'unknown'
+
+# -- algorithmic utilities
+
+DIGITS = re.compile(r'(\d+)')
+def embedded_numbers(s):
+    """Comparison function for natural order sorting based on
+    http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/214202."""
+    pieces = DIGITS.split(s)
+    pieces[1::2] = map(int, pieces[1::2])
+    return pieces
+
+
+# -- os utilities
 
 try:
     WindowsError = WindowsError
@@ -186,7 +172,7 @@ class AtomicFile(object):
     
     def __getattr__(self, name):
         return getattr(self._file, name)
-
+    
     def commit(self):
         if self._file is None:
             return
@@ -207,32 +193,30 @@ class AtomicFile(object):
         finally:
             try:
                 os.unlink(self._temp)
-            except Exception:
+            except:
                 pass
-            
+    
     close = commit
     __del__ = rollback
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    closed = property(lambda self: self._file is None or self._file.closed)
 
 
 def read_file(path, mode='r'):
     """Read a file and return its content."""
-    with open(path, mode) as f:
+    f = open(path, mode)
+    try:
         return f.read()
+    finally:
+        f.close()
 
 
 def create_file(path, data='', mode='w'):
     """Create a new file with the given data."""
-    with open(path, mode) as f:
+    f = open(path, mode)
+    try:
         if data:
             f.write(data)
+    finally:
+        f.close()
 
 
 def create_unique_file(path):
@@ -264,9 +248,7 @@ class NaivePopen:
     
     (`capturestderr` may not work under Windows 9x.)
 
-    Example::
-
-      print Popen3('grep spam','\\n\\nhere spam\\n\\n').out
+    Example: print Popen3('grep spam','\n\nhere spam\n\n').out
     """
     def __init__(self, command, input=None, capturestderr=None):
         outfile = tempfile.mktemp()
@@ -300,11 +282,6 @@ class NaivePopen:
 
 
 def makedirs(path, overwrite=False):
-    """Create as many directories as necessary to make `path` exist.
-
-    If `overwrite` is `True`, don't raise an exception in case `path`
-    already exists.
-    """
     if overwrite and os.path.exists(path):
         return
     os.makedirs(path)
@@ -373,38 +350,7 @@ def is_path_below(path, parent):
     return path == parent or path.startswith(parent + os.sep)
 
 
-class file_or_std(object):
-    """Context manager for opening a file or using a standard stream
-    
-    If `filename` is non-empty, open the file and close it when exiting the
-    block. Otherwise, use `sys.stdin` if opening for reading, or `sys.stdout`
-    if opening for writing or appending."""
-    
-    file = None
-    
-    def __init__(self, filename, mode='r', bufsize=-1):
-        self.filename = filename
-        self.mode = mode
-        self.bufsize = bufsize
-
-    def __enter__(self):
-        if not self.filename:
-            return sys.stdin if 'r' in self.mode else sys.stdout
-        self.file = open(self.filename, self.mode, self.bufsize)
-        return self.file
-
-    def __exit__(self, et, ev, tb):
-        if self.file is not None:
-            self.file.close()
-
-        
 # -- sys utils
-
-def fq_class_name(obj):
-    """Return the fully qualified class name of given object."""
-    c = type(obj)
-    m, n = c.__module__, c.__name__
-    return n if m == '__builtin__' else '%s.%s' % (m, n)
 
 def arity(f):
     """Return the number of arguments expected by the given function, unbound
@@ -414,7 +360,6 @@ def arity(f):
 
 
 def get_last_traceback():
-    """Retrieve the last traceback as an `unicode` string."""
     import traceback
     from StringIO import StringIO
     tb = StringIO()
@@ -451,7 +396,10 @@ def get_lines_from_file(filename, lineno, context=0, globals=None):
     if not lines:
         import linecache
         linecache.checkcache(filename)
-        lines = linecache.getlines(filename, globals)
+        if arity(linecache.getlines) >= 2:
+            lines = linecache.getlines(filename, globals)
+        else:   # Python 2.4
+            lines = linecache.getlines(filename)
 
     if not 0 <= lineno < len(lines):
         return (), None, ()
@@ -517,22 +465,6 @@ def safe__import__(module_name):
         raise e
 
 
-def safe_repr(x):
-    """`repr` replacement which "never" breaks.
-
-    Make sure we always get a representation of the input `x`
-    without risking to trigger an exception (e.g. from a buggy
-    `x.__repr__`).
-
-    .. versionadded :: 0.13
-    """
-    try:
-        return to_unicode(repr(x))
-    except Exception, e:     
-        return "<%s object at 0x%X (repr() error: %s)>" % (
-            fq_class_name(x), id(x), exception_to_unicode(e))
-
-
 def get_doc(obj):
     """Return the docstring of an object as a tuple `(summary, description)`,
     where `summary` is the first paragraph and `description` is the remaining
@@ -543,7 +475,7 @@ def get_doc(obj):
         return (None, None)
     doc = to_unicode(doc).split('\n\n', 1)
     summary = doc[0].replace('\n', ' ')
-    description = doc[1] if len(doc) > 1 else None
+    description = len(doc) > 1 and doc[1] or None
     return (summary, description)
 
 # -- setuptools utils
@@ -552,7 +484,7 @@ def get_module_path(module):
     """Return the base path the given module is imported from"""
     path = module.__file__
     module_name = module.__name__
-    if path.endswith(('.pyc', '.pyo')):
+    if path.endswith('.pyc') or path.endswith('.pyo'):
         path = path[:-1]
     if os.path.basename(path) == '__init__.py':
         path = os.path.dirname(path)
@@ -637,13 +569,12 @@ except NotImplementedError:
             hasher.update(str(_entropy.random()))
             result.append(hasher.digest())
         result = ''.join(result)
-        return result[:n] if len(result) > n else result
+        return len(result) > n and result[:n] or result
 
 
-def hex_entropy(digits=32):
-    """Generate `digits` number of hex digits of entropy."""
-    result = ''.join('%.2x' % ord(v) for v in urandom((digits + 1) // 2))
-    return result[:digits] if len(result) > digits else result
+def hex_entropy(bytes=32):
+    result = ''.join('%.2x' % ord(v) for v in urandom((bytes + 1) // 2))
+    return len(result) > bytes and result[:bytes] or result
 
 # Original license for md5crypt:
 # Based on FreeBSD src/lib/libcrypt/crypt.c 1.2
@@ -653,12 +584,6 @@ def hex_entropy(digits=32):
 # can do whatever you want with this stuff. If we meet some day, and you think
 # this stuff is worth it, you can buy me a beer in return.   Poul-Henning Kamp
 def md5crypt(password, salt, magic='$1$'):
-    """Based on FreeBSD src/lib/libcrypt/crypt.c 1.2
-
-    :param password: the plain text password to crypt
-    :param salt: the raw salt
-    :param magic: our magic string
-    """
     # /* The password first, since that is what is most unknown */
     # /* Then our magic string */
     # /* Then the raw salt */
@@ -721,12 +646,11 @@ def md5crypt(password, salt, magic='$1$'):
     return magic + salt + '$' + rearranged
 
 
-# -- data structures
+# -- misc. utils
 
 class Ranges(object):
-    """Holds information about ranges parsed from a string
-
-    :author: Tim Hatch
+    """
+    Holds information about ranges parsed from a string
     
     >>> x = Ranges("1,2,9-15")
     >>> 1 in x
@@ -778,6 +702,8 @@ class Ranges(object):
     >>> x.appendrange("2-3") # reduce'd away
     >>> list(x)
     [1, 2, 3, 5, 6, 7, 8, 9]
+
+    ''Code contributed by Tim Hatch''
 
     Reversed ranges are ignored, unless the Ranges has the `reorder` property 
     set.
@@ -888,7 +814,7 @@ class Ranges(object):
         if self.a is None or self.b is None:
             return 0
         # Result must fit an int
-        return min(self.b - self.a + 1, sys.maxint)
+        return min(self.b - self.a + 1, (1 << 31) - 1)
 
     def __nonzero__(self):
         """Return True iff the range is not empty.
@@ -956,38 +882,24 @@ def to_ranges(revs):
         store()
     return ','.join(ranges)
 
-
-class lazy(object):
-    """A lazily-evaluated attribute"""
-    
-    def __init__(self, fn):
-        self.fn = fn
-    
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        result = self.fn(instance)
-        setattr(instance, self.fn.__name__, result)
-        return result
-
-
-# -- algorithmic utilities
-
-DIGITS = re.compile(r'(\d+)')
-def embedded_numbers(s):
-    """Comparison function for natural order sorting based on
-    http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/214202."""
-    pieces = DIGITS.split(s)
-    pieces[1::2] = map(int, pieces[1::2])
-    return pieces
+def content_disposition(type=None, filename=None):
+    """Generate a properly escaped Content-Disposition header."""
+    type = type or ''
+    if filename is not None:
+        if isinstance(filename, unicode):
+            filename = filename.encode('utf-8')
+        if type:
+            type += '; '
+        type += 'filename=' + quote(filename, safe='')
+    return type
 
 def pairwise(iterable):
     """
     >>> list(pairwise([0, 1, 2, 3]))
     [(0, 1), (1, 2), (2, 3)]
 
-    .. deprecated :: 0.11
-       if this really needs to be used, rewrite it without izip
+    :deprecated: since 0.11 (if this really needs to be used, rewrite it
+                             without izip)
     """
     a, b = tee(iterable)
     try:
@@ -998,9 +910,9 @@ def pairwise(iterable):
 
 def partition(iterable, order=None):
     """
-    >>> partition([(1, "a"), (2, "b"), (3, "a")])
+    >>> partition([(1,"a"),(2, "b"),(3, "a")])
     {'a': [1, 3], 'b': [2]}
-    >>> partition([(1, "a"), (2, "b"), (3, "a")], "ab")
+    >>> partition([(1,"a"),(2, "b"),(3, "a")], "ab")
     [[1, 3], [2]]
     """
     result = {}

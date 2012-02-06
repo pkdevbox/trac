@@ -220,14 +220,10 @@ This is a <a class="missing wiki" href="/wiki/Wiki?version=12" rel="nofollow">Wi
 ============================== WikiPageName with label
 See details of the [WikiPageNames wiki page name] syntax.
 Here's a [BadExample\fbad] example with special whitespace.
-We can also [WikiLabels '"use [quotes]"']
-or [WikiLabels "'use [quotes]'"]
 ------------------------------
 <p>
 See details of the <a class="missing wiki" href="/wiki/WikiPageNames" rel="nofollow">wiki page name?</a> syntax.
 Here's a <a class="missing wiki" href="/wiki/BadExample" rel="nofollow">bad?</a> example with special whitespace.
-We can also <a class="missing wiki" href="/wiki/WikiLabels" rel="nofollow">"use [quotes]"?</a>
-or <a class="missing wiki" href="/wiki/WikiLabels" rel="nofollow">'use [quotes]'?</a>
 </p>
 ------------------------------
 ============================== WikiPageName with label should be strict...
@@ -275,9 +271,6 @@ complex link complex:a:test with positional arguments
 complex link complex:a (not enough arguments)
 complex link complex:a:test:more (too many arguments)
 
-in trac.ini inter:b:resource
-in trac.ini over:c:something overrides wiki
-
 NoLink:ignored
 NoLink:
 NoLink: ...
@@ -290,10 +283,6 @@ Checkout the <a class="ext-link" href="tsvn:http://svn.edgewall.com/repos/trac" 
 complex link <a class="ext-link" href="http://server/a/page/test?format=txt" title="resource test in a"><span class="icon"></span>complex:a:test</a> with positional arguments
 complex link <a class="ext-link" href="http://server/a/page/?format=txt" title="resource  in a"><span class="icon"></span>complex:a</a> (not enough arguments)
 complex link <a class="ext-link" href="http://server/a/page/test:more?format=txt" title="resource test:more in a"><span class="icon"></span>complex:a:test:more</a> (too many arguments)
-</p>
-<p>
-in trac.ini <a class="ext-link" href="http://inter/b/page/resource" title="Resource resource in b"><span class="icon"></span>inter:b:resource</a>
-in trac.ini <a class="ext-link" href="http://over/c/page/something" title="c:something in over"><span class="icon"></span>over:c:something</a> overrides wiki
 </p>
 <p>
 NoLink:ignored
@@ -661,7 +650,6 @@ This is the InterMapTxt
 MeatBall 	http://www.usemod.com/cgi-bin/mb.pl? # $1 in MeatBall...
 tsvn            tsvn:
 complex         http://server/$1/page/$2?format=txt  # resource $2 in $1
-over        http://unused/? # Overridden in trac.ini
 }}}
 ----
 {{{
@@ -669,10 +657,6 @@ nolink          http://noweb
 }}}
 """ 
     imt.save('joe', 'test InterWiki links', '::1', now)
-    tc.env.config.set('interwiki', 'inter',
-                      'http://inter/$1/page/$2 Resource $2 in $1')
-    tc.env.config.set('interwiki', 'over',
-                      'http://over/$1/page/$2')
 
     w = WikiPage(tc.env)
     w.name = 'FirstLevel'

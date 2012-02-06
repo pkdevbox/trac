@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2010 Edgewall Software
+# Copyright (C) 2005-2009 Edgewall Software
 # Copyright (C) 2005-2006 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -14,17 +14,7 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-"""Content presentation for the web layer.
-
-The Chrome module deals with delivering and shaping content to the end user,
-mostly targeting (X)HTML generation but not exclusively, RSS or other forms of
-web content are also using facilities provided here.
-"""
-
-from __future__ import with_statement
-
 import datetime
-from functools import partial
 import itertools
 import os.path
 import pkg_resources
@@ -46,64 +36,22 @@ from trac import __version__ as VERSION
 from trac.config import *
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant, ISystemInfoProvider
-from trac.mimeview.api import RenderingContext, get_mimetype
+from trac.mimeview import get_mimetype, Context
 from trac.resource import *
 from trac.util import compat, get_reporter_id, presentation, get_pkginfo, \
-                      lazy, pathjoin, sha1, translation
+                      pathjoin, translation
+from trac.util.compat import any, partial
 from trac.util.html import escape, plaintext
 from trac.util.text import pretty_size, obfuscate_email_address, \
                            shorten_line, unicode_quote_plus, to_unicode, \
                            javascript_quote, exception_to_unicode
 from trac.util.datefmt import pretty_timedelta, format_datetime, format_date, \
-                              format_time, from_utimestamp, http_date, utc, \
-                              user_time
+                              format_time, from_utimestamp, http_date, utc
 from trac.util.translation import _, get_available_locales
 from trac.web.api import IRequestHandler, ITemplateStreamFilter, HTTPNotFound
 from trac.web.href import Href
 from trac.wiki import IWikiSyntaxProvider
 from trac.wiki.formatter import format_to, format_to_html, format_to_oneliner
-
-
-class INavigationContributor(Interface):
-    """Extension point interface for components that contribute items to the
-    navigation.
-    """
-
-    def get_active_navigation_item(req):
-        """This method is only called for the `IRequestHandler` processing the
-        request.
-        
-        It should return the name of the navigation item that should be
-        highlighted as active/current.
-        """
-
-    def get_navigation_items(req):
-        """Should return an iterable object over the list of navigation items
-        to add, each being a tuple in the form (category, name, text).
-        """
-
-
-class ITemplateProvider(Interface):
-    """Extension point interface for components that provide their own
-    Genshi templates and accompanying static resources.
-    """
-
-    def get_htdocs_dirs():
-        """Return a list of directories with static resources (such as style
-        sheets, images, etc.)
-
-        Each item in the list must be a `(prefix, abspath)` tuple. The
-        `prefix` part defines the path in the URL that requests to these
-        resources are prefixed with.
-        
-        The `abspath` is the absolute path to the directory containing the
-        resources on the local file system.
-        """
-
-    def get_templates_dirs():
-        """Return a list of directories containing the provided template
-        files.
-        """
 
 
 def add_meta(req, content, http_equiv=None, name=None, scheme=None, lang=None):
@@ -136,19 +84,16 @@ def add_stylesheet(req, filename, mimetype='text/css', media=None):
     will be based off the application root path. If it is relative, the link
     will be based off the `/chrome/` path.
     """
-    if filename.startswith(('http://', 'https://')):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        filename = filename[7:]
     else:
-        if filename.startswith('/'):
-            href = req.href(filename)
-        else:
-            href = req.href.chrome(req.chrome['static_hash'], filename)
-    add_link(req, 'stylesheet', href, mimetype=mimetype, media=media)
+        href = req.href
+        if not filename.startswith('/'):
+            href = href.chrome
+    add_link(req, 'stylesheet', href(filename), mimetype=mimetype, media=media)
 
-def add_script(req, filename, mimetype='text/javascript', charset='utf-8',
-               ie_if=None):
+def add_script(req, filename, mimetype='text/javascript'):
     """Add a reference to an external javascript file to the template.
     
     If the filename is absolute (i.e. starts with a slash), the generated link
@@ -159,18 +104,15 @@ def add_script(req, filename, mimetype='text/javascript', charset='utf-8',
     if filename in scriptset:
         return False # Already added that script
 
-    if filename.startswith(('http://', 'https://')):
-        href = filename
-    elif filename.startswith('common/') and 'htdocs_location' in req.chrome:
-        href = Href(req.chrome['htdocs_location'])(filename[7:])
+    if filename.startswith('common/') and 'htdocs_location' in req.chrome:
+        href = Href(req.chrome['htdocs_location'])
+        path = filename[7:]
     else:
-        if filename.startswith('/'):
-            href = req.href(filename)
-        else:
-            href = req.href.chrome(req.chrome['static_hash'], filename)
-    script = {'href': href, 'type': mimetype, 'charset': charset,
-              'prefix': Markup('<!--[if %s]>' % ie_if) if ie_if else None,
-              'suffix': Markup('<![endif]-->') if ie_if else None}
+        href = req.href
+        if not filename.startswith('/'):
+            href = href.chrome
+        path = filename
+    script = {'href': href(path), 'type': mimetype}
 
     req.chrome.setdefault('scripts', []).append(script)
     scriptset.add(filename)
@@ -184,7 +126,7 @@ def add_script_data(req, data):
     req.chrome.setdefault('script_data', {}).update(data)
 
 def add_javascript(req, filename):
-    """:deprecated: use `add_script` instead."""
+    """Deprecated: use `add_script()` instead."""
     add_script(req, filename, mimetype='text/javascript')
 
 def add_warning(req, msg, *args):
@@ -212,10 +154,10 @@ def add_ctxtnav(req, elm_or_label, href=None, title=None):
 def prevnext_nav(req, prev_label, next_label, up_label=None):
     """Add Previous/Up/Next navigation links.
 
-       :param        req: a `Request` object
-       :param prev_label: the label to use for left (previous) link
-       :param   up_label: the label to use for the middle (up) link
-       :param next_label: the label to use for right (next) link
+       @param req        a `Request` object
+       @param prev_label the label to use for left (previous) link
+       @param up_label   the label to use for the middle (up) link
+       @param next_label the label to use for right (next) link
     """
     links = req.chrome['links']
     prev_link = next_link = None
@@ -229,7 +171,7 @@ def prevnext_nav(req, prev_label, next_label, up_label=None):
                           class_='prev')
         
     add_ctxtnav(req, tag.span(Markup('&larr; '), prev_link or prev_label,
-                              class_='missing' if not prev_link else None))
+                              class_=not prev_link and 'missing' or None))
 
     if up_label and 'up' in links:
         up = links['up'][0]
@@ -241,56 +183,7 @@ def prevnext_nav(req, prev_label, next_label, up_label=None):
                           class_='next')
 
     add_ctxtnav(req, tag.span(next_link or next_label, Markup(' &rarr;'),
-                              class_='missing' if not next_link else None))
-
-
-def web_context(req, resource=None, id=False, version=False, parent=False,
-                absurls=False):
-    """Create a rendering context from a request.
-
-    The `perm` and `href` properties of the context will be initialized
-    from the corresponding properties of the request object.
-
-    >>> from trac.test import Mock, MockPerm
-    >>> req = Mock(href=Mock(), perm=MockPerm())
-    >>> context = web_context(req)
-    >>> context.href is req.href
-    True
-    >>> context.perm is req.perm
-    True
-
-    :param      req: the HTTP request object
-    :param resource: the `Resource` object or realm
-    :param       id: the resource identifier
-    :param  version: the resource version
-    :param  absurls: whether URLs generated by the ``href`` object should
-                     be absolute (including the protocol scheme and host
-                     name)
-    :return: a new rendering context
-    :rtype: `RenderingContext`
-    """
-    if req:
-        href = req.abs_href if absurls else req.href
-        perm = req.perm
-    else:
-        href = None
-        perm = None
-    self = RenderingContext(Resource(resource, id=id, version=version,
-                                     parent=parent), href=href, perm=perm)
-    self.req = req
-    return self
-
-
-def auth_link(req, link):
-    """Return an "authenticated" link to `link` for authenticated users.
-    
-    If the user is anonymous, returns `link` unchanged. For authenticated
-    users, returns a link to `/login` that redirects to `link` after
-    authentication.
-    """
-    if req.authname != 'anonymous':
-        return req.href.login(referer=link)
-    return link
+                              class_=not next_link and 'missing' or None))
 
 
 def _save_messages(req, url, permanent):
@@ -299,6 +192,48 @@ def _save_messages(req, url, permanent):
     for type_ in ['warnings', 'notices']:
         for (i, message) in enumerate(req.chrome[type_]):
             req.session['chrome.%s.%d' % (type_, i)] = escape(message)
+
+
+class INavigationContributor(Interface):
+    """Extension point interface for components that contribute items to the
+    navigation.
+    """
+
+    def get_active_navigation_item(req):
+        """This method is only called for the `IRequestHandler` processing the
+        request.
+        
+        It should return the name of the navigation item that should be
+        highlighted as active/current.
+        """
+
+    def get_navigation_items(req):
+        """Should return an iterable object over the list of navigation items to
+        add, each being a tuple in the form (category, name, text).
+        """
+
+
+class ITemplateProvider(Interface):
+    """Extension point interface for components that provide their own
+    ClearSilver templates and accompanying static resources.
+    """
+
+    def get_htdocs_dirs():
+        """Return a list of directories with static resources (such as style
+        sheets, images, etc.)
+
+        Each item in the list must be a `(prefix, abspath)` tuple. The
+        `prefix` part defines the path in the URL that requests to these
+        resources are prefixed with.
+        
+        The `abspath` is the absolute path to the directory containing the
+        resources on the local file system.
+        """
+
+    def get_templates_dirs():
+        """Return a list of directories containing the provided template
+        files.
+        """
 
 
 # Mappings for removal of control characters
@@ -328,37 +263,10 @@ class Chrome(Component):
         environments `templates` directory, but the latter take precedence.
         
         (''since 0.11'')""")
- 
-    shared_htdocs_dir = PathOption('inherit', 'htdocs_dir', '',
-        """Path to the //shared htdocs directory//.
-        
-        Static resources in that directory are mapped to /chrome/shared
-        under the environment URL, in addition to common and site locations.
-        
-        This can be useful in site.html for common interface customization
-        of multiple Trac environments.
-        
-        (''since 0.13'')""")
 
     auto_reload = BoolOption('trac', 'auto_reload', False,
         """Automatically reload template files after modification.""")
     
-    fingerprint_resources = ChoiceOption('trac', 'fingerprint_resources',
-                                         ['content', 'meta', 'disabled'],
-        """Control the fingerprinting of static resources.
-        
-        URLs to static resources below `/chrome` have the form
-        `/chrome/![0-9a-f]{8}/.*`, where the second element is a fingerprint
-        of the ''content'' of all resources (for "content") or their
-        ''metadata'' (size and mtime, for "meta"). This allows aggressive
-        caching of static resources on the browser, while still ensuring that
-        they are reloaded when they change.
-        
-        Setting this option to "disabled" disables fingerprinting, and
-        reverts the URLs to static resources to `/chrome/.*`.
-        
-        (''since 0.13'')""")
-
     genshi_cache_size = IntOption('trac', 'genshi_cache_size', 128,
         """The maximum number of templates that the template loader will cache
         in memory. The default value is 128. You may want to choose a higher
@@ -381,26 +289,14 @@ class Chrome(Component):
         will not be made available this way and additional rewrite 
         rules will be needed in the web server.""")
 
-    jquery_location = Option('trac', 'jquery_location', '',
-        """Location of the jQuery !JavaScript library (version 1.5.1).
-        
-        An empty value loads jQuery from the copy bundled with Trac.
-        
-        Alternatively, jQuery could be loaded from a CDN, for example:
-        http://code.jquery.com/jquery-1.5.1.min.js,
-        http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.5.1.min.js or
-        https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js.
-        
-        (''since 0.13'')""")
-
     metanav_order = ListOption('trac', 'metanav',
-                               'login, logout, prefs, help, about', doc=
+                               'login,logout,prefs,help,about', doc=
         """Order of the items to display in the `metanav` navigation bar,
            listed by IDs. See also TracNavigation.""")
 
     mainnav_order = ListOption('trac', 'mainnav',
-                               'wiki, timeline, roadmap, browser, tickets, '
-                               'newticket, search', doc=
+                               'wiki,timeline,roadmap,browser,tickets,'
+                               'newticket,search', doc=
         """Order of the items to display in the `mainnav` navigation bar, 
            listed by IDs. See also TracNavigation.""")
 
@@ -453,20 +349,13 @@ class Chrome(Component):
         this to 0 to disable automatic preview. The default is 2.0 seconds.
         (''since 0.12'')""")
 
-    default_dateinfo_format = Option('trac', 'default_dateinfo_format',
-        'relative',
-        """The date information format. Valid options are 'relative' for
-        displaying relative format and 'absolute' for displaying absolute
-        format. (''since 0.13'')
-        """)
-
     templates = None
 
     # A dictionary of default context data for templates
     _default_context_data = {
         '_': translation.gettext,
-        'all': all,
-        'any': any,
+        'all': compat.all,
+        'any': compat.any,
         'classes': presentation.classes,
         'date': datetime.date,
         'datetime': datetime.datetime,
@@ -526,7 +415,8 @@ class Chrome(Component):
                 os.mkdir(templates_dir)
 
             site_path = os.path.join(templates_dir, 'site.html.sample')
-            with open(site_path, 'w') as fileobj:
+            fileobj = open(site_path, 'w')
+            try:
                 fileobj.write("""\
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:xi="http://www.w3.org/2001/XInclude"
@@ -544,6 +434,8 @@ class Chrome(Component):
   -->
 </html>
 """)
+            finally:
+                fileobj.close()
 
     def environment_needs_upgrade(self, db):
         return False
@@ -553,20 +445,15 @@ class Chrome(Component):
 
     # IRequestHandler methods
 
-    _chrome_path_re = re.compile(r'/chrome/(?:(?P<hash>![0-9a-f]+)/)?'
-                                 r'(?P<prefix>[^/]+)/+(?P<filename>.+)')
-
     def match_request(self, req):
-        match = self._chrome_path_re.match(req.path_info)
+        match = re.match(r'/chrome/(?P<prefix>[^/]+)/+(?P<filename>.+)',
+                         req.path_info)
         if match:
-            req.args['hash'] = match.group('hash')
             req.args['prefix'] = match.group('prefix')
             req.args['filename'] = match.group('filename')
             return True
 
     def process_request(self, req):
-        hash_matches = self.static_hash \
-                       and req.args['hash'] == self.static_hash
         prefix = req.args['prefix']
         filename = req.args['filename']
 
@@ -579,10 +466,7 @@ class Chrome(Component):
                 path = os.path.normpath(os.path.join(dir, filename))
                 assert os.path.commonprefix([dir, path]) == dir
                 if os.path.isfile(path):
-                    req.send_file(path, get_mimetype(path),
-                                  expires=datetime.datetime.now(utc)
-                                          + datetime.timedelta(days=365)
-                                          if hash_matches else None)
+                    req.send_file(path, get_mimetype(path))
 
         self.log.warning('File %s not found in any of %s', filename, dirs)
         raise HTTPNotFound('File %s not found', filename)
@@ -591,7 +475,6 @@ class Chrome(Component):
 
     def get_htdocs_dirs(self):
         return [('common', pkg_resources.resource_filename('trac', 'htdocs')),
-                ('shared', self.shared_htdocs_dir), 
                 ('site', self.env.get_htdocs_dir())]
 
     def get_templates_dirs(self):
@@ -611,41 +494,10 @@ class Chrome(Component):
 
     def _format_link(self, formatter, ns, file, label):
         file, query, fragment = formatter.split_link(file)
-        href = formatter.href.chrome(self.static_hash, 'site', file) + query \
-               + fragment
+        href = formatter.href.chrome('site', file) + query + fragment
         return tag.a(label, href=href)
 
     # Public API methods
-
-    @lazy
-    def static_hash(self):
-        """Return a hash of all available static resources."""
-        if self.fingerprint_resources == 'content':
-            def update(path):
-                with open(path, 'rb') as f:
-                    while True:
-                        data = f.read(65536)
-                        if not data:
-                            break
-                        hash.update(data)
-        elif self.fingerprint_resources == 'meta':
-            def update(path):
-                st = os.stat(path)
-                hash.update(str(st.st_size) + str(st.st_mtime))
-        else:
-            return None
-                
-        all_dirs = [dir[1] for provider in self.template_providers
-                    for dir in provider.get_htdocs_dirs() or []]
-        all_dirs.sort()
-        hash = sha1()
-        for dir in all_dirs:
-            for path, dirs, files in os.walk(dir):
-                dirs.sort()
-                files.sort()
-                for name in files:
-                    update(os.path.join(path, name))
-        return '!' + hash.hexdigest()[:8]
 
     def get_all_templates_dirs(self):
         """Return a list of the names of all known templates directories."""
@@ -657,19 +509,17 @@ class Chrome(Component):
     def prepare_request(self, req, handler=None):
         """Prepare the basic chrome data for the request.
         
-        :param     req: the request object
-        :param handler: the `IRequestHandler` instance that is processing the
-                        request
+        @param req: the request object
+        @param handler: the `IRequestHandler` instance that is processing the
+            request
         """
         self.log.debug('Prepare chrome data for request')
 
         chrome = {'metas': [], 'links': {}, 'scripts': [], 'script_data': {},
                   'ctxtnav': [], 'warnings': [], 'notices': []}
-        req.chrome = chrome
+        setattr(req, 'chrome', chrome)
 
-        chrome['static_hash'] = self.static_hash
-        htdocs_location = self.htdocs_location \
-                          or req.href.chrome(self.static_hash, 'common')
+        htdocs_location = self.htdocs_location or req.href.chrome('common')
         chrome['htdocs_location'] = htdocs_location.rstrip('/') + '/'
 
         # HTML <head> links
@@ -677,7 +527,7 @@ class Chrome(Component):
         add_link(req, 'search', req.href.search())
         add_link(req, 'help', req.href.wiki('TracGuide'))
         add_stylesheet(req, 'common/css/trac.css')
-        add_script(req, self.jquery_location or 'common/js/jquery.js')
+        add_script(req, 'common/js/jquery.js')
         # Only activate noConflict mode if requested to by the handler
         if handler is not None and \
            getattr(handler.__class__, 'jquery_noconflict', False):
@@ -778,14 +628,11 @@ class Chrome(Component):
         if icon_src:
             if not icon_src.startswith('/') and icon_src.find('://') == -1:
                 if '/' in icon_src:
-                    icon_abs_src = req.abs_href.chrome(self.static_hash,
-                                                       icon_src)
-                    icon_src = req.href.chrome(self.static_hash, icon_src)
+                    icon_abs_src = req.abs_href.chrome(icon_src)
+                    icon_src = req.href.chrome(icon_src)
                 else:
-                    icon_abs_src = req.abs_href.chrome(self.static_hash,
-                                                       'common', icon_src)
-                    icon_src = req.href.chrome(self.static_hash, 'common',
-                                               icon_src)
+                    icon_abs_src = req.abs_href.chrome('common', icon_src)
+                    icon_src = req.href.chrome('common', icon_src)
             mimetype = get_mimetype(icon_src)
             icon = {'src': icon_src, 'abs_src': icon_abs_src,
                     'mimetype': mimetype}
@@ -797,20 +644,21 @@ class Chrome(Component):
         logo_src = self.logo_src
         if logo_src:
             abs_href = abs_href or href
-            if logo_src.startswith(('http://', 'https://', '/')):
+            if logo_src.startswith('http://') or \
+                    logo_src.startswith('https://') or \
+                    logo_src.startswith('/'):
                 # Nothing further can be calculated
                 logo_src_abs = logo_src
             elif '/' in logo_src:
                 # Like 'common/trac_banner.png' or 'site/my_banner.png'
-                logo_src_abs = abs_href.chrome(self.static_hash, logo_src)
-                logo_src = href.chrome(self.static_hash, logo_src)
+                logo_src_abs = abs_href.chrome(logo_src)
+                logo_src = href.chrome(logo_src)
             else:
                 # Like 'trac_banner.png'
-                logo_src_abs = abs_href.chrome(self.static_hash, 'common',
-                                               logo_src)
-                logo_src = href.chrome(self.static_hash, 'common', logo_src)
-            width = self.logo_width if self.logo_width > -1 else None
-            height = self.logo_height if self.logo_height > -1 else None
+                logo_src_abs = abs_href.chrome('common', logo_src)
+                logo_src = href.chrome('common', logo_src)
+            width = self.logo_width > -1 and self.logo_width or None
+            height = self.logo_height > -1 and self.logo_height or None
             logo = {
                 'link': self.logo_link, 'src': logo_src,
                 'src_abs': logo_src_abs, 'alt': self.logo_alt,
@@ -820,6 +668,19 @@ class Chrome(Component):
             logo = {'link': self.logo_link, 'alt': self.logo_alt}
         return logo
 
+    def populate_hdf(self, req):
+        """Add chrome-related data to the HDF (deprecated)."""
+        req.hdf['HTTP.PathInfo'] = req.path_info
+        req.hdf['htdocs_location'] = req.chrome['htdocs_location']
+
+        req.hdf['chrome.href'] = req.href.chrome()
+        req.hdf['chrome.links'] = req.chrome['links']
+        req.hdf['chrome.scripts'] = req.chrome['scripts']
+        req.hdf['chrome.logo'] = req.chrome['logo']
+
+        for category, items in req.chrome['nav'].items():
+            req.hdf['chrome.nav.%s' % category] = items
+
     def populate_data(self, req, data):
         d = self._default_context_data.copy()
         d['trac'] = {
@@ -828,7 +689,7 @@ class Chrome(Component):
         }
         
         href = req and req.href
-        abs_href = req.abs_href if req else self.env.abs_href
+        abs_href = req and req.abs_href or self.env.abs_href
         admin_href = None
         if self.env.project_admin_trac_url == '.':
             admin_href = href
@@ -863,24 +724,13 @@ class Chrome(Component):
             self.log.error("Error during check of EMAIL_VIEW: %s", 
                            exception_to_unicode(e))
             show_email_addresses = False
-
-        def pretty_dateinfo(date, format=None, dateonly=False):
-            absolute = user_time(req, format_datetime, date)
-            relative = pretty_timedelta(date)
-            if not format:
-                format = req.session.get('dateinfo',
-                                         self.default_dateinfo_format)
-            if format == 'absolute':
-                label = absolute
-                title = _("%(relativetime)s ago", relativetime=relative)
-            else:
-                label = _("%(relativetime)s ago", relativetime=relative) \
-                        if not dateonly else relative
-                title = absolute
-            return tag.span(label, title=title)
+        tzinfo = None
+        if req:
+            tzinfo = req.tz
 
         def dateinfo(date):
-            return pretty_dateinfo(date, format='relative', dateonly=True)
+            return tag.span(pretty_timedelta(date),
+                            title=format_datetime(date))
 
         def get_rel_url(resource, **kwargs):
             return get_resource_url(self.env, resource, href, **kwargs)
@@ -889,7 +739,7 @@ class Chrome(Component):
             return get_resource_url(self.env, resource, abs_href, **kwargs)
 
         d.update({
-            'context': web_context(req) if req else None,
+            'context': req and Context.from_request(req) or None,
             'Resource': Resource,
             'url_of': get_rel_url,
             'abs_url_of': get_abs_url,
@@ -900,7 +750,7 @@ class Chrome(Component):
             'abs_href': abs_href,
             'href': href,
             'perm': req and req.perm,
-            'authname': req.authname if req else '<trac>',
+            'authname': req and req.authname or '<trac>',
             'locale': req and req.locale,
             'show_email_addresses': show_email_addresses,
             'show_ip_addresses': self.show_ip_addresses,
@@ -912,12 +762,11 @@ class Chrome(Component):
 
             # Date/time formatting
             'dateinfo': dateinfo,
-            'pretty_dateinfo': pretty_dateinfo,
-            'format_datetime': partial(user_time, req, format_datetime),
-            'format_date': partial(user_time, req, format_date),
-            'format_time': partial(user_time, req, format_time),
+            'format_datetime': partial(format_datetime, tzinfo=tzinfo),
+            'format_date': partial(format_date, tzinfo=tzinfo),
+            'format_time': partial(format_time, tzinfo=tzinfo),
             'fromtimestamp': partial(datetime.datetime.fromtimestamp,
-                                     tz=req and req.tz),
+                                     tz=tzinfo),
             'from_utimestamp': from_utimestamp,
 
             # Wiki-formatting functions
@@ -941,7 +790,6 @@ class Chrome(Component):
             self.templates = TemplateLoader(
                 self.get_all_templates_dirs(), auto_reload=self.auto_reload,
                 max_cache_size=self.genshi_cache_size,
-                default_encoding="utf-8",
                 variable_lookup='lenient', callback=lambda template:
                 Translator(translation.get_translations()).setup(template))
 
@@ -1056,8 +904,8 @@ class Chrome(Component):
 
         :param context: the context in which the check for obfuscation should
                         be done
-        :param   value: a string containing a comma-separated list of e-mails
-        :param     sep: the separator to use when rendering the list again
+        :param value: a string containing a comma-separated list of e-mails
+        :param sep: the separator to use when rendering the list again
         """
         all_cc = self.cc_list(value)
         if not (self.show_email_addresses or 'EMAIL_VIEW' in context.perm):
