@@ -3,7 +3,6 @@ table.progress {
  border: 1px solid #d7d7d7;
  border-collapse: collapse;
  border-spacing: 0;
- box-shadow: 0 0 1em #eee; /* from pre.wiki */
  float: left;
  margin: 0;
  padding: 0;
@@ -35,15 +34,12 @@ p.percent {
 .milestone .info h2 {
  background: #f7f7f7;
  border-bottom: 1px solid #d7d7d7;
- margin: .5em 0;
- box-shadow: 1px 1px .5em 0 #ccc;
- border-radius: .1em;
+ margin: 0;
 }
 .milestone .info h2 :link, .milestone .info h2 :visited {
  color: #000;
  display: block;
  border-bottom: none;
- padding: .2em .4em;
 }
 .milestone .info h2 :link:hover, .milestone .info h2 :visited:hover {
  color: #000;
@@ -55,41 +51,33 @@ p.percent {
  font-style: italic;
  margin: 0 0 1em 0;
 }
-.milestone .description { margin-left: 1em }
-
-/* Styles for the milestone view */
-.milestone .date { color: #888; font-style: italic; margin: 0 }
-.milestone .description { margin: 1em 0 2em }
-#stats {
- float: right;
- margin: 0 1em 2em 2em;
- padding: 0;
- width: 400px;
- max-width: 40%;
-}
-#stats legend { white-space: nowrap }
-
-/* Styles for progress bars */
-.trac-progress .progress, .trac-groupprogress { margin: 0 1em; width: 40em; max-width: 70% }
-.trac-progress .legend {
+.milestone .info .progress { margin: 0 1em; width: 40em; max-width: 70% }
+.milestone .info dl {
  font-size: 10px;
  font-style: italic;
  margin: 1em 1em 2em;
  white-space: nowrap;
  clear: left;
 }
-.trac-progress .legend .interval { margin: 0 .8em }
-.trac-groupprogress table { border-collapse: collapse; width: 100% }
-.trac-groupprogress th, .trac-groupprogress td { font-size: 10px; padding: 0; white-space: nowrap }
-.trac-groupprogress th { text-align: right; }
-.trac-groupprogress th :link, .trac-groupprogress th :visited { border: none }
-.trac-groupprogress td { padding-left: 0.5em; width: 100% }
-.trac-groupprogress table.progress  {
- margin: 3px 1em 3px 0;
- box-shadow: none;
-}
-.trac-groupprogress table.progress td  { padding: 0 }
-.trac-groupprogress p.percent { margin-top: 3px; white-space: nowrap }
+.milestone .info dt { display: inline; margin-left: .5em }
+.milestone .info dd { display: inline; margin: 0 1em 0 .5em }
+.milestone .description { margin-left: 1em }
+
+/* Styles for the milestone view */
+.milestone .date { color: #888; font-style: italic; margin: 0 }
+.milestone .description { margin: 1em 0 2em }
+
+/* Styles for the milestone statistics table */
+#stats { float: right; margin: 0 0 2em 2em; width: 400px; max-width: 40% }
+#stats legend { white-space: nowrap }
+#stats table { border-collapse: collapse; width: 100% }
+#stats th, #stats td { font-size: 10px; padding: 0; white-space: nowrap }
+#stats th { text-align: right; }
+#stats th :link, #stats th :visited { border: none }
+#stats td { padding-left: 0.5em; width: 100% }
+#stats td table.progress { margin: 3px 1em 3px 0 }
+#stats td table.progress td { padding: 0 }
+#stats td p.percent { margin-top: 3px }
 
 /* Styles for the milestone edit form */
 #edit fieldset { margin: 1em 0 }
@@ -97,7 +85,7 @@ p.percent {
 #edit .disabled em { color: #d7d7d7 }
 #edit .field { margin: 0.5em 0 }
 #edit label { padding-left: .2em }
-#edit fieldset { margin-left: 1px; margin-right: 1px }
+#edit fieldset.iefix { margin-left: 1px; margin-right: 1px }
 #edit textarea#description { margin-left: -1px; margin-right: -1px; padding: 0; width: 100% }
 #edit .wikitoolbar { margin-left: -1px }
 #edit div.trac-resizable { width: 100% }

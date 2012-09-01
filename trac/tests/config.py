@@ -12,8 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import os
 import tempfile
 import time
@@ -41,8 +39,11 @@ class ConfigurationTestCase(unittest.TestCase):
         return Configuration(self.filename)
 
     def _write(self, lines):
-        with open(self.filename, 'w') as fileobj:
+        fileobj = open(self.filename, 'w')
+        try:
             fileobj.write(('\n'.join(lines + [''])).encode('utf-8'))
+        finally:
+            fileobj.close()
 
     def test_default(self):
         config = self._read()
@@ -190,10 +191,9 @@ class ConfigurationTestCase(unittest.TestCase):
         config = self._read()
 
         class Foo(object):
-            # enclose in parentheses to avoid messages extraction
-            option = (ChoiceOption)('a', 'option', ['Item1', 2, '3'])
-            other = (ChoiceOption)('a', 'other', [1, 2, 3])
-            invalid = (ChoiceOption)('a', 'invalid', ['a', 'b', 'c'])
+            option = ChoiceOption('a', 'option', ['Item1', 2, '3'])
+            other = ChoiceOption('a', 'other', [1, 2, 3])
+            invalid = ChoiceOption('a', 'invalid', ['a', 'b', 'c'])
         
             def __init__(self):
                 self.config = config
@@ -295,15 +295,9 @@ class ConfigurationTestCase(unittest.TestCase):
         self.assertEquals(['a', 'b'], config.sections())
         
         class Foo(object):
-            # enclose in parentheses to avoid messages extraction
-            section_c = (ConfigSection)('c', 'Doc for c')
             option_c = Option('c', 'option', 'value')
         
         self.assertEquals(['a', 'b', 'c'], config.sections())
-        foo = Foo()
-        foo.config = config
-        self.assert_(foo.section_c is config['c'])
-        self.assertEquals('value', foo.section_c.get('option'))
 
     def test_sections_unicode(self):
         self._write([u'[aä]', u'öption = x', '[b]', 'option = y'])
@@ -434,9 +428,12 @@ class ConfigurationTestCase(unittest.TestCase):
 
     def _test_with_inherit(self, testcb):
         sitename = os.path.join(tempfile.gettempdir(), 'trac-site.ini')
+        sitefile = open(sitename, 'w')
         try:
-            with open(sitename, 'w') as sitefile:
+            try:
                 sitefile.write('[a]\noption = x\n')
+            finally:
+                sitefile.close()
 
             self._write(['[inherit]', 'file = trac-site.ini'])
             testcb()

@@ -11,12 +11,9 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import doctest
 import os.path
 import random
-import re
 import tempfile
 import unittest
 
@@ -36,28 +33,36 @@ class AtomicFileTestCase(unittest.TestCase):
             pass
     
     def test_non_existing(self):
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('test content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('test content', util.read_file(self.path))
     
     def test_existing(self):
         util.create_file(self.path, 'Some content')
         self.assertEqual('Some content', util.read_file(self.path))
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('Some new content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('Some new content', util.read_file(self.path))
     
     if util.can_rename_open_file:
         def test_existing_open_for_reading(self):
             util.create_file(self.path, 'Initial file content')
             self.assertEqual('Initial file content', util.read_file(self.path))
-            with open(self.path) as rf:
-                with util.AtomicFile(self.path) as f:
+            rf = open(self.path)
+            try:
+                f = util.AtomicFile(self.path)
+                try:
                     f.write('Replaced content')
-            self.assertEqual(True, rf.closed)
-            self.assertEqual(True, f.closed)
+                finally:
+                    f.close()
+            finally:
+                rf.close()
             self.assertEqual('Replaced content', util.read_file(self.path))
     
     # FIXME: It is currently not possible to make this test pass on all
@@ -68,9 +73,11 @@ class AtomicFileTestCase(unittest.TestCase):
     # we require Python 3.
     def _test_unicode_path(self):
         self.path = os.path.join(tempfile.gettempdir(), u'träc-témpfilè')
-        with util.AtomicFile(self.path) as f:
+        f = util.AtomicFile(self.path)
+        try:
             f.write('test content')
-        self.assertEqual(True, f.closed)
+        finally:
+            f.close()
         self.assertEqual('test content', util.read_file(self.path))
 
 
@@ -150,32 +157,12 @@ class ContentDispositionTestCase(unittest.TestCase):
                          util.content_disposition(filename='a file.txt'))
 
 
-class SafeReprTestCase(unittest.TestCase):
-    def test_normal_repr(self):
-        for x in ([1, 2, 3], "été", u"été"): 
-            self.assertEqual(repr(x), util.safe_repr(x))
-
-    def test_buggy_repr(self):
-        class eh_ix(object):
-            def __repr__(self):
-                return 1 + "2"
-        self.assertRaises(Exception, repr, eh_ix())
-        sr = util.safe_repr(eh_ix())
-        sr = re.sub('[A-F0-9]{4,}', 'ADDRESS', sr)
-        sr = re.sub(r'__main__|trac\.util\.tests', 'MODULE', sr)
-        self.assertEqual("<MODULE.eh_ix object at 0xADDRESS "
-                         "(repr() error: TypeError: unsupported operand "
-                         "type(s) for +: 'int' and 'str')>", sr)
-               
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(AtomicFileTestCase, 'test'))
     suite.addTest(unittest.makeSuite(PathTestCase, 'test'))
     suite.addTest(unittest.makeSuite(RandomTestCase, 'test'))
     suite.addTest(unittest.makeSuite(ContentDispositionTestCase, 'test'))
-    suite.addTest(unittest.makeSuite(SafeReprTestCase, 'test'))
     suite.addTest(concurrency.suite())
     suite.addTest(datefmt.suite())
     suite.addTest(presentation.suite())

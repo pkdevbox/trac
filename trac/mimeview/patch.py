@@ -21,6 +21,7 @@ import os.path
 from trac.core import *
 from trac.mimeview.api import content_to_unicode, IHTMLPreviewRenderer, \
                               Mimeview
+from trac.util.compat import any
 from trac.util.html import escape, Markup
 from trac.util.text import expandtabs
 from trac.util.translation import _
@@ -74,10 +75,10 @@ class PatchRenderer(Component):
         If the diff cannot be parsed, this method returns None.
         """
         def _markup_intraline_change(fromlines, tolines):
-            from trac.versioncontrol.diff import get_change_extent
+            from trac.versioncontrol.diff import _get_change_extent
             for i in xrange(len(fromlines)):
                 fr, to = fromlines[i], tolines[i]
-                (start, end) = get_change_extent(fr, to)
+                (start, end) = _get_change_extent(fr, to)
                 if start != 0 or end != 0:
                     last = end+len(fr)
                     fromlines[i] = fr[:start] + '\0' + fr[start:last] + \
@@ -220,7 +221,7 @@ class PatchRenderer(Component):
                         # Make a new block?
                         if (command == ' ') != last_type:
                             last_type = command == ' '
-                            kind = 'unmod' if last_type else 'mod'
+                            kind = last_type and 'unmod' or 'mod'
                             block = {'type': kind,
                                      'base': {'offset': fromline - 1,
                                               'lines': []},

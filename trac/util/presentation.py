@@ -19,13 +19,9 @@ tasks such as grouping or pagination.
 from math import ceil
 import re
 
-__all__ = ['captioned_button', 'classes', 'first_last', 'group', 'istext',
-           'prepared_paginate', 'paginate', 'Paginator']
+__all__ = ['classes', 'first_last', 'group', 'istext', 'prepared_paginate', 
+           'paginate', 'Paginator']
 
-
-def captioned_button(req, symbol, text):
-    return symbol if req.session.get('ui.use_symbols') \
-        else u'%s %s' % (symbol, text)
 
 def classes(*args, **kwargs):
     """Helper function for dynamically assembling a list of CSS class names
@@ -56,9 +52,6 @@ def classes(*args, **kwargs):
     return u' '.join(classes)
 
 def first_last(idx, seq):
-    """Generate ``first`` or ``last`` or both, according to the
-    position `idx` in sequence `seq`.
-    """
     return classes(first=idx == 0, last=idx == len(seq) - 1)
 
 
@@ -111,7 +104,6 @@ def group(iterable, num, predicate=None):
 
 
 def istext(text):
-    """`True` for text (`unicode` and `str`), but `False` for `Markup`."""
     from genshi.core import Markup
     return isinstance(text, basestring) and not isinstance(text, Markup)
 

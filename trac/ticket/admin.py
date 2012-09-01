@@ -11,8 +11,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/.
 
-from __future__ import with_statement
-
 from datetime import datetime
 
 from trac.admin import *
@@ -21,8 +19,8 @@ from trac.perm import PermissionSystem
 from trac.resource import ResourceNotFound
 from trac.ticket import model
 from trac.util import getuser
-from trac.util.datefmt import utc, parse_date, format_date, format_datetime, \
-                              get_datetime_format_hint, user_time
+from trac.util.datefmt import utc, parse_date, get_datetime_format_hint, \
+                              format_date, format_datetime
 from trac.util.text import print_table, printout, exception_to_unicode
 from trac.util.translation import _, N_, gettext
 from trac.web.chrome import Chrome, add_notice, add_warning
@@ -84,14 +82,10 @@ class ComponentAdminPanel(TicketAdminPanel):
             comp = model.Component(self.env, component)
             if req.method == 'POST':
                 if req.args.get('save'):
-                    comp.name = name = req.args.get('name')
+                    comp.name = req.args.get('name')
                     comp.owner = req.args.get('owner')
                     comp.description = req.args.get('description')
-                    try:
-                        comp.update()
-                    except self.env.db_exc.IntegrityError:
-                        raise TracError(_('The component "%(name)s" already '
-                                          'exists.', name=name))
+                    comp.update()
                     add_notice(req, _('Your changes have been saved.'))
                     req.redirect(req.href.admin(cat, page))
                 elif req.args.get('cancel'):
@@ -119,8 +113,8 @@ class ComponentAdminPanel(TicketAdminPanel):
                         req.redirect(req.href.admin(cat, page))
                     else:
                         if comp.name is None:
-                            raise TracError(_("Invalid component name."))
-                        raise TracError(_("Component %(name)s already exists.",
+                            raise TracError(_('Invalid component name.'))
+                        raise TracError(_('Component %(name)s already exists.',
                                           name=name))
 
                 # Remove components
@@ -130,18 +124,20 @@ class ComponentAdminPanel(TicketAdminPanel):
                         raise TracError(_('No component selected'))
                     if not isinstance(sel, list):
                         sel = [sel]
-                    with self.env.db_transaction:
+                    @self.env.with_transaction()
+                    def do_remove(db):
                         for name in sel:
-                            model.Component(self.env, name).delete()
-                    add_notice(req, _("The selected components have been "
-                                      "removed."))
+                            comp = model.Component(self.env, name, db=db)
+                            comp.delete()
+                    add_notice(req, _('The selected components have been '
+                                      'removed.'))
                     req.redirect(req.href.admin(cat, page))
 
                 # Set default component
                 elif req.args.get('apply'):
                     name = req.args.get('default')
                     if name and name != default:
-                        self.log.info("Setting default component to %s", name)
+                        self.log.info('Setting default component to %s', name)
                         self.config.set('ticket', 'default_component', name)
                         _save_config(self.config, req, self.log)
                         req.redirect(req.href.admin(cat, page))
@@ -187,8 +183,10 @@ class ComponentAdminPanel(TicketAdminPanel):
         return [c.name for c in model.Component.select(self.env)]
     
     def get_user_list(self):
-        return [username for username, in 
-                self.env.db_query("SELECT DISTINCT username FROM permission")]
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT DISTINCT username FROM permission")
+        return [row[0] for row in cursor]
     
     def _complete_add(self, args):
         if len(args) == 2:
@@ -216,17 +214,24 @@ class ComponentAdminPanel(TicketAdminPanel):
         component.insert()
     
     def _do_rename(self, name, newname):
-        component = model.Component(self.env, name)
-        component.name = newname
-        component.update()
+        @self.env.with_transaction()
+        def do_rename(db):
+            component = model.Component(self.env, name, db=db)
+            component.name = newname
+            component.update()
     
     def _do_remove(self, name):
-        model.Component(self.env, name).delete()
+        @self.env.with_transaction()
+        def do_remove(db):
+            component = model.Component(self.env, name, db=db)
+            component.delete()
     
     def _do_chown(self, name, owner):
-        component = model.Component(self.env, name)
-        component.owner = owner
-        component.update()
+        @self.env.with_transaction()
+        def do_chown(db):
+            component = model.Component(self.env, name, db=db)
+            component.owner = owner
+            component.update()
 
 
 class MilestoneAdminPanel(TicketAdminPanel):
@@ -252,26 +257,21 @@ class MilestoneAdminPanel(TicketAdminPanel):
             if req.method == 'POST':
                 if req.args.get('save'):
                     req.perm.require('MILESTONE_MODIFY')
-                    mil.name = name = req.args.get('name')
+                    mil.name = req.args.get('name')
                     mil.due = mil.completed = None
                     due = req.args.get('duedate', '')
                     if due:
-                        mil.due = user_time(req, parse_date, due,
-                                            hint='datetime')
+                        mil.due = parse_date(due, req.tz, 'datetime')
                     if req.args.get('completed', False):
                         completed = req.args.get('completeddate', '')
-                        mil.completed = user_time(req, parse_date, completed,
-                                                  hint='datetime')
+                        mil.completed = parse_date(completed, req.tz,
+                                                   'datetime')
                         if mil.completed > datetime.now(utc):
                             raise TracError(_('Completion date may not be in '
                                               'the future'),
                                             _('Invalid Completion Date'))
                     mil.description = req.args.get('description', '')
-                    try:
-                        mil.update()
-                    except self.env.db_exc.IntegrityError:
-                        raise TracError(_('The milestone "%(name)s" already '
-                                          'exists.', name=name))
+                    mil.update()
                     add_notice(req, _('Your changes have been saved.'))
                     req.redirect(req.href.admin(cat, page))
                 elif req.args.get('cancel'):
@@ -293,9 +293,8 @@ class MilestoneAdminPanel(TicketAdminPanel):
                         mil = model.Milestone(self.env)
                         mil.name = name
                         if req.args.get('duedate'):
-                            mil.due = user_time(req, parse_date,
-                                                req.args.get('duedate'),
-                                                hint='datetime')
+                            mil.due = parse_date(req.args.get('duedate'),
+                                                 req.tz, 'datetime')
                         mil.insert()
                         add_notice(req, _('The milestone "%(name)s" has been '
                                           'added.', name=name))
@@ -303,7 +302,7 @@ class MilestoneAdminPanel(TicketAdminPanel):
                     else:
                         if mil.name is None:
                             raise TracError(_('Invalid milestone name.'))
-                        raise TracError(_("Milestone %(name)s already exists.",
+                        raise TracError(_('Milestone %(name)s already exists.',
                                           name=name))
 
                 # Remove milestone
@@ -314,38 +313,39 @@ class MilestoneAdminPanel(TicketAdminPanel):
                         raise TracError(_('No milestone selected'))
                     if not isinstance(sel, list):
                         sel = [sel]
-                    with self.env.db_transaction:
+                    @self.env.with_transaction()
+                    def do_remove(db):
                         for name in sel:
-                            mil = model.Milestone(self.env, name)
+                            mil = model.Milestone(self.env, name, db=db)
                             mil.delete(author=req.authname)
-                    add_notice(req, _("The selected milestones have been "
-                                      "removed."))
+                    add_notice(req, _('The selected milestones have been '
+                                      'removed.'))
                     req.redirect(req.href.admin(cat, page))
 
                 # Set default milestone
                 elif req.args.get('apply'):
                     name = req.args.get('default')
                     if name and name != default:
-                        self.log.info("Setting default milestone to %s", name)
+                        self.log.info('Setting default milestone to %s', name)
                         self.config.set('ticket', 'default_milestone', name)
                         _save_config(self.config, req, self.log)
                         req.redirect(req.href.admin(cat, page))
 
             # Get ticket count
-            milestones = [
-                (milestone, self.env.db_query("""
-                    SELECT COUNT(*) FROM ticket WHERE milestone=%s
-                    """, (milestone.name,))[0][0])
-                for milestone in model.Milestone.select(self.env)]
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
+            milestones = []
+            for milestone in model.Milestone.select(self.env, db=db):
+                cursor.execute("SELECT COUNT(*) FROM ticket "
+                               "WHERE milestone=%s", (milestone.name, ))
+                milestones.append((milestone, cursor.fetchone()[0]))
             
             data = {'view': 'list',
                     'milestones': milestones,
                     'default': default}
 
-        Chrome(self.env).add_jquery_ui(req)
-
         data.update({
-            'datetime_hint': get_datetime_format_hint(req.lc_time),
+            'datetime_hint': get_datetime_format_hint()
         })
         return 'admin_milestones.html', data
 
@@ -353,13 +353,13 @@ class MilestoneAdminPanel(TicketAdminPanel):
     
     def get_admin_commands(self):
         yield ('milestone list', '',
-               "Show milestones",
+               'Show milestones',
                None, self._do_list)
         yield ('milestone add', '<name> [due]',
-               "Add milestone",
+               'Add milestone',
                None, self._do_add)
         yield ('milestone rename', '<name> <newname>',
-               "Rename milestone",
+               'Rename milestone',
                self._complete_name, self._do_rename)
         yield ('milestone due', '<name> <due>',
                """Set milestone due date
@@ -380,7 +380,7 @@ class MilestoneAdminPanel(TicketAdminPanel):
                """ % console_date_format_hint,
                self._complete_name, self._do_completed)
         yield ('milestone remove', '<name>',
-               "Remove milestone",
+               'Remove milestone',
                self._complete_name, self._do_remove)
     
     def get_milestone_list(self):
@@ -396,7 +396,7 @@ class MilestoneAdminPanel(TicketAdminPanel):
                       m.completed and
                         format_datetime(m.completed, console_datetime_format))
                      for m in model.Milestone.select(self.env)],
-                    [_("Name"), _("Due"), _("Completed")])
+                    [_('Name'), _('Due'), _('Completed')])
     
     def _do_add(self, name, due=None):
         milestone = model.Milestone(self.env)
@@ -406,23 +406,32 @@ class MilestoneAdminPanel(TicketAdminPanel):
         milestone.insert()
     
     def _do_rename(self, name, newname):
-        milestone = model.Milestone(self.env, name)
-        milestone.name = newname
-        milestone.update()
+        @self.env.with_transaction()
+        def do_rename(db):
+            milestone = model.Milestone(self.env, name, db=db)
+            milestone.name = newname
+            milestone.update()
     
     def _do_due(self, name, due):
-        milestone = model.Milestone(self.env, name)
-        milestone.due = due and parse_date(due, hint='datetime')
-        milestone.update()
+        @self.env.with_transaction()
+        def do_due(db):
+            milestone = model.Milestone(self.env, name, db=db)
+            milestone.due = due and parse_date(due, hint='datetime')
+            milestone.update()
     
     def _do_completed(self, name, completed):
-        milestone = model.Milestone(self.env, name)
-        milestone.completed = completed and parse_date(completed,
-                                                       hint='datetime')
-        milestone.update()
+        @self.env.with_transaction()
+        def do_completed(db):
+            milestone = model.Milestone(self.env, name, db=db)
+            milestone.completed = completed and parse_date(completed,
+                                                           hint='datetime')
+            milestone.update()
     
     def _do_remove(self, name):
-        model.Milestone(self.env, name).delete(author=getuser())
+        @self.env.with_transaction()
+        def do_remove(db):
+            milestone = model.Milestone(self.env, name, db=db)
+            milestone.delete(author=getuser())
 
 
 class VersionAdminPanel(TicketAdminPanel):
@@ -438,20 +447,14 @@ class VersionAdminPanel(TicketAdminPanel):
             ver = model.Version(self.env, version)
             if req.method == 'POST':
                 if req.args.get('save'):
-                    ver.name = name = req.args.get('name')
+                    ver.name = req.args.get('name')
                     if req.args.get('time'):
-                        ver.time = user_time(req, parse_date,
-                                             req.args.get('time'),
-                                             hint='datetime')
+                        ver.time = parse_date(req.args.get('time'), req.tz,
+                                              'datetime')
                     else:
                         ver.time = None # unset
                     ver.description = req.args.get('description')
-                    try:
-                        ver.update()
-                    except self.env.db_exc.IntegrityError:
-                        raise TracError(_('The version "%(name)s" already '
-                                          'exists.', name=name))
-                    
+                    ver.update()
                     add_notice(req, _('Your changes have been saved.'))
                     req.redirect(req.href.admin(cat, page))
                 elif req.args.get('cancel'):
@@ -472,39 +475,39 @@ class VersionAdminPanel(TicketAdminPanel):
                         ver = model.Version(self.env)
                         ver.name = name
                         if req.args.get('time'):
-                            ver.time = user_time(req, parse_date,
-                                                 req.args.get('time'),
-                                                 hint='datetime')
+                            ver.time = parse_date(req.args.get('time'),
+                                                  req.tz, 'datetime')
                         ver.insert()
                         add_notice(req, _('The version "%(name)s" has been '
                                           'added.', name=name))
                         req.redirect(req.href.admin(cat, page))
                     else:
                         if ver.name is None:
-                            raise TracError(_("Invalid version name."))
-                        raise TracError(_("Version %(name)s already exists.",
+                            raise TracError(_('Invalid version name.'))
+                        raise TracError(_('Version %(name)s already exists.',
                                           name=name))
                          
                 # Remove versions
                 elif req.args.get('remove'):
                     sel = req.args.get('sel')
                     if not sel:
-                        raise TracError(_("No version selected"))
+                        raise TracError(_('No version selected'))
                     if not isinstance(sel, list):
                         sel = [sel]
-                    with self.env.db_transaction:
+                    @self.env.with_transaction()
+                    def do_remove(db):
                         for name in sel:
-                            ver = model.Version(self.env, name)
+                            ver = model.Version(self.env, name, db=db)
                             ver.delete()
-                    add_notice(req, _("The selected versions have been "
-                                      "removed."))
+                    add_notice(req, _('The selected versions have been '
+                                      'removed.'))
                     req.redirect(req.href.admin(cat, page))
 
                 # Set default version
                 elif req.args.get('apply'):
                     name = req.args.get('default')
                     if name and name != default:
-                        self.log.info("Setting default version to %s", name)
+                        self.log.info('Setting default version to %s', name)
                         self.config.set('ticket', 'default_version', name)
                         _save_config(self.config, req, self.log)
                         req.redirect(req.href.admin(cat, page))
@@ -513,10 +516,8 @@ class VersionAdminPanel(TicketAdminPanel):
                     'versions': model.Version.select(self.env),
                     'default': default}
 
-        Chrome(self.env).add_jquery_ui(req)
-
         data.update({
-            'datetime_hint': get_datetime_format_hint(req.lc_time),
+            'datetime_hint': get_datetime_format_hint()
         })
         return 'admin_versions.html', data
 
@@ -524,13 +525,13 @@ class VersionAdminPanel(TicketAdminPanel):
     
     def get_admin_commands(self):
         yield ('version list', '',
-               "Show versions",
+               'Show versions',
                None, self._do_list)
         yield ('version add', '<name> [time]',
-               "Add version",
+               'Add version',
                None, self._do_add)
         yield ('version rename', '<name> <newname>',
-               "Rename version",
+               'Rename version',
                self._complete_name, self._do_rename)
         yield ('version time', '<name> <time>',
                """Set version date
@@ -542,7 +543,7 @@ class VersionAdminPanel(TicketAdminPanel):
                """ % console_date_format_hint,
                self._complete_name, self._do_time)
         yield ('version remove', '<name>',
-               "Remove version",
+               'Remove version',
                self._complete_name, self._do_remove)
     
     def get_version_list(self):
@@ -556,7 +557,7 @@ class VersionAdminPanel(TicketAdminPanel):
         print_table([(v.name,
                       v.time and format_date(v.time, console_date_format))
                      for v in model.Version.select(self.env)],
-                    [_("Name"), _("Time")])
+                    [_('Name'), _('Time')])
     
     def _do_add(self, name, time=None):
         version = model.Version(self.env)
@@ -566,17 +567,24 @@ class VersionAdminPanel(TicketAdminPanel):
         version.insert()
     
     def _do_rename(self, name, newname):
-        version = model.Version(self.env, name)
-        version.name = newname
-        version.update()
+        @self.env.with_transaction()
+        def do_rename(db):
+            version = model.Version(self.env, name, db=db)
+            version.name = newname
+            version.update()
     
     def _do_time(self, name, time):
-        version = model.Version(self.env, name)
-        version.time = time and parse_date(time, hint='datetime')
-        version.update()
+        @self.env.with_transaction()
+        def do_time(db):
+            version = model.Version(self.env, name, db=db)
+            version.time = time and parse_date(time, hint='datetime')
+            version.update()
     
     def _do_remove(self, name):
-        model.Version(self.env, name).delete()
+        @self.env.with_transaction()
+        def do_remove(db):
+            version = model.Version(self.env, name, db=db)
+            version.delete()
 
 
 class AbstractEnumAdminPanel(TicketAdminPanel):
@@ -598,13 +606,9 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
             enum = self._enum_cls(self.env, path_info)
             if req.method == 'POST':
                 if req.args.get('save'):
-                    enum.name = name = req.args.get('name')
-                    try:
-                        enum.update()
-                    except self.env.db_exc.IntegrityError:
-                        raise TracError(_('%(type)s value "%(name)s" already '
-                                          'exists', type=label[0], name=name))
-                    add_notice(req, _("Your changes have been saved."))
+                    enum.name = req.args.get('name')
+                    enum.update()
+                    add_notice(req, _('Your changes have been saved.'))
                     req.redirect(req.href.admin(cat, page))
                 elif req.args.get('cancel'):
                     req.redirect(req.href.admin(cat, page))
@@ -618,7 +622,7 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                     name = req.args.get('name')
                     try:
                         enum = self._enum_cls(self.env, name=name)
-                    except ResourceNotFound:
+                    except:
                         enum = self._enum_cls(self.env)
                         enum.name = name
                         enum.insert()
@@ -628,7 +632,7 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                         req.redirect(req.href.admin(cat, page))
                     else:
                         if enum.name is None:
-                            raise TracError(_("Invalid %(type)s value.",
+                            raise TracError(_('Invalid %(type)s value.',
                                               type=label[0]))
                         raise TracError(_('%(type)s value "%(name)s" already '
                                           'exists', type=label[0], name=name))
@@ -637,38 +641,40 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                 elif req.args.get('remove'):
                     sel = req.args.get('sel')
                     if not sel:
-                        raise TracError(_("No %s selected") % self._type)
+                        raise TracError(_('No %s selected') % self._type)
                     if not isinstance(sel, list):
                         sel = [sel]
-                    with self.env.db_transaction:
+                    @self.env.with_transaction()
+                    def do_remove(db):
                         for name in sel:
-                            self._enum_cls(self.env, name).delete()
-                    add_notice(req, _("The selected %(field)s values have "
-                                      "been removed.", field=label[0]))
+                            enum = self._enum_cls(self.env, name, db=db)
+                            enum.delete()
+                    add_notice(req, _('The selected %(field)s values have '
+                                      'been removed.', field=label[0]))
                     req.redirect(req.href.admin(cat, page))
 
                 # Apply changes
                 elif req.args.get('apply'):
-                    changed = False
+                    changed = [False]
                     
                     # Set default value
                     name = req.args.get('default')
                     if name and name != default:
-                        self.log.info("Setting default %s to %s",
+                        self.log.info('Setting default %s to %s',
                                       self._type, name)
                         self.config.set('ticket', 'default_%s' % self._type,
                                         name)
                         try:
                             self.config.save()
-                            changed = True
+                            changed[0] = True
                         except Exception, e:
-                            self.log.error("Error writing to trac.ini: %s",
+                            self.log.error('Error writing to trac.ini: %s',
                                            exception_to_unicode(e))
                             add_warning(req,
-                                        _("Error writing to trac.ini, make "
-                                          "sure it is writable by the web "
-                                          "server. The default value has not "
-                                          "been saved."))
+                                        _('Error writing to trac.ini, make '
+                                          'sure it is writable by the web '
+                                          'server. The default value has not '
+                                          'been saved.'))
 
                     # Change enum values
                     order = dict([(str(int(key[6:])), 
@@ -677,17 +683,18 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
                                   if key.startswith('value_')])
                     values = dict([(val, True) for val in order.values()])
                     if len(order) != len(values):
-                        raise TracError(_("Order numbers must be unique"))
-                    with self.env.db_transaction:
-                        for enum in self._enum_cls.select(self.env):
+                        raise TracError(_('Order numbers must be unique'))
+                    @self.env.with_transaction()
+                    def do_change(db):
+                        for enum in self._enum_cls.select(self.env, db=db):
                             new_value = order[enum.value]
                             if new_value != enum.value:
                                 enum.value = new_value
                                 enum.update()
-                                changed = True
+                                changed[0] = True
 
-                    if changed:
-                        add_notice(req, _("Your changes have been saved."))
+                    if changed[0]:
+                        add_notice(req, _('Your changes have been saved.'))
                     req.redirect(req.href.admin(cat, page))
 
             data.update(dict(enums=list(self._enum_cls.select(self.env)),
@@ -746,27 +753,34 @@ class AbstractEnumAdminPanel(TicketAdminPanel):
         enum.insert()
     
     def _do_change(self, name, newname):
-        enum = self._enum_cls(self.env, name)
-        enum.name = newname
-        enum.update()
+        @self.env.with_transaction()
+        def do_change(db):
+            enum = self._enum_cls(self.env, name, db=db)
+            enum.name = newname
+            enum.update()
     
     def _do_remove(self, value):
-        self._enum_cls(self.env, value).delete()
+        @self.env.with_transaction()
+        def do_remove(db):
+            enum = self._enum_cls(self.env, value, db=db)
+            enum.delete()
     
     def _do_order(self, name, up_down):
         if up_down not in ('up', 'down'):
             raise AdminCommandError(_("Invalid up/down value: %(value)s",
                                       value=up_down))
-        direction = -1 if up_down == 'up' else 1
-        enum1 = self._enum_cls(self.env, name)
+        direction = up_down == 'up' and -1 or 1
+        db = self.env.get_db_cnx()
+        enum1 = self._enum_cls(self.env, name, db=db)
         enum1.value = int(float(enum1.value) + direction)
-        for enum2 in self._enum_cls.select(self.env):
+        for enum2 in self._enum_cls.select(self.env, db=db):
             if int(float(enum2.value)) == enum1.value:
                 enum2.value = int(float(enum2.value) - direction)
                 break
         else:
             return
-        with self.env.db_transaction:
+        @self.env.with_transaction()
+        def do_order(db):
             enum1.update()
             enum2.update()
 
@@ -821,7 +835,9 @@ class TicketAdmin(Component):
             number = int(number)
         except ValueError:
             raise AdminCommandError(_('<number> must be a number'))
-        with self.env.db_transaction:
-            model.Ticket(self.env, number).delete()
+        @self.env.with_transaction()
+        def do_remove(db):
+            ticket = model.Ticket(self.env, number, db=db)
+            ticket.delete()
         printout(_('Ticket #%(num)s and all associated data removed.',
                    num=number))

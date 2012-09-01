@@ -5,7 +5,7 @@
       xmlns:py="http://genshi.edgewall.org/"
       xmlns:xi="http://www.w3.org/2001/XInclude"
       xmlns:i18n="http://genshi.edgewall.org/i18n"
-      py:with="parent = attachments.parent if attachments else attachment.resource.parent">
+      py:with="parent = attachments and attachments.parent or attachment.resource.parent">
   <xi:include href="layout.html" />
   <head>
     <title py:choose="mode">
@@ -38,18 +38,18 @@
             <py:if test="authname == 'anonymous'">
               <div class="field">
                 <label>Your email or username:<br />
-                  <input type="text" name="author" size="30" value="${attachment.author or author}" />
+                  <input type="text" name="author" size="30" value="$author" />
                 </label>
               </div>
               </py:if>
             <div class="field">
               <label>Description of the file (optional):<br />
-                <input type="text" name="description" size="60" value="$attachment.description"/></label>
+                <input type="text" name="description" size="60" /></label>
             </div>
             <br />
             <py:if test="authname and authname != 'anonymous'">
               <div class="options">
-                <label><input type="checkbox" name="replace" checked="${is_replace or None}" />
+                <label><input type="checkbox" name="replace" />
                   Replace existing attachment of the same name</label>
               </div>
               <br />
@@ -82,7 +82,7 @@
 
       <py:when test="'list'">
         <h1><a href="${url_of(parent)}">${name_of(parent)}</a></h1>
-        <py:with vars="context = context.child(parent)">
+        <py:with vars="context = context(parent)">
           <?python add_button_title = _('Attach another file') ?>
           <xi:include href="list_of_attachments.html" py:with="alist = attachments"/>
         </py:with>
@@ -96,12 +96,12 @@
               <th scope="col" i18n:msg="file,size,author,date">
                 File $attachment.filename,
                 <span title="${_('%(size)s bytes', size=attachment.size)}">${pretty_size(attachment.size)}</span>
-                (added by ${authorinfo(attachment.author)}, ${pretty_dateinfo(attachment.date)})
+                (added by ${authorinfo(attachment.author)}, ${dateinfo(attachment.date)} ago)
               </th>
             </tr>
             <tr>
               <td class="message searchable" xml:space="preserve">
-                ${wiki_to_html(context.child(parent), attachment.description)}
+                ${wiki_to_html(context(parent), attachment.description)}
               </td>
             </tr>
           </tbody>

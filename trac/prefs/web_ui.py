@@ -40,11 +40,7 @@ class PreferencesModule(Component):
     implements(INavigationContributor, IPreferencePanelProvider,
                IRequestHandler, ITemplateProvider)
 
-    _form_fields = [
-        'newsid', 'name', 'email', 'tz', 'lc_time', 'dateinfo',
-        'language', 'accesskeys',
-        'ui.use_symbols', 'ui.hide_help',
-        ]
+    _form_fields = ['newsid', 'name', 'email', 'tz', 'language', 'accesskeys']
 
     # INavigationContributor methods
 
@@ -64,10 +60,6 @@ class PreferencesModule(Component):
             return True
 
     def process_request(self, req):
-        xhr = req.get_header('X-Requested-With') == 'XMLHttpRequest'
-        if xhr and req.method == 'POST' and 'save_prefs' in req.args:
-            self._do_save_xhr(req)
-
         panel_id = req.args['panel_id']
 
         panels = []
@@ -94,7 +86,6 @@ class PreferencesModule(Component):
         yield (None, _('General'))
         yield ('datetime', _('Date & Time'))
         yield ('keybindings', _('Keyboard Shortcuts'))
-        yield ('userinterface', _('User Interface'))
         if Locale:
             yield ('language', _('Language'))
         if not req.authname or req.authname == 'anonymous':
@@ -115,10 +106,9 @@ class PreferencesModule(Component):
         }
 
         if Locale:
-            locales = [Locale.parse(locale)
-                       for locale in get_available_locales()]
-            languages = sorted((str(locale), locale.display_name)
-                               for locale in locales)
+            locales = map(Locale.parse, get_available_locales())
+            languages = sorted([(str(locale).replace('_','-'),
+                                 locale.display_name) for locale in locales])
             data['locales'] = locales
             data['languages'] = languages
 
@@ -133,13 +123,6 @@ class PreferencesModule(Component):
         return [pkg_resources.resource_filename('trac.prefs', 'templates')]
 
     # Internal methods
-
-    def _do_save_xhr(self, req):
-        for key in req.args:
-            if not key in ['save_prefs', 'panel_id']:
-                req.session[key] = req.args[key]
-        req.session.save()
-        req.send_no_content()
 
     def _do_save(self, req):
         for field in self._form_fields:

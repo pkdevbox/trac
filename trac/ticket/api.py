@@ -24,7 +24,7 @@ from trac.config import *
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionCache, PermissionSystem
 from trac.resource import IResourceManager
-from trac.util import Ranges, as_int
+from trac.util import Ranges
 from trac.util.text import shorten_line
 from trac.util.translation import _, N_, gettext
 from trac.wiki import IWikiSyntaxProvider, WikiParser
@@ -163,10 +163,6 @@ class TicketSystem(Component):
     change_listeners = ExtensionPoint(ITicketChangeListener)
     milestone_change_listeners = ExtensionPoint(IMilestoneChangeListener)
     
-    ticket_custom_section = ConfigSection('ticket-custom',
-        """In this section, you can define additional fields for tickets. See
-        TracTicketsCustomFields for more details.""")
-
     action_controllers = OrderedExtensionsOption('ticket', 'workflow',
         ITicketActionController, default='ConfigurableTicketWorkflow',
         include_missing=False,
@@ -211,7 +207,7 @@ class TicketSystem(Component):
     default_keywords = Option('ticket', 'default_keywords', '',
         """Default keywords for newly created tickets.""")
 
-    default_owner = Option('ticket', 'default_owner', '< default >',
+    default_owner = Option('ticket', 'default_owner', '',
         """Default owner for newly created tickets.""")
 
     default_cc = Option('ticket', 'default_cc', '',
@@ -363,7 +359,7 @@ class TicketSystem(Component):
     def custom_fields(self, db):
         """Return the list of custom ticket fields available for tickets."""
         fields = []
-        config = self.ticket_custom_section
+        config = self.config['ticket-custom']
         for name in [option for option, value in config.options()
                      if '.' not in option]:
             field = {
@@ -410,7 +406,6 @@ class TicketSystem(Component):
                                                            ticket.resource):
                     possible_owners.append(user)
             possible_owners.sort()
-            possible_owners.insert(0, '< default >')
             field['options'] = possible_owners
             field['optional'] = True
 
@@ -419,13 +414,12 @@ class TicketSystem(Component):
     def get_permission_actions(self):
         return ['TICKET_APPEND', 'TICKET_CREATE', 'TICKET_CHGPROP',
                 'TICKET_VIEW', 'TICKET_EDIT_CC', 'TICKET_EDIT_DESCRIPTION',
-                'TICKET_EDIT_COMMENT', 'TICKET_BATCH_MODIFY',
+                'TICKET_EDIT_COMMENT',
                 ('TICKET_MODIFY', ['TICKET_APPEND', 'TICKET_CHGPROP']),
                 ('TICKET_ADMIN', ['TICKET_CREATE', 'TICKET_MODIFY',
                                   'TICKET_VIEW', 'TICKET_EDIT_CC',
                                   'TICKET_EDIT_DESCRIPTION',
-                                  'TICKET_EDIT_COMMENT',
-                                  'TICKET_BATCH_MODIFY'])]
+                                  'TICKET_EDIT_COMMENT'])]
 
     # IWikiSyntaxProvider methods
 
@@ -457,26 +451,22 @@ class TicketSystem(Component):
                 from trac.ticket.model import Ticket
                 if Ticket.id_is_valid(num) and \
                         'TICKET_VIEW' in formatter.perm(ticket):
-                    # TODO: attempt to retrieve ticket view directly,
-                    #       something like: t = Ticket.view(num)
-                    for type, summary, status, resolution in \
-                            self.env.db_query("""
-                            SELECT type, summary, status, resolution
-                            FROM ticket WHERE id=%s
-                            """, (str(num),)):
+                    # TODO: watch #6436 and when done, attempt to retrieve 
+                    #       ticket directly (try: Ticket(self.env, num) ...)
+                    cursor = formatter.db.cursor() 
+                    cursor.execute("SELECT type,summary,status,resolution "
+                                   "FROM ticket WHERE id=%s", (str(num),)) 
+                    for type, summary, status, resolution in cursor:
                         title = self.format_summary(summary, status,
                                                     resolution, type)
                         href = formatter.href.ticket(num) + params + fragment
-                        return tag.a(label, title=title, href=href,
-                                     class_='%s ticket' % status)
+                        return tag.a(label, class_='%s ticket' % status, 
+                                     title=title, href=href)
             else:
                 ranges = str(r)
                 if params:
                     params = '&' + params[1:]
-                label_wrap = label.replace(',', u',\u200b')
-                ranges_wrap = ranges.replace(',', u', ')
-                return tag.a(label_wrap,
-                             title=_("Tickets %(ranges)s", ranges=ranges_wrap),
+                return tag.a(label, title='Tickets '+ranges,
                              href=formatter.href.query(id=ranges) + params)
         except ValueError:
             pass
@@ -495,20 +485,13 @@ class TicketSystem(Component):
             resource = formatter.resource
             cnum = target
 
-        if resource and resource.realm == 'ticket':
-            id = as_int(resource.id, None)
-            if id is not None:
-                href = "%s#comment:%s" % (formatter.href.ticket(resource.id),
-                                          cnum)
-                title = _("Comment %(cnum)s for Ticket #%(id)s", cnum=cnum,
-                          id=resource.id)
-                if 'TICKET_VIEW' in formatter.perm(resource):
-                    for status, in self.env.db_query(
-                            "SELECT status FROM ticket WHERE id=%s", (id,)):
-                        return tag.a(label, href=href, title=title,
-                                     class_=status)
-                return tag.a(label, href=href, title=title)
-        return label
+        if resource:
+            href = "%s#comment:%s" % (formatter.href.ticket(resource.id), cnum)
+            title = _("Comment %(cnum)s for Ticket #%(id)s", cnum=cnum,
+                      id=resource.id)
+            return tag.a(label, href=href, title=title)
+        else:
+            return label
  
     # IResourceManager methods
 
@@ -554,13 +537,16 @@ class TicketSystem(Component):
         >>> resource_exists(env, t.resource)
         True
         """
-        if self.env.db_query("SELECT id FROM ticket WHERE id=%s",
-                             (resource.id,)):
+        db = self.env.get_read_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM ticket WHERE id=%s", (resource.id,))
+        latest_exists = bool(cursor.fetchall())
+        if latest_exists:
             if resource.version is None:
                 return True
-            revcount = self.env.db_query("""
-                SELECT count(DISTINCT time) FROM ticket_change WHERE ticket=%s
+            cursor.execute("""
+                SELECT count(distinct time) FROM ticket_change WHERE ticket=%s
                 """, (resource.id,))
-            return revcount[0][0] >= resource.version
+            return cursor.fetchone()[0] >= resource.version
         else:
             return False

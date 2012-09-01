@@ -324,8 +324,6 @@ nolink:&#34;&lt;blink&gt;&#34;
 Relative links are supported:
 [../parent See above] Note: see wikisyntax tests for other parent tests
 [./sibling See next]
-[./sibling#index See next (index)]
-[./sibling?version=1 See next (v1)]
 [... nothing to see] [...]
 [//docs See documentation]
 [//images/logo.png Our logo]
@@ -339,8 +337,6 @@ Relative links are supported:
 Relative links are supported:
 <a class="missing wiki" href="/wiki/parent" rel="nofollow">See above?</a> Note: see wikisyntax tests for other parent tests
 <a class="missing wiki" href="/wiki/WikiStart/sibling" rel="nofollow">See next?</a>
-<a class="missing wiki" href="/wiki/WikiStart/sibling#index" rel="nofollow">See next (index)?</a>
-<a class="missing wiki" href="/wiki/WikiStart/sibling?version=1" rel="nofollow">See next (v1)?</a>
 [... nothing to see] [...]
 <a href="/docs">See documentation</a>
 <a href="/images/logo.png">Our logo</a>
@@ -902,13 +898,6 @@ Go ahead, edit it freely.
  }}}
 etc.
 }}}
-and
-{{{#!rtl
-Some RTL text
-}}}
-{{{#!rtl class="important"
-with an additional class
-}}}
 Done.
 ------------------------------
 <p>
@@ -924,22 +913,10 @@ And now it's <span class="important"><strong>TIME FOR BED! </strong></span>. Rea
 etc.
 </p>
 </div><p>
-and
-</p>
-<div class="rtl"><p>
-Some RTL text
-</p>
-</div><div class="rtl important"><p>
-with an additional class
-</p>
-</div><p>
 Done.
 </p>
 ------------------------------
-And now it's <span class="important"><strong>TIME FOR BED!</strong></span>. Really.
- […]
-and
- […]
+And now it's [[span(...)]]. Really.
  […]
 Done.
 ============================== div and Span wiki processors
@@ -1222,27 +1199,10 @@ Inline  comment
 == Heading with fixed id == #heading-fixed-id
 ============================== Normal heading, auto-corrected id
 == 10 tips ==
-[[br]] oops!
 ------------------------------
 <h2 id="a10tips">10 tips</h2>
-<p>
-<br /> oops!
-</p>
 ------------------------------
 == 10 tips ==
-  oops!
-------------------------------
-------------------------------
-
-<ol>
-  <li>
-    <ol>
-      <li>
-        <a href="#a10tips">10 tips</a>
-      </li>
-    </ol>
-  </li>
-</ol>
 ============================== Relaxed heading
 = Title
 == Chapter
@@ -1269,39 +1229,6 @@ Inline  comment
 ===== Subsubsection #h5
 ====== h6
 ======== but no h7
-------------------------------
-------------------------------
-
-<ol>
-  <li>
-    <a href="#Title">Title</a>
-    <ol>
-      <li>
-        <a href="#Chapter">Chapter</a>
-        <ol>
-          <li>
-            <a href="#Section">Section</a>
-            <ol>
-              <li>
-                <a href="#Subsection">Subsection</a>
-                <ol>
-                  <li>
-                    <a href="#h5">Subsubsection</a>
-                    <ol>
-                      <li>
-                        <a href="#h6">h6</a>
-                      </li>
-                    </ol>
-                  </li>
-                </ol>
-              </li>
-            </ol>
-          </li>
-        </ol>
-      </li>
-    </ol>
-  </li>
-</ol>
 ============================================================
 
              Lists
@@ -1314,10 +1241,6 @@ Paragraph
      Subitem line 2
  * item 2
    item 2 line 2
-Paragraph
- - foo bar
-   boo baz
- • item 2
 Paragraph
 ------------------------------
 <p>
@@ -1332,12 +1255,6 @@ item 2 line 2
 </li></ul><p>
 Paragraph
 </p>
-<ul><li>foo bar
-boo baz
-</li><li>item 2
-</li></ul><p>
-Paragraph
-</p>
 ------------------------------
 Paragraph
  * foo bar
@@ -1346,10 +1263,6 @@ Paragraph
      Subitem line 2
  * item 2
    item 2 line 2
-Paragraph
- - foo bar
-   boo baz
- • item 2
 Paragraph
 ============================== Changelog sample (and e-mail link)
 2003-09-18 23:26  Joe Bar <joeb@gloogle.gom>

@@ -1,8 +1,4 @@
-/* Warning: this module is deprecated and will be removed in Trac 1.1.x
- *
- * Don't use $.suggest in your own plugins, rather look into jquery-ui's
- * autocomplete features (http://docs.jquery.com/UI/Autocomplete).
- */
+
 (function($){
   
   
@@ -131,7 +127,7 @@
                  function() { $(this).removeClass("selected") })
           .click(function() { select(this); input.get(0).focus() });
         move(0);
-      }, 'html');
+      });
     }
   }
   
