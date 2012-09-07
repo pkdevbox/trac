@@ -13,11 +13,10 @@ class DeleteTicketActionController(Component):
     Illustrates how to create an action controller with side-effects.
 
     Don't forget to add `DeleteTicketActionController` to the workflow
-    option in the `[ticket]` section in TracIni.
-    If there is no other workflow option, the line will look like this:
-    {{{
+    option in [ticket].
+    If there is no workflow option, the line will look like this:
+
     workflow = ConfigurableTicketWorkflow,DeleteTicketActionController
-    }}}
     """
 
     implements(ITicketActionController, IPermissionRequestor)

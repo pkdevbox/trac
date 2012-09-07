@@ -24,7 +24,6 @@ wiki_pages = [
  "TracAccessibility",
  "TracAdmin",
  "TracBackup",
- "TracBatchModify",
  "TracBrowser",
  "TracCgi",
  "TracChangeset",
@@ -78,7 +77,7 @@ def get_page_from_file(prefix, pname):
         f = open(pname ,'r')
         d = f.read()
         f.close()
-    except Exception:
+    except:
         print "Missing page: %s" % pname
     return d
 

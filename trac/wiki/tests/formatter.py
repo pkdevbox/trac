@@ -2,28 +2,17 @@ import difflib
 import os
 import re
 import unittest
-
-# Python 2.7 `assertMultiLineEqual` calls `safe_repr(..., short=True)`
-# which breaks our custom failure display in WikiTestCase.
-
-try:
-    from unittest.util import safe_repr
-    unittest.case.safe_repr = lambda obj, short=False: safe_repr(obj, False)
-except ImportError:
-    pass
-
 from datetime import datetime
 
 from trac.core import *
-from trac.test import Mock, MockPerm, EnvironmentStub, locale_en
+from trac.mimeview import Context
+from trac.test import Mock, MockPerm, EnvironmentStub
 from trac.util.datefmt import utc
 from trac.util.html import html
 from trac.util.text import to_unicode
-from trac.web.chrome import web_context
 from trac.web.href import Href
 from trac.wiki.api import IWikiSyntaxProvider
-from trac.wiki.formatter import (HtmlFormatter, InlineHtmlFormatter, 
-                                 OutlineFormatter)
+from trac.wiki.formatter import HtmlFormatter, InlineHtmlFormatter
 from trac.wiki.macros import WikiMacroBase
 from trac.wiki.model import WikiPage
 
@@ -101,7 +90,7 @@ class SampleResolver(Component):
     def _format_link(self, formatter, ns, target, label):
         kind, module = 'text', 'stuff'
         try:
-            kind = 'odd' if int(target) % 2 else 'even'
+            kind = int(target) % 2 and 'odd' or 'even'
             module = 'thing'
         except ValueError:
             pass
@@ -125,13 +114,12 @@ class WikiTestCase(unittest.TestCase):
         self._teardown = teardown
 
         req = Mock(href=Href('/'), abs_href=Href('http://www.example.com/'),
-                   authname='anonymous', perm=MockPerm(), tz=utc, args={},
-                   locale=locale_en, lc_time=locale_en)
+                   authname='anonymous', perm=MockPerm(), tz=None, args={})
         if context:
             if isinstance(context, tuple):
-                context = web_context(req, *context)
+                context = Context.from_request(req, *context)
         else:
-            context = web_context(req, 'wiki', 'WikiStart')
+            context = Context.from_request(req, 'wiki', 'WikiStart')
         self.context = context
 
         all_test_components = [
@@ -178,7 +166,7 @@ class WikiTestCase(unittest.TestCase):
         """Testing WikiFormatter"""
         formatter = self.formatter()
         v = unicode(formatter.generate(**self.generate_opts))
-        v = v.replace('\r', '').replace(u'\u200b', '') # FIXME: keep ZWSP
+        v = v.replace('\r', '').replace(u'\u200b', '')
         try:
             self.assertEquals(self.correct, v)
         except AssertionError, e:
@@ -222,20 +210,6 @@ class EscapeNewLinesTestCase(WikiTestCase):
     def formatter(self):
         return HtmlFormatter(self.env, self.context, self.input)
 
-class OutlineTestCase(WikiTestCase):
-    def formatter(self):
-        from StringIO import StringIO
-        class Outliner(object):
-            flavor = 'outliner'
-            def __init__(self, env, context, input):
-                self.outliner = OutlineFormatter(env, context)
-                self.input = input
-            def generate(self):
-                out = StringIO()
-                self.outliner.format(self.input, out)
-                return out.getvalue()
-        return Outliner(self.env, self.context, self.input)
-
 
 def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
     suite = unittest.TestSuite()
@@ -253,9 +227,10 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
             if 'SKIP' in title or 'WONTFIX' in title:
                 continue
             blocks = test.split('-' * 30 + '\n')
-            if len(blocks) < 5:
-                blocks.extend([None,] * (5 - len(blocks)))
-            input, page, oneliner, page_escape_nl, outline = blocks[:5]
+            page_escape_nl = oneliner = None
+            if len(blocks) < 4:
+                blocks.extend([None,] * (4 - len(blocks)))
+            input, page, oneliner, page_escape_nl = blocks[:4]
             if page:
                 page = WikiTestCase(
                     title, input, page, filename, line, setup,
@@ -268,11 +243,7 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
                 page_escape_nl = EscapeNewLinesTestCase(
                     title, input, page_escape_nl, filename, line, setup,
                     teardown, context)
-            if outline:
-                outline = OutlineTestCase(
-                    title, input, outline, filename, line, setup, 
-                    teardown, context)
-            for tc in [page, oneliner, page_escape_nl, outline]:
+            for tc in [page, oneliner, page_escape_nl]:
                 if tc:
                     suite.addTest(tc)
     if data:

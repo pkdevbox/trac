@@ -10,23 +10,7 @@ The workflow configured in this case is the original workflow, so that ticket ac
 
 Graphically, that looks like this:
 
-{{{#!Workflow width=500 height=240
-leave = * -> *
-leave.operations = leave_status
-leave.default = 1
-accept = new -> assigned
-accept.permissions = TICKET_MODIFY
-accept.operations = set_owner_to_self
-resolve = new,assigned,reopened -> closed
-resolve.permissions = TICKET_MODIFY
-resolve.operations = set_resolution
-reassign = new,assigned,reopened -> new
-reassign.permissions = TICKET_MODIFY
-reassign.operations = set_owner
-reopen = closed -> reopened
-reopen.permissions = TICKET_CREATE
-reopen.operations = del_resolution
-}}}
+[[Image(htdocs:../common/guide/original-workflow.png)]]
 
 There are some significant "warts" in this; such as accepting a ticket sets it to 'assigned' state, and assigning a ticket sets it to 'new' state.  Perfectly obvious, right?
 So you will probably want to migrate to "basic" workflow; [trac:source:trunk/contrib/workflow/migrate_original_to_basic.py contrib/workflow/migrate_original_to_basic.py] may be helpful.
@@ -36,23 +20,7 @@ When a new environment is created, a default workflow is configured in your trac
 
 Graphically, it looks like this:
 
-{{{#!Workflow width=700 height=300
-leave = * -> *
-leave.operations = leave_status
-leave.default = 1
-accept = new,assigned,accepted,reopened -> accepted
-accept.permissions = TICKET_MODIFY
-accept.operations = set_owner_to_self
-resolve = new,assigned,accepted,reopened -> closed
-resolve.permissions = TICKET_MODIFY
-resolve.operations = set_resolution
-reassign = new,assigned,accepted,reopened -> assigned
-reassign.permissions = TICKET_MODIFY
-reassign.operations = set_owner
-reopen = closed -> reopened
-reopen.permissions = TICKET_CREATE
-reopen.operations = del_resolution
-}}}
+[[Image(htdocs:../common/guide/basic-workflow.png)]]
 
 == Additional Ticket Workflows ==
 

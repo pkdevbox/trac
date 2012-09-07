@@ -30,7 +30,6 @@ These are the available options for the `[notification]` section in trac.ini.
  * '''`smtp_enabled`''': Enable email notification.
  * '''`smtp_from`''': Email address to use for ''Sender''-headers in notification emails.
  * '''`smtp_from_name`''': Sender name to use for ''Sender''-headers in notification emails.
- * '''`smtp_from_author`''': (''since 1.0'') Use the author of a change (the reporter of a new ticket, or the author of a comment) as the `From:` header value in notification e-mails (default: false). If the author hasn't set an e-mail address, `smtp_from` and `smtp_from_name` are used instead.
  * '''`smtp_replyto`''': Email address to use for ''Reply-To''-headers in notification emails.
  * '''`smtp_default_domain`''': (''since 0.10'') Append the specified domain to addresses that do not contain one. Fully qualified addresses are not modified. The default domain is appended to all username/login for which an email address cannot be found from the user settings.
  * '''`smtp_always_cc`''': List of email addresses to always send notifications to. ''Typically used to post ticket changes to a dedicated mailing list.''
@@ -49,7 +48,7 @@ These are the available options for the `[notification]` section in trac.ini.
  * '''`ticket_subject_template`''': (''since 0.11'') A [http://genshi.edgewall.org/wiki/Documentation/text-templates.html Genshi text template] snippet used to get the notification subject.
  * '''`email_sender`''': (''since 0.12'') Name of the component implementing `IEmailSender`. This component is used by the notification system to send emails. Trac currently provides the following components:
    * `SmtpEmailSender`: connects to an SMTP server (default).
-   * `SendmailEmailSender`: runs a `sendmail`-compatible executable.
+   * `SendmailEmailSender`: runs a `sendmail`-compatible executable.   
 
 Either '''`smtp_from`''' or '''`smtp_replyto`''' (or both) ''must'' be set, otherwise Trac refuses to send notification mails.
 

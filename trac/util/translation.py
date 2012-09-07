@@ -13,15 +13,12 @@
 
 """Utilities for text translation with gettext."""
 
-from __future__ import with_statement
-
 import pkg_resources
 import re
 
 from genshi.builder import tag
 
 from trac.util.concurrency import ThreadLocal, threading
-from trac.util.compat import cleandoc
 
 
 __all__ = ['gettext', 'ngettext', 'gettext_noop', 'ngettext_noop', 
@@ -43,10 +40,9 @@ def dgettext_noop(domain, string, **kwargs):
     return gettext_noop(string, **kwargs)
 
 N_ = _noop = lambda string: string
-cleandoc_ = cleandoc
 
 def ngettext_noop(singular, plural, num, **kwargs):
-    string = singular if num == 1 else plural
+    string = (plural, singular)[num == 1]
     kwargs.setdefault('num', num)
     return safefmt(string, kwargs)
 
@@ -61,13 +57,13 @@ def _tag_kwargs(trans, kwargs):
     return tag(*trans_elts)
 
 def tgettext_noop(string, **kwargs):
-    return _tag_kwargs(string, kwargs) if kwargs else string
+    return kwargs and _tag_kwargs(string, kwargs) or string
 
 def dtgettext_noop(domain, string, **kwargs):
     return tgettext_noop(string, **kwargs)
 
 def tngettext_noop(singular, plural, num, **kwargs):
-    string = singular if num == 1 else plural
+    string = (plural, singular)[num == 1]
     kwargs.setdefault('num', num)
     return _tag_kwargs(string, kwargs)
 
@@ -132,9 +128,12 @@ try:
         # Public API
 
         def add_domain(self, domain, env_path, locales_dir):
-            with self._plugin_domains_lock:
+            self._plugin_domains_lock.acquire()
+            try:
                 domains = self._plugin_domains.setdefault(env_path, {})
                 domains[domain] = locales_dir
+            finally:
+                self._plugin_domains_lock.release()
 
         def make_activable(self, get_locale, env_path=None):
             self._current.args = (get_locale, env_path)
@@ -148,15 +147,14 @@ try:
             t = Translations.load(locale_dir, locale or 'en_US')
             if not t or t.__class__ is NullTranslations:
                 t = self._null_translations
-            else:
-                t.add(Translations.load(locale_dir, locale or 'en_US',
-                                        'tracini'))
-                if env_path:
-                    with self._plugin_domains_lock:
-                        domains = self._plugin_domains.get(env_path, {})
-                        domains = domains.items()
-                    for domain, dirname in domains:
-                        t.add(Translations.load(dirname, locale, domain))
+            elif env_path:
+                self._plugin_domains_lock.acquire()
+                try:
+                    domains = self._plugin_domains.get(env_path, {}).items()
+                finally:
+                    self._plugin_domains_lock.release()
+                for domain, dirname in domains:
+                    t.add(Translations.load(dirname, locale, domain))
             self._current.translations = t
             self._activate_failed = False
          
@@ -226,7 +224,7 @@ try:
         def tgettext(self, string, **kwargs):
             def _tgettext():
                 trans = self.active.ugettext(string)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_tgettext)
             return _tgettext()
@@ -234,7 +232,7 @@ try:
         def dtgettext(self, domain, string, **kwargs):
             def _dtgettext():
                 trans = self.active.dugettext(domain, string)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_dtgettext)
             return _dtgettext()
@@ -255,7 +253,7 @@ try:
                 trans = self.active.dungettext(domain, singular, plural, num)
                 if '%(num)' in trans:
                     kwargs.update(num=num)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_dtngettext)
             return _dtngettext()
@@ -343,9 +341,9 @@ try:
 
     def get_negotiated_locale(preferred_locales):
         def normalize(locale_ids):
-            return [id.replace('-', '_') for id in locale_ids if id]
+            return [id.replace('_', '-') for id in locale_ids if id]
         return Locale.negotiate(normalize(preferred_locales),
-                                normalize(get_available_locales()))
+                                normalize(get_available_locales()), sep='-')
         
     has_babel = True
 

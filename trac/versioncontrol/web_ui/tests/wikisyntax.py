@@ -3,7 +3,7 @@
 import unittest
 
 from trac.test import Mock
-from trac.versioncontrol import NoSuchChangeset, NoSuchNode
+from trac.versioncontrol import NoSuchChangeset
 from trac.versioncontrol.api import *
 from trac.versioncontrol.web_ui import *
 from trac.wiki.tests import formatter
@@ -11,7 +11,7 @@ from trac.wiki.tests import formatter
 
 def _get_changeset(rev):
     if rev == '1':
-        return Mock(message="start", is_viewable=lambda perm: True)
+        return Mock(message="start", can_view=lambda perm: True)
     else:
         raise NoSuchChangeset(rev)
 
@@ -23,22 +23,11 @@ def _normalize_rev(rev):
             return '200'
         else:
             raise NoSuchChangeset(rev)
-
-def _get_node(path, rev=None):
-    if path == 'foo':
-        return Mock(path=path, rev=rev, isfile=False,
-                    is_viewable=lambda resource: True)
-    elif path == 'missing/file':
-        raise NoSuchNode(path, rev)
-    else:
-        return Mock(path=path, rev=rev, isfile=True,
-                    is_viewable=lambda resource: True)
-
+    
 def _get_repository(reponame):
     return Mock(reponame=reponame, youngest_rev='200',
                 get_changeset=_get_changeset,
-                normalize_rev=_normalize_rev,
-                get_node=_get_node)
+                normalize_rev=_normalize_rev)
 
 def repository_setup(tc):
     setattr(tc.env, 'get_repository', _get_repository)
@@ -302,20 +291,18 @@ source:@42
 source:/foo/bar@42#L20
 source:/foo/bar@head#L20
 source:/foo/bar@#L20
-source:/missing/file
 ------------------------------
 <p>
-<a class="source" href="/browser/foo/bar">source:/foo/bar</a><a class="trac-rawlink" href="/export/HEAD/foo/bar" title="Download"></a>
-<a class="source" href="/browser/foo/bar#42">source:/foo/bar#42</a><a class="trac-rawlink" href="/export/HEAD/foo/bar#42" title="Download"></a>   # no long works as rev spec
-<a class="source" href="/browser/foo/bar#head">source:/foo/bar#head</a><a class="trac-rawlink" href="/export/HEAD/foo/bar#head" title="Download"></a> #
-<a class="source" href="/browser/foo/bar?rev=42">source:/foo/bar@42</a><a class="trac-rawlink" href="/export/42/foo/bar" title="Download"></a>
-<a class="source" href="/browser/foo/bar?rev=head">source:/foo/bar@head</a><a class="trac-rawlink" href="/export/head/foo/bar" title="Download"></a>
-<a class="source" href="/browser/foo%2520bar/baz%252Bquux">source:/foo%20bar/baz%2Bquux</a><a class="trac-rawlink" href="/export/HEAD/foo%2520bar/baz%252Bquux" title="Download"></a>
-<a class="source" href="/browser/?rev=42">source:@42</a><a class="trac-rawlink" href="/export/42/" title="Download"></a>
-<a class="source" href="/browser/foo/bar?rev=42#L20">source:/foo/bar@42#L20</a><a class="trac-rawlink" href="/export/42/foo/bar#L20" title="Download"></a>
-<a class="source" href="/browser/foo/bar?rev=head#L20">source:/foo/bar@head#L20</a><a class="trac-rawlink" href="/export/head/foo/bar#L20" title="Download"></a>
-<a class="source" href="/browser/foo/bar#L20">source:/foo/bar@#L20</a><a class="trac-rawlink" href="/export/HEAD/foo/bar#L20" title="Download"></a>
-<a class="missing source">source:/missing/file</a>
+<a class="source" href="/browser/foo/bar">source:/foo/bar</a>
+<a class="source" href="/browser/foo/bar#42">source:/foo/bar#42</a>   # no long works as rev spec
+<a class="source" href="/browser/foo/bar#head">source:/foo/bar#head</a> #
+<a class="source" href="/browser/foo/bar?rev=42">source:/foo/bar@42</a>
+<a class="source" href="/browser/foo/bar?rev=head">source:/foo/bar@head</a>
+<a class="source" href="/browser/foo%2520bar/baz%252Bquux">source:/foo%20bar/baz%2Bquux</a>
+<a class="source" href="/browser/?rev=42">source:@42</a>
+<a class="source" href="/browser/foo/bar?rev=42#L20">source:/foo/bar@42#L20</a>
+<a class="source" href="/browser/foo/bar?rev=head#L20">source:/foo/bar@head#L20</a>
+<a class="source" href="/browser/foo/bar#L20">source:/foo/bar@#L20</a>
 </p>
 ------------------------------
 ============================== source: link resolver + query 
@@ -324,7 +311,7 @@ source:/foo/bar?format=raw
 ------------------------------
 <p>
 <a class="source" href="/browser/foo?order=size&amp;desc=1">source:/foo?order=size&amp;desc=1</a>
-<a class="source" href="/browser/foo/bar?format=raw">source:/foo/bar?format=raw</a><a class="trac-rawlink" href="/export/HEAD/foo/bar" title="Download"></a>
+<a class="source" href="/browser/foo/bar?format=raw">source:/foo/bar?format=raw</a>
 </p>
 ------------------------------
 ============================== source: provider, with quoting
@@ -334,10 +321,10 @@ source:"even with whitespaces"
 [source:"even with whitespaces" Path with spaces]
 ------------------------------
 <p>
-<a class="source" href="/browser/even%20with%20whitespaces">source:'even with whitespaces'</a><a class="trac-rawlink" href="/export/HEAD/even%20with%20whitespaces" title="Download"></a>
-<a class="source" href="/browser/even%20with%20whitespaces">source:"even with whitespaces"</a><a class="trac-rawlink" href="/export/HEAD/even%20with%20whitespaces" title="Download"></a>
-<a class="source" href="/browser/even%20with%20whitespaces">Path with spaces</a><a class="trac-rawlink" href="/export/HEAD/even%20with%20whitespaces" title="Download"></a>
-<a class="source" href="/browser/even%20with%20whitespaces">Path with spaces</a><a class="trac-rawlink" href="/export/HEAD/even%20with%20whitespaces" title="Download"></a>
+<a class="source" href="/browser/even%20with%20whitespaces">source:'even with whitespaces'</a>
+<a class="source" href="/browser/even%20with%20whitespaces">source:"even with whitespaces"</a>
+<a class="source" href="/browser/even%20with%20whitespaces">Path with spaces</a>
+<a class="source" href="/browser/even%20with%20whitespaces">Path with spaces</a>
 </p>
 ------------------------------
 ============================== export: link resolver
@@ -346,16 +333,16 @@ export:123:/foo/pict.gif
 export:/foo/pict.gif@123
 ------------------------------
 <p>
-<a class="export" href="/export/HEAD/foo/bar.html" title="Download">export:/foo/bar.html</a>
-<a class="export" href="/export/123/foo/pict.gif" title="Download">export:123:/foo/pict.gif</a>
-<a class="export" href="/export/123/foo/pict.gif" title="Download">export:/foo/pict.gif@123</a>
+<a class="export" href="/export/HEAD/foo/bar.html">export:/foo/bar.html</a>
+<a class="export" href="/export/123/foo/pict.gif">export:123:/foo/pict.gif</a>
+<a class="export" href="/export/123/foo/pict.gif">export:/foo/pict.gif@123</a>
 </p>
 ------------------------------
 ============================== export: link resolver + fragment
 export:/foo/bar.html#header
 ------------------------------
 <p>
-<a class="export" href="/export/HEAD/foo/bar.html#header" title="Download">export:/foo/bar.html#header</a>
+<a class="export" href="/export/HEAD/foo/bar.html#header">export:/foo/bar.html#header</a>
 </p>
 ------------------------------
 """ # " (be Emacs friendly...)

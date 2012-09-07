@@ -12,8 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import with_statement
-
 import cmd
 import locale
 import os.path
@@ -32,8 +30,7 @@ from trac.util import translation
 from trac.util.html import html
 from trac.util.text import console_print, exception_to_unicode, printout, \
                            printerr, raw_input, to_unicode
-from trac.util.translation import _, ngettext, get_negotiated_locale, \
-                                  has_babel, cleandoc_
+from trac.util.translation import _, ngettext, get_negotiated_locale, has_babel
 from trac.versioncontrol.api import RepositoryManager
 from trac.wiki.admin import WikiAdmin
 from trac.wiki.macros import WikiMacroBase
@@ -47,8 +44,11 @@ def find_readline_lib():
     linked to the readline module.
     """
     import readline
-    with open(readline.__file__, "rb") as f:
+    f = open(readline.__file__, "rb")
+    try:
         data = f.read()
+    finally:
+        f.close()
     import re
     m = re.search('\0([^\0]*libreadline[^\0]*)\0', data)
     if m:
@@ -65,7 +65,6 @@ class TracAdmin(cmd.Cmd):
     prompt = "Trac> "
     envname = None
     __env = None
-    needs_upgrade = None
 
     def __init__(self, envdir=None):
         cmd.Cmd.__init__(self)
@@ -150,7 +149,7 @@ Type:  '?' or 'help' for help on commands.
         if not self.__env:
             try:
                 self._init_env()
-            except Exception:
+            except:
                 return False
         return True
 
@@ -267,19 +266,11 @@ Type:  '?' or 'help' for help on commands.
         try:
             if not self.__env:
                 self._init_env()
-            if self.needs_upgrade is None:
-                self.needs_upgrade = self.__env.needs_upgrade()
         except TracError, e:
             raise AdminCommandError(to_unicode(e))
         except Exception, e:
             raise AdminCommandError(exception_to_unicode(e))
         args = self.arg_tokenize(line)
-        if args[0] == 'upgrade':
-            self.needs_upgrade = None
-        elif self.needs_upgrade:
-            raise TracError(_('The Trac Environment needs to be upgraded.\n\n'
-                              'Run "trac-admin %(path)s upgrade"',
-                              path=self.envname))
         cmd_mgr = AdminCommandManager(self.env)
         return cmd_mgr.execute_command(*args)
 
@@ -331,7 +322,7 @@ Type:  '?' or 'help' for help on commands.
                     )
                 printout(_("Invoking trac-admin without command starts "
                            "interactive mode.\n"))
-            env = self.env if self.env_check() else None
+            env = self.env_check() and self.env or None
             self.print_doc(self.all_docs(env), short=True)
 
 
@@ -523,8 +514,6 @@ Congratulations!
         
 
 class TracAdminHelpMacro(WikiMacroBase):
-    _domain = 'messages'
-    _description = cleandoc_(
     """Display help for trac-admin commands.
 
     Examples:
@@ -534,7 +523,7 @@ class TracAdminHelpMacro(WikiMacroBase):
     [[TracAdminHelp(wiki export)]]  # the "wiki export" command
     [[TracAdminHelp(upgrade)]]      # the upgrade command
     }}}
-    """)
+    """
 
     def expand_macro(self, formatter, name, content):
         if content:

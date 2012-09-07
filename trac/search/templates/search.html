@@ -7,10 +7,7 @@
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <head>
-    <title py:choose="">
-      <py:when test="query">Search Results</py:when>
-      <py:otherwise>Search</py:otherwise>
-    </title>
+    <title>Search<py:if test="query"> Results</py:if></title>
     <py:if test="results">
         <meta name="startIndex" content="${results.span[0] + 1}"/>
         <meta name="totalResults" content="$results.num_items"/>
@@ -33,7 +30,7 @@
         <p class="filters">
           <py:for each="filter in filters">
             <input type="checkbox" id="${filter.name}" name="${filter.name}"
-                   checked="${filter.active or None}" />
+                   checked="${filter.active and 'checked' or None}" />
             <label for="${filter.name}">${filter.label}</label>
           </py:for>
        </p>

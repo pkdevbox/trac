@@ -54,9 +54,11 @@ class PhpDeuglifier(Deuglifier):
         colors = dict(comment='FF8000', lang='0000BB', keyword='007700',
                       string='DD0000')
         # rules check for <font> for PHP 4 or <span> for PHP 5
-        return [r'(?P<%s><(?:font color="|span style="color: )#%s">)' % c
-                for c in colors.items()
-                ] + [r'(?P<font><font.*?>)', r'(?P<endfont></font>)']
+        color_rules = [
+            r'(?P<%s><(?:font color="|span style="color: )#%s">)' % c
+            for c in colors.items()
+            ]
+        return color_rules + [ r'(?P<font><font.*?>)', r'(?P<endfont></font>)' ]
 
 
 class PHPRenderer(Component):
@@ -79,7 +81,7 @@ class PHPRenderer(Component):
     def render(self, context, mimetype, content, filename=None, rev=None):
         # -n to ignore php.ini so we're using default colors
         cmdline = '%s -sn' % self.path
-        self.log.debug("PHP command line: %s" % cmdline)
+        self.env.log.debug("PHP command line: %s" % cmdline)
 
         content = content_to_unicode(self.env, content, mimetype)
         content = content.encode('utf-8')

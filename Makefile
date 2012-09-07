@@ -1,23 +1,18 @@
-# == Makefile for Trac related tasks (beyond those supported by setuptools) ==
+#          Makefile for testing Trac (see doc/dev/testing.rst)
 #
-# Automating testing, i18n tasks, documentation generation, ... see HELP below
+#          Some i18n tasks are also supported, see HELP below.
 # ----------------------------------------------------------------------------
 #
-# Note about customization:
-#   No changes to the present Makefile should be necessary,
-#   rather copy Makefile.cfg.sample to Makefile.cfg and adapt it
-#   to match your local environment.
+# Note that this is a GNU Makefile.
+# nmake and other abominations are not supported.
 #
-# Note that this is a GNU Makefile, nmake and other abominations are
-# not supported.
-#
-# ============================================================================
+# ----------------------------------------------------------------------------
 
 define HELP
 
- Please use `make <target>' where <target> is one of:
+ Please use `make <target>' where <target> is one of: 
 
-  clean               delete all compiled files
+  clean               delete all compiled files 
   status              show which Python is used and other infos
 
   [python=...]        variable for selecting Python version
@@ -35,10 +30,6 @@ define HELP
   [test=...]          variable for selecting a single test file
   [testopts=...]      variable containing extra options for running tests
   [coverageopts=...]  variable containing extra options for coverage
-
- ---------------- Code checking tasks
-
-  pylint              check code with pylint
 
  ---------------- Standalone test server
 
@@ -77,40 +68,14 @@ define HELP
 
   [locale=...]        variable for selecting a set of locales
 
- ---------------- Documentation tasks
-
-  apidoc|sphinx       generate the Sphinx documentation (all specified formats)
-  apidoc-html         generate the Sphinx documentation in HTML format
-  apidoc-pdf          generate the Sphinx documentation in PDF format
-  apidoc-check        check for missing symbols in Sphinx documentation
-
-  apiref|epydoc       generate the full API reference using Epydoc
-
-  [sphinxformat=...]  list of formats for generated documentation
-  [sphinxopts=...]    variable containing extra options for Sphinx
-  [sphinxopts-html=...] variable containing extra options used for html format
-  [epydocopts=...]    variable containing extra options for Epydoc
-  [dotpath=/.../dot]  path to Graphviz dot program (not used yet)
-
 endef
 export HELP
 
 # ` (keep emacs font-lock happy)
 
-define HELP_CFG
- It looks like you don't have a Makefile.cfg file yet.
- You can get started by doing `cp Makefile.cfg.sample Makefile.cfg'
- and then adapt it to your environment.
-endef
-export HELP_CFG
-
-# ============================================================================
-
 # ----------------------------------------------------------------------------
 #
 # Main targets
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: all help status clean clean-bytecode clean-mo
 
@@ -121,20 +86,16 @@ else
 all: help
 endif
 
-help: Makefile.cfg
+help:
 	@echo "$$HELP"
-
-
-Makefile.cfg:
-	@echo "$$HELP_CFG"
 
 status:
 	@echo -n "Python version: "
 	@python -V
 	@echo -n "figleaf: "
-	@-which figleaf 2>/dev/null || echo
+	@-which figleaf 2>/dev/null || echo 
 	@echo -n "coverage: "
-	@-which coverage 2>/dev/null || echo
+	@-which coverage 2>/dev/null || echo 
 	@echo "PYTHONPATH=$$PYTHONPATH"
 	@echo "TRAC_TEST_DB_URI=$$TRAC_TEST_DB_URI"
 	@echo "server-options=$(server-options)"
@@ -142,14 +103,18 @@ status:
 Trac.egg-info: status
 	python setup.py egg_info
 
-clean: clean-bytecode clean-figleaf clean-coverage clean-doc
+clean: clean-bytecode clean-figleaf clean-coverage
 
 clean-bytecode:
 	find -name \*.py[co] -exec rm {} \;
 
-Makefile: ;
+Makefile Makefile.cfg: ;
 
 # ----------------------------------------------------------------------------
+#
+# Copy Makefile.cfg.sample to Makefile.cfg and adapt to your local environment,
+# no customizations to the present Makefile should be necessary.
+#
 #
 -include Makefile.cfg
 #
@@ -159,10 +124,6 @@ Makefile: ;
 # ----------------------------------------------------------------------------
 #
 # L10N related tasks
-#
-# ----------------------------------------------------------------------------
-
-catalogs = messages messages-js tracini
 
 ifdef locale
     locales = $(locale)
@@ -173,47 +134,43 @@ else
     locales := $(sort $(locales))
 endif
 
-# Note: variables only valid within a $(foreach catalog,...) evaluation
-catalog.po = trac/locale/$(*)/LC_MESSAGES/$(catalog).po
-catalog.pot = trac/locale/$(catalog).pot
-catalog_stripped = $(subst messages,,$(subst -,,$(catalog)))
-_catalog = $(if $(catalog_stripped),_)$(catalog_stripped)
+messages.po = trac/locale/$(*)/LC_MESSAGES/messages.po
+messages-js.po = trac/locale/$(*)/LC_MESSAGES/messages-js.po
+messages.pot = trac/locale/messages.pot
+messages-js.pot = trac/locale/messages-js.pot
 
 .PHONY: extract extraction update compile check stats summary diff
 
 init-%:
-	@$(foreach catalog,$(catalogs), \
-	    [ -e $(catalog.po) ] \
-	    && echo "$(catalog.po) already exists" \
-	    || python setup.py init_catalog$(_catalog) -l $(*);)
+	@[ -e $(messages.po) ] \
+	 && echo "$(messages.po) already exists" \
+	 || python setup.py init_catalog -l $(*)
+	@[ -e $(messages-js.po) ] \
+	 && echo "$(messages-js.po) already exists" \
+	 || python setup.py init_catalog_js -l $(*)
 
 extract extraction:
-	python setup.py $(foreach catalog,$(catalogs),\
-	    extract_messages$(_catalog))
+	python setup.py extract_messages extract_messages_js
 
 update-%:
-	python setup.py $(foreach catalog,$(catalogs), \
-	    update_catalog$(_catalog) -l $(*))
+	python setup.py update_catalog -l $(*) update_catalog_js -l $(*)
 
 ifdef locale
 update: $(addprefix update-,$(locale))
 else
 update:
-	python setup.py $(foreach catalog,$(catalogs), \
-	    update_catalog$(_catalog))
+	python setup.py update_catalog update_catalog_js
 endif
 
 compile-%:
-	python setup.py $(foreach catalog,$(catalogs), \
-	    compile_catalog$(_catalog) -l $(*)) \
-	    generate_messages_js -l $(*)
+	python setup.py compile_catalog -l $(*) \
+	    compile_catalog_js -l $(*) generate_messages_js -l $(*)
 
 ifdef locale
 compile: $(addprefix compile-,$(locale))
 else
 compile:
-	python setup.py $(foreach catalog,$(catalogs), \
-	    compile_catalog$(_catalog))
+	python setup.py compile_catalog compile_catalog_js
 endif
 
 check: pre-check $(addprefix check-,$(locales))
@@ -224,8 +181,7 @@ pre-check:
 
 check-%:
 	@echo -n "$(@): "
-	python setup.py $(foreach catalog,$(catalogs), \
-	    check_catalog$(_catalog) -l $(*))
+	@python setup.py check_catalog -l $(*) check_catalog_js -l $(*)
 
 stats: pre-stats $(addprefix stats-,$(locales))
 
@@ -234,44 +190,40 @@ pre-stats: stats-pot
 
 stats-pot:
 	@echo "translation statistics for catalog templates:"
-	@$(foreach catalog,$(catalogs), \
-	    echo -n "$(catalog.pot): "; \
-	    msgfmt --statistics $(catalog.pot);)
-	@rm -f messages.mo
+	@echo -n "messages.pot: "; msgfmt --statistics $(messages.pot)
+	@echo -n "messages-js.pot: "; msgfmt --statistics $(messages-js.pot) 
 
 stats-%:
-	@$(foreach catalog,$(catalogs), \
-	    [ -e $(catalog.po) ] \
-	    && { echo -n "$(catalog.po): "; \
-	         msgfmt --statistics $(catalog.po); } \
-	    || echo "$(catalog.po) doesn't exist (make init-$(*))";)
-	@rm -f messages.mo
+	@echo -n "messages.po: "; msgfmt --statistics $(messages.po)
+	@[ -e $(messages-js.po) ] \
+	 && echo -n "messages-js.po: "; msgfmt --statistics $(messages-js.po) \
+	 || echo "$(messages-js.po) doesn't exist (make init-$(*))"
 
 summary: $(addprefix summary-,$(locales))
 
 define untranslated-sh
-LC_ALL=C msgfmt --statistics $(catalog.pot) 2>&1 \
+LC_ALL=C msgfmt --statistics $(1) 2>&1 \
   | tail -1 \
   | sed -e 's/0 translated messages, \([0-9]*\) un.*/\1/'
 endef
 
 define translated-sh
-{ LC_ALL=C msgfmt --statistics $(catalog.po) 2>&1 || echo 0; } \
+{ LC_ALL=C msgfmt --statistics $(1) 2>&1 || echo 0; } \
     | tail -1 \
     | sed -e 's/[^0-9]*\([0-9]*\) translated.*/\1/'
 endef
 
 MESSAGES_TOTAL = \
-    $(eval MESSAGES_TOTAL := ($(foreach catalog,$(catalogs), \
-                                  $(shell $(untranslated-sh)) + ) 0)) \
+    $(eval MESSAGES_TOTAL := ( \
+        $(shell $(call untranslated-sh,$(messages.pot))) + \
+        $(shell $(call untranslated-sh,$(messages-js.pot)))))\
     $(MESSAGES_TOTAL)
 
 summary-%:
 	@python -c "print 'l10n/$(*): translations updated (%d%%)' \
-	    % (($(foreach catalog,$(catalogs), \
-	          $(shell $(translated-sh)) + ) 0) * 100.0 \
+	    % (($(shell $(call translated-sh,$(messages.po))) + \
+	        $(shell $(call translated-sh,$(messages-js.po)))) * 100.0 \
 	       / $(MESSAGES_TOTAL))"
-	@rm -f messages.mo
 
 diff: $(addprefix diff-,$(locales))
 
@@ -288,8 +240,6 @@ clean-mo:
 # ----------------------------------------------------------------------------
 #
 # Testing related tasks
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: test unit-test functional-test test-wiki
 
@@ -306,29 +256,9 @@ test-wiki:
 
 # ----------------------------------------------------------------------------
 #
-# Code checking tasks
-#
-# ----------------------------------------------------------------------------
-
-.PHONY: pylint
-
-pylint:
-	pylint \
-	    --include-ids=y --persistent=n --comment=n --init-import=y \
-	    --disable=E0102,E0211,E0213,E0602,E0611,E1002,E1101,E1102,E1103 \
-	    --disable=F0401 \
-	    --disable=W0102,W0141,W0142,W0201,W0212,W0221,W0223,W0231,W0232, \
-	    --disable=W0401,W0511,W0603,W0613,W0614,W0621,W0622,W0703 \
-	    --disable=C0103,C0111 \
-	    trac tracopt
-
-# ----------------------------------------------------------------------------
-#
 # Coverage related tasks
 #
 # (see http://nedbatchelder.com/code/coverage/)
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: coverage clean-coverage show-coverage
 
@@ -361,15 +291,13 @@ htmlcov/index.html:
 
 # ----------------------------------------------------------------------------
 #
-# Figleaf based coverage tasks
+# Figleaf based coverage tasks 
 #
 # (see http://darcs.idyll.org/~t/projects/figleaf/doc/)
 #
 # ** NOTE: there are still several issues with this **
 #  - as soon as a DocTestSuite is run, figleaf gets confused
 #  - functional-test-figleaf is broken (no .figleaf generated)
-#
-# ----------------------------------------------------------------------------
 
 .PHONY: figleaf clean-figleaf show-figleaf
 
@@ -411,8 +339,6 @@ unit-test.figleaf: Trac.egg-info
 # ----------------------------------------------------------------------------
 #
 # Tracd related tasks
-#
-# ----------------------------------------------------------------------------
 
 port ?= 8000
 tracdopts ?= -r
@@ -424,8 +350,6 @@ define server-options
  $(if $(wildcard $(env)/VERSION),$(env),-e $(env))
 endef
 
-.PHONY: server
-
 server: Trac.egg-info
 ifdef env
 	python trac/web/standalone.py $(server-options)
@@ -433,53 +357,7 @@ else
 	@echo "\`env' variable was not specified. See \`make help'."
 endif
 
-
 # ----------------------------------------------------------------------------
-#
-# Documentation related tasks
-#
-# ----------------------------------------------------------------------------
-
-.PHONY: apidoc sphinx apidoc-check apiref epydoc clean-doc
-
-# We also try to honor the "conventional" environment variables used by Sphinx
-sphinxopts ?= $(SPHINXOPTS)
-SPHINXBUILD ?= sphinx-build
-BUILDDIR ?= build/doc
-PAPER ?= a4
-sphinxopts-latex ?= -D latex_paper_size=$(PAPER)
-sphinxformat = html
-
-sphinx: apidoc
-apidoc: $(addprefix apidoc-,$(sphinxformat))
-
-apidoc-check:
-	@python doc/utils/checkapidoc.py
-
-apidoc-%:
-	@$(SPHINXBUILD) -b $(*) \
-	    $(sphinxopts) $(sphinxopts-$(*)) \
-	    -d build/doc/doctree \
-	    doc $(BUILDDIR)/$(*)
-
-
-epydoc: apiref
-apiref: doc-images
-	@python doc/utils/runepydoc.py --config=doc/utils/epydoc.conf \
-	    $(epydocopts) $(if $(dotpath),--dotpath=$(dotpath))
-
-doc-images: $(addprefix build/,$(wildcard doc/images/*.png))
-build/doc/images/%: doc/images/% | build/doc/images
-	@cp $(<) $(@)
-build/doc/images:
-	@mkdir -p $(@)
-
-clean-doc:
-	rm -fr build/doc
-
-
-
-# ============================================================================
 #
 # Setup environment variables
 
@@ -487,7 +365,7 @@ python-home := $(python.$(if $(python),$(python),$($(db).python)))
 
 ifeq "$(OS)" "Windows_NT"
     ifndef python-home
-        # Detect location of current python
+        # Detect location of current python 
         python-exe := $(shell python -c 'import sys; print sys.executable')
         python-home := $(subst \python.exe,,$(python-exe))
     endif

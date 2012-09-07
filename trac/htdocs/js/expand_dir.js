@@ -41,7 +41,7 @@
         var expander = $('<span class="expander">&nbsp;</span>')
           .attr("title", _("Expand sub-directory in place"))
           .click(function() { toggleDir($(this), qargs); })
-        a.before(expander);
+        a.wrap('<div></div>').before(expander);
         if (autoexpand && a.text() == autoexpand[0])
           autoexpand_expander = expander;
       }
@@ -118,7 +118,7 @@
         td_class: td_class, 
         colspan: tr.children("td").length, 
         depth: depth, 
-        loading: _("Loading %(entry)s...", {entry: a.text()})
+        loading: babel.format(_("Loading %(entry)s..."), {entry: a.text()})
       }));
       tr.after(loading_row);
   

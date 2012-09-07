@@ -30,8 +30,6 @@ milestone list       Show milestones
 milestone remove     Remove milestone
 milestone rename     Rename milestone
 permission add       Add a new permission rule
-permission export    Export permission rules to a file or stdout as CSV
-permission import    Import permission rules from a file or stdin as CSV
 permission list      List permission rules
 permission remove    Remove a permission rule
 priority add         Add a priority value option
@@ -119,11 +117,11 @@ Available actions:
  MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
  PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
  REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
+ SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_CHGPROP, TICKET_CREATE,
+ TICKET_EDIT_CC, TICKET_EDIT_COMMENT, TICKET_EDIT_DESCRIPTION,
+ TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW, TRAC_ADMIN,
+ VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE, WIKI_MODIFY,
+ WIKI_RENAME, WIKI_VIEW
 
 ===== test_permission_add_one_action_ok =====
 
@@ -154,11 +152,11 @@ Available actions:
  MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
  PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
  REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
+ SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_CHGPROP, TICKET_CREATE,
+ TICKET_EDIT_CC, TICKET_EDIT_COMMENT, TICKET_EDIT_DESCRIPTION,
+ TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW, TRAC_ADMIN,
+ VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE, WIKI_MODIFY,
+ WIKI_RENAME, WIKI_VIEW
 
 ===== test_permission_add_multiple_actions_ok =====
 
@@ -190,48 +188,11 @@ Available actions:
  MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
  PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
  REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
-
-===== test_permission_add_already_exists =====
-The user anonymous already has permission WIKI_VIEW.
-
-User           Action
-------------------------------
-anonymous      BROWSER_VIEW
-anonymous      CHANGESET_VIEW
-anonymous      FILE_VIEW
-anonymous      LOG_VIEW
-anonymous      MILESTONE_VIEW
-anonymous      REPORT_SQL_VIEW
-anonymous      REPORT_VIEW
-anonymous      ROADMAP_VIEW
-anonymous      SEARCH_VIEW
-anonymous      TICKET_VIEW
-anonymous      TIMELINE_VIEW
-anonymous      WIKI_CREATE
-anonymous      WIKI_MODIFY
-anonymous      WIKI_VIEW
-authenticated  TICKET_CREATE
-authenticated  TICKET_MODIFY
-authenticated  WIKI_CREATE
-authenticated  WIKI_MODIFY
-
-
-Available actions:
- BROWSER_VIEW, CHANGESET_VIEW, CONFIG_VIEW, EMAIL_VIEW, FILE_VIEW,
- LOG_VIEW, MILESTONE_ADMIN, MILESTONE_CREATE, MILESTONE_DELETE,
- MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
- PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
- REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
+ SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_CHGPROP, TICKET_CREATE,
+ TICKET_EDIT_CC, TICKET_EDIT_COMMENT, TICKET_EDIT_DESCRIPTION,
+ TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW, TRAC_ADMIN,
+ VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE, WIKI_MODIFY,
+ WIKI_RENAME, WIKI_VIEW
 
 ===== test_permission_remove_one_action_ok =====
 
@@ -261,11 +222,11 @@ Available actions:
  MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
  PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
  REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
+ SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_CHGPROP, TICKET_CREATE,
+ TICKET_EDIT_CC, TICKET_EDIT_COMMENT, TICKET_EDIT_DESCRIPTION,
+ TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW, TRAC_ADMIN,
+ VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE, WIKI_MODIFY,
+ WIKI_RENAME, WIKI_VIEW
 
 ===== test_permission_remove_multiple_actions_ok =====
 
@@ -295,109 +256,11 @@ Available actions:
  MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
  PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
  REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
-
-===== test_permission_remove_all_actions_for_user =====
-
-User           Action
-----------------------------
-authenticated  TICKET_CREATE
-authenticated  TICKET_MODIFY
-authenticated  WIKI_CREATE
-authenticated  WIKI_MODIFY
-
-
-Available actions:
- BROWSER_VIEW, CHANGESET_VIEW, CONFIG_VIEW, EMAIL_VIEW, FILE_VIEW,
- LOG_VIEW, MILESTONE_ADMIN, MILESTONE_CREATE, MILESTONE_DELETE,
- MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
- PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
- REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
-
-===== test_permission_remove_action_for_all_users =====
-
-User           Action
-------------------------------
-anonymous      BROWSER_VIEW
-anonymous      CHANGESET_VIEW
-anonymous      FILE_VIEW
-anonymous      LOG_VIEW
-anonymous      MILESTONE_VIEW
-anonymous      REPORT_SQL_VIEW
-anonymous      REPORT_VIEW
-anonymous      ROADMAP_VIEW
-anonymous      SEARCH_VIEW
-anonymous      TICKET_VIEW
-anonymous      TIMELINE_VIEW
-anonymous      WIKI_VIEW
-authenticated  TICKET_MODIFY
-authenticated  WIKI_CREATE
-authenticated  WIKI_MODIFY
-
-
-Available actions:
- BROWSER_VIEW, CHANGESET_VIEW, CONFIG_VIEW, EMAIL_VIEW, FILE_VIEW,
- LOG_VIEW, MILESTONE_ADMIN, MILESTONE_CREATE, MILESTONE_DELETE,
- MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
- PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
- REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
-
-===== test_permission_remove_unknown_user =====
-Error: Cannot remove permission TICKET_VIEW for user joe.
-===== test_permission_remove_action_not_granted =====
-Error: Cannot remove permission TICKET_CREATE for user anonymous.
-===== test_permission_export_ok =====
-anonymous,BROWSER_VIEW,CHANGESET_VIEW,FILE_VIEW,LOG_VIEW,MILESTONE_VIEW,REPORT_SQL_VIEW,REPORT_VIEW,ROADMAP_VIEW,SEARCH_VIEW,TICKET_VIEW,TIMELINE_VIEW,WIKI_VIEW
-authenticated,TICKET_CREATE,TICKET_MODIFY,WIKI_CREATE,WIKI_MODIFY
-===== test_permission_import_ok =====
-
-User           Action
-------------------------------
-anonymous      BROWSER_VIEW
-anonymous      CHANGESET_VIEW
-anonymous      FILE_VIEW
-anonymous      LOG_VIEW
-anonymous      MILESTONE_VIEW
-anonymous      REPORT_SQL_VIEW
-anonymous      REPORT_VIEW
-anonymous      ROADMAP_VIEW
-anonymous      SEARCH_VIEW
-anonymous      TICKET_VIEW
-anonymous      TIMELINE_VIEW
-anonymous      WIKI_VIEW
-authenticated  TICKET_CREATE
-authenticated  TICKET_MODIFY
-authenticated  WIKI_CREATE
-authenticated  WIKI_MODIFY
-test_userɐ     TICKET_VIEW
-test_userɐ     WIKI_VIEW
-
-
-Available actions:
- BROWSER_VIEW, CHANGESET_VIEW, CONFIG_VIEW, EMAIL_VIEW, FILE_VIEW,
- LOG_VIEW, MILESTONE_ADMIN, MILESTONE_CREATE, MILESTONE_DELETE,
- MILESTONE_MODIFY, MILESTONE_VIEW, PERMISSION_ADMIN, PERMISSION_GRANT,
- PERMISSION_REVOKE, REPORT_ADMIN, REPORT_CREATE, REPORT_DELETE,
- REPORT_MODIFY, REPORT_SQL_VIEW, REPORT_VIEW, ROADMAP_ADMIN, ROADMAP_VIEW,
- SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_BATCH_MODIFY,
- TICKET_CHGPROP, TICKET_CREATE, TICKET_EDIT_CC, TICKET_EDIT_COMMENT,
- TICKET_EDIT_DESCRIPTION, TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW,
- TRAC_ADMIN, VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE,
- WIKI_MODIFY, WIKI_RENAME, WIKI_VIEW
+ SEARCH_VIEW, TICKET_ADMIN, TICKET_APPEND, TICKET_CHGPROP, TICKET_CREATE,
+ TICKET_EDIT_CC, TICKET_EDIT_COMMENT, TICKET_EDIT_DESCRIPTION,
+ TICKET_MODIFY, TICKET_VIEW, TIMELINE_VIEW, TRAC_ADMIN,
+ VERSIONCONTROL_ADMIN, WIKI_ADMIN, WIKI_CREATE, WIKI_DELETE, WIKI_MODIFY,
+ WIKI_RENAME, WIKI_VIEW
 
 ===== test_component_list_ok =====
 
@@ -415,7 +278,7 @@ component2     somebody
 new_component  new_user
 
 ===== test_component_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: column name is not unique
 ===== test_component_rename_ok =====
 
 Name          Owner   
@@ -426,7 +289,7 @@ component2    somebody
 ===== test_component_rename_error_bad_component =====
 ResourceNotFound: Component bad_component does not exist.
 ===== test_component_rename_error_bad_new_name =====
-IntegrityError: [...]
+IntegrityError: column name is not unique
 ===== test_component_chown_ok =====
 
 Name        Owner        
@@ -462,7 +325,7 @@ task
 new_type
 
 ===== test_ticket_type_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_ticket_type_change_ok =====
 
 Possible Values
@@ -474,7 +337,7 @@ task
 ===== test_ticket_type_change_error_bad_type =====
 ResourceNotFound: ticket_type bad_type does not exist.
 ===== test_ticket_type_change_error_bad_new_name =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_ticket_type_remove_ok =====
 
 Possible Values
@@ -545,7 +408,7 @@ p9
 p10           
 
 ===== test_priority_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_priority_change_ok =====
 
 Possible Values
@@ -559,7 +422,7 @@ trivial
 ===== test_priority_change_error_bad_priority =====
 ResourceNotFound: priority bad_priority does not exist.
 ===== test_priority_change_error_bad_new_name =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_priority_remove_ok =====
 
 Possible Values
@@ -605,7 +468,7 @@ Possible Values
 new_severity   
 
 ===== test_severity_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_severity_change_ok =====
 
 Possible Values 
@@ -615,7 +478,7 @@ end-of-the-world
 ===== test_severity_change_error_bad_severity =====
 ResourceNotFound: severity bad_severity does not exist.
 ===== test_severity_change_error_bad_new_name =====
-IntegrityError: [...]
+IntegrityError: columns type, name are not unique
 ===== test_severity_remove_ok =====
 
 Possible Values
@@ -655,7 +518,7 @@ Name  Time
 9.9   2004-01-11
 
 ===== test_version_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: column name is not unique
 ===== test_version_rename_ok =====
 
 Name  Time
@@ -719,7 +582,7 @@ milestone3
 milestone4
 
 ===== test_milestone_add_error_already_exists =====
-IntegrityError: [...]
+IntegrityError: column name is not unique
 ===== test_milestone_rename_ok =====
 
 Name               Due  Completed

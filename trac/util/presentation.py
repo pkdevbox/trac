@@ -19,14 +19,9 @@ tasks such as grouping or pagination.
 from math import ceil
 import re
 
-__all__ = ['captioned_button', 'classes', 'first_last', 'group', 'istext',
-           'prepared_paginate', 'paginate', 'Paginator']
-__no_apidoc__ = 'prepared_paginate'
+__all__ = ['classes', 'first_last', 'group', 'istext', 'prepared_paginate', 
+           'paginate', 'Paginator']
 
-def captioned_button(req, symbol, text):
-    """Return symbol and text or only symbol, according to user preferences."""
-    return symbol if req.session.get('ui.use_symbols') \
-        else u'%s %s' % (symbol, text)
 
 def classes(*args, **kwargs):
     """Helper function for dynamically assembling a list of CSS class names
@@ -57,9 +52,6 @@ def classes(*args, **kwargs):
     return u' '.join(classes)
 
 def first_last(idx, seq):
-    """Generate ``first`` or ``last`` or both, according to the
-    position `idx` in sequence `seq`.
-    """
     return classes(first=idx == 0, last=idx == len(seq) - 1)
 
 
@@ -112,7 +104,6 @@ def group(iterable, num, predicate=None):
 
 
 def istext(text):
-    """`True` for text (`unicode` and `str`), but `False` for `Markup`."""
     from genshi.core import Markup
     return isinstance(text, basestring) and not isinstance(text, Markup)
 
@@ -195,7 +186,6 @@ def paginate(items, page=0, max_per_page=10):
 
 
 class Paginator(object):
-    """Pagination controller"""
 
     def __init__(self, items, page=0, max_per_page=10, num_items=None):
         if not page:
@@ -261,11 +251,11 @@ class Paginator(object):
         from trac.util.translation import _
         start, stop = self.span
         total = self.num_items
-        if start + 1 == stop:
+        if start+1 == stop:
             return _("%(last)d of %(total)d", last=stop, total=total)
         else:
             return _("%(start)d - %(stop)d of %(total)d",
-                    start=self.span[0] + 1, stop=self.span[1], total=total)
+                    start=self.span[0]+1, stop=self.span[1], total=total)
 
 
 def separated(items, sep=','):
