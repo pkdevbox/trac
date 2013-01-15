@@ -53,10 +53,10 @@ class IResourceManager(Interface):
                        `'default'`, `'compact'` or `'summary'`.
         :param context: an optional rendering context to allow rendering rich
                         output (like markup containing links)
-        :type context: `ResourceContext`
+        :type context: `Context`
 
         Additional keyword arguments can be given as extra information for
-        some formats.
+        some formats. 
 
         For example, the ticket with the id 123 is represented as:
          - `'#123'` in `'compact'` format,
@@ -147,7 +147,7 @@ class Resource(object):
         >>> main = Resource('wiki', 'WikiStart')
         >>> repr(main)
         "<Resource u'wiki:WikiStart'>"
-
+        
         >>> Resource(main) is main
         True
 
@@ -203,10 +203,10 @@ class Resource(object):
         Optional keyword arguments can be given to override `id` and
         `version`.
         """
-        return Resource(self if realm is False else realm, id, version, parent)
+        return Resource(realm is False and self or realm, id, version, parent)
 
     # -- methods for retrieving children Resource identifiers
-
+    
     def child(self, realm, id=False, version=False):
         """Retrieve a child resource for a secondary `realm`.
 
@@ -264,7 +264,7 @@ def get_resource_url(env, resource, href, **kwargs):
     This function delegates the work to the resource manager for that
     resource if it implements a `get_resource_url` method, otherwise
     reverts to simple '/realm/identifier' style URLs.
-
+    
     :param env: the `Environment` where `IResourceManager` components live
     :param resource: the `Resource` object specifying the Trac resource
     :param href: an `Href` object used for building the URL
@@ -278,19 +278,19 @@ def get_resource_url(env, resource, href, **kwargs):
     >>> main = Resource('generic', 'Main')
     >>> get_resource_url(env, main, href)
     '/trac.cgi/generic/Main'
-
+    
     >>> get_resource_url(env, main(version=3), href)
     '/trac.cgi/generic/Main?version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href)
     '/trac.cgi/generic/Main?version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href, action='diff')
     '/trac.cgi/generic/Main?action=diff&version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href, action='diff', version=5)
     '/trac.cgi/generic/Main?action=diff&version=5'
-
+    
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if manager and hasattr(manager, 'get_resource_url'):
@@ -306,7 +306,7 @@ def get_resource_description(env, resource, format='default', **kwargs):
     resource if it implements a `get_resource_description` method,
     otherwise reverts to simple presentation of the realm and identifier
     information.
-
+    
     :param env: the `Environment` where `IResourceManager` components live
     :param resource: the `Resource` object specifying the Trac resource
     :param format: which formats to use for the description
@@ -320,13 +320,13 @@ def get_resource_description(env, resource, format='default', **kwargs):
     >>> main = Resource('generic', 'Main')
     >>> get_resource_description(env, main)
     u'generic:Main'
-
+    
     >>> get_resource_description(env, main(version=3))
     u'generic:Main'
 
     >>> get_resource_description(env, main(version=3), format='summary')
     u'generic:Main at version 3'
-
+    
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if manager and hasattr(manager, 'get_resource_description'):
@@ -348,20 +348,20 @@ def get_resource_summary(env, resource):
 
 def get_relative_resource(resource, path=''):
     """Build a Resource relative to a reference resource.
-
+    
     :param path: path leading to another resource within the same realm.
     """
     if path in (None, '', '.'):
         return resource
     else:
-        base = unicode(resource.id if path[0] != '/' else '').split('/')
+        base = unicode(path[0] != '/' and resource.id or '').split('/')
         for comp in path.split('/'):
             if comp == '..':
                 if base:
                     base.pop()
             elif comp and comp != '.':
                 base.append(comp)
-        return resource(id='/'.join(base) if base else None)
+        return resource(id=base and '/'.join(base) or None)
 
 def get_relative_url(env, resource, href, path='', **kwargs):
     """Build an URL relative to a resource given as reference.

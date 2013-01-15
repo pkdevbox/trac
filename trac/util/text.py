@@ -52,8 +52,8 @@ def to_unicode(text, charset=None):
     the original byte sequence by mapping each byte to the corresponding
     unicode code point in the range U+0000 to U+00FF.
 
-    For anything else, a simple `unicode()` conversion is attempted,
-    with special care taken with `Exception` objects.
+    Otherwise, a simple `unicode()` conversion is attempted, with some special
+    care taken for `Exception` objects.
     """
     if isinstance(text, str):
         try:
@@ -72,11 +72,6 @@ def to_unicode(text, charset=None):
 
 
 def exception_to_unicode(e, traceback=False):
-    """Convert an `Exception` to an `unicode` object.
-
-    In addition to `to_unicode`, this representation of the exception
-    also contains the class name and optionally the traceback.
-    """
     message = '%s: %s' % (e.__class__.__name__, to_unicode(e))
     if traceback:
         from trac.util import get_last_traceback
@@ -93,40 +88,6 @@ def path_to_unicode(path):
         except UnicodeDecodeError:
             return unicode(path, 'latin1')
     return unicode(path)
-
-
-_ws_leading_re = re.compile(ur'\A[\s\u200b]+', re.UNICODE)
-_ws_trailing_re = re.compile(ur'[\s\u200b]+\Z', re.UNICODE)
-
-def stripws(text, leading=True, trailing=True):
-    """Strips unicode white-spaces and ZWSPs from ``text``.
-
-    :param leading: strips leading spaces from ``text`` unless ``leading`` is
-                    `False`.
-    :param trailing: strips trailing spaces from ``text`` unless ``trailing``
-                     is `False`.
-    """
-    if leading:
-        text = _ws_leading_re.sub('', text)
-    if trailing:
-        text = _ws_trailing_re.sub('', text)
-    return text
-
-
-def strip_line_ws(text, leading=True, trailing=True):
-    """Strips unicode white-spaces and ZWSPs from each line of ``text``.
-
-    :param leading: strips leading spaces from ``text`` unless ``leading`` is
-                    `False`.
-    :param trailing: strips trailing spaces from ``text`` unless ``trailing``
-                     is `False`.
-    """
-    lines = re.compile(r'(\n|\r\n|\r)').split(text)
-    if leading:
-        lines[::2] = (_ws_leading_re.sub('', line) for line in lines[::2])
-    if trailing:
-        lines[::2] = (_ws_trailing_re.sub('', line) for line in lines[::2])
-    return ''.join(lines)
 
 
 _js_quote = {'\\': '\\\\', '"': '\\"', '\b': '\\b', '\f': '\\f',
@@ -167,8 +128,8 @@ def unicode_quote(value, safe='/'):
     :param safe: as in `quote`, the characters that would otherwise be
                  quoted but shouldn't here (defaults to '/')
     """
-    return quote(value.encode('utf-8') if isinstance(value, unicode)
-                 else str(value), safe)
+    return quote(isinstance(value, unicode) and value.encode('utf-8') or
+                 str(value), safe)
 
 
 def unicode_quote_plus(value, safe=''):
@@ -180,13 +141,13 @@ def unicode_quote_plus(value, safe=''):
                  otherwise be quoted but shouldn't here (defaults to
                  '/')
     """
-    return quote_plus(value.encode('utf-8') if isinstance(value, unicode)
-                      else str(value), safe)
+    return quote_plus(isinstance(value, unicode) and value.encode('utf-8') or
+                      str(value), safe)
 
 
 def unicode_unquote(value):
     """A unicode aware version of `urllib.unquote`.
-
+    
     :param str: UTF-8 encoded `str` value (for example, as obtained by
                 `unicode_quote`).
     :rtype: `unicode`
@@ -196,7 +157,7 @@ def unicode_unquote(value):
 
 def unicode_urlencode(params, safe=''):
     """A unicode aware version of `urllib.urlencode`.
-
+    
     Values set to `empty` are converted to the key alone, without the
     equal sign.
     """
@@ -207,7 +168,7 @@ def unicode_urlencode(params, safe=''):
         if v is empty:
             l.append(unicode_quote_plus(k, safe))
         else:
-            l.append(unicode_quote_plus(k, safe) + '=' +
+            l.append(unicode_quote_plus(k, safe) + '=' + 
                      unicode_quote_plus(v, safe))
     return '&'.join(l)
 
@@ -219,13 +180,11 @@ def quote_query_string(text):
     """
     return unicode_quote_plus(text, _qs_quote_safe)
 
-
-def to_utf8(text, charset='latin1'):
+def to_utf8(text, charset='iso-8859-15'):
     """Convert a string to UTF-8, assuming the encoding is either UTF-8, ISO
     Latin-1, or as specified by the optional `charset` parameter.
 
-    .. deprecated :: 0.10
-       You should use `unicode` strings only.
+    ''Deprecated in 0.10. You should use `unicode` strings only.''
     """
     try:
         # Do nothing if it's already utf-8
@@ -237,7 +196,7 @@ def to_utf8(text, charset='latin1'):
             u = unicode(text, charset)
         except UnicodeError:
             # This should always work
-            u = unicode(text, 'latin1')
+            u = unicode(text, 'iso-8859-15')
         return u.encode('utf-8')
 
 
@@ -247,41 +206,26 @@ class unicode_passwd(unicode):
         return '*******'
 
 
-def stream_encoding(stream):
-    """Return the appropriate encoding for the given stream."""
-    encoding = getattr(stream, 'encoding', None)
-    # Windows returns 'cp0' to indicate no encoding
-    return encoding if encoding not in (None, 'cp0') else 'utf-8'
-
-
 def console_print(out, *args, **kwargs):
-    """Output the given arguments to the console, encoding the output
-    as appropriate.
-
-    :param kwargs: ``newline`` controls whether a newline will be appended
-                   (defaults to `True`)
-    """
-    cons_charset = stream_encoding(out)
-    out.write(' '.join([to_unicode(a).encode(cons_charset, 'replace')
+    cons_charset = getattr(out, 'encoding', None)
+    # Windows returns 'cp0' to indicate no encoding
+    if cons_charset in (None, 'cp0'):
+        cons_charset = 'utf-8'
+    out.write(' '.join([to_unicode(a).encode(cons_charset, 'replace') 
                         for a in args]))
     if kwargs.get('newline', True):
         out.write('\n')
 
 
 def printout(*args, **kwargs):
-    """Do a `console_print` on `sys.stdout`."""
     console_print(sys.stdout, *args, **kwargs)
 
 
 def printerr(*args, **kwargs):
-    """Do a `console_print` on `sys.stderr`."""
     console_print(sys.stderr, *args, **kwargs)
 
 
 def raw_input(prompt):
-    """Input one line from the console and converts it to unicode as
-    appropriate.
-    """
     printout(prompt, newline=False)
     return to_unicode(__builtin__.raw_input(), sys.stdin.encoding)
 
@@ -313,8 +257,8 @@ def text_width(text, ambiwidth=1):
 
     cf. http://www.unicode.org/reports/tr11/.
     """
-    twice = 'FWA' if ambiwidth == 2 else 'FW'
-    return sum([2 if east_asian_width(chr) in twice else 1
+    twice = ('FW', 'FWA')[ambiwidth == 2]
+    return sum([(1, 2)[east_asian_width(chr) in twice]
                 for chr in to_unicode(text)])
 
 _default_ambiwidth = 1  # Default width of East Asian Ambiguous (A)
@@ -340,16 +284,11 @@ else:
 
 
 def print_table(data, headers=None, sep='  ', out=None, ambiwidth=None):
-    """Print data according to a tabular layout.
+    """Print `data` as a table in the terminal.
 
-    :param data: a sequence of rows; assume all rows are of equal length.
-    :param headers: an optional row containing column headers; must be of
-                    the same length as each row in `data`.
-    :param sep: column separator
-    :param out: output file descriptor (`None` means use `sys.stdout`)
-    :param ambiwidth: column width of the East Asian Ambiguous (A). If None,
-                      detect ambiwidth with the locale settings. If others,
-                      pass to the `ambiwidth` parameter of `text_width`.
+    That `ambiwidth` parameter is used for the column width of the East
+    Asian Ambiguous (A). If None, detect ambiwidth with the locale settings.
+    If others, pass to the `ambiwidth` parameter of `text_width`.
     """
     if out is None:
         out = sys.stdout
@@ -375,7 +314,7 @@ def print_table(data, headers=None, sep='  ', out=None, ambiwidth=None):
     # Convert each cell to an unicode object
     data = [[to_text(cell) for cell in row] for row in data]
 
-    num_cols = len(data[0])
+    num_cols = len(data[0]) # assumes all rows are of equal length
     col_width = [max(tw(row[idx]) for row in data)
                  for idx in xrange(num_cols)]
 
@@ -398,15 +337,11 @@ def print_table(data, headers=None, sep='  ', out=None, ambiwidth=None):
         if ridx == 0 and headers:
             out.write('-' * (tw(sep) * cidx + sum(col_width)))
             out.write('\n')
+
     out.write('\n')
 
 
 def shorten_line(text, maxlen=75):
-    """Truncates content to at most `maxlen` characters.
-
-    This tries to be (a bit) clever and attempts to find a proper word
-    boundary for doing so.
-    """
     if len(text or '') < maxlen:
         return text
     cut = max(text.rfind(' ', 0, maxlen), text.rfind('\n', 0, maxlen))
@@ -562,14 +497,11 @@ def wrap(t, cols=75, initial_indent='', subsequent_indent='',
 
 
 def obfuscate_email_address(address):
-    """Replace anything looking like an e-mail address (``'@something'``)
-    with a trailing ellipsis (``'@…'``)
-    """
     if address:
         at = address.find('@')
         if at != -1:
             return address[:at] + u'@\u2026' + \
-                   ('>' if address[-1] == '>' else '')
+                   (address[-1] == '>' and '>' or '')
     return address
 
 
@@ -598,21 +530,9 @@ def normalize_whitespace(text, to_space=u'\u00a0', remove=u'\u200b'):
         text = text.replace(each, '')
     return text
 
-def unquote_label(txt):
-    """Remove (one level of) enclosing single or double quotes.
-
-    .. versionadded :: 1.0
-    """
-    return txt[1:-1] if txt and txt[0] in "'\"" and txt[0] == txt[-1] else txt
-
 # -- Conversion
 
 def pretty_size(size, format='%.1f'):
-    """Pretty print content size information with appropriate unit.
-
-    :param size: number of bytes
-    :param format: can be used to adjust the precision shown
-    """
     if size is None:
         return ''
 
@@ -630,16 +550,6 @@ def pretty_size(size, format='%.1f'):
 
 
 def expandtabs(s, tabstop=8, ignoring=None):
-    """Expand tab characters `'\\\\t'` into spaces.
-
-    :param tabstop: number of space characters per tab
-                    (defaults to the canonical 8)
-
-    :param ignoring: if not `None`, the expansion will be "smart" and
-                     go from one tabstop to the next. In addition,
-                     this parameter lists characters which can be
-                     ignored when computing the indent.
-    """
     if '\t' not in s:
         return s
     if ignoring is None:
@@ -674,7 +584,7 @@ def fix_eol(text, eol):
 
 def unicode_to_base64(text, strip_newlines=True):
     """Safe conversion of ``text`` to base64 representation using
-    utf-8 bytes.
+    utf-8 bytes.  
 
     Strips newlines from output unless ``strip_newlines`` is `False`.
     """

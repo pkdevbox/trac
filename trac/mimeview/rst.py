@@ -34,8 +34,6 @@ try:
 except ImportError:
     has_docutils = False
 
-from genshi.core import escape
-
 from trac.core import *
 from trac.env import ISystemInfoProvider
 from trac.mimeview.api import IHTMLPreviewRenderer, content_to_unicode
@@ -54,7 +52,7 @@ if has_docutils and StrictVersion(__version__) < StrictVersion('0.6'):
             return [prb], [msg]
         return _raw_role(role, rawtext, text, lineno, inliner, options,
                          content)
-
+    
     from docutils.parsers.rst import roles
     raw_role.options = roles.raw_role.options
     _raw_role = roles.raw_role
@@ -65,7 +63,7 @@ if has_docutils:
     # Register "trac" role handler and directive
 
     def trac_get_reference(env, context, rawtext, target, text):
-        fulltext = target + ' ' + text if text else target
+        fulltext = text and target + ' ' + text or target
         link = extract_link(env, context, fulltext)
         uri = None
         missing = False
@@ -83,7 +81,7 @@ if has_docutils:
         else:
             uri = context.href.wiki(target)
             missing = not WikiSystem(env).has_page(target)
-        if uri or missing:
+        if uri or missing:                    
             reference = nodes.reference(rawtext, text or target)
             reference['refuri'] = uri
             if missing:
@@ -194,7 +192,7 @@ if has_docutils:
             return []
         env, context = state.inliner.trac
         language = arguments[0]
-        text = '\n'.join(content)
+        text = '\n'.join(content)        
         return [code_formatter(env, context, language, text)]
 
     # These are documented
@@ -214,13 +212,13 @@ if has_docutils:
     rst.directives.register_directive('code-block', code_block_directive)
     rst.roles.register_local_role('code-block', code_block_role)
 
-
+    
 class ReStructuredTextRenderer(Component):
     """HTML renderer for plain text in reStructuredText format."""
     implements(ISystemInfoProvider, IHTMLPreviewRenderer)
 
     can_render = False
-
+    
     def __init__(self):
         if has_docutils:
             if StrictVersion(__version__) < StrictVersion('0.3.9'):
@@ -228,9 +226,9 @@ class ReStructuredTextRenderer(Component):
                                  '%s found' % ('0.3.9', __version__))
             else:
                 self.can_render = True
-
+        
     # ISystemInfoProvider methods
-
+    
     def get_system_info(self):
         if has_docutils:
             yield 'Docutils', __version__
@@ -238,42 +236,18 @@ class ReStructuredTextRenderer(Component):
     # IHTMLPreviewRenderer methods
 
     def get_quality_ratio(self, mimetype):
-        if self.can_render and mimetype in ('text/x-rst',
-                                            'text/prs.fallenstein.rst'):
+        if self.can_render and mimetype == 'text/x-rst':
             return 8
         return 0
 
     def render(self, context, mimetype, content, filename=None, rev=None):
-        # Minimize visual impact of errors
-        from docutils.writers import html4css1
-        class TracHTMLTranslator(html4css1.HTMLTranslator):
-            """Specialized translator with unobtrusive error reporting"""
-            def visit_system_message(self, node):
-                paragraph = node.children.pop(0)
-                message = escape(paragraph.astext()) if paragraph else ''
-                backrefs = node['backrefs']
-                if backrefs:
-                    span = ('<span class="system-message">%s</span>' %
-                            (''.join('<a href="#%s" title="%s">?</a>' %
-                                     (backref, message)
-                                     for backref in backrefs)))
-                else:
-                    span = ('<span class="system-message" title="%s">?</span>' %
-                            message)
-                self.body.append(span)
-            def depart_system_message(self, node):
-                pass
-        writer = html4css1.Writer()
-        writer.translator_class = TracHTMLTranslator
-
         inliner = rst.states.Inliner()
         inliner.trac = (self.env, context)
         parser = rst.Parser(inliner=inliner)
         content = content_to_unicode(self.env, content, mimetype)
-        parts = publish_parts(content, writer=writer, parser=parser,
-                              settings_overrides={'halt_level': 6,
-                                                  'warning_stream': False,
-                                                  'file_insertion_enabled': 0,
+        parts = publish_parts(content, writer_name='html', parser=parser,
+                              settings_overrides={'halt_level': 6, 
+                                                  'file_insertion_enabled': 0, 
                                                   'raw_enabled': 0,
                                                   'warning_stream': False})
         return parts['html_body']

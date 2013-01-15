@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from trac.attachment import Attachment
-from trac.mimeview.api import RenderingContext
+from trac.mimeview.api import Context
 from trac.resource import Resource
 from trac.search.web_ui import SearchModule
 from trac.test import MockPerm
@@ -149,9 +149,9 @@ def email_default_context():
             return action != 'EMAIL_VIEW'
         __contains__ = has_permission
 
-    context = RenderingContext(Resource('wiki', 'WikiStart'), href=Href('/'),
-                               perm=NoEmailViewPerm())
-    context.req = None # 1.0 FIXME .req shouldn't be required by formatter
+    context = Context(Resource('wiki', 'WikiStart'), href=Href('/'), 
+                      perm=NoEmailViewPerm())
+    context.req = None # 0.12 FIXME .req shouldn't be required by formatter
     return context
 
 
@@ -178,9 +178,9 @@ def suite():
                                   context=('wiki', 'WikiStart'),
                                   setup=attachment_setup,
                                   teardown=attachment_teardown))
-    suite.addTest(formatter.suite(EMAIL_TEST_CASE_DEFAULT, file=__file__,
+    suite.addTest(formatter.suite(EMAIL_TEST_CASE_DEFAULT, file=__file__, 
                                   context=email_default_context()))
-    suite.addTest(formatter.suite(EMAIL_TEST_CASE_NEVER_OBFUSCATE,
+    suite.addTest(formatter.suite(EMAIL_TEST_CASE_NEVER_OBFUSCATE, 
                                   file=__file__,
                                   context=email_default_context(),
                                   setup=email_never_obfuscate_setup))

@@ -22,7 +22,7 @@ from trac.core import *
 from trac.config import Option
 from trac.db.api import IDatabaseConnector, _parse_db_str
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.util import as_int, get_pkginfo
+from trac.util import get_pkginfo
 from trac.util.compat import close_fds
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
@@ -33,22 +33,22 @@ try:
     import MySQLdb
     import MySQLdb.cursors
     has_mysqldb = True
-
+    
     class MySQLUnicodeCursor(MySQLdb.cursors.Cursor):
         def _convert_row(self, row):
-            return tuple(v.decode('utf-8') if isinstance(v, str) else v
-                         for v in row)
+            return tuple([(isinstance(v, str) and [v.decode('utf-8')] or [v])[0]
+                          for v in row])
         def fetchone(self):
             row = super(MySQLUnicodeCursor, self).fetchone()
-            return self._convert_row(row) if row else None
+            return row and self._convert_row(row) or None
         def fetchmany(self, num):
             rows = super(MySQLUnicodeCursor, self).fetchmany(num)
-            return [self._convert_row(row) for row in rows] \
-                   if rows is not None else []
+            return rows != None and [self._convert_row(row)
+                                     for row in rows] or []
         def fetchall(self):
             rows = super(MySQLUnicodeCursor, self).fetchall()
-            return [self._convert_row(row) for row in rows] \
-                   if rows is not None else []
+            return rows != None and [self._convert_row(row)
+                                     for row in rows] or []
 except ImportError:
     has_mysqldb = False
 
@@ -60,18 +60,11 @@ _type_map = {
 
 class MySQLConnector(Component):
     """Database connector for MySQL version 4.1 and greater.
-
+    
     Database URLs should be of the form:
     {{{
-    mysql://user[:password]@host[:port]/database[?param1=value&param2=value]
+    mysql://user[:password]@host[:port]/database
     }}}
-    The following parameters are supported:
-     * `compress`: Enable compression (0 or 1)
-     * `init_command`: Command to run once the connection is created
-     * `named_pipe`: Use a named pipe to connect on Windows (0 or 1)
-     * `read_default_file`: Read default client values from the given file
-     * `read_default_group`: Configuration group to use from the default file
-     * `unix_socket`: Use a Unix socket at the given path to connect
     """
     implements(IDatabaseConnector)
 
@@ -85,7 +78,7 @@ class MySQLConnector(Component):
     def get_supported_schemes(self):
         if not has_mysqldb:
             self.error = _("Cannot load Python bindings for MySQL")
-        yield ('mysql', -1 if self.error else 1)
+        yield ('mysql', self.error and -1 or 1)
 
     def get_connection(self, path, log=None, user=None, password=None,
                        host=None, port=None, params={}):
@@ -101,28 +94,24 @@ class MySQLConnector(Component):
                                         ('MySQLdb', self._version)])
             self.required = True
         return cnx
-
-    def get_exceptions(self):
-        return MySQLdb
-
-    def init_db(self, path, schema=None, log=None, user=None, password=None,
-                host=None, port=None, params={}):
+    
+    def init_db(self, path, log=None, user=None, password=None, host=None,
+                port=None, params={}):
         cnx = self.get_connection(path, log, user, password, host, port,
                                   params)
         cursor = cnx.cursor()
         utf8_size = {'utf8': 3, 'utf8mb4': 4}.get(cnx.charset)
-        if schema is None:
-            from trac.db_default import schema
+        from trac.db_default import schema
         for table in schema:
             for stmt in self.to_sql(table, utf8_size=utf8_size):
-                self.log.debug(stmt)
+                self.env.log.debug(stmt)
                 cursor.execute(stmt)
         cnx.commit()
 
     def _collist(self, table, columns, utf8_size=3):
         """Take a list of columns and impose limits on each so that indexing
         works properly.
-
+        
         Some Versions of MySQL limit each index prefix to 1000 bytes total,
         with a max of 767 bytes per column.
         """
@@ -168,7 +157,7 @@ class MySQLConnector(Component):
         yield '\n'.join(sql)
 
         for index in table.indices:
-            unique = 'UNIQUE' if index.unique else ''
+            unique = index.unique and 'UNIQUE' or ''
             yield 'CREATE %s INDEX %s_%s_idx ON %s (%s);' % (unique, table.name,
                   '_'.join(index.columns), table.name,
                   self._collist(table, index.columns, utf8_size=utf8_size))
@@ -176,7 +165,7 @@ class MySQLConnector(Component):
     def alter_column_types(self, table, columns):
         """Yield SQL statements altering the type of one or more columns of
         a table.
-
+        
         Type changes are specified as a `columns` dict mapping column names
         to `(from, to)` SQL type tuples.
         """
@@ -194,7 +183,6 @@ class MySQLConnector(Component):
         from subprocess import Popen, PIPE
         db_url = self.env.config.get('trac', 'database')
         scheme, db_prop = _parse_db_str(db_url)
-        db_params = db_prop.setdefault('params', {})
         db_name = os.path.basename(db_prop['path'])
 
         args = [self.mysqldump_path]
@@ -204,20 +192,8 @@ class MySQLConnector(Component):
             args.extend(['-P', str(db_prop['port'])])
         if 'user' in db_prop:
             args.extend(['-u', db_prop['user']])
-        for name, value in db_params.iteritems():
-            if name == 'compress' and as_int(value, 0):
-                args.append('--compress')
-            elif name == 'named_pipe' and as_int(value, 0):
-                args.append('--protocol=pipe')
-            elif name == 'read_default_file': # Must be first
-                args.insert(1, '--defaults-file=' + value)
-            elif name == 'unix_socket':
-                args.extend(['--protocol=socket', '--socket=' + value])
-            elif name not in ('init_command', 'read_default_group'):
-                self.log.warning("Invalid connection string parameter '%s'",
-                                 name)
         args.extend(['-r', dest_file, db_name])
-
+        
         environ = os.environ.copy()
         if 'password' in db_prop:
             environ['MYSQL_PWD'] = str(db_prop['password'])
@@ -249,18 +225,8 @@ class MySQLConnection(ConnectionWrapper):
             password = ''
         if port == None:
             port = 3306
-        opts = {}
-        for name, value in params.iteritems():
-            if name in ('init_command', 'read_default_file',
-                        'read_default_group', 'unix_socket'):
-                opts[name] = value
-            elif name in ('compress', 'named_pipe'):
-                opts[name] = as_int(value, 0)
-            else:
-                self.log.warning("Invalid connection string parameter '%s'",
-                                 name)
-        cnx = MySQLdb.connect(db=path, user=user, passwd=password, host=host,
-                              port=port, charset='utf8', **opts)
+        cnx = MySQLdb.connect(db=path, user=user, passwd=password,
+                              host=host, port=port, charset='utf8')
         if hasattr(cnx, 'encoders'):
             # 'encoders' undocumented but present since 1.2.1 (r422)
             cnx.encoders[Markup] = cnx.encoders[types.UnicodeType]

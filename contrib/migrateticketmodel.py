@@ -1,15 +1,13 @@
 #!/usr/bin/env python
-#
+# 
 # This script completely migrates a <= 0.8.x Trac environment to use the new
 # default ticket model introduced in Trac 0.9.
-#
+# 
 # In particular, this means that the severity field is removed (or rather
 # disabled by removing all possible values), and the priority values are
 # changed to the more meaningful new defaults.
-#
+# 
 # Make sure to make a backup of the Trac environment before running this!
-
-from __future__ import with_statement
 
 import os
 import sys
@@ -32,14 +30,17 @@ def main():
         sys.exit(2)
 
     env = open_environment(sys.argv[1])
-    with env.db_transaction:
-        for oldprio, newprio in priority_mapping.items():
-            priority = Priority(env, oldprio)
-            priority.name = newprio
-            priority.update()
+    db = env.get_db_cnx()
 
-        for severity in list(Severity.select(env)):
-            severity.delete()
+    for oldprio, newprio in priority_mapping.items():
+        priority = Priority(env, oldprio, db)
+        priority.name = newprio
+        priority.update(db)
+
+    for severity in list(Severity.select(env, db)):
+        severity.delete(db)
+
+    db.commit()
 
 if __name__ == '__main__':
     main()

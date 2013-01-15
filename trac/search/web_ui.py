@@ -21,18 +21,17 @@ from genshi.builder import tag
 
 from trac.config import IntOption, ListOption
 from trac.core import *
-from trac.mimeview import RenderingContext
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.search.api import ISearchSource
-from trac.util.datefmt import format_datetime, user_time
+from trac.util.datefmt import format_datetime
 from trac.util.html import find_element
 from trac.util.presentation import Paginator
 from trac.util.text import quote_query_string
 from trac.util.translation import _
 from trac.web import IRequestHandler
-from trac.web.chrome import (INavigationContributor, ITemplateProvider,
-                             add_link, add_stylesheet, add_warning,
-                             web_context)
+from trac.web.chrome import add_link, add_stylesheet, add_warning, \
+                            INavigationContributor, ITemplateProvider
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import extract_link
 
@@ -43,7 +42,7 @@ class SearchModule(Component):
                ITemplateProvider, IWikiSyntaxProvider)
 
     search_sources = ExtensionPoint(ISearchSource)
-
+    
     RESULTS_PER_PAGE = 10
 
     min_query_length = IntOption('search', 'min_query_length', 3,
@@ -93,7 +92,7 @@ class SearchModule(Component):
         for source in self.search_sources:
             available_filters.extend(source.get_search_filters(req) or [])
         available_filters.sort(key=lambda f: f[1].lower())
-
+        
         filters = self._get_selected_filters(req, available_filters)
         data = self._prepare_data(req, query, available_filters, filters)
         if query:
@@ -148,7 +147,7 @@ class SearchModule(Component):
                        if f[0] not in self.default_disabled_filters and
                        (len(f) < 3 or len(f) > 2 and f[2])]
         return filters
-
+        
     def _prepare_data(self, req, query, available_filters, filters):
         return {'filters': [{'name': f[0], 'label': f[1],
                              'active': f[0] in filters}
@@ -165,7 +164,7 @@ class SearchModule(Component):
             name = kwd
             description = _('Browse repository path %(path)s', path=kwd)
         else:
-            context = web_context(req, 'search')
+            context = Context.from_request(req, 'search')
             link = find_element(extract_link(self.env, context, kwd), 'href')
             if link is not None:
                 quickjump_href = link.attrib.get('href')
@@ -183,7 +182,7 @@ class SearchModule(Component):
 
     def _get_search_terms(self, query):
         """Break apart a search query into its various search terms.
-
+        
         Terms are grouped implicitly by word boundary, or explicitly by (single
         or double) quotes.
         """
@@ -202,7 +201,7 @@ class SearchModule(Component):
         if terms and (len(terms) > 1 or
                       len(terms[0]) >= self.min_query_length):
             return terms
-
+        
         add_warning(req, _('Search query too short. '
                            'Query must be at least %(num)s characters long.',
                            num=self.min_query_length))
@@ -219,10 +218,10 @@ class SearchModule(Component):
         results = Paginator(results, page - 1, self.RESULTS_PER_PAGE)
         for idx, result in enumerate(results):
             results[idx] = {'href': result[0], 'title': result[1],
-                            'date': user_time(req, format_datetime, result[2]),
+                            'date': format_datetime(result[2]),
                             'author': result[3], 'excerpt': result[4]}
 
-        pagedata = []
+        pagedata = []    
         shown_pages = results.get_shown_pages(21)
         for shown_page in shown_pages:
             page_href = req.href.search([(f, 'on') for f in filters],

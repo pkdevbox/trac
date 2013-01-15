@@ -61,7 +61,7 @@ def assemble_pg_dsn(path, user=None, password=None, host=None, port=None):
 
 class PostgreSQLConnector(Component):
     """Database connector for PostgreSQL.
-
+    
     Database URLs should be of the form:
     {{{
     postgres://user[:password]@host[:port]/database[?schema=my_schema]
@@ -79,7 +79,7 @@ class PostgreSQLConnector(Component):
     def get_supported_schemes(self):
         if not has_psycopg:
             self.error = _("Cannot load Python bindings for PostgreSQL")
-        yield ('postgres', -1 if self.error else 1)
+        yield ('postgres', self.error and -1 or 1)
 
     def get_connection(self, path, log=None, user=None, password=None,
                        host=None, port=None, params={}):
@@ -92,19 +92,15 @@ class PostgreSQLConnector(Component):
             self.required = True
         return cnx
 
-    def get_exceptions(self):
-        return psycopg
-
-    def init_db(self, path, schema=None, log=None, user=None, password=None,
-                host=None, port=None, params={}):
+    def init_db(self, path, log=None, user=None, password=None, host=None,
+                port=None, params={}):
         cnx = self.get_connection(path, log, user, password, host, port,
                                   params)
         cursor = cnx.cursor()
         if cnx.schema:
             cursor.execute('CREATE SCHEMA "%s"' % cnx.schema)
             cursor.execute('SET search_path TO %s', (cnx.schema,))
-        if schema is None:
-            from trac.db_default import schema
+        from trac.db_default import schema
         for table in schema:
             for stmt in self.to_sql(table):
                 cursor.execute(stmt)
@@ -127,16 +123,16 @@ class PostgreSQLConnector(Component):
         sql.append(',\n'.join(coldefs) + '\n)')
         yield '\n'.join(sql)
         for index in table.indices:
-            unique = 'UNIQUE' if index.unique else ''
+            unique = index.unique and 'UNIQUE' or ''
             yield 'CREATE %s INDEX "%s_%s_idx" ON "%s" ("%s")' % \
-                    (unique, table.name,
+                    (unique, table.name, 
                      '_'.join(index.columns), table.name,
                      '","'.join(index.columns))
 
     def alter_column_types(self, table, columns):
         """Yield SQL statements altering the type of one or more columns of
         a table.
-
+        
         Type changes are specified as a `columns` dict mapping column names
         to `(from, to)` SQL type tuples.
         """
@@ -216,7 +212,7 @@ class PostgreSQLConnection(ConnectionWrapper):
             path = path[1:]
         if 'host' in params:
             host = params['host']
-
+        
         cnx = psycopg.connect(assemble_pg_dsn(path, user, password, host,
                                               port))
 

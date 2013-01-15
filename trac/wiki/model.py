@@ -16,8 +16,6 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from __future__ import with_statement
-
 from datetime import datetime
 
 from trac.core import *
@@ -53,60 +51,62 @@ class WikiPage(object):
         self.old_readonly = self.readonly
 
     def _fetch(self, name, version=None, db=None):
+        if not db:
+            db = self.env.get_db_cnx()
+        cursor = db.cursor()
         if version is not None:
-            sql = """SELECT version, time, author, text, comment, readonly
-                     FROM wiki WHERE name=%s AND version=%s"""
-            args = (name, int(version))
+            cursor.execute("SELECT version,time,author,text,comment,readonly "
+                           "FROM wiki "
+                           "WHERE name=%s AND version=%s",
+                           (name, int(version)))
         else:
-            sql = """SELECT version, time, author, text, comment, readonly
-                     FROM wiki WHERE name=%s ORDER BY version DESC LIMIT 1"""
-            args = (name,)
-        for version, time, author, text, comment, readonly in \
-                self.env.db_query(sql, args):
+            cursor.execute("SELECT version,time,author,text,comment,readonly "
+                           "FROM wiki "
+                           "WHERE name=%s ORDER BY version DESC LIMIT 1",
+                           (name,))
+        row = cursor.fetchone()
+        if row:
+            version, time, author, text, comment, readonly = row
             self.version = int(version)
             self.author = author
             self.time = from_utimestamp(time)
             self.text = text
             self.comment = comment
-            self.readonly = int(readonly) if readonly else 0
-            break
+            self.readonly = readonly and int(readonly) or 0
         else:
             self.version = 0
             self.text = self.comment = self.author = ''
             self.time = None
             self.readonly = 0
-
+            
     exists = property(lambda self: self.version > 0)
 
     def delete(self, version=None, db=None):
-        """Delete one or all versions of a page.
-
-        :since 1.0: the `db` parameter is no longer needed and will be removed
-        in version 1.1.1
-        """
-        assert self.exists, "Cannot delete non-existent page"
-
-        with self.env.db_transaction as db:
+        assert self.exists, 'Cannot delete non-existent page'
+        
+        @self.env.with_transaction(db)
+        def do_delete(db):
+            cursor = db.cursor()
             if version is None:
                 # Delete a wiki page completely
-                db("DELETE FROM wiki WHERE name=%s", (self.name,))
-                self.env.log.info("Deleted page %s", self.name)
+                cursor.execute("DELETE FROM wiki WHERE name=%s", (self.name,))
+                self.env.log.info('Deleted page %s' % self.name)
             else:
                 # Delete only a specific page version
-                db("DELETE FROM wiki WHERE name=%s and version=%s",
-                   (self.name, version))
-                self.env.log.info("Deleted version %d of page %s", version,
-                                  self.name)
+                cursor.execute("DELETE FROM wiki WHERE name=%s and version=%s",
+                               (self.name, version))
+                self.env.log.info('Deleted version %d of page %s'
+                                  % (version, self.name))
 
             if version is None or version == self.version:
-                self._fetch(self.name, None)
+                self._fetch(self.name, None, db)
 
             if not self.exists:
                 # Invalidate page name cache
                 del WikiSystem(self.env).pages
                 # Delete orphaned attachments
                 from trac.attachment import Attachment
-                Attachment.delete_all(self.env, 'wiki', self.name)
+                Attachment.delete_all(self.env, 'wiki', self.name, db)
 
         # Let change listeners know about the deletion
         if not self.exists:
@@ -118,37 +118,35 @@ class WikiPage(object):
                     listener.wiki_page_version_deleted(self)
 
     def save(self, author, comment, remote_addr, t=None, db=None):
-        """Save a new version of a page.
-
-        :since 1.0: the `db` parameter is no longer needed and will be removed
-        in version 1.1.1
-        """
         if not validate_page_name(self.name):
             raise TracError(_("Invalid Wiki page name '%(name)s'",
                               name=self.name))
 
         new_text = self.text != self.old_text
         if not new_text and self.readonly == self.old_readonly:
-            raise TracError(_("Page not modified"))
+            raise TracError(_('Page not modified'))
         t = t or datetime.now(utc)
 
-        with self.env.db_transaction as db:
+        @self.env.with_transaction(db)
+        def do_save(db):
+            cursor = db.cursor()
             if new_text:
-                db("""INSERT INTO wiki (name, version, time, author, ipnr,
-                                        text, comment, readonly)
-                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                      """, (self.name, self.version + 1, to_utimestamp(t),
-                            author, remote_addr, self.text, comment,
-                            self.readonly))
+                cursor.execute("""
+                    INSERT INTO wiki (name,version,time,author,ipnr,text,
+                                      comment,readonly)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (self.name, self.version + 1, to_utimestamp(t),
+                          author, remote_addr, self.text, comment,
+                          self.readonly))
                 self.version += 1
                 self.resource = self.resource(version=self.version)
             else:
-                db("UPDATE wiki SET readonly=%s WHERE name=%s",
-                   (self.readonly, self.name))
+                cursor.execute("UPDATE wiki SET readonly=%s WHERE name=%s",
+                               (self.readonly, self.name))
             if self.version == 1:
                 # Invalidate page name cache
                 del WikiSystem(self.env).pages
-
+        
         self.author = author
         self.comment = comment
         self.time = t
@@ -168,20 +166,23 @@ class WikiPage(object):
         Renaming a page this way will eventually leave dangling references
         to the old page - which litterally doesn't exist anymore.
         """
-        assert self.exists, "Cannot rename non-existent page"
+        assert self.exists, 'Cannot rename non-existent page'
 
         if not validate_page_name(new_name):
             raise TracError(_("Invalid Wiki page name '%(name)s'",
                               name=new_name))
         old_name = self.name
-
-        with self.env.db_transaction as db:
-            new_page = WikiPage(self.env, new_name)
+        
+        @self.env.with_transaction()
+        def do_rename(db):
+            cursor = db.cursor()
+            new_page = WikiPage(self.env, new_name, db=db)
             if new_page.exists:
                 raise TracError(_("Can't rename to existing %(name)s page.",
                                   name=new_name))
 
-            db("UPDATE wiki SET name=%s WHERE name=%s", (new_name, old_name))
+            cursor.execute("UPDATE wiki SET name=%s WHERE name=%s",
+                           (new_name, old_name))
             # Invalidate page name cache
             del WikiSystem(self.env).pages
             # Reparent attachments
@@ -191,19 +192,17 @@ class WikiPage(object):
 
         self.name = new_name
         self.env.log.info('Renamed page %s to %s', old_name, new_name)
-
+        
         for listener in WikiSystem(self.env).change_listeners:
             if hasattr(listener, 'wiki_page_renamed'):
                 listener.wiki_page_renamed(self, old_name)
 
     def get_history(self, db=None):
-        """Retrieve the edit history of a wiki page.
-
-        :since 1.0: the `db` parameter is no longer needed and will be removed
-        in version 1.1.1
-        """
-        for version, ts, author, comment, ipnr in self.env.db_query("""
-                SELECT version, time, author, comment, ipnr FROM wiki
-                WHERE name=%s AND version<=%s ORDER BY version DESC
-                """, (self.name, self.version)):
+        if not db:
+            db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT version,time,author,comment,ipnr FROM wiki "
+                       "WHERE name=%s AND version<=%s "
+                       "ORDER BY version DESC", (self.name, self.version))
+        for version, ts, author, comment, ipnr in cursor:
             yield version, from_utimestamp(ts), author, comment, ipnr

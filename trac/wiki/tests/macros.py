@@ -2,9 +2,7 @@
 from datetime import datetime
 import unittest
 
-from trac.config import Option
-from trac.test import locale_en
-from trac.util.datefmt import format_date, utc
+from trac.util.datefmt import utc
 from trac.wiki.model import WikiPage
 from trac.wiki.tests import formatter
 
@@ -22,7 +20,7 @@ IMAGE_MACRO_TEST_CASES = u"""
 <a style="padding:0; border:none" href="/browser/%C2%AB%20test%C2%A0%C2%BB.png"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB.png?format=raw" alt="source:« test ».png" title="source:« test ».png" /></a>
 </p>
 ------------------------------
-<a style="padding:0; border:none" href="/browser/%C2%AB%20test%C2%A0%C2%BB.png"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB.png?format=raw" alt="source:« test ».png" title="source:« test ».png" /></a>
+[[Image(...)]]
 ============================== intertrac:source: Image, no other arguments
 [[Image(trac:source:/trunk/doc/images/bkgnd_pattern_« test ».png)]]
 ------------------------------
@@ -30,7 +28,7 @@ IMAGE_MACRO_TEST_CASES = u"""
 <a style="padding:0; border:none" href="http://trac.edgewall.org/intertrac/source%3A/trunk/doc/images/bkgnd_pattern_%C2%AB%20test%C2%A0%C2%BB.png"><img src="http://trac.edgewall.org/intertrac/source%3A/trunk/doc/images/bkgnd_pattern_%C2%AB%20test%C2%A0%C2%BB.png%3Fformat%3Draw" alt="source:/trunk/doc/images/bkgnd_pattern_« test ».png in Trac's Trac" title="source:/trunk/doc/images/bkgnd_pattern_« test ».png in Trac's Trac" /></a>
 </p>
 ------------------------------
-<a style="padding:0; border:none" href="http://trac.edgewall.org/intertrac/source%3A/trunk/doc/images/bkgnd_pattern_%C2%AB%20test%C2%A0%C2%BB.png"><img src="http://trac.edgewall.org/intertrac/source%3A/trunk/doc/images/bkgnd_pattern_%C2%AB%20test%C2%A0%C2%BB.png%3Fformat%3Draw" alt="source:/trunk/doc/images/bkgnd_pattern_« test ».png in Trac's Trac" title="source:/trunk/doc/images/bkgnd_pattern_« test ».png in Trac's Trac" /></a>
+[[Image(...)]]
 ============================== source: Image, nolink
 [[Image(source:« test », nolink)]]
 ------------------------------
@@ -38,7 +36,6 @@ IMAGE_MACRO_TEST_CASES = u"""
 <img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="source:« test »" title="source:« test »" />
 </p>
 ------------------------------
-<img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="source:« test »" title="source:« test »" />
 ============================== source: Image, normal args
 [[Image(source:« test », align=left, title=Test)]]
 ------------------------------
@@ -46,7 +43,6 @@ IMAGE_MACRO_TEST_CASES = u"""
 <a style="padding:0; border:none" href="/browser/%C2%AB%20test%C2%A0%C2%BB"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="source:« test »" style="float:left" title="Test" /></a>
 </p>
 ------------------------------
-<a style="padding:0; border:none" href="/browser/%C2%AB%20test%C2%A0%C2%BB"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="source:« test »" style="float:left" title="Test" /></a>
 ============================== source: Image, size arg
 [[Image(source:« test », 30%)]]
 ------------------------------
@@ -89,16 +85,6 @@ IMAGE_MACRO_TEST_CASES = u"""
 <a style="padding:0; border:none" href="/wiki/WikiStart"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="/browser/« test »" title="/browser/« test »" /></a>
 </p>
 ------------------------------
-<a style="padding:0; border:none" href="/wiki/WikiStart"><img src="/browser/%C2%AB%20test%C2%A0%C2%BB?format=raw" alt="/browser/« test »" title="/browser/« test »" /></a>
-============================== Strip unicode white-spaces and ZWSPs (#10668)
-[[Image(  ​source:« test ».png　 ​, nolink)]]
-------------------------------
-<p>
-<img src="/browser/%C2%AB%20test%C2%A0%C2%BB.png?format=raw" alt="source:« test ».png" title="source:« test ».png" />
-</p>
-------------------------------
-<img src="/browser/%C2%AB%20test%C2%A0%C2%BB.png?format=raw" alt="source:« test ».png" title="source:« test ».png" />
-------------------------------
 """
 
 # Note: in the <img> src attribute above, the Unicode characters
@@ -107,7 +93,7 @@ IMAGE_MACRO_TEST_CASES = u"""
 #       according to the W3C XHTML validator).
 
 
-
+
 # == [[TitleIndex]]
 
 def add_pages(tc, names):
@@ -246,34 +232,6 @@ TITLEINDEX4_MACRO_TEST_CASES = u"""
 </p><div class="titleindex"><ul><li><strong>0.11</strong><ul><li><strong>Group</strong><ul><li><a href="/wiki/0.11/GroupOne">0.11/GroupOne</a></li><li><a href="/wiki/0.11/GroupTwo">0.11/GroupTwo</a></li></ul></li><li><a href="/wiki/0.11/Test">0.11/Test</a></li></ul></li><li><strong>Test</strong><ul><li><strong>0.11</strong><ul><li><a href="/wiki/Test0.11/Abc">Test0.11/Abc</a></li><li><a href="/wiki/Test0.11Abc">Test0.11Abc</a></li></ul></li><li><strong>0.12</strong><ul><li><a href="/wiki/Test0.12Def">Test0.12Def</a></li><li><a href="/wiki/Test0.12Ijk">Test0.12Ijk</a></li></ul></li><li><strong>0.13</strong><ul><li><a href="/wiki/Test0.13alpha">Test0.13alpha</a></li><li><a href="/wiki/Test0.13beta">Test0.13beta</a></li></ul></li><li><a href="/wiki/Test0.131">Test0.131</a></li><li><a href="/wiki/Test2">Test2</a></li><li><a href="/wiki/TestTest">TestTest</a></li><li><a href="/wiki/TestThing">TestThing</a></li></ul></li><li><a href="/wiki/WikiStart">WikiStart</a></li></ul></div><p>
 </p>
 ------------------------------
-============================== TitleIndex, compact format with prefix hidden, including Test0.13*
-[[TitleIndex(Test,format=compact,include=*0.13*)]]
-------------------------------
-<p>
-<a href="/wiki/Test0.131">Test0.131</a>, <a href="/wiki/Test0.13alpha">Test0.13alpha</a>, <a href="/wiki/Test0.13beta">Test0.13beta</a>
-</p>
-------------------------------
-============================== TitleIndex, compact format with prefix hidden, including Test0.13* but excluding Test0.131
-[[TitleIndex(Test,format=compact,include=*0.13*,exclude=*1)]]
-------------------------------
-<p>
-<a href="/wiki/Test0.13alpha">Test0.13alpha</a>, <a href="/wiki/Test0.13beta">Test0.13beta</a>
-</p>
-------------------------------
-============================== TitleIndex, compact format, excluding various topics
-[[TitleIndex(Test,format=compact,exclude=Test0.13*:*0.11*:Test2:Test*i*)]]
-------------------------------
-<p>
-<a href="/wiki/Test0.12Def">Test0.12Def</a>, <a href="/wiki/Test0.12Ijk">Test0.12Ijk</a>, <a href="/wiki/TestTest">TestTest</a>
-</p>
-------------------------------
-============================== TitleIndex, compact format, including and excluding various topics
-[[TitleIndex(format=compact,include=*Group*:test2,exclude=*One)]]
-------------------------------
-<p>
-<a href="/wiki/0.11/GroupTwo">0.11/GroupTwo</a>
-</p>
-------------------------------
 """
 
 def titleindex4_setup(tc):
@@ -329,86 +287,6 @@ def titleindex5_setup(tc):
         ])
 
 
-RECENTCHANGES_MACRO_TEST_CASES = u""""
-============================== RecentChanges, group option
-[[RecentChanges()]]
-[[RecentChanges(group=date)]]
-[[RecentChanges(group=none)]]
-[[RecentChanges(,2,group=none)]]
-[[RecentChanges(Wiki,group=none)]]
-[[RecentChanges(Wiki,1,group=none)]]
-------------------------------
-<p>
-</p><div><h3>%(date)s</h3><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li><li><a href="/wiki/WikiMid">WikiMid</a>
-</li><li><a href="/wiki/WikiStart">WikiStart</a>
-</li></ul></div><p>
-</p><div><h3>%(date)s</h3><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li><li><a href="/wiki/WikiMid">WikiMid</a>
-</li><li><a href="/wiki/WikiStart">WikiStart</a>
-</li></ul></div><p>
-</p><div><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li><li><a href="/wiki/WikiMid">WikiMid</a>
-</li><li><a href="/wiki/WikiStart">WikiStart</a>
-</li></ul></div><p>
-</p><div><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li><li><a href="/wiki/WikiMid">WikiMid</a>
-</li></ul></div><p>
-</p><div><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li><li><a href="/wiki/WikiMid">WikiMid</a>
-</li><li><a href="/wiki/WikiStart">WikiStart</a>
-</li></ul></div><p>
-</p><div><ul><li><a href="/wiki/WikiEnd">WikiEnd</a>
-</li></ul></div><p>
-</p>
-------------------------------
-"""
-
-def recentchanges_setup(tc):
-    def add_pages(tc, names):
-        for name in names:
-            now = datetime.now(utc)
-            w = WikiPage(tc.env)
-            w.name = name
-            w.text = '--'
-            w.save('joe', 'the page ' + name, '::1', now)
-    add_pages(tc, [
-        'WikiMid',
-        'WikiEnd',
-        ])
-    tc.correct = tc.correct % {'date': format_date(tzinfo=utc,
-                                                   locale=locale_en)}
-
-def recentchanges_teardown(tc):
-    tc.env.reset_db()
-
-
-TRACINI_MACRO_TEST_CASES = u"""\
-============================== TracIni, option with empty doc (#10940)
-[[TracIni(section-42)]]
-------------------------------
-<p>
-</p><div class="tracini">\
-<h3 id="section-42-section"><code>[section-42]</code></h3>\
-<table class="wiki"><tbody>\
-<tr><td><tt>option1</tt></td><td></td><td class="default"><code>value</code></td></tr>\
-<tr><td><tt>option2</tt></td><td>blah</td><td class="default"><code>value</code></td></tr>\
-</tbody></table>\
-</div><p>
-</p>
-------------------------------
-"""
-
-def tracini_setup(tc):
-    tc._orig_registry = Option.registry
-    class Foo(object):
-        option_a1 = (Option)('section-42', 'option1', 'value', doc='')
-        option_a2 = (Option)('section-42', 'option2', 'value', doc='blah')
-
-def tracini_teardown(tc):
-    Option.registry = tc._orig_registry
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(formatter.suite(IMAGE_MACRO_TEST_CASES, file=__file__))
@@ -425,14 +303,7 @@ def suite():
     suite.addTest(formatter.suite(TITLEINDEX5_MACRO_TEST_CASES, file=__file__,
                                   setup=titleindex5_setup,
                                   teardown=titleindex_teardown))
-    suite.addTest(formatter.suite(RECENTCHANGES_MACRO_TEST_CASES, file=__file__,
-                                  setup=recentchanges_setup,
-                                  teardown=recentchanges_teardown))
-    suite.addTest(formatter.suite(TRACINI_MACRO_TEST_CASES, file=__file__,
-                                  setup=tracini_setup,
-                                  teardown=tracini_teardown))
     return suite
-
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')

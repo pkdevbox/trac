@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2010 Edgewall Software
+# Copyright (C) 2003-2009 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2007 Christian Boos <cboos@edgewall.org>
 # All rights reserved.
@@ -23,24 +23,23 @@ from genshi.builder import tag
 
 from trac.config import ListOption, BoolOption, Option
 from trac.core import *
-from trac.mimeview.api import IHTMLPreviewAnnotator, Mimeview, is_binary
+from trac.mimeview.api import Mimeview, is_binary, \
+                              IHTMLPreviewAnnotator, Context
 from trac.perm import IPermissionRequestor
 from trac.resource import Resource, ResourceNotFound
 from trac.util import as_bool, embedded_numbers
-from trac.util.compat import cleandoc
+from trac.util.compat import any, cleandoc
 from trac.util.datefmt import http_date, to_datetime, utc
 from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
-from trac.util.translation import _, cleandoc_
+from trac.util.translation import _
 from trac.web import IRequestHandler, RequestDone
-from trac.web.chrome import (INavigationContributor, add_ctxtnav, add_link,
-                             add_script, add_stylesheet, prevnext_nav,
-                             web_context)
+from trac.web.chrome import add_ctxtnav, add_link, add_script, add_stylesheet, \
+                            prevnext_nav, INavigationContributor
 from trac.wiki.api import IWikiSyntaxProvider, IWikiMacroProvider, parse_args
 from trac.wiki.formatter import format_to_html, format_to_oneliner
-
-from ..api import NoSuchChangeset, RepositoryManager
-from trac.versioncontrol.web_ui.util import * # `from .util import *` FIXME 2.6
+from trac.versioncontrol.api import NoSuchChangeset, RepositoryManager
+from trac.versioncontrol.web_ui.util import *
 
 
 CHUNK_SIZE = 4096
@@ -130,8 +129,8 @@ class WikiPropertyRenderer(Component):
         (''since 0.11'')""")
 
     def match_property(self, name, mode):
-        return 4 if name in self.wiki_properties \
-                    or name in self.oneliner_properties else 0
+        return (name in self.wiki_properties or \
+                name in self.oneliner_properties) and 4 or 0
 
     def render_property(self, name, mode, context, props):
         if name in self.wiki_properties:
@@ -143,7 +142,7 @@ class WikiPropertyRenderer(Component):
 class TimeRange(object):
 
     min = datetime(1, 1, 1, 0, 0, 0, 0, utc) # tz aware version of datetime.min
-
+    
     def __init__(self, base):
         self.oldest = self.newest = base
         self._total = None
@@ -151,7 +150,7 @@ class TimeRange(object):
     def seconds_between(self, dt1, dt2):
         delta = dt1 - dt2
         return delta.days * 24 * 3600 + delta.seconds
-
+    
     def to_seconds(self, dt):
         return self.seconds_between(dt, TimeRange.min)
 
@@ -176,7 +175,7 @@ class TimeRange(object):
 class BrowserModule(Component):
 
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler,
-               IWikiSyntaxProvider, IHTMLPreviewAnnotator,
+               IWikiSyntaxProvider, IHTMLPreviewAnnotator, 
                IWikiMacroProvider)
 
     property_renderers = ExtensionPoint(IPropertyRenderer)
@@ -184,19 +183,15 @@ class BrowserModule(Component):
     downloadable_paths = ListOption('browser', 'downloadable_paths',
                                     '/trunk, /branches/*, /tags/*',
         doc="""List of repository paths that can be downloaded.
-
-        Leave this option empty if you want to disable all downloads, otherwise
+        
+        Leave the option empty if you want to disable all downloads, otherwise
         set it to a comma-separated list of authorized paths (those paths are
-        glob patterns, i.e. "*" can be used as a wild card). In a
-        multi-repository environment, the path must be qualified with the
-        repository name if the path does not point to the default repository
-        (e.g. /reponame/trunk). Note that a simple prefix matching is
-        performed on the paths, so aliases won't get automatically resolved.
+        glob patterns, i.e. "*" can be used as a wild card)
         (''since 0.10'')""")
 
     color_scale = BoolOption('browser', 'color_scale', True,
         doc="""Enable colorization of the ''age'' column.
-
+        
         This uses the same color scale as the source code annotation:
         blue is older, red is newer.
         (''since 0.11'')""")
@@ -233,13 +228,13 @@ class BrowserModule(Component):
 
     render_unsafe_content = BoolOption('browser', 'render_unsafe_content',
                                         'false',
-        """Whether raw files should be rendered in the browser, or only made
+        """Whether raw files should be rendered in the browser, or only made 
         downloadable.
-
+ 
         Pretty much any file may be interpreted as HTML by the browser,
         which allows a malicious user to create a file containing cross-site
         scripting attacks.
-
+        
         For open repositories where anyone can check-in a file, it is
         recommended to leave this option disabled (which is the default).""")
 
@@ -252,7 +247,7 @@ class BrowserModule(Component):
 
     def get_custom_colorizer(self):
         """Returns a converter for values from [0.0, 1.0] to a RGB triple."""
-
+        
         def interpolate(old, new, value):
             # Provides a linearly interpolated color triple for `value`
             # which must be a floating point value between 0.0 and 1.0
@@ -262,10 +257,10 @@ class BrowserModule(Component):
             # Get three ints out of a `rgb` string or return `default`
             try:
                 t = tuple([int(v) for v in re.split(r'(\d+)', rgb)[1::2]])
-                return t if len(t) == 3 else default
+                return len(t) == 3 and t or default
             except ValueError:
                 return default
-
+        
         newest_color = parse_color(self.newest_color, self.NEWEST_COLOR)
         oldest_color = parse_color(self.oldest_color, self.OLDEST_COLOR)
         try:
@@ -288,7 +283,7 @@ class BrowserModule(Component):
             def colorizer(value):
                 return interpolate(oldest_color, newest_color, value)
         return colorizer
-
+        
     # INavigationContributor methods
 
     def get_active_navigation_item(self, req):
@@ -335,12 +330,12 @@ class BrowserModule(Component):
 
         path = req.args.get('path', '/')
         rev = req.args.get('rev', '')
-        if rev.lower() in ('', 'head'):
+        if rev in ('', 'HEAD'):
             rev = None
         order = req.args.get('order', 'name').lower()
         desc = req.args.has_key('desc')
         xhr = req.get_header('X-Requested-With') == 'XMLHttpRequest'
-
+        
         rm = RepositoryManager(self.env)
         all_repositories = rm.get_all_repositories()
         reponame, repos, path = rm.get_repository_by_path(path)
@@ -349,7 +344,7 @@ class BrowserModule(Component):
         show_index = not reponame and path == '/'
         if show_index:
             if repos and (as_bool(all_repositories[''].get('hidden'))
-                          or not repos.is_viewable(req.perm)):
+                          or not repos.can_view(req.perm)):
                 repos = None
 
         if not repos and reponame:
@@ -359,11 +354,11 @@ class BrowserModule(Component):
         if reponame and reponame != repos.reponame: # Redirect alias
             qs = req.query_string
             req.redirect(req.href.browser(repos.reponame or None, path)
-                         + ('?' + qs if qs else ''))
-        reponame = repos.reponame if repos else None
-
+                         + (qs and '?' + qs or ''))
+        reponame = repos and repos.reponame or None
+        
         # Find node for the requested path/rev
-        context = web_context(req)
+        context = Context.from_request(req)
         node = None
         display_rev = lambda rev: rev
         if repos:
@@ -378,7 +373,7 @@ class BrowserModule(Component):
                 raise ResourceNotFound(e.message,
                                        _('Invalid changeset number'))
 
-            context = context.child(repos.resource.child('source', path,
+            context = context(repos.resource.child('source', path,
                                                    version=rev_or_latest))
             display_rev = repos.display_rev
 
@@ -414,13 +409,13 @@ class BrowserModule(Component):
             'created_rev': node and node.created_rev,
             'properties': properties_data,
             'path_links': path_links,
-            'order': order, 'desc': 1 if desc else None,
+            'order': order, 'desc': desc and 1 or None,
             'repo': repo_data, 'dir': dir_data, 'file': file_data,
             'quickjump_entries': quickjump_data,
             'wiki_format_messages': \
                 self.config['changeset'].getbool('wiki_format_messages'),
             'xhr': xhr,
-        }
+        }                   
         if xhr: # render and return the content only
             return 'dir_entries.html', data, None
 
@@ -454,27 +449,27 @@ class BrowserModule(Component):
                 if path != '/':
                     add_link(req, 'up', path_links[-2]['href'],
                              _('Parent directory'))
-                add_ctxtnav(req, tag.a(_('Last Change'),
+                add_ctxtnav(req, tag.a(_('Last Change'), 
                             href=req.href.changeset(node.created_rev, reponame,
                                                     node.created_path)))
             if node.isfile:
                 annotate = data['file']['annotate']
                 if annotate:
-                    add_ctxtnav(req, _('Normal'),
-                                title=_('View file without annotations'),
+                    add_ctxtnav(req, _('Normal'), 
+                                title=_('View file without annotations'), 
                                 href=req.href.browser(reponame,
-                                                      node.created_path,
+                                                      node.created_path, 
                                                       rev=rev))
                 if annotate != 'blame':
-                    add_ctxtnav(req, _('Blame'),
+                    add_ctxtnav(req, _('Blame'), 
                                 title=_('Annotate each line with the last '
                                         'changed revision '
-                                        '(this can be time consuming...)'),
+                                        '(this can be time consuming...)'), 
                                 href=req.href.browser(reponame,
-                                                      node.created_path,
+                                                      node.created_path, 
                                                       rev=rev,
                                                       annotate='blame'))
-            add_ctxtnav(req, _('Revision Log'),
+            add_ctxtnav(req, _('Revision Log'), 
                         href=req.href.log(reponame, path, rev=rev))
             path_url = repos.get_path_url(path, rev)
             if path_url:
@@ -501,7 +496,7 @@ class BrowserModule(Component):
             try:
                 repos = rm.get_repository(reponame)
                 if repos:
-                    if not repos.is_viewable(context.perm):
+                    if not repos.can_view(context.perm):
                         continue
                     try:
                         youngest = repos.get_changeset(repos.youngest_rev)
@@ -512,15 +507,12 @@ class BrowserModule(Component):
                             timerange = TimeRange(youngest.date)
                         else:
                             timerange.insert(youngest.date)
-                    raw_href = self._get_download_href(context.href, repos,
-                                                       None, None)
-                    entry = (reponame, repoinfo, repos, youngest, None,
-                             raw_href)
+                    entry = (reponame, repoinfo, repos, youngest, None)
                 else:
-                    entry = (reponame, repoinfo, None, None, u"\u2013", None)
+                    entry = (reponame, repoinfo, None, None, u"\u2013")
             except TracError, err:
                 entry = (reponame, repoinfo, None, None,
-                         exception_to_unicode(err), None)
+                         exception_to_unicode(err))
             if entry[-1] is not None:   # Check permission in case of error
                 root = Resource('repository', reponame).child('source', '/')
                 if 'BROWSER_VIEW' not in context.perm(root):
@@ -529,15 +521,15 @@ class BrowserModule(Component):
 
         # Ordering of repositories
         if order == 'date':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
-                return (youngest.date if youngest else to_datetime(0),
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
+                return (youngest and youngest.date or to_datetime(0),
                         embedded_numbers(reponame.lower()))
         elif order == 'author':
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
-                return (youngest.author.lower() if youngest else '',
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
+                return (youngest and youngest.author.lower() or '',
                         embedded_numbers(reponame.lower()))
         else:
-            def repo_order((reponame, repoinfo, repos, youngest, err, href)):
+            def repo_order((reponame, repoinfo, repos, youngest, err)):
                 return embedded_numbers(reponame.lower())
 
         repositories = sorted(repositories, key=repo_order, reverse=desc)
@@ -547,21 +539,18 @@ class BrowserModule(Component):
 
     def _render_dir(self, req, repos, node, rev, order, desc):
         req.perm(node.resource).require('BROWSER_VIEW')
-        download_href = self._get_download_href
 
         # Entries metadata
         class entry(object):
-            _copy = 'name rev created_rev kind isdir path content_length' \
-                    .split()
-            __slots__ = _copy + ['raw_href']
+            __slots__ = ('name', 'rev', 'created_rev', 'kind', 'isdir', 'path',
+                         'content_length')
 
             def __init__(self, node):
-                for f in entry._copy:
+                for f in entry.__slots__:
                     setattr(self, f, getattr(node, f))
-                self.raw_href = download_href(req.href, repos, node, rev)
-
+                
         entries = [entry(n) for n in node.get_entries()
-                   if n.is_viewable(req.perm)]
+                   if n.can_view(req.perm)]
         changes = get_changes(repos, [i.created_rev for i in entries],
                               self.log)
 
@@ -600,15 +589,23 @@ class BrowserModule(Component):
             def file_order(a):
                 return embedded_numbers(a.name.lower())
 
-        dir_order = 1 if desc else -1
+        dir_order = desc and 1 or -1
 
         def browse_order(a):
-            return dir_order if a.isdir else 0, file_order(a)
+            return a.isdir and dir_order or 0, file_order(a)
         entries = sorted(entries, key=browse_order, reverse=desc)
 
         # ''Zip Archive'' alternate link
-        zip_href = self._get_download_href(req.href, repos, node, rev)
-        if zip_href:
+        path = node.path.strip('/')
+        if repos.reponame:
+            path = repos.reponame + '/' + path
+        if any(fnmatchcase(path, p.strip('/'))
+               for p in self.downloadable_paths):
+            zip_href = req.href.changeset(rev or repos.youngest_rev, 
+                                          repos.reponame or None, node.path,
+                                          old=rev,
+                                          old_path=repos.reponame or '/',
+                                          format='zip')
             add_link(req, 'alternate', zip_href, _('Zip Archive'),
                      'application/zip', 'zip')
 
@@ -638,7 +635,7 @@ class BrowserModule(Component):
         if format in ('raw', 'txt'):
             req.send_response(200)
             req.send_header('Content-Type',
-                            'text/plain' if format == 'txt' else mime_type)
+                            format == 'txt' and 'text/plain' or mime_type)
             req.send_header('Content-Length', node.content_length)
             req.send_header('Last-Modified', http_date(node.last_modified))
             if rev is None:
@@ -647,7 +644,7 @@ class BrowserModule(Component):
                 req.send_header('Expires', 'Fri, 01 Jan 1999 00:00:00 GMT')
             if not self.render_unsafe_content:
                 # Force browser to download files instead of rendering
-                # them, since they might contain malicious code enabling
+                # them, since they might contain malicious code enabling 
                 # XSS attacks
                 req.send_header('Content-Disposition', 'attachment')
             req.end_headers()
@@ -658,7 +655,7 @@ class BrowserModule(Component):
                 req.write(chunk)
                 chunk = content.read(CHUNK_SIZE)
         else:
-            # The changeset corresponding to the last change on `node`
+            # The changeset corresponding to the last change on `node` 
             # is more interesting than the `rev` changeset.
             changeset = repos.get_changeset(node.created_rev)
 
@@ -670,7 +667,7 @@ class BrowserModule(Component):
                          'text/plain')
 
             # add ''Original Format'' alternate link (always)
-            raw_href = req.href.export(rev or repos.youngest_rev,
+            raw_href = req.href.export(rev or repos.youngest_rev, 
                                        repos.reponame or None, node.path)
             add_link(req, 'alternate', raw_href, _('Original Format'),
                      mime_type)
@@ -699,23 +696,8 @@ class BrowserModule(Component):
                 'annotate': annotate,
                 }
 
-    def _get_download_href(self, href, repos, node, rev):
-        """Return the URL for downloading a file, or a directory as a ZIP."""
-        if node is not None and node.isfile:
-            return href.export(rev or 'HEAD', repos.reponame or None,
-                               node.path)
-        path = npath = '' if node is None else node.path.strip('/')
-        if repos.reponame:
-            path = (repos.reponame + '/' + npath).rstrip('/')
-        if any(fnmatchcase(path, p.strip('/'))
-               for p in self.downloadable_paths):
-            return href.changeset(rev or repos.youngest_rev,
-                                  repos.reponame or None, npath,
-                                  old=rev, old_path=repos.reponame or '/',
-                                  format='zip')
-
     # public methods
-
+    
     def render_properties(self, mode, context, props):
         """Prepare rendering of a collection of properties."""
         return filter(None, [self.render_property(name, mode, context, props)
@@ -778,13 +760,9 @@ class BrowserModule(Component):
         elif '@' in export:
             path, rev = export.split('@', 1)
         else:
-            rev, path = None, export
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if raw_href:
-            return tag.a(label, class_='export', href=raw_href + fragment,
-                         title=title)
-        return tag.a(label, class_='missing export')
+            rev, path = 'HEAD', export
+        return tag.a(label, class_='export',
+                     href=formatter.href.export(rev, path) + fragment)
 
     def _format_browser_link(self, formatter, ns, path, label):
         path, query, fragment = formatter.split_link(path)
@@ -792,38 +770,14 @@ class BrowserModule(Component):
         match = self.PATH_LINK_RE.match(path)
         if match:
             path, rev, marks = match.groups()
-        href = formatter.href
-        src_href = href.browser(path, rev=rev, marks=marks) + query + fragment
-        node, raw_href, title = self._get_link_info(path, rev, formatter.href,
-                                                    formatter.perm)
-        if not node:
-            return tag.a(label, class_='missing source')
-        link = tag.a(label, class_='source', href=src_href)
-        if raw_href:
-            link = tag(link, tag.a(u'\u200b', href=raw_href + fragment,
-                                   title=title,
-                                   class_='trac-rawlink' if node.isfile
-                                          else 'trac-ziplink'))
-        return link
+        return tag.a(label, class_='source',
+                     href=(formatter.href.browser(path, rev=rev, marks=marks) +
+                           query + fragment))
 
     PATH_LINK_RE = re.compile(r"([^@#:]*)"     # path
                               r"[@:]([^#:]+)?" # rev
                               r"(?::(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*))?" # marks
                               )
-
-    def _get_link_info(self, path, rev, href, perm):
-        rm = RepositoryManager(self.env)
-        node = raw_href = title = None
-        try:
-            reponame, repos, npath = rm.get_repository_by_path(path)
-            node = get_allowed_node(repos, npath, rev, perm)
-            if node is not None:
-                raw_href = self._get_download_href(href, repos, node, rev)
-                title = _("Download") if node.isfile \
-                        else _("Download as Zip archive")
-        except TracError:
-            pass
-        return (node, raw_href, title)
 
     # IHTMLPreviewAnnotator methods
 
@@ -843,16 +797,16 @@ class BrowserModule(Component):
         yield "RepositoryIndex"
 
     def get_macro_description(self, name):
-        description = cleandoc_("""
+        return cleandoc("""
         Display the list of available repositories.
 
         Can be given the following named arguments:
-
+        
           ''format''::
             Select the rendering format:
             - ''compact'' produces a comma-separated list of repository prefix
               names (default)
-            - ''list'' produces a description list of repository prefix names
+            - ''list'' produces a description list of repository prefix names 
             - ''table'' produces a table view, similar to the one visible in
               the ''Browse View'' page
           ''glob''::
@@ -865,7 +819,6 @@ class BrowserModule(Component):
 
         (''since 0.12'')
         """)
-        return 'messages', description
 
     def expand_macro(self, formatter, name, content):
         args, kwargs = parse_args(content)
@@ -885,7 +838,7 @@ class BrowserModule(Component):
             add_stylesheet(formatter.req, 'common/css/browser.css')
             wiki_format_messages = self.config['changeset'] \
                                        .getbool('wiki_format_messages')
-            data = {'repo': repo, 'order': order, 'desc': 1 if desc else None,
+            data = {'repo': repo, 'order': order, 'desc': desc and 1 or None,
                     'reponame': None, 'path': '/', 'stickyrev': None,
                     'wiki_format_messages': wiki_format_messages}
             from trac.web.chrome import Chrome
@@ -904,12 +857,12 @@ class BrowserModule(Component):
         all_repos = sorted(((reponame, repos) for reponame, repos in all_repos
                             if repos
                             and not as_bool(repos.params.get('hidden'))
-                            and repos.is_viewable(formatter.perm)),
+                            and repos.can_view(formatter.perm)),
                            reverse=desc)
 
         def repolink(reponame, repos):
             label = reponame or _('(default)')
-            return Markup(tag.a(label,
+            return Markup(tag.a(label, 
                           title=_('View repository %(repo)s', repo=label),
                           href=formatter.href.browser(repos.reponame or None)))
 
@@ -922,7 +875,7 @@ class BrowserModule(Component):
             return Markup(', ').join([repolink(reponame, repos)
                                       for reponame, repos in all_repos])
 
-
+        
 
 class BlameAnnotator(object):
 
@@ -982,7 +935,7 @@ class BlameAnnotator(object):
         path = self.paths.get(rev, None)
         # Note: path will be None if copy/rename is not supported
         # by get_history
-
+        
         # -- compute anchor and style once per revision
         if rev not in self.chgset_data:
             chgset_href = \

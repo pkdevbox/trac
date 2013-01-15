@@ -1,22 +1,7 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
-
 from trac.core import Component, implements
 from trac.test import EnvironmentStub
-from trac.tests.contentgen import random_sentence
-from trac.web.chrome import (
-    Chrome, INavigationContributor, add_link, add_meta, add_notice, add_script,
-    add_script_data, add_stylesheet, add_warning)
+from trac.web.chrome import add_link, add_meta, add_script, add_script_data, \
+                            add_stylesheet, Chrome, INavigationContributor
 from trac.web.href import Href
 
 import unittest
@@ -75,20 +60,16 @@ class ChromeTestCase(unittest.TestCase):
         req = Request(base_path='/trac.cgi', href=Href('/trac.cgi'))
         add_script(req, 'common/js/trac.js')
         add_script(req, 'common/js/trac.js')
-        add_script(req, 'http://example.com/trac.js')
         scripts = req.chrome['scripts']
-        self.assertEqual(2, len(scripts))
+        self.assertEqual(1, len(scripts))
         self.assertEqual('text/javascript', scripts[0]['type'])
         self.assertEqual('/trac.cgi/chrome/common/js/trac.js',
                          scripts[0]['href'])
-        self.assertEqual('text/javascript', scripts[1]['type'])
-        self.assertEqual('http://example.com/trac.js',
-                         scripts[1]['href'])
 
     def test_add_script_data(self):
         req = Request(href=Href('/trac.cgi'))
         add_script_data(req, {'var1': 1, 'var2': 'Testing'})
-        add_script_data(req, var2='More testing', var3=3)
+        add_script_data(req, {'var2': 'More testing', 'var3': 3})
         self.assertEqual({'var1': 1, 'var2': 'More testing', 'var3': 3},
                          req.chrome['script_data'])
 
@@ -96,15 +77,11 @@ class ChromeTestCase(unittest.TestCase):
         req = Request(base_path='/trac.cgi', href=Href('/trac.cgi'))
         add_stylesheet(req, 'common/css/trac.css')
         add_stylesheet(req, 'common/css/trac.css')
-        add_stylesheet(req, 'https://example.com/trac.css')
         links = req.chrome['links']['stylesheet']
-        self.assertEqual(2, len(links))
+        self.assertEqual(1, len(links))
         self.assertEqual('text/css', links[0]['type'])
         self.assertEqual('/trac.cgi/chrome/common/css/trac.css',
                          links[0]['href'])
-        self.assertEqual('text/css', links[1]['type'])
-        self.assertEqual('https://example.com/trac.css',
-                         links[1]['href'])
 
     def test_add_stylesheet_media(self):
         req = Request(base_path='/trac.cgi', href=Href('/trac.cgi'))
@@ -112,28 +89,6 @@ class ChromeTestCase(unittest.TestCase):
         links = req.chrome['links']['stylesheet']
         self.assertEqual(1, len(links))
         self.assertEqual('print', links[0]['media'])
-
-    def test_add_warning_is_unique(self):
-        req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), base_path='/trac.cgi',
-                      path_info='',
-                      add_redirect_listener=lambda listener: None)
-        Chrome(self.env).prepare_request(req)
-        message = random_sentence(5)
-        add_warning(req, message)
-        add_warning(req, message)
-        self.assertEqual(1, len(req.chrome['warnings']))
-
-    def test_add_notice_is_unique(self):
-        req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), base_path='/trac.cgi',
-                      path_info='',
-                      add_redirect_listener=lambda listener: None)
-        Chrome(self.env).prepare_request(req)
-        message = random_sentence(5)
-        add_notice(req, message)
-        add_notice(req, message)
-        self.assertEqual(1, len(req.chrome['notices']))
 
     def test_htdocs_location(self):
         req = Request(abs_href=Href('http://example.org/trac.cgi'),
@@ -159,14 +114,14 @@ class ChromeTestCase(unittest.TestCase):
         self.env.config.set('header_logo', 'src', 'foo.png')
         info = Chrome(self.env).prepare_request(req)
         self.assertEqual('/trac.cgi/chrome/common/foo.png', info['logo']['src'])
-        self.assertEqual('http://example.org/trac.cgi/chrome/common/foo.png',
+        self.assertEqual('http://example.org/trac.cgi/chrome/common/foo.png', 
                     info['logo']['src_abs'])
 
         # Test with a location in project htdocs
         self.env.config.set('header_logo', 'src', 'site/foo.png')
         info = Chrome(self.env).prepare_request(req)
         self.assertEqual('/trac.cgi/chrome/site/foo.png', info['logo']['src'])
-        self.assertEqual('http://example.org/trac.cgi/chrome/site/foo.png',
+        self.assertEqual('http://example.org/trac.cgi/chrome/site/foo.png', 
                     info['logo']['src_abs'])
 
         # Test with a server-relative path to the logo image
@@ -196,7 +151,7 @@ class ChromeTestCase(unittest.TestCase):
 
     def test_icon_links(self):
         req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), base_path='/trac.cgi',
+                      href=Href('/trac.cgi'), base_path='/trac.cgi', 
                       path_info='',
                       add_redirect_listener=lambda listener: None)
         chrome = Chrome(self.env)
@@ -237,7 +192,7 @@ class ChromeTestCase(unittest.TestCase):
             def get_navigation_items(self, req):
                 yield 'metanav', 'test', 'Test'
         req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), path_info='/',
+                      href=Href('/trac.cgi'), path_info='/', 
                       base_path='/trac.cgi',
                       add_redirect_listener=lambda listener: None)
         nav = Chrome(self.env).prepare_request(req)['nav']
@@ -252,7 +207,7 @@ class ChromeTestCase(unittest.TestCase):
             def get_navigation_items(self, req):
                 yield 'metanav', 'test', 'Test'
         req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), path_info='/',
+                      href=Href('/trac.cgi'), path_info='/', 
                       base_path='/trac.cgi',
                       add_redirect_listener=lambda listener: None)
         handler = TestNavigationContributor(self.env)
@@ -274,7 +229,7 @@ class ChromeTestCase(unittest.TestCase):
             def get_navigation_items(self, req):
                 yield 'metanav', 'test2', 'Test 2'
         req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                      href=Href('/trac.cgi'), base_path='/trac.cgi',
+                      href=Href('/trac.cgi'), base_path='/trac.cgi', 
                       path_info='/',
                       add_redirect_listener=lambda listener: None)
         chrome = Chrome(self.env)

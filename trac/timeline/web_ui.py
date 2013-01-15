@@ -25,21 +25,19 @@ from genshi.builder import tag
 
 from trac.config import IntOption, BoolOption
 from trac.core import *
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import as_int
-from trac.util.datefmt import format_date, format_datetime, format_time, \
-                              parse_date, to_utimestamp, to_datetime, utc, \
-                              pretty_timedelta, user_time, localtz
+from trac.util.datefmt import format_date, format_datetime, parse_date, \
+                              to_utimestamp, to_datetime, utc, pretty_timedelta
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _, tag_
 from trac.web import IRequestHandler, IRequestFilter
-from trac.web.chrome import (Chrome, INavigationContributor, ITemplateProvider,
-                             add_link, add_stylesheet, auth_link, prevnext_nav,
-                             web_context)
+from trac.web.chrome import add_link, add_stylesheet, prevnext_nav, Chrome, \
+                            INavigationContributor, ITemplateProvider
+                            
 from trac.wiki.api import IWikiSyntaxProvider
-from trac.wiki.formatter import concat_path_query_fragment, \
-                                split_url_into_path_query_fragment
 
 
 class TimelineModule(Component):
@@ -54,7 +52,7 @@ class TimelineModule(Component):
         (''since 0.9.'')""")
 
     max_daysback = IntOption('timeline', 'max_daysback', 90,
-        """Maximum number of days (-1 for unlimited) displayable in the
+        """Maximum number of days (-1 for unlimited) displayable in the 
         Timeline. (''since 0.11'')""")
 
     abbreviated_messages = BoolOption('timeline', 'abbreviated_messages',
@@ -75,7 +73,7 @@ class TimelineModule(Component):
     def get_navigation_items(self, req):
         if 'TIMELINE_VIEW' in req.perm:
             yield ('mainnav', 'timeline',
-                   tag.a(_("Timeline"), href=req.href.timeline(), accesskey=2))
+                   tag.a(_('Timeline'), href=req.href.timeline(), accesskey=2))
 
     # IPermissionRequestor methods
 
@@ -91,15 +89,7 @@ class TimelineModule(Component):
         req.perm.assert_permission('TIMELINE_VIEW')
 
         format = req.args.get('format')
-        maxrows = int(req.args.get('max', 50 if format == 'rss' else 0))
-        lastvisit = int(req.session.get('timeline.lastvisit', '0'))
-
-        # indication of new events is unchanged when form is updated by user
-        revisit = any(a in req.args for a in ['update', 'from', 'daysback',
-                                              'author'])
-        if revisit:
-            lastvisit = int(req.session.get('timeline.nextlastvisit',
-                                            lastvisit))
+        maxrows = int(req.args.get('max', format == 'rss' and 50 or 0))
 
         # Parse the from date and adjust the timestamp to the last second of
         # the day
@@ -111,7 +101,7 @@ class TimelineModule(Component):
             # Acquire from date only from non-blank input
             reqfromdate = req.args['from'].strip()
             if reqfromdate:
-                precisedate = user_time(req, parse_date, reqfromdate)
+                precisedate = parse_date(reqfromdate, req.tz)
                 fromdate = precisedate.astimezone(req.tz)
             precision = req.args.get('precision', '')
             if precision.startswith('second'):
@@ -127,7 +117,7 @@ class TimelineModule(Component):
                                req.tz)
 
         daysback = as_int(req.args.get('daysback'),
-                          90 if format == 'rss' else None)
+                          format == 'rss' and 90 or None)
         if daysback is None:
             daysback = as_int(req.session.get('timeline.daysback'), None)
         if daysback is None:
@@ -143,12 +133,11 @@ class TimelineModule(Component):
 
         data = {'fromdate': fromdate, 'daysback': daysback,
                 'authors': authors,
-                'today': user_time(req, format_date, today),
-                'yesterday': user_time(req, format_date, yesterday),
+                'today': format_date(today, tzinfo=req.tz),
+                'yesterday': format_date(yesterday, tzinfo=req.tz),
                 'precisedate': precisedate, 'precision': precision,
                 'events': [], 'filters': [],
-                'abbreviated_messages': self.abbreviated_messages,
-                'lastvisit': lastvisit}
+                'abbreviated_messages': self.abbreviated_messages}
 
         available_filters = []
         for event_provider in self.event_providers:
@@ -185,7 +174,7 @@ class TimelineModule(Component):
                 exclude.add(name)
             else:
                 include.add(name)
-
+        
         # gather all events for the given period of time
         events = []
         for provider in self.event_providers:
@@ -193,7 +182,7 @@ class TimelineModule(Component):
                 for event in provider.get_timeline_events(req, start, stop,
                                                           filters) or []:
                     # Check for 0.10 events
-                    author = (event[2 if len(event) < 6 else 4] or '').lower()
+                    author = (event[len(event) < 6 and 2 or 4] or '').lower()
                     if (not include or author in include) \
                        and not author in exclude:
                         events.append(self._event_data(provider, event))
@@ -207,10 +196,10 @@ class TimelineModule(Component):
             events = events[:maxrows]
 
         data['events'] = events
-
+        
         if format == 'rss':
             data['email_map'] = Chrome(self.env).get_email_map()
-            rss_context = web_context(req, absurls=True)
+            rss_context = Context.from_request(req, absurls=True)
             rss_context.set_hints(wiki_flavor='html', shorten_lines=False)
             data['context'] = rss_context
             return 'timeline.rss', data, 'application/rss+xml'
@@ -218,13 +207,8 @@ class TimelineModule(Component):
             req.session.set('timeline.daysback', daysback,
                             self.default_daysback)
             req.session.set('timeline.authors', authors, '')
-            # store lastvisit
-            if events and not revisit:
-                lastviewed = to_utimestamp(events[0]['date'])
-                req.session['timeline.lastvisit'] = max(lastvisit, lastviewed)
-                req.session['timeline.nextlastvisit'] = lastvisit
-            html_context = web_context(req)
-            html_context.set_hints(wiki_flavor='oneliner',
+            html_context = Context.from_request(req)
+            html_context.set_hints(wiki_flavor='oneliner', 
                                    shorten_lines=self.abbreviated_messages)
             data['context'] = html_context
 
@@ -232,9 +216,8 @@ class TimelineModule(Component):
         rss_href = req.href.timeline([(f, 'on') for f in filters],
                                      daysback=90, max=50, authors=authors,
                                      format='rss')
-        add_link(req, 'alternate', auth_link(req, rss_href), _('RSS Feed'),
+        add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
-        Chrome(self.env).add_jquery_ui(req)
 
         for filter_ in available_filters:
             data['filters'].append({'name': filter_[0], 'label': filter_[1],
@@ -259,7 +242,7 @@ class TimelineModule(Component):
                                                     daysback=daysback),
                      _('Next Period'))
         prevnext_nav(req, _('Previous Period'), _('Next Period'))
-
+        
         return 'timeline.html', data, None
 
     # ITemplateProvider methods
@@ -274,55 +257,13 @@ class TimelineModule(Component):
 
     def pre_process_request(self, req, handler):
         return handler
-
+    
     def post_process_request(self, req, template, data, content_type):
         if data:
-            def pretty_dateinfo(date, format=None, dateonly=False):
-                if not date:
-                    return ''
-                if format == 'date':
-                    absolute = user_time(req, format_date, date)
-                else:
-                    absolute = user_time(req, format_datetime, date)
-                now = datetime.now(localtz)
-                relative = pretty_timedelta(date, now)
-                if not format:
-                    format = req.session.get('dateinfo',
-                                 Chrome(self.env).default_dateinfo_format)
-                if format == 'relative':
-                    if date > now:
-                        label = _("in %(relative)s", relative=relative) \
-                                if not dateonly else relative
-                        title = _("on %(date)s at %(time)s",
-                                  date=user_time(req, format_date, date),
-                                  time=user_time(req, format_time, date))
-                        return tag.span(label, title=title)
-                    else:
-                        label = _("%(relative)s ago", relative=relative) \
-                                if not dateonly else relative
-                        title = _("See timeline at %(absolutetime)s",
-                                  absolutetime=absolute)
-                else:
-                    if dateonly:
-                        label = absolute
-                    elif req.lc_time == 'iso8601':
-                        label = _("at %(iso8601)s", iso8601=absolute)
-                    elif format == 'date':
-                        label = _("on %(date)s", date=absolute)
-                    else:
-                        label = _("on %(date)s at %(time)s",
-                                  date=user_time(req, format_date, date),
-                                  time=user_time(req, format_time, date))
-                    if date > now:
-                        title = _("in %(relative)s", relative=relative)
-                        return tag.span(label, title=title)
-                    title = _("See timeline %(relativetime)s ago",
-                              relativetime=relative)
-                return self.get_timeline_link(req, date, label,
-                                              precision='second', title=title)
             def dateinfo(date):
-                return pretty_dateinfo(date, format='relative', dateonly=True)
-            data['pretty_dateinfo'] = pretty_dateinfo
+                return self.get_timeline_link(req, date,
+                                              pretty_timedelta(date),
+                                              precision='second')
             data['dateinfo'] = dateinfo
         return template, data, content_type
 
@@ -333,9 +274,8 @@ class TimelineModule(Component):
 
     def get_link_resolvers(self):
         def link_resolver(formatter, ns, target, label):
-            path, query, fragment = split_url_into_path_query_fragment(target)
             precision = None
-            time = path.split("T", 1)
+            time = target.split("T", 1)
             if len(time) > 1:
                 time = time[1].split("Z")[0]
                 if len(time) >= 6:
@@ -346,8 +286,8 @@ class TimelineModule(Component):
                     precision = 'hours'
             try:
                 return self.get_timeline_link(formatter.req,
-                                              parse_date(path, utc),
-                                              label, precision, query, fragment)
+                                              parse_date(target, utc),
+                                              label, precision)
             except TracError, e:
                 return tag.a(label, title=to_unicode(e.message),
                              class_='timeline missing')
@@ -355,14 +295,15 @@ class TimelineModule(Component):
 
     # Public methods
 
-    def get_timeline_link(self, req, date, label=None, precision='hours',
-                          query=None, fragment=None, title=None):
-        iso_date = format_datetime(date, 'iso8601', req.tz)
-        href = req.href.timeline(from_=iso_date, precision=precision)
+    def get_timeline_link(self, req, date, label=None, precision='hours'):
+        iso_date = display_date = format_datetime(date, 'iso8601', req.tz)
+        fmt = req.session.get('datefmt')
+        if fmt and fmt != 'iso8601':
+            display_date = format_datetime(date, fmt, req.tz)
         return tag.a(label or iso_date, class_='timeline',
-                     title=title or _("See timeline at %(absolutetime)s",
-                                      absolutetime=iso_date),
-                     href=concat_path_query_fragment(href, query, fragment))
+                     title=_("%(date)s in Timeline", date=display_date),
+                     href=req.href.timeline(from_=iso_date,
+                                            precision=precision))
 
     # Internal methods
 
@@ -393,7 +334,7 @@ class TimelineModule(Component):
         At the same time, the message will contain a link to the timeline
         without the filters corresponding to the guilty event provider `ep`.
         """
-        self.log.error('Timeline event provider failed: %s',
+        self.log.error('Timeline event provider failed: %s', 
                        exception_to_unicode(exc, traceback=True))
 
         ep_kinds = dict((f[0], f[1])
@@ -412,7 +353,7 @@ class TimelineModule(Component):
             tag.p(tag_("Event provider %(name)s failed for filters "
                        "%(kinds)s: ",
                        name=tag.tt(ep.__class__.__name__),
-                       kinds=', '.join('"%s"' % ep_kinds[f] for f in
+                       kinds=', '.join('"%s"' % ep_kinds[f] for f in 
                                        current_filters & ep_filters)),
                   tag.b(exception_to_unicode(exc)), class_='message'),
             tag.p(tag_("You may want to see the %(other_events)s from the "

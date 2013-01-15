@@ -18,7 +18,7 @@ def execute(hdf, txt, env):
     # From a wiki page
     if hdf:
         hdf['wiki.macro.greeting'] = 'Hello World'
-
+        
     # args will be `None` if the macro is called without parenthesis.
     args = txt or 'No arguments'
 
@@ -37,7 +37,6 @@ def execute(hdf, txt, env):
 from trac.wiki.macros import WikiMacroBase
 
 class HelloWorldMacro(WikiMacroBase):
-    _description = cleandoc_(
     """Simple HelloWorld macro.
 
     Note that the name of the class is meaningful:
@@ -47,7 +46,7 @@ class HelloWorldMacro(WikiMacroBase):
     The documentation of the class (i.e. what you're reading)
     will become the documentation of the macro, as shown by
     the !MacroList macro (usually used in the TracWikiMacros page).
-    """)
+    """
 
     def expand_macro(self, formatter, name, args):
         """Return some output that will be displayed in the Wiki content.
@@ -59,7 +58,7 @@ class HelloWorldMacro(WikiMacroBase):
           [[HelloWorld]]), then `args` is `None`.
         """
         return 'Hello World, args = ' + unicode(args)
-
+    
     # Note that there's no need to HTML escape the returned data,
     # as the template engine (Genshi) will do it for us.
 # --

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#
+# 
 # Copyright (C) 2004-2009 Edgewall Software
 # All rights reserved.
 #
@@ -42,8 +42,10 @@ import trac.search.web_ui
 import trac.timeline.web_ui
 import trac.wiki.web_ui
 
+from trac.config import Configuration
+from trac.env import Environment
 from trac.admin import console, console_date_format
-from trac.test import EnvironmentStub
+from trac.test import InMemoryDatabase
 from trac.util.datefmt import format_date, get_date_format_hint
 from trac.web.tests.session import _prep_session_table
 
@@ -71,6 +73,44 @@ def load_expected_results(file, pattern):
     return expected
 
 
+class InMemoryConfiguration(Configuration):
+    """A subclass of Configuration that doesn't save to disk."""
+    def save(self):
+        pass
+
+
+class InMemoryEnvironment(Environment):
+    """
+    A subclass of Environment that keeps its DB in memory.
+    """
+
+    def get_read_db(self):
+        return self.get_db_cnx()
+
+    def get_db_cnx(self):
+        if not hasattr(self, '_db'):
+            self._db = InMemoryDatabase()
+        return self._db
+
+    def create(self, options=[]):
+        self.setup_config()
+
+    def verify(self):
+        return True
+
+    def setup_log(self):
+        from trac.log import logger_factory
+        self.log = logger_factory('null')
+
+    def is_component_enabled(self, cls):
+        return cls.__module__.startswith('trac.') and \
+               cls.__module__.find('.tests.') == -1
+
+    def setup_config(self):
+        self.config = InMemoryConfiguration(None)
+        self.setup_log()
+
+
 class TracadminTestCase(unittest.TestCase):
     """
     Tests the output of trac-admin and is meant to be used with
@@ -82,8 +122,9 @@ class TracadminTestCase(unittest.TestCase):
             '===== (test_[^ ]+) =====')
 
     def setUp(self):
-        self.env = EnvironmentStub(default_data=True, enable=('trac.*',),
-                                   disable=('trac.tests.*',))
+        self.env = InMemoryEnvironment('', create=True)
+        self.db = self.env.get_db_cnx()
+
         self._admin = console.TracAdmin()
         self._admin.env_set('', self.env)
 
@@ -93,20 +134,16 @@ class TracadminTestCase(unittest.TestCase):
     def tearDown(self):
         self.env = None
 
-    def _execute(self, cmd, strip_trailing_space=True, input=None):
-        _in = sys.stdin
+    def _execute(self, cmd, strip_trailing_space=True):
         _err = sys.stderr
         _out = sys.stdout
         try:
-            if input:
-                sys.stdin = StringIO(input.encode('utf-8'))
-                sys.stdin.encoding = 'utf-8' # fake input encoding
             sys.stderr = sys.stdout = out = StringIO()
-            out.encoding = 'utf-8' # fake output encoding
+            setattr(out, 'encoding', 'utf-8') # fake output encoding
             retval = None
             try:
                 retval = self._admin.onecmd(cmd)
-            except SystemExit:
+            except SystemExit, e:
                 pass
             value = out.getvalue()
             if isinstance(value, str): # reverse what print_listing did
@@ -119,7 +156,6 @@ class TracadminTestCase(unittest.TestCase):
             else:
                 return retval, value
         finally:
-            sys.stdin = _in
             sys.stderr = _err
             sys.stdout = _out
 
@@ -127,22 +163,16 @@ class TracadminTestCase(unittest.TestCase):
         if not (isinstance(expected_results, basestring) and \
                 isinstance(output, basestring)):
             return unittest.TestCase.assertEqual(self, expected_results, output)
-        def diff():
-            # Create a useful delta between the output and the expected output
-            output_lines = ['%s\n' % x for x in output.split('\n')]
-            expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
-            return ''.join(difflib.unified_diff(expected_lines, output_lines,
-                                                'expected', 'actual'))
-        if '[...]' in expected_results:
-            m = re.match(expected_results.replace('[...]', '.*'), output,
-                         re.MULTILINE)
-            unittest.TestCase.assertTrue(self, m,
-                                         "%r != %r\n%s" % (expected_results,
-                                                           output, diff()))
-        else:
-            unittest.TestCase.assertEqual(self, expected_results, output,
-                                          "%r != %r\n%s" % (expected_results,
-                                                            output, diff()))
+        # Create a useful delta between the output and the expected output
+        output_lines = ['%s\n' % x for x in output.split('\n')]
+        expected_lines = ['%s\n' % x for x in expected_results.split('\n')]
+        output_diff = ''.join(list(
+            difflib.unified_diff(expected_lines, output_lines,
+                                 'expected', 'actual')
+        ))
+        unittest.TestCase.assertEqual(self, expected_results, output, 
+                                      "%r != %r\n%s" %
+                                      (expected_results, output, output_diff))
     # Help test
 
     def test_help_ok(self):
@@ -162,7 +192,7 @@ class TracadminTestCase(unittest.TestCase):
         self.assertEqual(expected_results, output)
 
     # Attachment tests
-
+    
     def test_attachment_list_empty(self):
         """
         Tests the 'attachment list' command in trac-admin, on a wiki page that
@@ -176,9 +206,9 @@ class TracadminTestCase(unittest.TestCase):
         rv, output = self._execute('attachment list wiki:WikiStart')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
-
+    
     # Config tests
-
+    
     def test_config_get(self):
         """
         Tests the 'config get' command in trac-admin.  This particular
@@ -252,20 +282,6 @@ class TracadminTestCase(unittest.TestCase):
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
-    def test_permission_add_already_exists(self):
-        """
-        Tests the 'permission add' command in trac-admin.  This particular
-        test passes a permission that already exists and checks for the
-        message. Other permissions passed are added.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('permission add anonymous WIKI_CREATE '
-                                   'WIKI_VIEW WIKI_MODIFY')
-        self.assertEqual(0, rv)
-        rv, output2 = self._execute('permission list')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output + output2)
-
     def test_permission_remove_one_action_ok(self):
         """
         Tests the 'permission remove' command in trac-admin.  This particular
@@ -286,78 +302,6 @@ class TracadminTestCase(unittest.TestCase):
         """
         test_name = sys._getframe().f_code.co_name
         self._execute('permission remove anonymous WIKI_CREATE WIKI_MODIFY')
-        rv, output = self._execute('permission list')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_remove_all_actions_for_user(self):
-        """
-        Tests the 'permission remove' command in trac-admin.  This particular
-        test removes all permissions for anonymous.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self._execute('permission remove anonymous *')
-        rv, output = self._execute('permission list')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_remove_action_for_all_users(self):
-        """
-        Tests the 'permission remove' command in trac-admin.  This particular
-        test removes the TICKET_CREATE permission from all users.
-        """
-        test_name = sys._getframe().f_code.co_name
-        self._execute('permission add anonymous TICKET_CREATE')
-        self._execute('permission remove * TICKET_CREATE')
-        rv, output = self._execute('permission list')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_remove_unknown_user(self):
-        """
-        Tests the 'permission remove' command in trac-admin.  This particular
-        test tries removing a permission from an unknown user.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('permission remove joe TICKET_VIEW')
-        self.assertEqual(2, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_remove_action_not_granted(self):
-        """
-        Tests the 'permission remove' command in trac-admin.  This particular
-        test tries removing TICKET_CREATE from user anonymous, who doesn't
-        have that permission.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('permission remove anonymous TICKET_CREATE')
-        self.assertEqual(2, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_export_ok(self):
-        """
-        Tests the 'permission export' command in trac-admin.  This particular
-        test exports the default permissions to stdout.
-        """
-        test_name = sys._getframe().f_code.co_name
-        rv, output = self._execute('permission export')
-        self.assertEqual(0, rv)
-        self.assertEqual(self.expected_results[test_name], output)
-
-    def test_permission_import_ok(self):
-        """
-        Tests the 'permission import' command in trac-admin.  This particular
-        test exports additional permissions, removes them and imports them back.
-        """
-        test_name = sys._getframe().f_code.co_name
-        user = u'test_user\u0250'
-        self._execute('permission add ' + user + ' WIKI_VIEW')
-        self._execute('permission add ' + user + ' TICKET_VIEW')
-        rv, output = self._execute('permission export')
-        self._execute('permission remove ' + user + ' *')
-        rv, output = self._execute('permission import', input=output)
-        self.assertEqual(0, rv)
-        self.assertEqual('', output)
         rv, output = self._execute('permission list')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
@@ -448,7 +392,7 @@ class TracadminTestCase(unittest.TestCase):
         test_name = sys._getframe().f_code.co_name
         rv, output = self._execute('component chown bad_component changed_owner')
         self.assertEqual(2, rv)
-        # We currently trigger a deprecation warning with py26 so we
+        # We currently trigger a deprecation warning with py26 so we 
         # can currrently only verify that the end of the output string is
         # correct
         self.assertEqual(output.endswith(self.expected_results[test_name]), True)
@@ -1128,21 +1072,21 @@ class TracadminTestCase(unittest.TestCase):
 
     def test_session_list_authenticated(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session list authenticated')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_session_list_anonymous(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session list anonymous')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_session_list_all(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         if self._admin.interactive:
             rv, output = self._execute("session list *")
         else:
@@ -1152,21 +1096,21 @@ class TracadminTestCase(unittest.TestCase):
 
     def test_session_list_authenticated_sid(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session list name00')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_session_list_anonymous_sid(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session list name10:0')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
 
     def test_session_list_missing_sid(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session list thisdoesntexist')
         self.assertEqual(0, rv)
         self.assertEqual(self.expected_results[test_name], output)
@@ -1179,7 +1123,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_add_duplicate_sid(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session add name00')
         self.assertEqual(2, rv)
         self.assertEqual(self.expected_results[test_name], output)
@@ -1213,7 +1157,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_set_attr_name(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session set name name00 JOHN')
         self.assertEqual(0, rv)
         rv, output = self._execute('session list name00')
@@ -1221,7 +1165,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_set_attr_email(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session set email name00 JOHN@EXAMPLE.ORG')
         self.assertEqual(0, rv)
         rv, output = self._execute('session list name00')
@@ -1253,7 +1197,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_delete_sid(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session delete name00')
         self.assertEqual(0, rv)
         rv, output = self._execute('session list nam00')
@@ -1267,7 +1211,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_delete_anonymous(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session delete anonymous')
         self.assertEqual(0, rv)
         rv, output = self._execute('session list *')
@@ -1275,7 +1219,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def test_session_delete_multiple_sids(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env)
+        _prep_session_table(self.env.get_db_cnx())
         rv, output = self._execute('session delete name00 name01 name02 '
                                    'name03')
         self.assertEqual(0, rv)
@@ -1284,7 +1228,7 @@ class TracadminTestCase(unittest.TestCase):
 
     def  test_session_purge_age(self):
         test_name = sys._getframe().f_code.co_name
-        _prep_session_table(self.env, spread_visits=True)
+        _prep_session_table(self.env.get_db_cnx(), spread_visits=True)
         rv, output = self._execute('session purge 20100112')
         self.assertEqual(0, rv)
         rv, output = self._execute('session list *')

@@ -18,21 +18,17 @@
 
 import pkg_resources
 
-from ConfigParser import RawConfigParser
-from StringIO import StringIO
-
 from genshi.builder import tag
 
-from trac.config import Configuration, ConfigSection
 from trac.core import *
-from trac.env import IEnvironmentSetupParticipant
 from trac.perm import PermissionSystem
+from trac.env import IEnvironmentSetupParticipant
+from trac.config import Configuration
 from trac.ticket.api import ITicketActionController, TicketSystem
 from trac.ticket.model import Resolution
 from trac.util.text import obfuscate_email_address
-from trac.util.translation import _, tag_, cleandoc_
-from trac.web.chrome import Chrome, add_script, add_script_data
-from trac.wiki.macros import WikiMacroBase
+from trac.util.translation import _, tag_
+from trac.web.chrome import Chrome
 
 # -- Utilities for the ConfigurableTicketWorkflow
 
@@ -60,7 +56,7 @@ def parse_workflow_config(rawactions):
     def as_list(key):
         value = attributes.get(key, '')
         return [item for item in (x.strip() for x in value.split(',')) if item]
-
+    
     for action, attributes in actions.items():
         # Default the 'name' attribute to the name used in the ini file
         if 'name' not in attributes:
@@ -97,19 +93,11 @@ def load_workflow_config_snippet(config, filename):
 class ConfigurableTicketWorkflow(Component):
     """Ticket action controller which provides actions according to a
     workflow defined in trac.ini.
-
+    
     The workflow is idefined in the `[ticket-workflow]` section of the
     [wiki:TracIni#ticket-workflow-section trac.ini] configuration file.
     """
-
-    ticket_workflow_section = ConfigSection('ticket-workflow',
-        """The workflow for tickets is controlled by plugins. By default,
-        there's only a `ConfigurableTicketWorkflow` component in charge.
-        That component allows the workflow to be configured via this section
-        in the `trac.ini` file. See TracWorkflow for more details.
-
-        (''since 0.11'')""")
-
+    
     def __init__(self, *args, **kwargs):
         self.actions = get_workflow_config(self.config)
         if not '_reset' in self.actions:
@@ -161,7 +149,7 @@ The ticket Workflow is now configurable.
 
 Your environment has been upgraded, but configured to use the original
 workflow. It is recommended that you look at changing this configuration to use
-basic-workflow.
+basic-workflow. 
 
 Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
 
@@ -218,13 +206,13 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
         all_status.discard('*')
         all_status.discard('')
         return all_status
-
+        
     def render_ticket_action_control(self, req, ticket, action):
 
         self.log.debug('render_ticket_action_control: action "%s"' % action)
 
         this_action = self.actions[action]
-        status = this_action['newstate']
+        status = this_action['newstate']        
         operations = this_action['operations']
         current_owner = ticket._old.get('owner', ticket['owner'] or '(none)')
         if not (Chrome(self.env).show_email_addresses
@@ -281,9 +269,9 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                      for x in owners],
                     id=id, name=id)))
                 hints.append(_("The owner will be changed from "
-                               "%(current_owner)s to the selected user",
+                               "%(current_owner)s",
                                current_owner=current_owner))
-        elif 'set_owner_to_self' in operations and \
+        if 'set_owner_to_self' in operations and \
                 ticket._old.get('owner', ticket['owner']) != req.authname:
             hints.append(_("The owner will be changed from %(current_owner)s "
                            "to %(authname)s", current_owner=current_owner,
@@ -308,7 +296,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                 hints.append(_("The resolution will be set to %(name)s",
                                name=resolutions[0]))
             else:
-                selected_option = req.args.get(id,
+                selected_option = req.args.get(id, 
                         TicketSystem(self.env).default_resolution)
                 control.append(tag_('as %(resolution)s',
                                     resolution=tag.select(
@@ -326,7 +314,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
         else:
             if status != '*':
                 hints.append(_("Next status will be '%(name)s'", name=status))
-        return (this_action['name'], tag(*control), '. '.join(hints) + ".")
+        return (this_action['name'], tag(*control), '. '.join(hints))
 
     def get_ticket_changes(self, req, ticket, action):
         this_action = self.actions[action]
@@ -385,7 +373,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
 
     # Public methods (for other ITicketActionControllers that want to use
     #                 our config file and provide an operation for an action)
-
+    
     def get_actions_by_operation(self, operation):
         """Return a list of all actions with a given operation
         (for use in the controller's get_all_status())
@@ -412,84 +400,3 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                       self._has_perms_for_action(req, info, ticket.resource)]
         return actions
 
-
-class WorkflowMacro(WikiMacroBase):
-    _domain = 'messages'
-    _description = cleandoc_(
-    """Render a workflow graph.
-
-    This macro accepts a TracWorkflow configuration and renders the states
-    and transitions as a directed graph. If no parameters are given, the
-    current ticket workflow is rendered. In WikiProcessors mode the `width`
-    and `height` arguments can be specified.
-
-    (Defaults: `width = 800` and `heigth = 600`)
-
-    Examples:
-    {{{
-        [[Workflow()]]
-
-        [[Workflow(go = here -> there; return = there -> here)]]
-
-        {{{
-        #!Workflow width=700 height=700
-        leave = * -> *
-        leave.operations = leave_status
-        leave.default = 1
-
-        accept = new,assigned,accepted,reopened -> accepted
-        accept.permissions = TICKET_MODIFY
-        accept.operations = set_owner_to_self
-
-        resolve = new,assigned,accepted,reopened -> closed
-        resolve.permissions = TICKET_MODIFY
-        resolve.operations = set_resolution
-
-        reassign = new,assigned,accepted,reopened -> assigned
-        reassign.permissions = TICKET_MODIFY
-        reassign.operations = set_owner
-
-        reopen = closed -> reopened
-        reopen.permissions = TICKET_CREATE
-        reopen.operations = del_resolution
-        }}}
-    }}}
-    """)
-
-    def expand_macro(self, formatter, name, text, args):
-        if not text:
-            raw_actions = self.config.options('ticket-workflow')
-        else:
-            if args is None:
-                text = '\n'.join([line.lstrip() for line in text.split(';')])
-            if not '[ticket-workflow]' in text:
-                text = '[ticket-workflow]\n' + text
-            parser = RawConfigParser()
-            parser.readfp(StringIO(text))
-            raw_actions = list(parser.items('ticket-workflow'))
-        actions = parse_workflow_config(raw_actions)
-        states = list(set(
-            [state for action in actions.itervalues()
-                   for state in action['oldstates']] +
-            [action['newstate'] for action in actions.itervalues()]))
-        action_names = actions.keys()
-        edges = []
-        for name, action in actions.items():
-            new_index = states.index(action['newstate'])
-            name_index = action_names.index(name)
-            for old_state in action['oldstates']:
-                old_index = states.index(old_state)
-                edges.append((old_index, new_index, name_index))
-
-        args = args or {}
-        graph = {'nodes': states, 'actions': action_names, 'edges': edges,
-                 'width': args.get('width', 800),
-                 'height': args.get('height', 600)}
-        graph_id = '%012x' % id(graph)
-        req = formatter.req
-        add_script(req, 'common/js/excanvas.js', ie_if='IE')
-        add_script(req, 'common/js/workflow_graph.js')
-        add_script_data(req, {'graph_%s' % graph_id: graph})
-        return tag.div(_("Enable JavaScript to display the workflow graph."),
-                       class_='trac-workflow-graph system-message',
-                       id='trac-workflow-graph-%s' % graph_id)

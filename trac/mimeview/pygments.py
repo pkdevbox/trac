@@ -86,21 +86,15 @@ class PygmentsRenderer(Component):
         self._types = None
 
     # ISystemInfoProvider methods
-
+    
     def get_system_info(self):
         version = get_pkginfo(pygments).get('version')
         # if installed from source, fallback to the hardcoded version info
         if not version and hasattr(pygments, '__version__'):
             version = pygments.__version__
         yield 'Pygments', version
-
+    
     # IHTMLPreviewRenderer methods
-
-    def get_extra_mimetypes(self):
-        for lexname, aliases, _, mimetypes in get_all_lexers():
-            name = aliases[0] if aliases else lexname
-            for mimetype in mimetypes:
-                yield mimetype, aliases
 
     def get_quality_ratio(self, mimetype):
         # Extend default MIME type to mode mappings with configured ones
@@ -189,7 +183,7 @@ class PygmentsRenderer(Component):
     def _init_types(self):
         self._types = {}
         for lexname, aliases, _, mimetypes in get_all_lexers():
-            name = aliases[0] if aliases else lexname
+            name = aliases and aliases[0] or lexname
             for mimetype in mimetypes:
                 self._types[mimetype] = (name, self.QUALITY_RATIO)
 

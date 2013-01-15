@@ -6,15 +6,13 @@
       xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude"
       py:with="modify_perm = 'WIKI_MODIFY' in perm(page.resource);
-               admin_perm = 'WIKI_ADMIN' in perm(page.resource);
-               is_not_latest = page.exists and page.version != latest_version">
+               admin_perm = 'WIKI_ADMIN' in perm(page.resource)">
   <xi:include href="layout.html" />
   <head>
     <title py:if="title">$title</title>
     <meta py:if="version or page.author == 'trac'" name="ROBOTS" content="NOINDEX, NOFOLLOW" />
     <link py:if="admin_perm or (not page.readonly and modify_perm)" rel="alternate" type="application/x-wiki"
-          href="${href.wiki(page.name, action='edit', version=page.version if is_not_latest else None)}"
-          title="${_('Revert page to this version') if is_not_latest else _('Edit this page')}"/>
+          title="Edit this page" href="${href.wiki(page.name, action='edit')}" />
     <script type="text/javascript">
       jQuery(document).ready(function($) {
         $("#content").find("h1,h2,h3,h4,h5,h6").addAnchor(_("Link to this section"));
@@ -34,7 +32,7 @@
         <table id="info" summary="Revision info">
           <tbody>
             <tr><th scope="row" i18n:msg="version, author, date">
-               Version $page.version (modified by ${authorinfo(page.author)}, ${pretty_dateinfo(page.time)})
+               Version $page.version (modified by ${authorinfo(page.author)}, ${dateinfo(page.time)} ago)
                (<a href="${href.wiki(page.name, action='diff', version=page.version)}">diff</a>)
             </th></tr>
             <tr><td class="message" xml:space="preserve">
@@ -46,7 +44,6 @@
 
       <div class="wikipage searchable" py:choose="" xml:space="preserve">
         <py:when test="page.exists">
-          <div id="wikipage" class="trac-content" py:content="wiki_to_html(context, text)" />
           <?python
             last_modification = (page.comment and
                  _('Version %(version)s by %(author)s: %(comment)s',
@@ -57,10 +54,11 @@
           <div py:if="not version" class="trac-modifiedby">
             <span i18n:msg="reldate">
               <a href="${href.wiki(page.name, action='diff', version=page.version)}"
-                 title="$last_modification">Last modified</a> ${pretty_dateinfo(page.time)}
+                 title="$last_modification">Last modified</a> ${dateinfo(page.time)} ago
             </span>
             <span class="trac-print" i18n:msg="date">Last modified on ${format_datetime(page.time)}</span>
           </div>
+          <div id="wikipage" py:content="wiki_to_html(context, text)" />
         </py:when>
         <py:otherwise>
           <p i18n:msg="name">The page ${name_of(page.resource)} does not exist. You can create it here.</p>
@@ -85,10 +83,6 @@
                 <div>
                   <input type="hidden" name="action" value="edit" />
                   <py:choose>
-                    <py:when test="is_not_latest">
-                      <input type="hidden" name="version" value="${page.version}"/>
-                      <input type="submit" value="${_('Revert to this version')}"/>
-                    </py:when>
                     <py:when test="page.exists">
                       <input type="submit" value="${_('Edit this page')}" accesskey="e" />
                     </py:when>
@@ -97,7 +91,7 @@
                       <div py:if="templates" id="template">
                         <label for="template">Using the template:</label>
                         <select name="template">
-                          <option selected="${not default_template in templates or None}"
+                          <option selected="${not default_template in templates and 'selected' or None}"
                                   value="">(blank page)</option>
                           <option py:for="t in sorted(templates)" value="$t"
                                   selected="${t == default_template or None}">$t</option>
@@ -117,16 +111,18 @@
                 <input type="submit" value="${_('Rename page')}" />
               </div>
             </form>
-            <form method="get" action="${href.wiki(page.name)}" py:if="page.exists and delete_perm">
-              <div id="delete">
-                <input type="hidden" name="action" value="delete" />
-                <input type="hidden" name="version" value="$page.version" />
-                <py:if test="page.version == latest_version">
-                  <input type="submit" name="delete_version" value="${_('Delete this version')}" />
-                </py:if>
-                <input type="submit" value="${_('Delete page')}" />
-              </div>
-            </form>
+            <py:if test="page.exists and delete_perm">
+              <form method="get" action="${href.wiki(page.name)}">
+                <div id="delete">
+                  <input type="hidden" name="action" value="delete" />
+                  <input type="hidden" name="version" value="$page.version" />
+                  <py:if test="page.version == latest_version">
+                    <input type="submit" name="delete_version" value="${_('Delete this version')}" />
+                  </py:if>
+                  <input type="submit" value="${_('Delete page')}" />
+                </div>
+              </form>
+            </py:if>
           </div>
         </py:if>
       </py:with>

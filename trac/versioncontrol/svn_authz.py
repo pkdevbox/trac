@@ -22,6 +22,7 @@ from trac.config import Option, PathOption
 from trac.core import *
 from trac.perm import IPermissionPolicy
 from trac.util import read_file
+from trac.util.compat import any
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _
 from trac.versioncontrol.api import RepositoryManager
@@ -49,7 +50,7 @@ class ParseError(Exception):
 
 def parse(authz, modules):
     """Parse a Subversion authorization file.
-
+    
     Return a dict of modules, each containing a dict of paths, each containing
     a dict mapping users to permissions. Only modules contained in `modules`
     are retained.
@@ -62,7 +63,7 @@ def parse(authz, modules):
     for line in authz.splitlines():
         lineno += 1
         line = to_unicode(line.strip())
-        if not line or line.startswith(('#', ';')):
+        if not line or line.startswith('#') or line.startswith(';'):
             continue
         if line.startswith('[') and line.endswith(']'):
             section = line[1:-1]
@@ -83,7 +84,7 @@ def parse(authz, modules):
             aliases[name] = value.strip()
         else:
             parts = section.split(':', 1)
-            module, path = parts[0] if len(parts) > 1 else '', parts[-1]
+            module, path = len(parts) > 1 and parts[0] or '', parts[-1]
             if module in modules:
                 sections.setdefault((module, path), []).append((name, value))
 
@@ -97,30 +98,30 @@ def parse(authz, modules):
             yield aliases[subject[1:]]
         else:
             yield subject
-
+    
     authz = {}
     for (module, path), items in sections.iteritems():
         section = authz.setdefault(module, {}).setdefault(path, {})
         for subject, perms in items:
             for user in resolve(subject, set()):
                 section.setdefault(user, 'r' in perms)  # The first match wins
-
+    
     return authz
 
 
 class AuthzSourcePolicy(Component):
     """Permission policy for `source:` and `changeset:` resources using a
     Subversion authz file.
-
+    
     `FILE_VIEW` and `BROWSER_VIEW` permissions are granted as specified in the
     authz file.
-
+    
     `CHANGESET_VIEW` permission is granted for changesets where `FILE_VIEW` is
     granted on at least one modified file, as well as for empty changesets.
     """
 
     implements(IPermissionPolicy)
-
+    
     authz_file = PathOption('trac', 'authz_file', '',
         """The path to the Subversion
         [http://svnbook.red-bean.com/en/1.5/svn.serverconfig.pathbasedauthz.html authorization (authz) file].
@@ -136,7 +137,7 @@ class AuthzSourcePolicy(Component):
     _mtime = 0
     _authz = {}
     _users = set()
-
+    
     _handled_perms = frozenset([(None, 'BROWSER_VIEW'),
                                 (None, 'CHANGESET_VIEW'),
                                 (None, 'FILE_VIEW'),
@@ -149,18 +150,18 @@ class AuthzSourcePolicy(Component):
     # IPermissionPolicy methods
 
     def check_permission(self, action, username, resource, perm):
-        realm = resource.realm if resource else None
+        realm = resource and resource.realm or None
         if (realm, action) in self._handled_perms:
             authz, users = self._get_authz_info()
             if authz is None:
                 return False
-
+            
             if username == 'anonymous':
                 usernames = ('$anonymous', '*')
             else:
                 usernames = (username, '$authenticated', '*')
             if resource is None:
-                return True if users & set(usernames) else None
+                return users & set(usernames) and True or None
 
             rm = RepositoryManager(self.env)
             try:
@@ -177,7 +178,7 @@ class AuthzSourcePolicy(Component):
                 path = '/' + join(repos.scope, path)
                 if path != '/':
                     path += '/'
-
+                
                 # Allow access to parent directories of allowed resources
                 if any(section.get(user) is True
                        for module in modules
@@ -195,7 +196,7 @@ class AuthzSourcePolicy(Component):
                                 result = section.get(user)
                                 if result is not None:
                                     return result
-
+            
             if realm == 'source':
                 return check_path(resource.id)
 

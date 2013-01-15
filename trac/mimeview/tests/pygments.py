@@ -23,11 +23,11 @@ try:
 except ImportError:
     have_pygments = False
 
-from trac.mimeview.api import Mimeview, RenderingContext
+from trac.mimeview.api import Mimeview, Context
 if have_pygments:
     from trac.mimeview.pygments import PygmentsRenderer
 from trac.test import EnvironmentStub, Mock
-from trac.web.chrome import Chrome, web_context
+from trac.web.chrome import Chrome
 from trac.web.href import Href
 
 
@@ -39,14 +39,14 @@ class PygmentsRendererTestCase(unittest.TestCase):
         self.req = Mock(base_path='', chrome={}, args={},
                         abs_href=Href('/'), href=Href('/'),
                         session={}, perm=None, authname=None, tz=None)
-        self.context = web_context(self.req)
+        self.context = Context.from_request(self.req)
         pygments_html = open(os.path.join(os.path.split(__file__)[0],
                                        'pygments.html'))
-        self.pygments_html = Stream(list(HTMLParser(pygments_html, encoding='utf-8')))
+        self.pygments_html = Stream(list(HTMLParser(pygments_html)))
 
     def _expected(self, expected_id):
         return self.pygments_html.select(
-            '//div[@id="%s"]/*|//div[@id="%s"]/text())' %
+            '//div[@id="%s"]/*|//div[@id="%s"]/text())' % 
             (expected_id, expected_id))
 
     def _test(self, expected_id, result):
@@ -109,19 +109,6 @@ def hello():
         """
         result = self.pygments.render(self.context, 'text/x-python', '')
         self.assertEqual(None, result)
-
-    def test_extra_mimetypes(self):
-        """
-        The text/x-ini mimetype is normally not known by Trac, but
-        Pygments supports it.
-        """
-        mimeview = Mimeview(self.env)
-        self.assertEqual('text/x-ini; charset=utf-8',
-                         mimeview.get_mimetype('file.ini'))
-        self.assertEqual('text/x-ini; charset=utf-8',
-                         mimeview.get_mimetype('file.cfg'))
-        self.assertEqual('text/x-ini; charset=utf-8',
-                         mimeview.get_mimetype('file.text/x-ini'))
 
 def suite():
     suite = unittest.TestSuite()

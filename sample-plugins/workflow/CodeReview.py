@@ -17,7 +17,7 @@ class CodeReviewActionController(Component):
     a specific state will be selected.
 
     Example (from the enterprise-review-workflow.ini):
-    {{{
+
     review = in_review -> *
     review.name = review as
     review.operations = code_review
@@ -25,24 +25,23 @@ class CodeReviewActionController(Component):
       approve -> in_QA,
       approve as noted -> post_review,
       request changes -> in_work
-    }}}
+
     Don't forget to add the `CodeReviewActionController` to the workflow
-    option in the `[ticket]` section in TracIni.
-    If there is no other workflow option, the line will look like this:
-    {{{
+    option in [ticket].
+    If there is no workflow option, the line will look like this:
+
     workflow = ConfigurableTicketWorkflow,CodeReviewActionController
-    }}}
     """
 
     implements(ITicketActionController, IPermissionRequestor)
 
     # IPermissionRequestor methods
-
+    
     def get_permission_actions(self):
         return ['TICKET_REVIEW']
 
     # ITicketActionController methods
-
+    
     def get_ticket_actions(self, req, ticket):
         # The review action is available in those status where it has been
         # configured, for those users who have the TICKET_REVIEW permission, as
@@ -74,7 +73,7 @@ class CodeReviewActionController(Component):
         actions = ConfigurableTicketWorkflow(self.env).actions
 
         selected_value = grade or review_options[0][0]
-
+        
         label = actions[action]['name']
         control = tag(["as: ",
                        tag.select([tag.option(option, selected=
@@ -104,7 +103,7 @@ class CodeReviewActionController(Component):
     def _get_grade(self, req, action):
         id = action + '_code_review_result'
         return id, req.args.get(id)
-
+        
     def _get_review_options(self, action):
         return [[x.strip() for x in raw_option.split('->')]
                 for raw_option in self.config.getlist('ticket-workflow',
@@ -116,4 +115,4 @@ class CodeReviewActionController(Component):
             review_options = self._get_review_options(action)
         for option, status in review_options:
             if grade == option:
-                return status
+                return status            

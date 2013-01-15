@@ -13,13 +13,13 @@
   <body>
     <h2>Manage Components</h2>
 
-    <py:def function="owner_field(default_owner='', br_after_label=False)">
+    <py:def function="owner_field(default_owner='')">
       <div class="field">
-        <label>Owner:<br py:if="br_after_label"/>
+        <label>Owner: <br />
           <py:choose>
             <select py:when="owners" size="1" id="owner" name="owner">
               <option py:for="owner in owners"
-                      selected="${owner == default_owner or None}" value="$owner">$owner</option>
+                      selected="${owner==default_owner or None}" value="$owner">$owner</option>
               <option py:if="default_owner and default_owner not in owners"
                       selected="selected" value="$default_owner">$default_owner</option>
             </select>
@@ -36,9 +36,9 @@
           <div class="field">
             <label>Name:<br /><input type="text" name="name" value="$component.name"/></label>
           </div>
-          ${owner_field(component.owner, True)}
+          ${owner_field(component.owner)}
           <div class="field">
-            <fieldset>
+            <fieldset class="iefix">
               <label for="description" i18n:msg="">
                 Description (you may use
                 <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a>
@@ -63,7 +63,7 @@ $component.description</textarea>
           <fieldset>
             <legend>Add Component:</legend>
             <div class="field">
-              <label>Name: <input type="text" name="name"/></label>
+              <label>Name:<br /><input type="text" name="name" /></label>
             </div>
             ${owner_field()}
             <div class="buttons">
@@ -89,7 +89,7 @@ $component.description</textarea>
                   <td class="owner">$comp.owner</td>
                   <td class="default">
                     <input type="radio" name="default" value="$comp.name"
-                           checked="${comp.name == default or None}" />
+                           checked="${comp.name==default or None}" />
                   </td>
                 </tr>
               </tbody>

@@ -9,27 +9,20 @@
   <head>
     <title>$title</title>
     <script type="text/javascript" src="${chrome.htdocs_location}js/folding.js"></script>
-    <script type="text/javascript">
+    <script type="text/javascript">/*<![CDATA[*/
       jQuery(document).ready(function($) {
         initializeFilters();
-      <py:if test="batch_modify">
-        initializeBatch();
-      </py:if>
         $("#group").change(function() {
           $("#groupdesc").enable(this.selectedIndex != 0)
         }).change();
         $("fieldset legend.foldable").enableFolding(false);
-      /*<![CDATA[*/
         /* Hide the filters for saved queries. */
         if (window.location.href.search(/[?&]report=[0-9]+/) != -1)
           $("#filters").toggleClass("collapsed");
-      /*]]>*/
         /* Hide the columns by default. */
         $("#columns").toggleClass("collapsed");
-        $(".datepicker").datepicker();
-        $(".datetimepicker").datetimepicker();
       });
-    </script>
+    /*]]>*/</script>
   </head>
 
   <body>
@@ -37,7 +30,7 @@
       <h1>$title <span class="numrows">(${ngettext('%(num)s match', '%(num)s matches', query.num_items)})</span></h1>
 
       <div py:if="description" id="description" xml:space="preserve">
-        ${wiki_to_html(context.child(report_resource), description)}
+        ${wiki_to_html(context(report_resource), description)}
       </div>
 
       <form id="query" method="post" action="${href.query()}"
@@ -47,12 +40,12 @@
           <table summary="Query filters">
             <tbody py:for="clause_num, constraints in enumerate(clauses or [{}])"
                    py:with="clause_pre = '%d_' % clause_num">
-              <tr style="${'display: none' if clause_num == 0 else None}">
+              <tr style="${clause_num == 0 and 'display: none' or None}">
                 <td>
-                  <div class="trac-clause-lsep">&nbsp;<hr /></div>
-                  <div class="trac-clause-msep">Or</div>
-                  <div class="trac-clause-rsep">&nbsp;<hr /></div>
-                </td>
+		  <div class="trac-clause-lsep">&nbsp;<hr /></div>
+		  <div class="trac-clause-msep">Or</div>
+		  <div class="trac-clause-rsep">&nbsp;<hr /></div>
+		</td>
               </tr>
               <tr><td class="trac-clause">
                 <table class="trac-clause">
@@ -73,31 +66,24 @@
                           <td py:if="field.type not in ('radio', 'checkbox', 'time')" class="mode">
                             <select name="${n_field_name}_mode">
                               <option py:for="mode in modes[field.type]" value="$mode.value"
-                                      selected="${mode.value == constraint.mode or None}">$mode.name</option>
+                                selected="${mode.value == constraint.mode and 'selected' or None}">$mode.name</option>
                             </select>
                           </td>
                         </py:when>
                         <py:otherwise><!--! not the first line of a multiline constraint -->
-                          <th colspan="${1 if field.type == 'time' else 2}"><label>or</label></th>
+                          <th colspan="${field.type == 'time' and 1 or 2}"><label>or</label></th>
                         </py:otherwise>
                       </py:choose>
 
-                      <td class="filter" colspan="${2 if field.type in ('radio', 'checkbox', 'time') else None}"
+                      <td class="filter" colspan="${field.type in ('radio', 'checkbox', 'time') and 2 or None}"
                           py:choose="">
 
                         <py:when test="field.type == 'select'">
                           <select name="${n_field_name}">
                             <option></option>
                             <option py:for="option in field.options"
-                                    selected="${option == constraint_value or None}"
-                                    value="$option" py:content="option"></option>
-                            <optgroup py:for="optgroup in field.optgroups"
-                                      py:if="optgroup.options"
-                                      label="${optgroup.label}">
-                              <option py:for="option in optgroup.options"
-                                      selected="${option == constraint_value or None}"
-                                      value="$option" py:content="option"></option>
-                            </optgroup>
+                              selected="${option == constraint_value and 'selected' or None}"
+                              value="$option" py:content="option"></option>
                           </select>
                         </py:when>
 
@@ -105,7 +91,8 @@
                           <py:for each="option in field.options">
                             <input type="checkbox" id="_${n_field_name}_$option" name="${n_field_name}"
                               value="$option"
-                              checked="${((constraint['mode'] == '') == (option in constraint['values'])) or None}" />
+                              checked="${((constraint['mode'] == '') == (option in constraint['values']))
+                                       and 'checked' or None}" />
                             <label for="_${n_field_name}_$option" class="control">${option or 'none'}</label>
                           </py:for>
                         </py:when>
@@ -122,16 +109,15 @@
                         <py:when test="field.type in ('text', 'textarea', 'id')">
                           <input type="text" name="${n_field_name}" value="$constraint_value" size="42" />
                         </py:when>
-
+                        
                         <py:when test="field.type == 'time'"
                                  py:with="(start, end) = '..' in constraint_value and constraint_value.split('..', 1)
-                                                         or (constraint_value, '');
-                                          date_or_datetime = field.get('format', 'datetime')">
+                                                         or (constraint_value, '')">
                           <i18n:msg>
                             <label>between</label>
-                            <input type="text" name="${n_field_name}" value="$start" size="14" class="${date_or_datetime}picker" />
+                            <input type="text" name="${n_field_name}" value="$start" size="14" />
                             <label>and</label>
-                            <input type="text" name="${n_field_name}_end" value="$end" size="14" class="${date_or_datetime}picker" />
+                            <input type="text" name="${n_field_name}_end" value="$end" size="14" />
                           </i18n:msg>
                         </py:when>
                       </td>
@@ -179,7 +165,8 @@
             <py:for each="column in all_columns">
               <label>
                 <input type="checkbox" name="col" value="$column"
-                       checked="${any(value == column for value in col) or None}" />
+                       checked="${any([(value == column) for value in col])
+                                  and 'checked' or None}" />
                 ${fields.get(column, {'label': column or 'none'}).label}
               </label>
             </py:for>
@@ -206,7 +193,7 @@
           Show under each result:
           <py:for each="column in all_textareas">
             <label><input type="checkbox" name="row" value="$column"
-                          checked="${any(value == column for value in row) or None}" />
+                checked="${any([(value == column) for value in row]) and 'checked' or None}" />
             ${fields.get(column, {'label': column or 'none'}).label}</label>
           </py:for>
         </p>
@@ -226,27 +213,26 @@
       </form>
 
       <xi:include href="query_results.html" />
-      <xi:include py:if="batch_modify" href="batch_modify.html" />
 
-      <div id="trac-report-buttons" class="buttons"
+      <div class="buttons"
            py:with="edit = report_resource and 'REPORT_MODIFY' in perm(report_resource);
                     new = 'REPORT_CREATE' in perm;
                     delete = report_resource and 'REPORT_DELETE' in perm(report_resource)">
         <form py:if="edit" method="get" action="${url_of(report_resource)}">
           <div>
             <input type="hidden" name="action" value="edit" />
-            <input type="submit"
+            <input type="submit" 
                    title="${_('Edit report {%(id)s} corresponding to this query', id=report_resource.id)}"
                    value="${_('Edit query')}" />
           </div>
         </form>
-        <form py:if="new or edit" method="get" action="${url_of(report_resource) if edit else href.report()}">
+        <form py:if="new or edit" method="get" action="${edit and url_of(report_resource) or href.report()}">
           <div>
-            <input type="hidden" name="action" value="${'edit' if edit else 'new'}" />
+            <input type="hidden" name="action" value="${edit and 'edit' or 'new'}" />
             <input type="hidden" name="query" value="${query.to_string()}" />
             <input type="submit" value="${_('Save query')}"
-                   title="${_('Save updated query in report {%(id)s}', id=report_resource.id) if edit
-                            else _('Create new report from current query')}" />
+                   title="${edit and _('Save updated query in report {%(id)s}', id=report_resource.id) or
+                                     _('Create new report from current query')}" />
           </div>
         </form>
         <form py:if="delete" method="get" action="${url_of(report_resource)}">

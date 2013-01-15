@@ -16,62 +16,60 @@ class DefaultPermissionStoreTestCase(unittest.TestCase):
         self.env.reset_db()
 
     def test_simple_actions(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('john', 'WIKI_MODIFY'),
-             ('john', 'REPORT_ADMIN'),
-             ('kate', 'TICKET_CREATE')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('john', 'WIKI_MODIFY'), ('john', 'REPORT_ADMIN'),
+                           ('kate', 'TICKET_CREATE')])
         self.assertEquals(['REPORT_ADMIN', 'WIKI_MODIFY'],
                           sorted(self.store.get_user_permissions('john')))
-        self.assertEquals(['TICKET_CREATE'],
-                          self.store.get_user_permissions('kate'))
+        self.assertEquals(['TICKET_CREATE'], self.store.get_user_permissions('kate'))
 
     def test_simple_group(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('dev', 'WIKI_MODIFY'),
-             ('dev', 'REPORT_ADMIN'),
-             ('john', 'dev')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('dev', 'WIKI_MODIFY'), ('dev', 'REPORT_ADMIN'),
+                           ('john', 'dev')])
         self.assertEquals(['REPORT_ADMIN', 'WIKI_MODIFY'],
                           sorted(self.store.get_user_permissions('john')))
 
     def test_nested_groups(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('dev', 'WIKI_MODIFY'),
-             ('dev', 'REPORT_ADMIN'),
-             ('admin', 'dev'),
-             ('john', 'admin')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('dev', 'WIKI_MODIFY'), ('dev', 'REPORT_ADMIN'),
+                           ('admin', 'dev'), ('john', 'admin')])
         self.assertEquals(['REPORT_ADMIN', 'WIKI_MODIFY'],
                           sorted(self.store.get_user_permissions('john')))
 
     def test_mixed_case_group(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('Dev', 'WIKI_MODIFY'),
-             ('Dev', 'REPORT_ADMIN'),
-             ('Admin', 'Dev'),
-             ('john', 'Admin')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('Dev', 'WIKI_MODIFY'), ('Dev', 'REPORT_ADMIN'),
+                           ('Admin', 'Dev'), ('john', 'Admin')])
         self.assertEquals(['REPORT_ADMIN', 'WIKI_MODIFY'],
                           sorted(self.store.get_user_permissions('john')))
 
     def test_builtin_groups(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('authenticated', 'WIKI_MODIFY'),
-             ('authenticated', 'REPORT_ADMIN'),
-             ('anonymous', 'TICKET_CREATE')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('authenticated', 'WIKI_MODIFY'),
+                           ('authenticated', 'REPORT_ADMIN'),
+                           ('anonymous', 'TICKET_CREATE')])
         self.assertEquals(['REPORT_ADMIN', 'TICKET_CREATE', 'WIKI_MODIFY'],
                           sorted(self.store.get_user_permissions('john')))
         self.assertEquals(['TICKET_CREATE'],
                           self.store.get_user_permissions('anonymous'))
 
     def test_get_all_permissions(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO permission VALUES (%s,%s)",
-            [('dev', 'WIKI_MODIFY'),
-             ('dev', 'REPORT_ADMIN'),
-             ('john', 'dev')])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.executemany("INSERT INTO permission VALUES (%s,%s)", [
+                           ('dev', 'WIKI_MODIFY'), ('dev', 'REPORT_ADMIN'),
+                           ('john', 'dev')])
         expected = [('dev', 'WIKI_MODIFY'),
                     ('dev', 'REPORT_ADMIN'),
                     ('john', 'dev')]
@@ -84,10 +82,8 @@ class TestPermissionRequestor(Component):
 
     def get_permission_actions(self):
         return ['TEST_CREATE', 'TEST_DELETE', 'TEST_MODIFY',
-                ('TEST_CREATE', []),
-                ('TEST_ADMIN', ['TEST_CREATE', 'TEST_DELETE']),
-                ('TEST_ADMIN', ['TEST_MODIFY'])]
-
+                ('TEST_ADMIN', ['TEST_CREATE', 'TEST_DELETE',
+                                'TEST_MODIFY'])]
 
 class PermissionSystemTestCase(unittest.TestCase):
 
@@ -131,7 +127,7 @@ class PermissionSystemTestCase(unittest.TestCase):
                     ('jane', 'TEST_ADMIN')]
         for res in self.perm.get_all_permissions():
             self.failIf(res not in expected)
-
+    
     def test_expand_actions_iter_7467(self):
         # Check that expand_actions works with iterators (#7467)
         perms = set(['EMAIL_VIEW', 'TRAC_ADMIN', 'TEST_DELETE', 'TEST_MODIFY',
@@ -148,7 +144,7 @@ class PermissionCacheTestCase(unittest.TestCase):
                                            TestPermissionRequestor])
         self.perm_system = perm.PermissionSystem(self.env)
         # by-pass DefaultPermissionPolicy cache:
-        perm.DefaultPermissionPolicy.CACHE_EXPIRY = -1
+        perm.DefaultPermissionPolicy.CACHE_EXPIRY = -1 
         self.perm_system.grant_permission('testuser', 'TEST_MODIFY')
         self.perm_system.grant_permission('testuser', 'TEST_ADMIN')
         self.perm = perm.PermissionCache(self.env, 'testuser')

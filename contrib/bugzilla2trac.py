@@ -22,8 +22,6 @@ Jeff Moreland <hou5e@hotmail.com>
 $Id$
 """
 
-from __future__ import with_statement
-
 import re
 
 ###
@@ -212,8 +210,11 @@ import StringIO
 
 import MySQLdb
 import MySQLdb.cursors
+try:
+    from trac.env import Environment
+except:
+    from trac.Environment import Environment
 from trac.attachment import Attachment
-from trac.env import Environment
 
 if not hasattr(sys, 'setdefaultencoding'):
     reload(sys)
@@ -240,14 +241,20 @@ statusXlator = FieldTranslator(STATUS_TRANSLATE)
 class TracDatabase(object):
     def __init__(self, path):
         self.env = Environment(path)
+        self._db = self.env.get_db_cnx()
+        self._db.autocommit = False
         self.loginNameCache = {}
         self.fieldNameCache = {}
         from trac.db.api import DatabaseManager
-	self.using_postgres = \
-                DatabaseManager(self.env).connection_uri.startswith("postgres:")
+	self.using_postgres = DatabaseManager(self.env).connection_uri.startswith("postgres:")
+
+    def db(self):
+        return self._db
 
     def hasTickets(self):
-        return int(self.env.db_query("SELECT count(*) FROM ticket")[0][0] > 0)
+        c = self.db().cursor()
+        c.execute("SELECT count(*) FROM ticket")
+        return int(c.fetchall()[0][0]) > 0
 
     def assertNoTickets(self):
         if self.hasTickets():
@@ -257,63 +264,71 @@ class TracDatabase(object):
         """Remove all severities, set them to `s`"""
         self.assertNoTickets()
 
-        with self.env.db_transaction as db:
-            db("DELETE FROM enum WHERE type='severity'")
-            for value, i in s:
-                print "  inserting severity '%s' - '%s'" % (value, i)
-                db("""INSERT INTO enum (type, name, value)
-                      VALUES (%s, %s, %s)""",
-                   ("severity", value, i))
+        c = self.db().cursor()
+        c.execute("DELETE FROM enum WHERE type='severity'")
+        for value, i in s:
+            print "  inserting severity '%s' - '%s'" % (value, i)
+            c.execute("""INSERT INTO enum (type, name, value)
+                                   VALUES (%s, %s, %s)""",
+                      ("severity", value, i))
+        self.db().commit()
 
     def setPriorityList(self, s):
         """Remove all priorities, set them to `s`"""
         self.assertNoTickets()
 
-        with self.env.db_transaction as db:
-            db("DELETE FROM enum WHERE type='priority'")
-            for value, i in s:
-                print "  inserting priority '%s' - '%s'" % (value, i)
-                db("INSERT INTO enum (type, name, value) VALUES (%s, %s, %s)",
-                   ("priority", value, i))
+        c = self.db().cursor()
+        c.execute("DELETE FROM enum WHERE type='priority'")
+        for value, i in s:
+            print "  inserting priority '%s' - '%s'" % (value, i)
+            c.execute("""INSERT INTO enum (type, name, value)
+                                   VALUES (%s, %s, %s)""",
+                      ("priority", value, i))
+        self.db().commit()
+
 
     def setComponentList(self, l, key):
         """Remove all components, set them to `l`"""
         self.assertNoTickets()
 
-        with self.env.db_transaction as db:
-            db("DELETE FROM component")
-            for comp in l:
-                print "  inserting component '%s', owner '%s'" % \
-                                (comp[key], comp['owner'])
-                db("INSERT INTO component (name, owner) VALUES (%s, %s)",
-                   (comp[key], comp['owner']))
+        c = self.db().cursor()
+        c.execute("DELETE FROM component")
+        for comp in l:
+            print "  inserting component '%s', owner '%s'" % \
+                            (comp[key], comp['owner'])
+            c.execute("INSERT INTO component (name, owner) VALUES (%s, %s)",
+                      (comp[key], comp['owner']))
+        self.db().commit()
 
     def setVersionList(self, v, key):
         """Remove all versions, set them to `v`"""
         self.assertNoTickets()
 
-        with self.env.db_transaction as db:
-            db("DELETE FROM version")
-            for vers in v:
-                print "  inserting version '%s'" % (vers[key])
-                db("INSERT INTO version (name) VALUES (%s)",
-                   (vers[key],))
+        c = self.db().cursor()
+        c.execute("DELETE FROM version")
+        for vers in v:
+            print "  inserting version '%s'" % (vers[key])
+            c.execute("INSERT INTO version (name) VALUES (%s)",
+                      (vers[key],))
+        self.db().commit()
 
     def setMilestoneList(self, m, key):
         """Remove all milestones, set them to `m`"""
         self.assertNoTickets()
 
-        with self.env.db_transaction as db:
-            db("DELETE FROM milestone")
-            for ms in m:
-                milestone = ms[key]
-                print "  inserting milestone '%s'" % (milestone)
-                db("INSERT INTO milestone (name) VALUES (%s)",
-                   (milestone,))
+        c = self.db().cursor()
+        c.execute("DELETE FROM milestone")
+        for ms in m:
+            milestone = ms[key]
+            print "  inserting milestone '%s'" % (milestone)
+            c.execute("INSERT INTO milestone (name) VALUES (%s)",
+                      (milestone,))
+        self.db().commit()
 
     def addTicket(self, id, time, changetime, component, severity, priority,
                   owner, reporter, cc, version, milestone, status, resolution,
                   summary, description, keywords, customfields):
+        c = self.db().cursor()
 
         desc = description
         type = "defect"
@@ -340,25 +355,25 @@ class TracDatabase(object):
 
         print "  inserting ticket %s -- %s" % (id, summary)
 
-        with self.env.db_transaction as db:
-            db("""INSERT INTO ticket (id, type, time, changetime, component,
-                                      severity, priority, owner, reporter, cc,
-                                      version, milestone, status, resolution,
-                                      summary, description, keywords)
-                  VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                          %s, %s, %s, %s)
-                  """, (id, type, datetime2epoch(time),
-                        datetime2epoch(changetime), component, severity,
-                        priority, owner, reporter, cc, version, milestone,
-                        status.lower(), resolution, summary, desc, keywords))
+        c.execute("""INSERT INTO ticket (id, type, time, changetime, component,
+                                         severity, priority, owner, reporter,
+                                         cc, version, milestone, status,
+                                         resolution, summary, description,
+                                         keywords)
+                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                         %s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (id, type, datetime2epoch(time),
+                   datetime2epoch(changetime), component,
+                   severity, priority, owner,
+                   reporter, cc, version, milestone,
+                   status.lower(), resolution, summary, desc,
+                   keywords))
 
+        self.db().commit()
         if self.using_postgres:
-            with self.env.db_transaction as db:
-                c = db.cursor()
-                c.execute("""
-                    SELECT SETVAL('ticket_id_seq', MAX(id)) FROM ticket;
-                    SELECT SETVAL('report_id_seq', MAX(id)) FROM report""")
-                ticket_id = db.get_last_id(c, 'ticket')
+            c.execute("""SELECT SETVAL('ticket_id_seq', MAX(id)) FROM ticket;
+              SELECT SETVAL('report_id_seq', MAX(id)) FROM report""")
+        ticket_id = self.db().get_last_id(c, 'ticket')
 
         # add all custom fields to ticket
         for name, value in customfields.iteritems():
@@ -367,11 +382,16 @@ class TracDatabase(object):
         return ticket_id
 
     def addTicketCustomField(self, ticket_id, field_name, field_value):
+        c = self.db().cursor()
+
         if field_value == None:
             return
-        self.env.db_transaction("""
-            INSERT INTO ticket_custom (ticket, name, value) VALUES (%s, %s, %s)
-            """, (ticket_id, field_name, field_value))
+
+        c.execute("""INSERT INTO ticket_custom (ticket, name, value)
+                                 VALUES (%s, %s, %s)""",
+                  (ticket_id, field_name, field_value))
+
+        self.db().commit()
 
     def addTicketComment(self, ticket, time, author, value):
         comment = value
@@ -383,14 +403,15 @@ class TracDatabase(object):
             if BUG_NO_RE.search(comment):
                 comment = re.sub(BUG_NO_RE, BUG_NO_REPL, comment)
 
-        with self.env.db_transaction as db:
-            db("""INSERT INTO ticket_change (ticket, time, author, field,
-                                             oldvalue, newvalue)
-                  VALUES (%s, %s, %s, %s, %s, %s)
-                  """, (ticket, datetime2epoch(time), author, 'comment', '',
-                        comment))
+        c = self.db().cursor()
+        c.execute("""INSERT INTO ticket_change (ticket, time, author, field,
+                                                oldvalue, newvalue)
+                                        VALUES (%s, %s, %s, %s, %s, %s)""",
+                  (ticket, datetime2epoch(time), author, 'comment', '', comment))
+        self.db().commit()
 
     def addTicketChange(self, ticket, time, author, field, oldvalue, newvalue):
+        c = self.db().cursor()
 
         if field == "owner":
             if LOGIN_MAP.has_key(oldvalue):
@@ -408,12 +429,12 @@ class TracDatabase(object):
         if oldvalue == newvalue:
             return
 
-        with self.env.db_transaction as db:
-            db("""INSERT INTO ticket_change (ticket, time, author, field,
-                                             oldvalue, newvalue)
-                  VALUES (%s, %s, %s, %s, %s, %s)
-                  """, (ticket, datetime2epoch(time), author, field,
-                        oldvalue, newvalue))
+        c.execute("""INSERT INTO ticket_change (ticket, time, author, field,
+                                                oldvalue, newvalue)
+                                        VALUES (%s, %s, %s, %s, %s, %s)""",
+                  (ticket, datetime2epoch(time), author, field,
+                   oldvalue, newvalue))
+        self.db().commit()
 
     def addAttachment(self, author, a):
         if a['filename'] != '':
@@ -428,8 +449,7 @@ class TracDatabase(object):
             attachment = Attachment(self.env, 'ticket', id)
             attachment.author = author
             attachment.description = description
-            attachment.insert(filename, filedata, filesize,
-                              datetime2epoch(time))
+            attachment.insert(filename, filedata, filesize, datetime2epoch(time))
             del attachment
 
     def getLoginName(self, cursor, userid):
@@ -480,7 +500,7 @@ def makeWhereClause(fieldName, values, negative=False):
         connector, op = ' AND ', '!='
     else:
         connector, op = ' OR ', '='
-    clause = connector.join(["%s %s '%s'" % (fieldName, op, value)
+    clause = connector.join(["%s %s '%s'" % (fieldName, op, value) 
                              for value in values])
     return ' (' + clause + ')'
 
@@ -509,13 +529,19 @@ def convert(_db, _host, _user, _password, _env, _force):
     # force mode...
     if _force == 1:
         print "\nCleaning all tickets..."
-        with trac.env.db_transaction as db:
-            db("DELETE FROM ticket_change")
-            db("DELETE FROM ticket")
-            db("DELETE FROM ticket_custom")
-            db("DELETE FROM attachment")
-        attachments_dir = os.path.join(os.path.normpath(trac.env.path),
-                                       "attachments")
+        c = trac.db().cursor()
+        c.execute("DELETE FROM ticket_change")
+        trac.db().commit()
+
+        c.execute("DELETE FROM ticket")
+        trac.db().commit()
+
+        c.execute("DELETE FROM ticket_custom")
+        trac.db().commit()
+
+        c.execute("DELETE FROM attachment")
+	attachments_dir = os.path.join(os.path.normpath(trac.env.path),
+                                "attachments")
         # Straight from the Python documentation.
         for root, dirs, files in os.walk(attachments_dir, topdown=False):
             for name in files:
@@ -524,6 +550,7 @@ def convert(_db, _host, _user, _password, _env, _force):
                 os.rmdir(os.path.join(root, name))
         if not os.stat(attachments_dir):
             os.mkdir(attachments_dir)
+        trac.db().commit()
         print "All tickets cleaned..."
 
 
@@ -567,12 +594,12 @@ def convert(_db, _host, _user, _password, _env, _force):
             sql = ("SELECT p.name AS product, c.name AS comp, "
                    " c.initialowner AS owner "
                    "FROM components c, products p "
-                   "WHERE c.product_id = p.id AND" +
+                   "WHERE c.product_id = p.id AND" + 
                    makeWhereClause('p.name', PRODUCTS))
         else:
             sql = ("SELECT program AS product, value AS comp, "
                    " initialowner AS owner "
-                   "FROM components WHERE" +
+                   "FROM components WHERE" + 
                    makeWhereClause('program', PRODUCTS))
         mysql_cur.execute(sql)
         lines = mysql_cur.fetchall()
@@ -623,7 +650,7 @@ def convert(_db, _host, _user, _password, _env, _force):
     trac.setMilestoneList(milestones, 'value')
 
     print "\n6. Retrieving bugs..."
-    if BZ_VERSION >= 2180:
+    if BZ_VERSION >= 2180: 
         sql = """SELECT DISTINCT b.*, c.name AS component, p.name AS product
                             FROM bugs AS b, components AS c, products AS p """
         sql += " WHERE" + makeWhereClause('p.name', PRODUCTS)
@@ -664,7 +691,7 @@ def convert(_db, _host, _user, _password, _env, _force):
             # priorities
             ticket['severity'] = ''
             ticket['priority'] = bug['bug_severity']
-
+        
         ticket['owner'] = trac.getLoginName(mysql_cur, bug['assigned_to'])
         ticket['reporter'] = trac.getLoginName(mysql_cur, bug['reporter'])
 
@@ -680,7 +707,7 @@ def convert(_db, _host, _user, _password, _env, _force):
         cc_list = []
         for cc in cc_records:
             cc_list.append(trac.getLoginName(mysql_cur, cc['who']))
-        cc_list = [cc for cc in cc_list if cc not in IGNORE_CC]
+        cc_list = [cc for cc in cc_list if cc not in IGNORE_CC]  
         ticket['cc'] = string.join(cc_list, ', ')
 
         ticket['version'] = bug['version']
@@ -728,7 +755,7 @@ def convert(_db, _host, _user, _password, _env, _force):
                 value = desc['thetext'])
 
         mysql_cur.execute("""SELECT * FROM bugs_activity WHERE bug_id = %s
-                             ORDER BY bug_when""" % bugid)
+                           ORDER BY bug_when""" % bugid)
         bugs_activity = mysql_cur.fetchall()
         resolution = ''
         ticketChanges = []
@@ -831,7 +858,7 @@ def convert(_db, _host, _user, _password, _env, _force):
                   oldChange['oldvalue'] += " " + ticketChange['oldvalue']
                   oldChange['newvalue'] += " " + ticketChange['newvalue']
                   break
-              # cc and attachments.isobsolete sometime appear
+              # cc and attachments.isobsolete sometime appear 
               # in different activities with same time
               if ((field_name == "cc" or field_name == "attachments.isobsolete") \
                   and oldChange['time'] == ticketChange['time']):
@@ -877,7 +904,7 @@ def convert(_db, _host, _user, _password, _env, _force):
                               "WHERE attachments.bug_id = %s AND "
                               "attachments.attach_id = attach_data.id" % bugid)
         else:
-            mysql_cur.execute("SELECT * FROM attachments WHERE bug_id = %s" %
+            mysql_cur.execute("SELECT * FROM attachments WHERE bug_id = %s" % 
                               bugid)
         attachments = mysql_cur.fetchall()
         for a in attachments:
@@ -899,7 +926,7 @@ def convert(_db, _host, _user, _password, _env, _force):
             login = LOGIN_MAP[user['login_name']]
         else:
             login = user['login_name']
-
+        
         htpasswd.write(login + ":" + user['cryptpassword'] + "\n")
 
     htpasswd.close()
@@ -927,7 +954,7 @@ Available Options:
   -p | --passwd <MySQL password>   - Bugzilla's user password
   -c | --clean                     - Remove current Trac tickets before
                                      importing
-  -n | --noseverities              - import Bugzilla severities as Trac
+  -n | --noseverities              - import Bugzilla severities as Trac 
                                      priorities and forget Bugzilla priorities
   --help | help                    - This help info
 

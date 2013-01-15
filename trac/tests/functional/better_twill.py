@@ -47,10 +47,10 @@ if twill:
     class _BrowserProxy(object):
         def __getattribute__(self, name):
             return getattr(twill.get_browser(), name)
-
+        
         def __setattr__(self, name, value):
             setattr(twill.get_browser(), name, value)
-
+            
     # setup short names to reduce typing
     # This twill browser (and the tc commands that use it) are essentially
     # global, and not tied to our test fixture.
@@ -90,7 +90,7 @@ if twill:
                 context = data.splitlines()[max(0, entry.line - 5):
                                             entry.line + 6]
                 msg.append("\n# %s\n# URL: %s\n# Line %d, column %d\n\n%s\n"
-                    % (entry.message, entry.filename,
+                    % (entry.message, entry.filename, 
                        entry.line, entry.column,
                        "\n".join([each.decode('utf-8') for each in context])))
             return "\n".join(msg).encode('ascii', 'xmlcharrefreplace')
@@ -153,21 +153,6 @@ if twill:
             raise twill.errors.TwillAssertionError(*args)
     tc.formvalue = better_formvalue
     tc.fv = better_formvalue
-
-    # Twill requires that on pages with more than one form, you have to click a
-    # field within the form before you can click submit.  There are a number of
-    # cases where the first interaction a user would have with a form is
-    # clicking on a button.  This enhancement allows us to specify the form to
-    # click on.
-    def better_browser_submit(fieldname=None, formname=None, browser=b, old_submit=b.submit):
-        if formname is not None: # enhancement to directly specify the form
-            browser._browser.form = browser.get_form(formname)
-        old_submit(fieldname)
-
-    b.submit = better_browser_submit
-    def better_submit(fieldname=None, formname=None):
-        b.submit(fieldname, formname)
-    tc.submit = better_submit
 
     # Twill's formfile function leaves a filehandle open which prevents the
     # file from being deleted on Windows.  Since we would just assume use a

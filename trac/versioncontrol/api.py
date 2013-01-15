@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C)2005-2011 Edgewall Software
+# Copyright (C)2005-2009 Edgewall Software
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
 #
@@ -14,13 +14,11 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from __future__ import with_statement
-
 import os.path
 import time
 
 from trac.admin import AdminCommandError, IAdminCommandProvider, get_dir_list
-from trac.config import ConfigSection, ListOption, Option
+from trac.config import ListOption, Option
 from trac.core import *
 from trac.resource import IResourceManager, Resource, ResourceNotFound
 from trac.util.concurrency import threading
@@ -44,13 +42,13 @@ class IRepositoryConnector(Interface):
 
         Yields `(repotype, priority)` pairs, where `repotype` is used to
         match against the configured `[trac] repository_type` value in TracIni.
-
+        
         If multiple provider match a given type, the `priority` is used to
         choose between them (highest number is highest priority).
 
-        If the `priority` returned is negative, this indicates that the
+        If the `priority` returned is negative, this indicates that the 
         connector for the given `repotype` indeed exists but can't be
-        used for some reason. The `error` property can then be used to
+        used for some reason. The `error` property can then be used to 
         store an error message or exception relevant to the problem detected.
         """
 
@@ -64,42 +62,35 @@ class IRepositoryProvider(Interface):
 
     def get_repositories():
         """Generate repository information for known repositories.
-
-        Repository information is a key,value pair, where the value is
-        a dictionary which must contain at the very least either of
-        the following entries:
-
-         - `'dir'`: the repository directory which can be used by the
-                    connector to create a `Repository` instance. This
-                    defines a "real" repository.
-
-         - `'alias'`: the name of another repository. This defines an
-                      alias to another (real) repository.
-
+        
+        Repository information is a key,value pair, where the value is 
+        a dictionary which must contain at the very least either of the
+        following entries:
+         - `'dir'`: the repository directory which can be used by the 
+                    connector to create a `Repository` instance. This defines
+                    a "real" repository.
+         - `'alias'`: the name of another repository. This defines an alias to
+                      another (real) repository.
         Optional entries:
-
-         - `'type'`: the type of the repository (if not given, the
-                     default repository type will be used).
-
-         - `'description'`: a description of the repository (can
-                            contain WikiFormatting).
-
-         - `'hidden'`: if set to `'true'`, the repository is hidden
-                       from the repository index.
-
+         - `'type'`: the type of the repository (if not given, the default
+                     repository type will be used).
+         - `'description'`: a description of the repository (can contain
+                            WikiFormatting).
+         - `'hidden'`: if set to `'true'`, the repository is hidden from the
+                       repository index.
          - `'url'`: the base URL for checking out the repository.
         """
 
 
 class IRepositoryChangeListener(Interface):
     """Listen for changes in repositories."""
-
+    
     def changeset_added(repos, changeset):
         """Called after a changeset has been added to a repository."""
 
     def changeset_modified(repos, changeset, old_changeset):
         """Called after a changeset has been modified in a repository.
-
+        
         The `old_changeset` argument contains the metadata of the changeset
         prior to the modification. It is `None` if the old metadata cannot
         be retrieved.
@@ -113,15 +104,18 @@ class DbRepositoryProvider(Component):
 
     repository_attrs = ('alias', 'description', 'dir', 'hidden', 'name',
                         'type', 'url')
-
+    
     # IRepositoryProvider methods
 
     def get_repositories(self):
         """Retrieve repositories specified in the repository DB table."""
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT id,name,value FROM repository "
+                       "WHERE name IN (%s)" % ",".join(
+                           "'%s'" % each for each in self.repository_attrs))
         repos = {}
-        for id, name, value in self.env.db_query(
-                "SELECT id, name, value FROM repository WHERE name IN (%s)"
-                % ",".join("'%s'" % each for each in self.repository_attrs)):
+        for id, name, value in cursor:
             if value is not None:
                 repos.setdefault(id, {})[name] = value
         reponames = {}
@@ -132,58 +126,58 @@ class DbRepositoryProvider(Component):
         return reponames.iteritems()
 
     # IAdminCommandProvider methods
-
+    
     def get_admin_commands(self):
         yield ('repository add', '<repos> <dir> [type]',
-               "Add a source repository",
+               'Add a source repository',
                self._complete_add, self._do_add)
         yield ('repository alias', '<name> <target>',
-               "Create an alias for a repository",
+               'Create an alias for a repository',
                self._complete_alias, self._do_alias)
         yield ('repository remove', '<repos>',
-               "Remove a source repository",
+               'Remove a source repository',
                self._complete_repos, self._do_remove)
         yield ('repository set', '<repos> <key> <value>',
                """Set an attribute of a repository
-
+               
                The following keys are supported: %s
                """ % ', '.join(self.repository_attrs),
                self._complete_set, self._do_set)
-
+    
     def get_reponames(self):
         rm = RepositoryManager(self.env)
         return [reponame or '(default)' for reponame
                 in rm.get_all_repositories()]
-
+    
     def _complete_add(self, args):
         if len(args) == 2:
             return get_dir_list(args[-1], True)
         elif len(args) == 3:
             return RepositoryManager(self.env).get_supported_types()
-
+    
     def _complete_alias(self, args):
         if len(args) == 2:
             return self.get_reponames()
-
+    
     def _complete_repos(self, args):
         if len(args) == 1:
             return self.get_reponames()
-
+    
     def _complete_set(self, args):
         if len(args) == 1:
             return self.get_reponames()
         elif len(args) == 2:
             return self.repository_attrs
-
+            
     def _do_add(self, reponame, dir, type_=None):
         self.add_repository(reponame, os.path.abspath(dir), type_)
-
+    
     def _do_alias(self, reponame, target):
         self.add_alias(reponame, target)
-
+    
     def _do_remove(self, reponame):
         self.remove_repository(reponame)
-
+    
     def _do_set(self, reponame, key, value):
         if key not in self.repository_attrs:
             raise AdminCommandError(_('Invalid key "%(key)s"', key=key))
@@ -198,9 +192,9 @@ class DbRepositoryProvider(Component):
         elif key == 'type':
             printout(_('You may have to run "repository resync %(name)s".',
                        name=reponame))
-
+    
     # Public interface
-
+    
     def add_repository(self, reponame, dir, type_=None):
         """Add a repository."""
         if not os.path.isabs(dir):
@@ -211,14 +205,16 @@ class DbRepositoryProvider(Component):
         if type_ and type_ not in rm.get_supported_types():
             raise TracError(_("The repository type '%(type)s' is not "
                               "supported", type=type_))
-        with self.env.db_transaction as db:
+        @self.env.with_transaction()
+        def do_add(db):
             id = rm.get_repository_id(reponame)
-            db.executemany(
-                "INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)",
-                [(id, 'dir', dir),
-                 (id, 'type', type_ or '')])
+            cursor = db.cursor()
+            cursor.executemany("INSERT INTO repository (id, name, value) "
+                               "VALUES (%s, %s, %s)",
+                               [(id, 'dir', dir),
+                                (id, 'type', type_ or '')])
         rm.reload_repositories()
-
+    
     def add_alias(self, reponame, target):
         """Create an alias repository."""
         if is_default(reponame):
@@ -226,32 +222,38 @@ class DbRepositoryProvider(Component):
         if is_default(target):
             target = ''
         rm = RepositoryManager(self.env)
-        with self.env.db_transaction as db:
+        @self.env.with_transaction()
+        def do_add(db):
             id = rm.get_repository_id(reponame)
-            db.executemany(
-                "INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)",
-                [(id, 'dir', None),
-                 (id, 'alias', target)])
+            cursor = db.cursor()
+            cursor.executemany("INSERT INTO repository (id, name, value) "
+                               "VALUES (%s, %s, %s)",
+                               [(id, 'dir', None),
+                                (id, 'alias', target)])
         rm.reload_repositories()
-
+    
     def remove_repository(self, reponame):
         """Remove a repository."""
         if is_default(reponame):
             reponame = ''
         rm = RepositoryManager(self.env)
-        with self.env.db_transaction as db:
+        @self.env.with_transaction()
+        def do_remove(db):
             id = rm.get_repository_id(reponame)
-            db("DELETE FROM repository WHERE id=%s", (id,))
-            db("DELETE FROM revision WHERE repos=%s", (id,))
-            db("DELETE FROM node_change WHERE repos=%s", (id,))
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM repository WHERE id=%s", (id,))
+            cursor.execute("DELETE FROM revision WHERE repos=%s", (id,))
+            cursor.execute("DELETE FROM node_change WHERE repos=%s", (id,))
         rm.reload_repositories()
-
+    
     def modify_repository(self, reponame, changes):
         """Modify attributes of a repository."""
         if is_default(reponame):
             reponame = ''
         rm = RepositoryManager(self.env)
-        with self.env.db_transaction as db:
+        @self.env.with_transaction()
+        def do_modify(db):
+            cursor = db.cursor()
             id = rm.get_repository_id(reponame)
             for (k, v) in changes.iteritems():
                 if k not in self.repository_attrs:
@@ -261,14 +263,13 @@ class DbRepositoryProvider(Component):
                 if k == 'dir' and not os.path.isabs(v):
                     raise TracError(_("The repository directory must be "
                                       "absolute"))
-                db("UPDATE repository SET value=%s WHERE id=%s AND name=%s",
-                   (v, id, k))
-                if not db(
-                        "SELECT value FROM repository WHERE id=%s AND name=%s",
-                        (id, k)):
-                    db("""INSERT INTO repository (id, name, value)
-                          VALUES (%s, %s, %s)
-                          """, (id, k, v))
+                cursor.execute("UPDATE repository SET value=%s "
+                               "WHERE id=%s AND name=%s", (v, id, k))
+                cursor.execute("SELECT value FROM repository "
+                               "WHERE id=%s AND name=%s", (id, k))
+                if not cursor.fetchone():
+                    cursor.execute("INSERT INTO repository (id, name, value) "
+                                   "VALUES (%s, %s, %s)", (id, k, v))
         rm.reload_repositories()
 
 
@@ -281,23 +282,9 @@ class RepositoryManager(Component):
     providers = ExtensionPoint(IRepositoryProvider)
     change_listeners = ExtensionPoint(IRepositoryChangeListener)
 
-    repositories_section = ConfigSection('repositories',
-        """One of the alternatives for registering new repositories is to
-        populate the `[repositories]` section of the `trac.ini`.
-
-        This is especially suited for setting up convenience aliases,
-        short-lived repositories, or during the initial phases of an
-        installation.
-
-        See [TracRepositoryAdmin#Intrac.ini TracRepositoryAdmin] for details
-        about the format adopted for this section and the rest of that page for
-        the other alternatives.
-
-        (''since 0.12'')""")
-
     repository_type = Option('trac', 'repository_type', 'svn',
         """Default repository connector type. (''since 0.10'')
-
+        
         This is also used as the default repository type for repositories
         defined in [[TracIni#repositories-section repositories]] or using the
         "Repositories" admin panel. (''since 0.12'')
@@ -306,7 +293,7 @@ class RepositoryManager(Component):
     repository_dir = Option('trac', 'repository_dir', '',
         """Path to the default repository. This can also be a relative path
         (''since 0.11'').
-
+        
         This option is deprecated, and repositories should be defined in the
         [TracIni#repositories-section repositories] section, or using the
         "Repositories" admin panel. (''since 0.12'')""")
@@ -315,7 +302,7 @@ class RepositoryManager(Component):
         'repository_sync_per_request', '(default)',
         doc="""List of repositories that should be synchronized on every page
         request.
-
+        
         Leave this option empty if you have set up post-commit hooks calling
         `trac-admin $ENV changeset added` on all your repositories
         (recommended). Otherwise, set it to a comma-separated list of
@@ -395,7 +382,7 @@ class RepositoryManager(Component):
                 kind = _("path")
                 if resource.version:
                     version = '@%s' % resource.version
-            in_repo = _(" in %(repo)s", repo=reponame) if reponame else ''
+            in_repo = reponame and _(" in %(repo)s", repo=reponame) or ''
             # TRANSLATOR: file /path/to/file.py at version 13 in reponame
             return _('%(kind)s %(id)s%(at_version)s%(in_repo)s',
                      kind=kind, id=id, at_version=version, in_repo=in_repo)
@@ -440,11 +427,11 @@ class RepositoryManager(Component):
 
     def get_repositories(self):
         """Retrieve repositories specified in TracIni.
-
+        
         The `[repositories]` section can be used to specify a list
         of repositories.
         """
-        repositories = self.repositories_section
+        repositories = self.config['repositories']
         reponames = {}
         # eventually add pre-0.12 default repository
         if self.repository_dir:
@@ -478,12 +465,12 @@ class RepositoryManager(Component):
                     for (type_, prio) in connector.get_supported_types() or []
                     if prio >= 0)
         return list(types)
-
+    
     def get_repositories_by_dir(self, directory):
         """Retrieve the repositories based on the given directory.
 
            :param directory: the key for identifying the repositories.
-           :return: list of `Repository` instances.
+           :return: list of Repository instances.
         """
         directory = os.path.join(os.path.normcase(directory), '')
         repositories = []
@@ -498,32 +485,30 @@ class RepositoryManager(Component):
         return repositories
 
     def get_repository_id(self, reponame):
-        """Return a unique id for the given repository name.
-
-        This will create and save a new id if none is found.
-
-        \note: this should probably be renamed as we're dealing
-               exclusively with *db* repository ids here.
-        """
-        with self.env.db_transaction as db:
-            for id, in db(
-                    "SELECT id FROM repository WHERE name='name' AND value=%s",
-                    (reponame,)):
-                return id
-
-            id = db("SELECT COALESCE(MAX(id), 0) FROM repository")[0][0] + 1
-            db("INSERT INTO repository (id, name, value) VALUES (%s, %s, %s)",
-               (id, 'name', reponame))
-            return id
-
+        """Return a unique id for the given repository name."""
+        repo_id = [None]
+        @self.env.with_transaction()
+        def do_get(db):
+            cursor = db.cursor()
+            cursor.execute("SELECT id FROM repository "
+                           "WHERE name='name' AND value=%s", (reponame,))
+            for id, in cursor:
+                repo_id[0] = id
+                return
+            cursor.execute("SELECT COALESCE(MAX(id),0) FROM repository")
+            id = cursor.fetchone()[0] + 1
+            cursor.execute("INSERT INTO repository (id, name, value) "
+                           "VALUES (%s,%s,%s)", (id, 'name', reponame))
+            repo_id[0] = id
+        return repo_id[0]
+    
     def get_repository(self, reponame):
-        """Retrieve the appropriate `Repository` for the given
-        repository name.
+        """Retrieve the appropriate Repository for the given name.
 
            :param reponame: the key for specifying the repository.
-                            If no name is given, take the default
+                            If no name is given, take the default 
                             repository.
-           :return: if no corresponding repository was defined,
+           :return: if no corresponding repository was defined, 
                     simply return `None`.
         """
         reponame = reponame or ''
@@ -537,33 +522,35 @@ class RepositoryManager(Component):
         rtype = repoinfo.get('type') or self.repository_type
 
         # get a Repository for the reponame (use a thread-level cache)
-        with self.env.db_transaction: # prevent possible deadlock, see #4465
-            with self._lock:
-                tid = threading._get_ident()
-                if tid in self._cache:
-                    repositories = self._cache[tid]
-                else:
-                    repositories = self._cache[tid] = {}
-                repos = repositories.get(reponame)
-                if not repos:
-                    if not os.path.isabs(rdir):
-                        rdir = os.path.join(self.env.path, rdir)
-                    connector = self._get_connector(rtype)
-                    repos = connector.get_repository(rtype, rdir,
-                                                     repoinfo.copy())
-                    repositories[reponame] = repos
-                return repos
+        db = self.env.get_db_cnx() # prevent possible deadlock, see #4465
+        try:
+            self._lock.acquire()
+            tid = threading._get_ident()
+            if tid in self._cache:
+                repositories = self._cache[tid]
+            else:
+                repositories = self._cache[tid] = {}
+            repos = repositories.get(reponame)
+            if not repos:
+                if not os.path.isabs(rdir):
+                    rdir = os.path.join(self.env.path, rdir)
+                connector = self._get_connector(rtype)
+                repos = connector.get_repository(rtype, rdir, repoinfo.copy())
+                repositories[reponame] = repos
+            return repos
+        finally:
+            self._lock.release()
 
     def get_repository_by_path(self, path):
-        """Retrieve a matching `Repository` for the given `path`.
-
+        """Retrieve a matching Repository for the given path.
+        
         :param path: the eventually scoped repository-scoped path
-        :return: a `(reponame, repos, path)` triple, where `path` is
+        :return: a `(reponame, repos, path)` triple, where `path` is 
                  the remaining part of `path` once the `reponame` has
                  been truncated, if needed.
         """
         matches = []
-        path = path.strip('/') + '/' if path else '/'
+        path = path and path.strip('/') + '/' or '/'
         for reponame in self.get_all_repositories().keys():
             stripped_reponame = reponame.strip('/') + '/'
             if path.startswith(stripped_reponame):
@@ -580,7 +567,7 @@ class RepositoryManager(Component):
     def get_default_repository(self, context):
         """Recover the appropriate repository from the current context.
 
-        Lookup the closest source or changeset resource in the context
+        Lookup the closest source or changeset resource in the context 
         hierarchy and return the name of its associated repository.
         """
         while context:
@@ -604,7 +591,7 @@ class RepositoryManager(Component):
                         all_repositories[reponame] = info
             self._all_repositories = all_repositories
         return self._all_repositories
-
+    
     def get_real_repositories(self):
         """Return a set of all real repositories (i.e. excluding aliases)."""
         repositories = set()
@@ -619,21 +606,24 @@ class RepositoryManager(Component):
 
     def reload_repositories(self):
         """Reload the repositories from the providers."""
-        with self._lock:
+        self._lock.acquire()
+        try:
             # FIXME: trac-admin doesn't reload the environment
             self._cache = {}
             self._all_repositories = None
+        finally:
+            self._lock.release()
         self.config.touch()     # Force environment reload
-
+ 
     def notify(self, event, reponame, revs):
         """Notify repositories and change listeners about repository events.
-
+        
         The supported events are the names of the methods defined in the
         `IRepositoryChangeListener` interface.
         """
         self.log.debug("Event %s on %s for changesets %r",
                        event, reponame, revs)
-
+        
         # Notify a repository by name, and all repositories with the same
         # base, or all repositories by base or by repository dir
         repos = self.get_repository(reponame)
@@ -672,21 +662,23 @@ class RepositoryManager(Component):
                                event, repos.reponame or '(default)', rev)
                 for listener in self.change_listeners:
                     getattr(listener, event)(repos, changeset, *args)
-
+    
     def shutdown(self, tid=None):
-        """Free `Repository` instances bound to a given thread identifier"""
         if tid:
             assert tid == threading._get_ident()
-            with self._lock:
+            try:
+                self._lock.acquire()
                 repositories = self._cache.pop(tid, {})
                 for reponame, repos in repositories.iteritems():
                     repos.close()
-
+            finally:
+                self._lock.release()
+        
     # private methods
 
     def _get_connector(self, rtype):
         """Retrieve the appropriate connector for the given repository type.
-
+        
         Note that the self._lock must be held when calling this method.
         """
         if self._connectors is None:
@@ -707,7 +699,7 @@ class RepositoryManager(Component):
             else:
                 raise TracError(
                     _('Unsupported version control system "%(name)s"'
-                      ': %(error)s', name=rtype,
+                      ': %(error)s', name=rtype, 
                       error=to_unicode(connector.error)))
         else:
             raise TracError(
@@ -737,13 +729,11 @@ class NoSuchNode(ResourceNotFound):
 class Repository(object):
     """Base class for a repository provided by a version control system."""
 
-    has_linear_changesets = False
-
     scope = '/'
-
+    
     def __init__(self, name, params, log):
         """Initialize a repository.
-
+        
            :param name: a unique name identifying the repository, usually a
                         type-specific prefix followed by the path to the
                         repository.
@@ -766,13 +756,13 @@ class Repository(object):
 
     def get_base(self):
         """Return the name of the base repository for this repository.
-
+        
         This function returns the name of the base repository to which scoped
-        repositories belong. For non-scoped repositories, it returns the
+        repositories belong. For non-scoped repositories, it returns the 
         repository name.
         """
         return self.name
-
+        
     def clear(self, youngest_rev=None):
         """Clear any data that may have been cached in instance properties.
 
@@ -783,17 +773,17 @@ class Repository(object):
 
     def sync(self, rev_callback=None, clean=False):
         """Perform a sync of the repository cache, if relevant.
-
+        
         If given, `rev_callback` must be a callable taking a `rev` parameter.
         The backend will call this function for each `rev` it decided to
-        synchronize, once the synchronization changes are committed to the
+        synchronize, once the synchronization changes are committed to the 
         cache. When `clean` is `True`, the cache is cleaned first.
         """
         pass
 
     def sync_changeset(self, rev):
         """Resync the repository cache for the given `rev`, if relevant.
-
+        
         Returns a "metadata-only" changeset containing the metadata prior to
         the resync, or `None` if the old values cannot be retrieved (typically
         when the repository is not cached).
@@ -809,16 +799,16 @@ class Repository(object):
         The generated results must be of the form (category, name, path, rev).
         """
         return []
-
+    
     def get_path_url(self, path, rev):
         """Return the repository URL for the given path and revision.
-
+        
         The returned URL can be `None`, meaning that no URL has been specified
         for the repository, an absolute URL, or a scheme-relative URL starting
         with `//`, in which case the scheme of the request should be prepended.
         """
         return None
-
+    
     def get_changeset(self, rev):
         """Retrieve a Changeset corresponding to the given revision `rev`."""
         raise NotImplementedError
@@ -851,8 +841,8 @@ class Repository(object):
             self.get_node(path, rev)
             return True
         except TracError:
-            return False
-
+            return False        
+    
     def get_node(self, path, rev=None):
         """Retrieve a Node from the repository at the given path.
 
@@ -875,36 +865,34 @@ class Repository(object):
     youngest_rev = property(lambda self: self.get_youngest_rev())
 
     def previous_rev(self, rev, path=''):
-        """Return the revision immediately preceding the specified revision.
-
-        If `path` is given, filter out ancestor revisions having no changes
-        below `path`.
-
-        In presence of multiple parents, this follows the first parent.
-        """
+        """Return the revision immediately preceding the specified revision."""
         raise NotImplementedError
 
     def next_rev(self, rev, path=''):
-        """Return the revision immediately following the specified revision.
-
-        If `path` is given, filter out descendant revisions having no changes
-        below `path`.
-
-        In presence of multiple children, this follows the first child.
-        """
+        """Return the revision immediately following the specified revision."""
         raise NotImplementedError
-
-    def parent_revs(self, rev):
-        """Return a list of parents of the specified revision."""
-        parent = self.previous_rev(rev)
-        return [parent] if parent is not None else []
 
     def rev_older_than(self, rev1, rev2):
         """Provides a total order over revisions.
-
-        Return `True` if `rev1` is an ancestor of `rev2`.
+        
+        Return `True` if `rev1` is older than `rev2`, i.e. if `rev1`
+        comes before `rev2` in the revision sequence.
         """
         raise NotImplementedError
+
+    def get_youngest_rev_in_cache(self, db):
+        """Return the youngest revision currently cached.
+        
+        The way revisions are sequenced is version control specific.
+        By default, one assumes that the revisions are sequenced in time
+        (... which is ''not'' correct for most VCS, including Subversion).
+
+        (Deprecated, will not be used anymore in Trac 0.12)
+        """
+        cursor = db.cursor()
+        cursor.execute("SELECT rev FROM revision ORDER BY time DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row and row[0] or None
 
     def get_path_history(self, path, rev=None, limit=None):
         """Retrieve all the revisions containing this path.
@@ -922,11 +910,11 @@ class Repository(object):
     def normalize_rev(self, rev):
         """Return a (unique) canonical representation of a revision.
 
-        It's up to the backend to decide which string values of `rev`
-        (usually provided by the user) should be accepted, and how they
+        It's up to the backend to decide which string values of `rev` 
+        (usually provided by the user) should be accepted, and how they 
         should be normalized. Some backends may for instance want to match
         against known tags or branch names.
-
+        
         In addition, if `rev` is `None` or '', the youngest revision should
         be returned.
         """
@@ -939,16 +927,16 @@ class Repository(object):
     def display_rev(self, rev):
         """Return a representation of a revision in the repos for displaying to
         the user.
-
+        
         This can be a shortened revision string, e.g. for repositories using
         long hashes.
         """
         return self.normalize_rev(rev)
-
+        
     def get_changes(self, old_path, old_rev, new_path, new_rev,
                     ignore_ancestry=1):
         """Generates changes corresponding to generalized diffs.
-
+        
         Generator that yields change tuples (old_node, new_node, kind, change)
         for each node change between the two arbitrary (path,rev) pairs.
 
@@ -957,11 +945,9 @@ class Repository(object):
         """
         raise NotImplementedError
 
-    def is_viewable(self, perm):
+    def can_view(self, perm):
         """Return True if view permission is granted on the repository."""
         return 'BROWSER_VIEW' in perm(self.resource.child('source', '/'))
-
-    can_view = is_viewable  # 0.12 compatibility
 
 
 class Node(object):
@@ -979,7 +965,7 @@ class Node(object):
     #
     # Those properties must be set by subclasses.
     #
-    created_rev = None
+    created_rev = None   
     created_path = None
 
     def __init__(self, repos, path, rev, kind):
@@ -1008,7 +994,7 @@ class Node(object):
 
     def get_history(self, limit=None):
         """Provide backward history for this Node.
-
+        
         Generator that yields `(path, rev, chg)` tuples, one for each revision
         in which the node was changed. This generator will follow copies and
         moves of a node (if the underlying version control system supports
@@ -1075,13 +1061,11 @@ class Node(object):
     isdir = property(lambda self: self.kind == Node.DIRECTORY)
     isfile = property(lambda self: self.kind == Node.FILE)
 
-    def is_viewable(self, perm):
+    def can_view(self, perm):
         """Return True if view permission is granted on the node."""
-        return ('BROWSER_VIEW' if self.isdir else 'FILE_VIEW') \
+        return (self.isdir and 'BROWSER_VIEW' or 'FILE_VIEW') \
                in perm(self.resource)
-
-    can_view = is_viewable  # 0.12 compatibility
-
+        
 
 class Changeset(object):
     """Represents a set of changes committed at once in a repository."""
@@ -1106,7 +1090,7 @@ class Changeset(object):
         self.message = message or ''
         self.author = author or ''
         self.date = date
-
+    
     def get_properties(self):
         """Returns the properties (meta-data) of the node, as a dictionary.
 
@@ -1117,7 +1101,7 @@ class Changeset(object):
         This is now replaced by the usage of IPropertyRenderer (see #1601).
         """
         return []
-
+        
     def get_changes(self):
         """Generator that produces a tuple for every change in the changeset.
 
@@ -1140,18 +1124,9 @@ class Changeset(object):
         """
         return []
 
-    def get_tags(self):
-        """Yield tags associated with this changeset.
-
-        .. versionadded :: 1.0
-        """
-        return []
-
-    def is_viewable(self, perm):
+    def can_view(self, perm):
         """Return True if view permission is granted on the changeset."""
         return 'CHANGESET_VIEW' in perm(self.resource)
-
-    can_view = is_viewable  # 0.12 compatibility
 
 
 # Note: Since Trac 0.12, Exception PermissionDenied class is gone,

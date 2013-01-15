@@ -13,20 +13,17 @@
 
 import os
 import sys
-import threading
+import thread
 import time
-import traceback
 
 _SLEEP_TIME = 1
 
-def _reloader_thread(modification_callback, loop_callback):
+def _reloader_thread(modification_callback):
     """When this function is run from the main thread, it will force other
     threads to exit when any modules currently loaded change.
-
+    
     @param modification_callback: a function taking a single argument, the
         modified file, which is called every time a modification is detected
-    @param loop_callback: a function taking no arguments, which is called
-        after every modification check
     """
     mtimes = {}
     while True:
@@ -39,7 +36,7 @@ def _reloader_thread(modification_callback, loop_callback):
             if not filename: # Couldn't map to physical file, so just ignore
                 continue
 
-            if filename.endswith(('.pyc', '.pyo')):
+            if filename.endswith('.pyc') or filename.endswith('.pyo'):
                 filename = filename[:-1]
 
             if not os.path.isfile(filename):
@@ -53,7 +50,6 @@ def _reloader_thread(modification_callback, loop_callback):
             if mtime > mtimes[filename]:
                 modification_callback(filename)
                 sys.exit(3)
-        loop_callback()
         time.sleep(_SLEEP_TIME)
 
 def _restart_with_reloader():
@@ -74,26 +70,11 @@ def _restart_with_reloader():
 def main(func, modification_callback, *args, **kwargs):
     """Run the given function and restart any time modules are changed."""
     if os.environ.get('RUN_MAIN'):
-        exit_code = []
-        def main_thread():
-            try:
-                func(*args, **kwargs)
-                exit_code.append(None)
-            except SystemExit, e:
-                exit_code.append(e.code)
-            except:
-                traceback.print_exception(*sys.exc_info())
-                exit_code.append(1)
-        def check_exit():
-            if exit_code:
-                sys.exit(exit_code[0])
         # Lanch the actual program as a child thread
-        thread = threading.Thread(target=main_thread, name='Main thread')
-        thread.setDaemon(True)
-        thread.start()
+        thread.start_new_thread(func, args, kwargs)
         try:
             # Now wait for a file modification and quit
-            _reloader_thread(modification_callback, check_exit)
+            _reloader_thread(modification_callback)
         except KeyboardInterrupt:
             pass
     else:
