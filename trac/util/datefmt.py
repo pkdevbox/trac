@@ -459,8 +459,7 @@ def parse_date(text, tzinfo=None, locale=None, hint='date'):
         dt = _parse_relative_time(text, tzinfo)
     if dt is None:
         hint = {'datetime': get_datetime_format_hint,
-                'date': get_date_format_hint,
-                'relative': get_datetime_format_hint
+                'date': get_date_format_hint
                }.get(hint, lambda(l): hint)(locale)
         raise TracError(_('"%(date)s" is an invalid date, or the date format '
                           'is not known. Try "%(hint)s" instead.',
@@ -614,12 +613,10 @@ def _i18n_parse_date_0(text, order, regexp, period_names, month_names, tzinfo):
     t = tzinfo.localize(datetime(*(values[k] for k in 'yMdhms')))
     return tzinfo.normalize(t)
 
-_REL_FUTURE_RE = re.compile(
-    r'(?:in|\+)\s*(\d+\.?\d*)\s*'
-    r'(second|minute|hour|day|week|month|year|[hdwmy])s?$')
-_REL_PAST_RE = re.compile(
-    r'(?:-\s*)?(\d+\.?\d*)\s*'
-    r'(second|minute|hour|day|week|month|year|[hdwmy])s?\s*(?:ago)?$')
+_REL_TIME_RE = re.compile(
+    r'(\d+\.?\d*)\s*'
+    r'(second|minute|hour|day|week|month|year|[hdwmy])s?\s*'
+    r'(?:ago)?$')
 _time_intervals = dict(
     second=lambda v: timedelta(seconds=v),
     minute=lambda v: timedelta(minutes=v),
@@ -634,7 +631,7 @@ _time_intervals = dict(
     m=lambda v: timedelta(days=30 * v),
     y=lambda v: timedelta(days=365 * v),
 )
-_TIME_START_RE = re.compile(r'(this|last|next)\s*'
+_TIME_START_RE = re.compile(r'(this|last)\s*'
                             r'(second|minute|hour|day|week|month|year)$')
 _time_starts = dict(
     second=lambda now: datetime(now.year, now.month, now.day, now.hour,
@@ -660,15 +657,8 @@ def _parse_relative_time(text, tzinfo, now=None):
         dt = _time_starts['day'](now)
     elif text == 'yesterday':
         dt = _time_starts['day'](now) - timedelta(days=1)
-    elif text == 'tomorrow':
-        dt = _time_starts['day'](now) + timedelta(days=1)
     if dt is None:
-        match = _REL_FUTURE_RE.match(text)
-        if match:
-            (value, interval) = match.groups()
-            dt = now + _time_intervals[interval](float(value))
-    if dt is None:
-        match = _REL_PAST_RE.match(text)
+        match = _REL_TIME_RE.match(text)
         if match:
             (value, interval) = match.groups()
             dt = now - _time_intervals[interval](float(value))
@@ -687,23 +677,12 @@ def _parse_relative_time(text, tzinfo, now=None):
                     dt = dt.replace(year=dt.year - 1)
                 else:
                     dt -= _time_intervals[start](1)
-            elif which == 'next':
-                if start == 'month':
-                    if dt.month < 12:
-                        dt = dt.replace(month=dt.month + 1)
-                    else:
-                        dt = dt.replace(year=dt.year + 1, month=1)
-                elif start == 'year':
-                    dt = dt.replace(year=dt.year + 1)
-                else:
-                    dt += _time_intervals[start](1)
 
     if dt is None:
         return None
     if not dt.tzinfo:
         dt = tzinfo.localize(dt)
     return tzinfo.normalize(dt)
-
 
 # -- formatting/parsing helper functions
 
@@ -723,12 +702,6 @@ def user_time(req, func, *args, **kwargs):
     if 'locale' not in kwargs:
         kwargs['locale'] = getattr(req, 'lc_time', None)
     return func(*args, **kwargs)
-
-def format_date_or_datetime(format, *args, **kwargs):
-    if format == 'date':
-        return format_date(*args, **kwargs)
-    else:
-        return format_datetime(*args, **kwargs)
 
 # -- timezone utilities
 

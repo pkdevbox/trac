@@ -1,13 +1,13 @@
 # Japanese translations for Trac.
-# Copyright (C) 2010-2012 Edgewall Software
+# Copyright (C) 2010-2013 Edgewall Software
 # This file is distributed under the same license as the Trac project.
-# Jun Omae <jun66j5@gmail.com>, 2010-2012.
+# Jun Omae <jun66j5@gmail.com>, 2010-2013.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: Trac 1.0\n"
 "Report-Msgid-Bugs-To: trac-dev@googlegroups.com\n"
-"POT-Creation-Date: 2012-09-17 22:04+0200\n"
+"POT-Creation-Date: 2013-01-27 11:21+0900\n"
 "PO-Revision-Date: 2010-05-25 18:45+0900\n"
 "Last-Translator: Jun Omae <jun66j5@gmail.com>\n"
 "Language-Team: ja <LL@li.org>\n"
@@ -15,7 +15,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 0.9.6\n"
+"Generated-By: Babel 0.9.6dev-r0\n"
 
 #: trac/htdocs/js/blame.js:84
 msgid "(no changeset information)"
@@ -140,36 +140,36 @@ msgstr "このプロパティは既にフィルタで使っています"
 msgid "or"
 msgstr "or"
 
-#: trac/htdocs/js/query.js:182 trac/htdocs/js/query.js:318
+#: trac/htdocs/js/query.js:182 trac/htdocs/js/query.js:310
 msgid "yes"
 msgstr "はい"
 
-#: trac/htdocs/js/query.js:185 trac/htdocs/js/query.js:321
+#: trac/htdocs/js/query.js:185 trac/htdocs/js/query.js:313
 msgid "no"
 msgstr "いいえ"
 
-#: trac/htdocs/js/query.js:196
+#: trac/htdocs/js/query.js:188
 msgid "between"
 msgstr " "
 
-#: trac/htdocs/js/query.js:198
+#: trac/htdocs/js/query.js:190
 msgid "and"
 msgstr "から"
 
-#: trac/htdocs/js/query.js:345
+#: trac/htdocs/js/query.js:337
 msgid " remove:"
 msgstr " 削除:"
 
-#: trac/htdocs/js/query.js:355
+#: trac/htdocs/js/query.js:347
 msgid " add:"
 msgstr " 追加:"
 
-#: trac/htdocs/js/query.js:384
+#: trac/htdocs/js/query.js:376
 #, python-format
 msgid "Select ticket %(id)s for modification"
 msgstr "更新対象としてチケット %(id)s を選択する"
 
-#: trac/htdocs/js/query.js:395
+#: trac/htdocs/js/query.js:387
 msgid "Toggle selection of all tickets shown in this group"
 msgstr "このグループに表示しているすべてのチケットに対し、選択を切り替える"
 

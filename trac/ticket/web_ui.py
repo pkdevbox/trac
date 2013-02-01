@@ -40,8 +40,7 @@ from trac.ticket.notification import TicketNotifyEmail
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import as_bool, as_int, get_reporter_id
 from trac.util.datefmt import (
-    format_date_or_datetime, from_utimestamp, get_date_format_hint,
-    get_datetime_format_hint, parse_date, to_utimestamp, user_time, utc
+    format_datetime, from_utimestamp, to_utimestamp, utc
 )
 from trac.util.text import (
     exception_to_unicode, empty, obfuscate_email_address, shorten_line,
@@ -76,11 +75,6 @@ class TicketModule(Component):
     timeline_details = BoolOption('timeline', 'ticket_show_details', 'false',
         """Enable the display of all ticket changes in the timeline, not only
         open / close operations (''since 0.9'').""")
-
-    timeline_component = BoolOption('timeline', 'ticket_show_component',
-                                    'false',
-        """Enable the display of component of tickets in the timeline
-        (''since 1.1.1'').""")
 
     max_description_size = IntOption('ticket', 'max_description_size', 262144,
         """Don't accept tickets with a too big description.
@@ -262,8 +256,7 @@ class TicketModule(Component):
 
         field_labels = TicketSystem(self.env).get_ticket_field_labels()
 
-        def produce_event((id, ts, author, type, summary, description,
-                           component),
+        def produce_event((id, ts, author, type, summary, description),
                           status, fields, comment, cid):
             ticket = ticket_realm(id=id)
             if 'TICKET_VIEW' not in req.perm(ticket):
@@ -292,14 +285,14 @@ class TicketModule(Component):
             kind, verb = status_map[status]
             return (kind, from_utimestamp(ts), author,
                     (ticket, verb, info, summary, status, resolution, type,
-                     description, component, comment, cid))
+                     description, comment, cid))
 
         def produce_ticket_change_events(db):
             data = None
-            for (id, t, author, type, summary,
-                 component, field, oldvalue, newvalue) in db("""
+            for id, t, author, type, summary, field, oldvalue, newvalue \
+                    in db("""
                     SELECT t.id, tc.time, tc.author, t.type, t.summary,
-                           t.component, tc.field, tc.oldvalue, tc.newvalue
+                           tc.field, tc.oldvalue, tc.newvalue
                     FROM ticket_change tc
                         INNER JOIN ticket t ON t.id = tc.ticket
                             AND tc.time>=%s AND tc.time<=%s
@@ -316,7 +309,7 @@ class TicketModule(Component):
                         if ev:
                              yield (ev, data[1])
                     status, fields, comment, cid = 'edit', {}, '', None
-                    data = (id, t, author, type, summary, None, component)
+                    data = (id, t, author, type, summary, None)
                 if field == 'comment':
                     comment = newvalue
                     cid = oldvalue and oldvalue.split('.')[-1]
@@ -368,7 +361,7 @@ class TicketModule(Component):
                 # New tickets
                 if 'ticket' in filters:
                     for row in db("""SELECT id, time, reporter, type, summary,
-                                            description, component
+                                            description
                                      FROM ticket WHERE time>=%s AND time<=%s
                                      """, (ts_start, ts_stop)):
                         ev = produce_event(row, 'new', {}, None, None)
@@ -386,7 +379,7 @@ class TicketModule(Component):
         if kind == 'batchmodify':
             return self._render_batched_timeline_event(context, field, event)
         ticket, verb, info, summary, status, resolution, type, \
-                description, component, comment, cid = event[3]
+                description, comment, cid = event[3]
         if field == 'url':
             href = context.href.ticket(ticket.id)
             if cid:
@@ -401,14 +394,9 @@ class TicketModule(Component):
                 'closed': N_("Ticket %(ticketref)s (%(summary)s) closed"),
                 'updated': N_("Ticket %(ticketref)s (%(summary)s) updated"),
             }[verb]
-            # Add component as prefix to summary if enabled and available
-            component_prefix = ''
-            if self.timeline_component and component:
-                component_prefix = component + ' - '
-            summary_complete = component_prefix + shorten_line(summary)
             return tag_(message,
                         ticketref=tag.em('#', ticket.id, title=title),
-                        summary=summary_complete)
+                        summary=shorten_line(summary))
         elif field == 'description':
             descr = message = ''
             if status == 'new':
@@ -427,7 +415,7 @@ class TicketModule(Component):
 
     def _render_batched_timeline_event(self, context, field, event):
         tickets, verb, info, summary, status, resolution, type, \
-                description, component, comment, cid = event[3]
+                description, comment, cid = event[3]
         tickets = sorted(tickets)
         if field == 'url':
             return context.href.query(id=','.join(str(t) for t in tickets))
@@ -521,7 +509,6 @@ class TicketModule(Component):
         add_script(req, 'common/js/folding.js')
         Chrome(self.env).add_wiki_toolbars(req)
         Chrome(self.env).add_auto_preview(req)
-        Chrome(self.env).add_jquery_ui(req)
         return 'ticket.html', data, None
 
     def _process_ticket_request(self, req):
@@ -712,7 +699,6 @@ class TicketModule(Component):
         add_script(req, 'common/js/folding.js')
         Chrome(self.env).add_wiki_toolbars(req)
         Chrome(self.env).add_auto_preview(req)
-        Chrome(self.env).add_jquery_ui(req)
 
         # Add registered converters
         for conversion in mime.get_supported_conversions('trac.ticket.Ticket'):
@@ -793,18 +779,6 @@ class TicketModule(Component):
         for each in Ticket.protected_fields:
             fields.pop(each, None)
             fields.pop('checkbox_' + each, None)    # See Ticket.populate()
-        for field, value in fields.iteritems():
-            if field in ticket.time_fields:
-                try:
-                    fields[field] = user_time(req, parse_date, value) \
-                                    if value else None
-                except TracError, e:
-                    # Handle bad user input for custom time fields gracefully.
-                    if field in ticket.custom_fields:
-                        # Leave it to _validate_ticket() to complain.
-                        fields[field] = value
-                    else:
-                        raise TracError(e)
         ticket.populate(fields)
         # special case for updating the Cc: field
         if 'cc_update' in req.args and 'revert_cc' not in req.args:
@@ -1159,9 +1133,8 @@ class TicketModule(Component):
             if name in ('cc', 'reporter'):
                 value = Chrome(self.env).format_emails(context, value, ' ')
             elif name in ticket.time_fields:
-                format = ticket.fields.by_name(name).get('format')
-                value = user_time(req, format_date_or_datetime, format,
-                                  value) if value else ''
+                value = format_datetime(value, '%Y-%m-%d %H:%M:%S',
+                                        tzinfo=req.tz)
             cols.append(value.encode('utf-8'))
         writer.writerow(cols)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
@@ -1299,22 +1272,6 @@ class TicketModule(Component):
         except ValueError:
             # Shouldn't happen in "normal" circumstances, hence not a warning
             raise InvalidTicket(_("Invalid comment threading identifier"))
-
-        # Validate time field content
-        for field in ticket.time_fields:
-            value = ticket[field]
-            if not (field in ticket.std_fields or \
-                    isinstance(value, datetime)):
-                try:
-                    format = ticket.fields.by_name(field).get('format')
-                    ticket.values[field] = user_time(req, parse_date, value,
-                                                     hint=format) \
-                                          if value else None
-                except TracError, e:
-                    # Degrade TracError to warning.
-                    add_warning(req, e)
-                    ticket.values[field] = value
-                    valid = False
 
         # Custom validation rules
         for manipulator in self.ticket_manipulators:
@@ -1483,7 +1440,7 @@ class TicketModule(Component):
             type_ = field['type']
 
             # enable a link to custom query for all choice fields
-            if type_ not in ['text', 'textarea', 'time']:
+            if type_ not in ['text', 'textarea']:
                 field['rendered'] = self._query_link(req, name, ticket[name])
 
             # per field settings
@@ -1574,20 +1531,6 @@ class TicketModule(Component):
                     field['rendered'] = \
                         format_to_html(self.env, context, ticket[name],
                                 escape_newlines=self.must_preserve_newlines)
-            elif type_ == 'time':
-                value = ticket[name]
-                field['timevalue'] = value
-                format = field.get('format', 'datetime')
-                field['rendered'] =  user_time(req, format_date_or_datetime,
-                                               format, value) if value else ''
-                field['dateinfo'] = value
-                field['edit'] = user_time(req, format_date_or_datetime,
-                                          format, value) if value else ''
-                locale = getattr(req, 'lc_time', None)
-                if format == 'date':
-                    field['format_hint'] = get_date_format_hint(locale)
-                else:
-                    field['format_hint'] = get_datetime_format_hint(locale)
 
             # ensure sane defaults
             field.setdefault('optional', False)
@@ -1762,12 +1705,6 @@ class TicketModule(Component):
                                                   resource_new)
             if rendered:
                 changes['rendered'] = rendered
-            elif ticket.fields.by_name(field, {}).get('type') == 'time':
-                format = ticket.fields.by_name(field).get('format')
-                changes['old'] = user_time(req, format_date_or_datetime,
-                                           format, old) if old else ''
-                changes['new'] = user_time(req, format_date_or_datetime,
-                                           format, new) if new else ''
 
     def _render_property_diff(self, req, ticket, field, old, new,
                               resource_new=None):
@@ -1777,7 +1714,11 @@ class TicketModule(Component):
         sep = ', '
 
         # per type special rendering of diffs
-        field_info = ticket.fields.by_name(field, {})
+        field_info = {}
+        for f in ticket.fields:
+            if f['name'] == field:
+                field_info = f
+                break
         type_ = field_info.get('type')
         if type_ == 'checkbox':
             rendered = _("set") if new == '1' else _("unset")

@@ -753,7 +753,13 @@ class SubversionNode(Node):
         """Retrieve raw content as a "read()"able object."""
         if self.isdir:
             return None
-        return core.Stream(fs.file_contents(self.root, self._scoped_path_utf8))
+        pool = Pool(self.pool)
+        s = core.Stream(fs.file_contents(self.root, self._scoped_path_utf8,
+                                         pool()))
+        # The stream object needs to reference the pool to make sure the pool
+        # is not destroyed before the former.
+        s._pool = pool
+        return s
 
     def get_entries(self):
         """Yield `SubversionNode` corresponding to entries in this directory.

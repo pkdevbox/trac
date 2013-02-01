@@ -59,7 +59,7 @@ from trac.util.datefmt import (
     from_utimestamp, http_date, utc, get_date_format_jquery_ui, is_24_hours,
     get_time_format_jquery_ui, user_time, get_month_names_jquery_ui,
     get_day_names_jquery_ui, get_timezone_list_jquery_ui,
-    get_first_week_day_jquery_ui, localtz)
+    get_first_week_day_jquery_ui)
 from trac.util.translation import _, get_available_locales
 from trac.web.api import IRequestHandler, ITemplateStreamFilter, HTTPNotFound
 from trac.web.href import Href
@@ -384,41 +384,41 @@ class Chrome(Component):
         rules will be needed in the web server.""")
 
     jquery_location = Option('trac', 'jquery_location', '',
-        """Location of the jQuery !JavaScript library (version 1.8.3).
+        """Location of the jQuery !JavaScript library (version 1.7.2).
 
         An empty value loads jQuery from the copy bundled with Trac.
 
         Alternatively, jQuery could be loaded from a CDN, for example:
-        http://code.jquery.com/jquery-1.8.3.min.js,
-        http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.8.3.min.js or
-        https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js.
+        http://code.jquery.com/jquery-1.7.2.min.js,
+        http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.7.2.min.js or
+        https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js.
 
         (''since 1.0'')""")
 
     jquery_ui_location = Option('trac', 'jquery_ui_location', '',
-        """Location of the jQuery UI !JavaScript library (version 1.9.2).
+        """Location of the jQuery UI !JavaScript library (version 1.8.21).
 
         An empty value loads jQuery UI from the copy bundled with Trac.
 
         Alternatively, jQuery UI could be loaded from a CDN, for example:
-        https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js
+        https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js
         or
-        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/jquery-ui.min.js.
+        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/jquery-ui.min.js.
 
         (''since 1.0'')""")
 
     jquery_ui_theme_location = Option('trac', 'jquery_ui_theme_location', '',
         """Location of the theme to be used with the jQuery UI !JavaScript
-        library (version 1.9.2).
+        library (version 1.8.21).
 
         An empty value loads the custom Trac jQuery UI theme from the copy
         bundled with Trac.
 
         Alternatively, a jQuery UI theme could be loaded from a CDN, for
         example:
-        https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/themes/start/jquery-ui.css
+        https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/themes/start/jquery-ui.css
         or
-        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/themes/start/jquery-ui.css.
+        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/themes/start/jquery-ui.css.
 
         (''since 1.0'')""")
 
@@ -855,26 +855,18 @@ class Chrome(Component):
             show_email_addresses = False
 
         def pretty_dateinfo(date, format=None, dateonly=False):
-            if not date:
-                return ''
-            if format == 'date':
-                absolute = user_time(req, format_date, date)
-            else:
-                absolute = user_time(req, format_datetime, date)
-            now = datetime.datetime.now(localtz)
-            relative = pretty_timedelta(date, now)
+            absolute = user_time(req, format_datetime, date)
+            relative = pretty_timedelta(date)
             if not format:
                 format = req.session.get('dateinfo',
                                          self.default_dateinfo_format)
-            in_or_ago = _("in %(relative)s", relative=relative) \
-                        if date > now else \
-                        _("%(relative)s ago", relative=relative)
-            if format == 'relative':
-                label = in_or_ago if not dateonly else relative
-                title = absolute
-            else:
+            if format == 'absolute':
                 label = absolute
-                title = in_or_ago
+                title = _("%(relativetime)s ago", relativetime=relative)
+            else:
+                label = _("%(relativetime)s ago", relativetime=relative) \
+                        if not dateonly else relative
+                title = absolute
             return tag.span(label, title=title)
 
         def dateinfo(date):

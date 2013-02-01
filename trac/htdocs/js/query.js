@@ -184,19 +184,11 @@
             .append(createRadio(propertyName, "0", propertyName + "_off"))
             .append(" ").append(createLabel(_("no"), propertyName + "_off"));
         } else if (property.type == "time") {
-          var endElement = createText(propertyName + "_end", 14);
-          focusElement = createText(propertyName, 14);
-          if (property.format == "datetime") {
-            focusElement.datetimepicker();
-            endElement.datetimepicker();
-          } else if (property.format == "date") {
-            focusElement.datepicker();
-            endElement.datepicker();
-          }
+          focusElement = createText(propertyName, 14).datepicker();
           td.append(createLabel(_("between"))).append(" ")
             .append(focusElement).append(" ")
             .append(createLabel(_("and"))).append(" ")
-            .append(endElement);
+            .append(createText(propertyName + "_end", 14).datepicker());
         }
         tr.append(td);
       } else {
@@ -330,11 +322,6 @@
           break;
         case 'time':
           focusElement = createText(inputName, 42).addClass("time");
-          if (property.format == "datetime") {
-            focusElement.datetimepicker();
-          } else if (property.format == "date") {
-            focusElement.datepicker();
-          }
           td.append(focusElement);
           break;
       }

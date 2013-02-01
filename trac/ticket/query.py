@@ -34,12 +34,11 @@ from trac.resource import Resource
 from trac.ticket.api import TicketSystem
 from trac.ticket.model import Milestone, group_milestones, Ticket
 from trac.util import Ranges, as_bool
-from trac.util.datefmt import from_utimestamp, format_date_or_datetime, \
-                              parse_date, to_timestamp, to_utimestamp, utc, \
-                              user_time
+from trac.util.datefmt import format_datetime, from_utimestamp, parse_date, \
+                              to_timestamp, to_utimestamp, utc, user_time
 from trac.util.presentation import Paginator
 from trac.util.text import empty, shorten_line, quote_query_string
-from trac.util.translation import _, cleandoc_, ngettext, tag_
+from trac.util.translation import _, tag_, cleandoc_
 from trac.web import arg_list_to_args, parse_arg_list, IRequestHandler
 from trac.web.href import Href
 from trac.web.chrome import (INavigationContributor, Chrome,
@@ -317,7 +316,10 @@ class Query(object):
             # self.env.log.debug("SQL: " + sql % tuple([repr(a) for a in args]))
             cursor.execute(sql, args)
             columns = get_column_names(cursor)
-            fields = [self.fields.by_name(column, None) for column in columns]
+            fields = []
+            for column in columns:
+                fields += [f for f in self.fields if f['name'] == column] or \
+                          [None]
             results = []
 
             column_indices = range(len(columns))
@@ -332,7 +334,7 @@ class Query(object):
                         if href is not None:
                             result['href'] = href.ticket(val)
                     elif name in self.time_fields:
-                        val = from_utimestamp(long(val)) if val else ''
+                        val = from_utimestamp(val)
                     elif field and field['type'] == 'checkbox':
                         try:
                             val = bool(int(val))
@@ -712,10 +714,12 @@ class Query(object):
 
         cols = self.get_columns()
         labels = TicketSystem(self.env).get_ticket_field_labels()
+        wikify = set(f['name'] for f in self.fields
+                     if f['type'] == 'text' and f.get('format') == 'wiki')
 
         headers = [{
             'name': col, 'label': labels.get(col, _('Ticket')),
-            'field': self.fields.by_name(col, {}),
+            'wikify': col in wikify,
             'href': self.get_href(context.href, order=col,
                                   desc=(col == self.order and not self.desc))
         } for col in cols]
@@ -1070,9 +1074,9 @@ class QueryModule(Component):
                 add_warning(req, error)
 
         context = web_context(req, 'query')
-        owner_field = query.fields.by_name('owner', None)
+        owner_field = [f for f in query.fields if f['name'] == 'owner']
         if owner_field:
-            TicketSystem(self.env).eventually_restrict_owner(owner_field)
+            TicketSystem(self.env).eventually_restrict_owner(owner_field[0])
         data = query.template_data(context, tickets, orig_list, orig_time, req)
 
         req.session['query_href'] = query.get_href(context.href)
@@ -1117,7 +1121,7 @@ class QueryModule(Component):
 
         properties = dict((name, dict((key, field[key])
                                       for key in ('type', 'label', 'options',
-                                                  'optgroups', 'format')
+                                                  'optgroups')
                                       if key in field))
                           for name, field in data['fields'].iteritems())
         add_script_data(req, properties=properties, modes=data['modes'])
@@ -1147,9 +1151,8 @@ class QueryModule(Component):
                         value = Chrome(self.env).format_emails(
                                     context.child(ticket), value)
                     elif col in query.time_fields:
-                        format = query.fields.by_name(col).get('format')
-                        value = user_time(req, format_date_or_datetime,
-                                          format, value) if value else ''
+                        value = format_datetime(value, '%Y-%m-%d %H:%M:%S',
+                                                tzinfo=req.tz)
                     values.append(unicode(value).encode('utf-8'))
                 writer.writerow(values)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
@@ -1220,8 +1223,6 @@ class TicketQueryMacro(WikiMacroBase):
      - '''compact''' -- the tickets are presented as a comma-separated
        list of ticket IDs.
      - '''count''' -- only the count of matching tickets is displayed
-     - '''rawcount''' -- only the count of matching tickets is displayed,
-       not even with a link to the corresponding query //(since 1.1.1)//
      - '''table'''  -- a view similar to the custom query view (but without
        the controls)
      - '''progress''' -- a view similar to the milestone progress bars
@@ -1302,20 +1303,14 @@ class TicketQueryMacro(WikiMacroBase):
         query_string, kwargs, format = self.parse_args(content)
         if query_string:
             query_string += '&'
-
-        query_string += '&'.join('%s=%s' % item for item in kwargs.iteritems())
+        query_string += '&'.join('%s=%s' % item
+                                 for item in kwargs.iteritems())
         query = Query.from_string(self.env, query_string)
 
-        if format in ('count', 'rawcount'):
+        if format == 'count':
             cnt = query.count(req)
-            title = ngettext("%(num)s ticket matching %(criteria)s",
-                             "%(num)s tickets matching %(criteria)s", cnt,
-                             criteria=query_string.replace('&', ', '))
-            if format == 'rawcount':
-                return tag.span(cnt, title=title, class_='query_count')
-            else:
-                return tag.a(cnt, href=query.get_href(formatter.context),
-                             title=title)
+            return tag.span(cnt, title='%d tickets for which %s' %
+                            (cnt, query_string), class_='query_count')
 
         tickets = query.execute(req)
 
@@ -1452,4 +1447,4 @@ class TicketQueryMacro(WikiMacroBase):
 
     def is_inline(self, content):
         query_string, kwargs, format = self.parse_args(content)
-        return format in ('compact', 'count', 'rawcount')
+        return format in ('count', 'compact')

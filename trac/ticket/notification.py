@@ -26,8 +26,7 @@ from trac.core import *
 from trac.config import *
 from trac.notification import NotifyEmail
 from trac.ticket.api import TicketSystem
-from trac.util.datefmt import format_date_or_datetime, get_timezone, \
-                              to_utimestamp
+from trac.util.datefmt import to_utimestamp
 from trac.util.text import obfuscate_email_address, text_width, wrap
 from trac.util.translation import deactivate, reactivate
 
@@ -225,10 +224,6 @@ class TicketNotifyEmail(NotifyEmail):
                         if field in ['owner', 'reporter']:
                             old = self.obfuscate_email(old)
                             new = self.obfuscate_email(new)
-                        elif field in ticket.time_fields:
-                            format = ticket.fields.by_name(field).get('format')
-                            old = self.format_time_field(old, format)
-                            new = self.format_time_field(new, format)
                         newv = new
                         length = 7 + len(field)
                         spacer_old, spacer_new = ' ', ' '
@@ -287,9 +282,6 @@ class TicketNotifyEmail(NotifyEmail):
             if not fname in tkt.values:
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fval.find('\n') != -1:
                 continue
             if fname in ['owner', 'reporter']:
@@ -323,9 +315,6 @@ class TicketNotifyEmail(NotifyEmail):
             if not tkt.values.has_key(fname):
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fname in ['owner', 'reporter']:
                 fval = self.obfuscate_email(fval)
             if f['type'] == 'textarea' or '\n' in unicode(fval):
@@ -392,11 +381,6 @@ class TicketNotifyEmail(NotifyEmail):
         }
 
         return template.generate(**data).render('text', encoding=None).strip()
-
-    def format_time_field(self, value, format):
-        tzinfo = get_timezone(self.config.get('trac', 'default_timezone'))
-        return format_date_or_datetime(format, value, tzinfo=tzinfo) \
-               if value else ''
 
     def get_recipients(self, tktid):
         (torecipients, ccrecipients, reporter, owner) = \

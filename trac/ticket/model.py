@@ -30,8 +30,7 @@ from trac.resource import Resource, ResourceNotFound
 from trac.ticket.api import TicketSystem
 from trac.util import embedded_numbers, partition
 from trac.util.text import empty
-from trac.util.datefmt import from_utimestamp, parse_date, to_utimestamp, \
-                              utc, utcmax
+from trac.util.datefmt import from_utimestamp, to_utimestamp, utc, utcmax
 from trac.util.translation import _
 
 __all__ = ['Ticket', 'Type', 'Status', 'Resolution', 'Priority', 'Severity',
@@ -45,31 +44,6 @@ def _fixup_cc_list(cc_value):
         if cc and cc not in cclist:
             cclist.append(cc)
     return ', '.join(cclist)
-
-
-def _db_str_to_datetime(value):
-    if value is None:
-        return None
-    try:
-        return from_utimestamp(long(value))
-    except ValueError:
-        pass
-    try:
-        return parse_date(value.strip(), utc, 'datetime')
-    except Exception:
-        return None
-
-
-def _datetime_to_db_str(dt, is_custom_field):
-    if not dt:
-        return ''
-    ts = to_utimestamp(dt)
-    if is_custom_field:
-        # Padding with '0' would be easy to sort in report page for a user
-        fmt = '%018d' if ts >= 0 else '%+017d'
-        return fmt % ts
-    else:
-        return ts
 
 
 class Ticket(object):
@@ -132,15 +106,6 @@ class Ticket(object):
                         self.env.log.warning('Invalid default value "%s" '
                                              'for custom field "%s"'
                                              % (default, field['name']))
-                if default and field.get('type') == 'time':
-                    try:
-                        default = parse_date(default,
-                                             hint=field.get('format'))
-                    except TracError, e:
-                        self.env.log.warning('Invalid default value "%s" '
-                                             'for custom field "%s": %s'
-                                             % (default, field['name'], e))
-                        default = None
             if default:
                 self.values.setdefault(field['name'], default)
 
@@ -170,9 +135,7 @@ class Ticket(object):
                 SELECT name, value FROM ticket_custom WHERE ticket=%s
                 """, (tkt_id,)):
             if name in self.custom_fields:
-                if name in self.time_fields:
-                    self.values[name] = _db_str_to_datetime(value)
-                elif value is None:
+                if value is None:
                     self.values[name] = empty
                 else:
                     self.values[name] = value
@@ -189,10 +152,11 @@ class Ticket(object):
             self._old[name] = self.values.get(name)
         elif self._old[name] == value: # Change of field reverted
             del self._old[name]
-        if value and name not in self.time_fields:
+        if value:
             if isinstance(value, list):
                 raise TracError(_("Multi-values fields not supported yet"))
-            if self.fields.by_name(name, {}).get('type') != 'textarea':
+            field = [field for field in self.fields if field['name'] == name]
+            if field and field[0].get('type') != 'textarea':
                 value = value.strip()
         self.values[name] = value
 
@@ -207,13 +171,15 @@ class Ticket(object):
 
     def get_default(self, name):
         """Return the default value of a field."""
-        return self.fields.by_name(name, {}).get('value', '')
+        field = [field for field in self.fields if field['name'] == name]
+        if field:
+            return field[0].get('value', '')
 
     def populate(self, values):
         """Populate the ticket with 'suitable' values from a dictionary"""
         field_names = [f['name'] for f in self.fields]
         for name in [name for name in values.keys() if name in field_names]:
-            self[name] = values[name]
+            self[name] = values.get(name, '')
 
         # We have to do an extra trick to catch unchecked checkboxes
         for name in [name for name in values.keys() if name[9:] in field_names
@@ -252,7 +218,10 @@ class Ticket(object):
             self['owner'] = default_to_owner
 
         # Perform type conversions
-        db_values = self._to_db_types(self.values)
+        values = dict(self.values)
+        for field in self.time_fields:
+            if field in values:
+                values[field] = to_utimestamp(values[field])
 
         # Insert ticket record
         std_fields = []
@@ -269,7 +238,7 @@ class Ticket(object):
             cursor.execute("INSERT INTO ticket (%s) VALUES (%s)"
                            % (','.join(std_fields),
                               ','.join(['%s'] * len(std_fields))),
-                           [db_values[name] for name in std_fields])
+                           [values[name] for name in std_fields])
             tkt_id = db.get_last_id(cursor, 'ticket')
 
             # Insert custom fields
@@ -277,8 +246,7 @@ class Ticket(object):
                 db.executemany(
                     """INSERT INTO ticket_custom (ticket, name, value)
                        VALUES (%s, %s, %s)
-                       """, [(tkt_id, c, db_values.get(c, ''))
-                             for c in custom_fields])
+                    """, [(tkt_id, c, self[c]) for c in custom_fields])
 
         self.id = tkt_id
         self.resource = self.resource(id=tkt_id)
@@ -334,10 +302,6 @@ class Ticket(object):
                     # we just leave the owner as is.
                     pass
 
-        # Perform type conversions
-        db_values = self._to_db_types(self.values)
-        old_db_values = self._to_db_types(self._old)
-
         with self.env.db_transaction as db:
             db("UPDATE ticket SET changetime=%s WHERE id=%s",
                (when_ts, self.id))
@@ -371,20 +335,20 @@ class Ticket(object):
                                      """, (self.id, name)):
                         db("""UPDATE ticket_custom SET value=%s
                               WHERE ticket=%s AND name=%s
-                              """, (db_values.get(name, ''), self.id, name))
+                              """, (self[name], self.id, name))
                         break
                     else:
                         db("""INSERT INTO ticket_custom (ticket,name,value)
                               VALUES(%s,%s,%s)
-                              """, (self.id, name, db_values.get(name, '')))
+                              """, (self.id, name, self[name]))
                 else:
                     db("UPDATE ticket SET %s=%%s WHERE id=%%s"
-                       % name, (db_values.get(name, ''), self.id))
+                       % name, (self[name], self.id))
                 db("""INSERT INTO ticket_change
                         (ticket,time,author,field,oldvalue,newvalue)
                       VALUES (%s, %s, %s, %s, %s, %s)
-                      """, (self.id, when_ts, author, name,
-                            old_db_values[name], db_values.get(name, '')))
+                      """, (self.id, when_ts, author, name, self._old[name],
+                            self[name]))
 
             # always save comment, even if empty
             # (numbering support for timeline)
@@ -400,14 +364,6 @@ class Ticket(object):
         for listener in TicketSystem(self.env).change_listeners:
             listener.ticket_changed(self, comment, author, old_values)
         return int(cnum.rsplit('.', 1)[-1])
-
-    def _to_db_types(self, values):
-        values = values.copy()
-        for field, value in values.iteritems():
-            if field in self.time_fields:
-                is_custom_field = field in self.custom_fields
-                values[field] = _datetime_to_db_str(value, is_custom_field)
-        return values
 
     def get_changelog(self, when=None, db=None):
         """Return the changelog as a list of tuples of the form
@@ -452,15 +408,10 @@ class Ticket(object):
                 ORDER BY time,permanent,author
                 """
             args = (self.id, sid, sid)
-        log = []
-        for t, author, field, oldvalue, newvalue, permanent \
-                in self.env.db_query(sql, args):
-            if field in self.time_fields:
-                oldvalue = _db_str_to_datetime(oldvalue)
-                newvalue = _db_str_to_datetime(newvalue)
-            log.append((from_utimestamp(t), author, field,
-                        oldvalue or '', newvalue or '', permanent))
-        return log
+        return [(from_utimestamp(t), author, field, oldvalue or '',
+                 newvalue or '', permanent)
+                for t, author, field, oldvalue, newvalue, permanent in
+                self.env.db_query(sql, args)]
 
     def delete(self, db=None):
         """Delete the ticket.
