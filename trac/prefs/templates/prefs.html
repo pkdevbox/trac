@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -30,8 +20,8 @@
       restored on subsequent visits.</p>
       <ul id="tabs">
         <li py:for="name, label in sorted(panels)"
-            class="${'active' if name == active_panel else None}"
-            id="${('tab_%s' % name) if name else None}">
+            class="${name == active_panel and 'active' or None}"
+            id="${name and ('tab_%s' % name) or None}">
           <a py:strip="name == active_panel" href="${href.prefs(name)}">${label}</a>
         </li>
       </ul>

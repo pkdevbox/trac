@@ -1,24 +1,13 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2005-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
 import os
 import unittest
 
 from trac import __version__ as TRAC_VERSION
-from trac.mimeview.api import Mimeview
 from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.ticket.model import Ticket
 from trac.ticket.web_ui import TicketModule
+from trac.mimeview.api import Mimeview
 from trac.web.href import Href
 
 
@@ -79,8 +68,7 @@ class TicketConversionTestCase(unittest.TestCase):
         ticket = self._create_a_ticket()
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'csv')
-        self.assertEqual(('\xef\xbb\xbf'
-                          'id,summary,reporter,owner,description,status,'
+        self.assertEqual((u'id,summary,reporter,owner,description,status,'
                           'keywords,cc\r\n1,Foo,santa,,Bar,,,\r\n',
                           'text/csv;charset=utf-8', 'csv'), csv)
 
@@ -89,8 +77,7 @@ class TicketConversionTestCase(unittest.TestCase):
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'csv')
         self.assertEqual(
-            ('\xef\xbb\xbf'
-             'id,summary,reporter,owner,description,status,keywords,cc\r\n'
+            ('id,summary,reporter,owner,description,status,keywords,cc\r\n'
              '1,Foo,santa@…,joe@…,Bar,,,cc1 cc2@…\r\n',
              'text/csv;charset=utf-8', 'csv'),
             csv)
@@ -98,8 +85,7 @@ class TicketConversionTestCase(unittest.TestCase):
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'csv')
         self.assertEqual(
-            ('\xef\xbb\xbf'
-             'id,summary,reporter,owner,description,status,keywords,cc\r\n'
+            ('id,summary,reporter,owner,description,status,keywords,cc\r\n'
              '1,Foo,santa@example.org,joe@example.org,Bar,,,'
              'cc1 cc2@example.org\r\n',
              'text/csv;charset=utf-8', 'csv'),
@@ -109,8 +95,7 @@ class TicketConversionTestCase(unittest.TestCase):
         ticket = self._create_a_ticket()
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'tab')
-        self.assertEqual(('\xef\xbb\xbf'
-                          'id\tsummary\treporter\towner\tdescription\tstatus\t'
+        self.assertEqual(('id\tsummary\treporter\towner\tdescription\tstatus\t'
                           'keywords\tcc\r\n1\tFoo\tsanta\t\tBar\t\t\t\r\n',
                           'text/tab-separated-values;charset=utf-8', 'tsv'),
                          csv)
@@ -120,8 +105,7 @@ class TicketConversionTestCase(unittest.TestCase):
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'tab')
         self.assertEqual(
-            ('\xef\xbb\xbf'
-             'id\tsummary\treporter\towner\tdescription\tstatus\tkeywords\t'
+            ('id\tsummary\treporter\towner\tdescription\tstatus\tkeywords\t'
              'cc\r\n'
              '1\tFoo\tsanta@…\tjoe@…\tBar\t\t\tcc1 cc2@…\r\n',
              'text/tab-separated-values;charset=utf-8', 'tsv'),
@@ -130,8 +114,7 @@ class TicketConversionTestCase(unittest.TestCase):
         csv = self.mimeview.convert_content(self.req, 'trac.ticket.Ticket',
                                             ticket, 'tab')
         self.assertEqual(
-            ('\xef\xbb\xbf'
-             'id\tsummary\treporter\towner\tdescription\tstatus\tkeywords\t'
+            ('id\tsummary\treporter\towner\tdescription\tstatus\tkeywords\t'
              'cc\r\n'
              '1\tFoo\tsanta@example.org\tjoe@example.org\tBar\t\t\t'
              'cc1 cc2@example.org\r\n',
@@ -160,8 +143,7 @@ Bar
 
 
 def suite():
-    return unittest.makeSuite(TicketConversionTestCase)
-
+    return unittest.makeSuite(TicketConversionTestCase, 'test')
 
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

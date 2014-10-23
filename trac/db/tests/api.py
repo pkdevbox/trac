@@ -1,36 +1,23 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2005-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
 import os
 import unittest
 
-import trac.tests.compat
 from trac.db.api import DatabaseManager, _parse_db_str, get_column_names, \
                         with_transaction
-from trac.db_default import schema as default_schema
 from trac.db.schema import Column, Table
 from trac.test import EnvironmentStub, Mock
 from trac.util.concurrency import ThreadLocal
 
 
 class Connection(object):
-
+    
     committed = False
     rolledback = False
-
+    
     def commit(self):
         self.committed = True
-
+    
     def rollback(self):
         self.rolledback = True
 
@@ -39,26 +26,33 @@ class Error(Exception):
     pass
 
 
-def make_env(get_cnx):
-    from trac.core import ComponentManager
-    return Mock(ComponentManager, components={DatabaseManager:
-             Mock(get_connection=get_cnx,
-                  _transaction_local=ThreadLocal(wdb=None, rdb=None))})
+class MockDatabaseManager(object):
+    def __init__(self):
+        self._transaction_local = ThreadLocal(db=None)
+        
+class MinimalEnv(object):
+    def __init__(self, db=None):
+        self.db = db
+        self.components = {DatabaseManager: MockDatabaseManager()}
+    def get_db_cnx(self):
+        if self.db is Connection:
+            return Connection()
+        return self.db
 
 
 class WithTransactionTest(unittest.TestCase):
 
     def test_successful_transaction(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(db)
         @with_transaction(env)
         def do_transaction(db):
             self.assertTrue(not db.committed and not db.rolledback)
         self.assertTrue(db.committed and not db.rolledback)
-
+        
     def test_failed_transaction(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(db)
         try:
             @with_transaction(env)
             def do_transaction(db):
@@ -68,9 +62,9 @@ class WithTransactionTest(unittest.TestCase):
         except Error:
             pass
         self.assertTrue(not db.committed and db.rolledback)
-
+        
     def test_implicit_nesting_success(self):
-        env = make_env(Connection)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         @with_transaction(env)
         def level0(db):
@@ -85,7 +79,7 @@ class WithTransactionTest(unittest.TestCase):
         self.assertTrue(dbs[0].committed and not dbs[0].rolledback)
 
     def test_implicit_nesting_failure(self):
-        env = make_env(Connection)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         try:
             @with_transaction(env)
@@ -110,7 +104,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_explicit_success(self):
         db = Connection()
-        env = make_env(lambda: None)
+        env = MinimalEnv(None)
         @with_transaction(env, db)
         def do_transaction(idb):
             self.assertTrue(idb is db)
@@ -119,7 +113,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_explicit_failure(self):
         db = Connection()
-        env = make_env(lambda: None)
+        env = MinimalEnv(None)
         try:
             @with_transaction(env, db)
             def do_transaction(idb):
@@ -133,7 +127,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_implicit_in_explicit_success(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         @with_transaction(env, db)
         def level0(db):
@@ -149,7 +143,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_implicit_in_explicit_failure(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         try:
             @with_transaction(env, db)
@@ -170,7 +164,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_explicit_in_implicit_success(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         @with_transaction(env)
         def level0(db):
@@ -186,7 +180,7 @@ class WithTransactionTest(unittest.TestCase):
 
     def test_explicit_in_implicit_failure(self):
         db = Connection()
-        env = make_env(lambda: db)
+        env = MinimalEnv(Connection)
         dbs = [None, None]
         try:
             @with_transaction(env)
@@ -206,7 +200,7 @@ class WithTransactionTest(unittest.TestCase):
         self.assertTrue(not dbs[0].committed and dbs[0].rolledback)
 
     def test_invalid_nesting(self):
-        env = make_env(Connection)
+        env = MinimalEnv(Connection)
         try:
             @with_transaction(env)
             def level0(db):
@@ -292,35 +286,44 @@ class StringsTestCase(unittest.TestCase):
         self.env.reset_db()
 
     def test_insert_unicode(self):
-        self.env.db_transaction(
-                "INSERT INTO system (name,value) VALUES (%s,%s)",
-                ('test-unicode', u'ünicöde'))
-        self.assertEqual([(u'ünicöde',)], self.env.db_query(
-            "SELECT value FROM system WHERE name='test-unicode'"))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('INSERT INTO system (name,value) VALUES (%s,%s)',
+                       ('test-unicode', u'ünicöde'))
+        db.commit()
+        cursor = db.cursor()
+        cursor.execute("SELECT value FROM system WHERE name='test-unicode'")
+        self.assertEqual([(u'ünicöde',)], cursor.fetchall())
 
     def test_insert_empty(self):
         from trac.util.text import empty
-        self.env.db_transaction(
-                "INSERT INTO system (name,value) VALUES (%s,%s)",
-                ('test-empty', empty))
-        self.assertEqual([(u'',)], self.env.db_query(
-            "SELECT value FROM system WHERE name='test-empty'"))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('INSERT INTO system (name,value) VALUES (%s,%s)',
+                       ('test-empty', empty))
+        db.commit()
+        cursor = db.cursor()
+        cursor.execute("SELECT value FROM system WHERE name='test-empty'")
+        self.assertEqual([(u'',)], cursor.fetchall())
 
     def test_insert_markup(self):
         from genshi.core import Markup
-        self.env.db_transaction(
-                "INSERT INTO system (name,value) VALUES (%s,%s)",
-                ('test-markup', Markup(u'<em>märkup</em>')))
-        self.assertEqual([(u'<em>märkup</em>',)], self.env.db_query(
-            "SELECT value FROM system WHERE name='test-markup'"))
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('INSERT INTO system (name,value) VALUES (%s,%s)',
+                       ('test-markup', Markup(u'<em>märkup</em>')))
+        db.commit()
+        cursor = db.cursor()
+        cursor.execute("SELECT value FROM system WHERE name='test-markup'")
+        self.assertEqual([(u'<em>märkup</em>',)], cursor.fetchall())
 
     def test_quote(self):
-        with self.env.db_query as db:
-            cursor = db.cursor()
-            cursor.execute('SELECT 1 AS %s' % \
-                           db.quote(r'alpha\`\"\'\\beta``gamma""delta'))
-            self.assertEqual(r'alpha\`\"\'\\beta``gamma""delta',
-                             get_column_names(cursor)[0])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('SELECT 1 AS %s' % \
+                       db.quote(r'alpha\`\"\'\\beta``gamma""delta'))
+        self.assertEqual(r'alpha\`\"\'\\beta``gamma""delta',
+                         get_column_names(cursor)[0])
 
     def test_quoted_id_with_percent(self):
         db = self.env.get_read_db()
@@ -397,7 +400,8 @@ class StringsTestCase(unittest.TestCase):
 class ConnectionTestCase(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub()
-        self.schema = [
+        self.db = self.env.get_db_cnx()
+        self.tables = [
             Table('HOURS', key='ID')[
                 Column('ID', auto_increment=True),
                 Column('AUTHOR')],
@@ -406,95 +410,96 @@ class ConnectionTestCase(unittest.TestCase):
                 Column('author')
             ]
         ]
-        self.env.global_databasemanager.drop_tables(self.schema)
-        self.env.global_databasemanager.create_tables(self.schema)
+        self._drop_tables(self.tables)
+        self._create_tables(self.tables)
 
     def tearDown(self):
-        self.env.global_databasemanager.drop_tables(self.schema)
+        self._drop_tables(self.tables)
         self.env.reset_db()
 
-    def test_get_last_id(self):
-        q = "INSERT INTO report (author) VALUES ('anonymous')"
-        with self.env.db_transaction as db:
-            cursor = db.cursor()
-            cursor.execute(q)
-            # Row ID correct before...
-            id1 = db.get_last_id(cursor, 'report')
-            db.commit()
-            cursor.execute(q)
-            # ... and after commit()
-            db.commit()
-            id2 = db.get_last_id(cursor, 'report')
+    def _create_tables(self, tables):
+        @self.env.with_transaction()
+        def do_create(db):
+            connector = DatabaseManager(self.env).get_connector()[0]
+            cursor = self.db.cursor()
+            for table in tables:
+                for sql in connector.to_sql(table):
+                    cursor.execute(sql)
 
+    def _drop_tables(self, tables):
+        @self.env.with_transaction()
+        def do_drop(db):
+            for table in tables:
+                self.db.drop_table(table.name)
+
+    def test_get_last_id(self):
+        c = self.db.cursor()
+        q = "INSERT INTO report (author) VALUES ('anonymous')"
+        c.execute(q)
+        # Row ID correct before...
+        id1 = self.db.get_last_id(c, 'report')
         self.assertNotEqual(0, id1)
+        self.db.commit()
+        c.execute(q)
+        self.db.commit()
+        # ... and after commit()
+        id2 = self.db.get_last_id(c, 'report')
         self.assertEqual(id1 + 1, id2)
 
     def test_update_sequence_default_column(self):
-        with self.env.db_transaction as db:
-            db("INSERT INTO report (id, author) VALUES (42, 'anonymous')")
-            cursor = db.cursor()
-            db.update_sequence(cursor, 'report', 'id')
-
-        self.env.db_transaction(
-            "INSERT INTO report (author) VALUES ('next-id')")
-
-        self.assertEqual(43, self.env.db_query(
-                "SELECT id FROM report WHERE author='next-id'")[0][0])
+        cursor = self.db.cursor()
+        cursor.execute("""
+            INSERT INTO report (id, author) VALUES (42, 'anonymous')
+            """)
+        self.db.commit()
+        self.db.update_sequence(cursor, 'report', 'id')
+        self.db.commit()
+        cursor.execute("INSERT INTO report (author) VALUES ('next-id')")
+        self.db.commit()
+        cursor.execute("SELECT id FROM report WHERE author='next-id'")
+        self.assertEqual(43, cursor.fetchall()[0][0])
 
     def test_update_sequence_nondefault_column(self):
-        with self.env.db_transaction as db:
-            cursor = db.cursor()
-            cursor.execute(
-                "INSERT INTO blog (bid, author) VALUES (42, 'anonymous')")
-            db.update_sequence(cursor, 'blog', 'bid')
+        db = self.db
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO blog (bid, author) VALUES (42, 'anonymous')")
+        db.commit()
 
-        self.env.db_transaction(
-            "INSERT INTO blog (author) VALUES ('next-id')")
+        db.update_sequence(cursor, 'blog', 'bid')
+        db.commit()
+        cursor.execute("INSERT INTO blog (author) VALUES ('next-id')")
+        db.commit()
 
-        self.assertEqual(43, self.env.db_query(
-            "SELECT bid FROM blog WHERE author='next-id'")[0][0])
+        cursor.execute("SELECT bid FROM blog WHERE author='next-id'")
+        self.assertEqual(43, cursor.fetchall()[0][0])
 
     def test_identifiers_need_quoting(self):
         """Test for regression described in comment:4:ticket:11512."""
-        with self.env.db_transaction as db:
-            db("INSERT INTO %s (%s, %s) VALUES (42, 'anonymous')"
-               % (db.quote('HOURS'), db.quote('ID'), db.quote('AUTHOR')))
-            cursor = db.cursor()
-            db.update_sequence(cursor, 'HOURS', 'ID')
+        db = self.db
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO %s (%s, %s) VALUES (42, 'anonymous')"
+            % (db.quote('HOURS'), db.quote('ID'), db.quote('AUTHOR')))
+        db.commit()
+        db.update_sequence(cursor, 'HOURS', 'ID')
+        db.commit()
 
-        with self.env.db_transaction as db:
-            cursor = db.cursor()
-            cursor.execute(
-                "INSERT INTO %s (%s) VALUES ('next-id')"
-                % (db.quote('HOURS'), db.quote('AUTHOR')))
-            last_id = db.get_last_id(cursor, 'HOURS', 'ID')
+        cursor.execute(
+            "INSERT INTO %s (%s) VALUES ('next-id')"
+            % (db.quote('HOURS'), db.quote('AUTHOR')))
+        db.commit()
+        last_id = db.get_last_id(cursor, 'HOURS', 'ID')
 
         self.assertEqual(43, last_id)
-
-    def test_table_names(self):
-        schema = default_schema + self.schema
-        with self.env.db_query as db:
-            db_tables = db.get_table_names()
-            self.assertEqual(len(schema), len(db_tables))
-            for table in schema:
-                self.assertIn(table.name, db_tables)
-
-    def test_get_column_names(self):
-        schema = default_schema + self.schema
-        with self.env.db_transaction as db:
-            for table in schema:
-                db_columns = db.get_column_names(table.name)
-                self.assertEqual(len(table.columns), len(db_columns))
-                for column in table.columns:
-                    self.assertIn(column.name, db_columns)
 
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(ParseConnectionStringTestCase))
-    suite.addTest(unittest.makeSuite(StringsTestCase))
-    suite.addTest(unittest.makeSuite(ConnectionTestCase))
-    suite.addTest(unittest.makeSuite(WithTransactionTest))
+    suite.addTest(unittest.makeSuite(ParseConnectionStringTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(StringsTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(ConnectionTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(WithTransactionTest, 'test'))
     return suite
 
 

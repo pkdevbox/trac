@@ -6,7 +6,7 @@
       fragId = parseInt(fragId.substr(3));
     if (snap == undefined)
       snap = false;
-
+    
     var count = 1;
     return this.each(function() {
       // Use first child <a> as a trigger, or generate a trigger from the text
@@ -14,11 +14,11 @@
       if (trigger.length == 0) {
         trigger = $("<a" + (snap? " id='no" + count + "'": "")
             + " href='#no" + count + "'></a>");
-        trigger.html($(this).html());
+        trigger.text($(this).text());
         $(this).text("");
         $(this).append(trigger);
       }
-
+      
       trigger.click(function() {
         var div = $(this.parentNode.parentNode).toggleClass("collapsed");
         return snap && !div.hasClass("collapsed");
@@ -59,7 +59,7 @@
             row_headers.eq(i*k+j).css('display', 'none');
           // create a recovery button and its "show" callback
           recovery_area.prepend($("<span></span>").addClass("recover")
-            .text(_("Show %(title)s", {title: th.text()}))
+            .text(babel.format(_("Show %(title)s"), {title: th.text()}))
             .click(function() {
               $(this).remove();
               th.show();
@@ -74,8 +74,8 @@
         };
         $(this).click(hide)
           .css('cursor', 'pointer')
-          .attr('title', _("%(title)s (click to hide column)",
-                           {title: $(this).attr('title')}));
+          .attr('title', babel.format(_("%(title)s (click to hide column)"),
+                                      {title: $(this).attr('title')}));
       });
   }
 

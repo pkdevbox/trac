@@ -1,4 +1,4 @@
-# -*- Makefile -*- configuration file sample
+# -*- Makefile -*- configuration file sample 
 #
 # Copy to Makefile.cfg and adapt to your local environment.
 #
@@ -29,9 +29,8 @@ python.27 =
 #
 #  (one of them can be selected with `make db=<backend>`)
 
-# db URIs
+# db URIs 
 # <backend>.uri = <db:params>
-sqlite.uri = sqlite:test.db
 mysql.uri = mysql://tracuser:tracpassword@localhost/trac
 postgres.uri = postgres://tracuser:tracpassword@localhost:5432/trac?schema=tractest
 
@@ -63,11 +62,6 @@ postgres.python = 26
 
 env = ~/tracenvs
 auth = *,~/tracenvs/htdigest.realm,realm
-
-# ----------------------------------------------------------------------------
-# Settings for the documentation
-
-dotpath = /usr/local/bin/dot
 
 # ----------------------------------------------------------------------------
 # Custom rules - let your imagination go wild ;-)

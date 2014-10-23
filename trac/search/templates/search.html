@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -17,15 +7,15 @@
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <head>
-    <title py:choose="">
-      <py:when test="query">Search Results</py:when>
-      <py:otherwise>Search</py:otherwise>
-    </title>
+    <title>Search<py:if test="query"> Results</py:if></title>
     <py:if test="results">
         <meta name="startIndex" content="${results.span[0] + 1}"/>
         <meta name="totalResults" content="$results.num_items"/>
         <meta name="itemsPerPage" content="$results.max_per_page"/>
     </py:if>
+    <script type="text/javascript">
+      jQuery(document).ready(function($) {$("#q").get(0).focus()});
+    </script>
   </head>
   <body>
     <div id="content" class="search">
@@ -33,14 +23,14 @@
       <h1><label for="q">Search</label></h1>
       <form id="fullsearch" action="${href.search()}" method="get">
         <p>
-          <input type="text" id="q" name="q" class="trac-autofocus" size="40" value="${query}" />
+          <input type="text" id="q" name="q" size="40" value="${query}" />
           <input type="hidden" name="noquickjump" value="1" />
           <input type="submit" value="${_('Search')}" />
         </p>
         <p class="filters">
           <py:for each="filter in filters">
             <input type="checkbox" id="${filter.name}" name="${filter.name}"
-                   checked="${filter.active or None}" />
+                   checked="${filter.active and 'checked' or None}" />
             <label for="${filter.name}">${filter.label}</label>
           </py:for>
        </p>
@@ -62,12 +52,10 @@
             <py:for each="result in results">
               <dt><a href="${result.href}" class="searchable">${result.title}</a></dt>
               <dd class="searchable">${result.excerpt}</dd>
-              <py:choose>
-                <dd py:when="result.author" i18n:msg="author,date">
-                  By ${authorinfo(result.author)} &mdash; <span class="date">${result.date}</span>
-                </dd>
-                <dd py:otherwise=""><span class="date">${result.date}</span></dd>
-              </py:choose>
+              <dd>
+                <py:if test="result.author"><span class="author" i18n:msg="author">By ${format_author(result.author)}</span> &mdash;</py:if>
+                <span class="date">${result.date}</span>
+              </dd>
             </py:for>
           </dl>
         </div>

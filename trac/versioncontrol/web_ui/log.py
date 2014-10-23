@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2014 Edgewall Software
+# Copyright (C) 2003-2009 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2006 Christian Boos <cboos@edgewall.org>
 # All rights reserved.
@@ -18,25 +18,26 @@
 
 import re
 
-from genshi.builder import tag
 from genshi.core import Markup
+from genshi.builder import tag
 
-from trac.config import IntOption, ListOption
+from trac.config import IntOption
 from trac.core import *
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.resource import ResourceNotFound
 from trac.util import Ranges
+from trac.util.compat import any
 from trac.util.text import to_unicode, wrap
 from trac.util.translation import _
-from trac.versioncontrol.api import Changeset, RepositoryManager
+from trac.versioncontrol.api import RepositoryManager, Changeset, \
+                                    NoSuchChangeset
 from trac.versioncontrol.web_ui.changeset import ChangesetModule
 from trac.versioncontrol.web_ui.util import *
-from trac.web.api import IRequestHandler
-from trac.web.chrome import (Chrome, INavigationContributor, add_ctxtnav,
-                             add_link, add_script, add_script_data,
-                             add_stylesheet, auth_link, web_context)
-from trac.wiki import IWikiSyntaxProvider, WikiParser
-
+from trac.web import IRequestHandler
+from trac.web.chrome import add_ctxtnav, add_link, add_stylesheet, \
+                            INavigationContributor, Chrome
+from trac.wiki import IWikiSyntaxProvider, WikiParser 
 
 class LogModule(Component):
 
@@ -44,13 +45,8 @@ class LogModule(Component):
                IWikiSyntaxProvider)
 
     default_log_limit = IntOption('revisionlog', 'default_log_limit', 100,
-        """Default value for the limit argument in the TracRevisionLog.
-        (''since 0.11'')""")
-
-    graph_colors = ListOption('revisionlog', 'graph_colors',
-        ['#cc0', '#0c0', '#0cc', '#00c', '#c0c', '#c00'],
-        doc="""Comma-separated list of colors to use for the TracRevisionLog
-        graph display. (''since 1.0'')""")
+        """Default value for the limit argument in the TracRevisionLog
+        (''since 0.11'').""")
 
     # INavigationContributor methods
 
@@ -87,42 +83,37 @@ class LogModule(Component):
 
         rm = RepositoryManager(self.env)
         reponame, repos, path = rm.get_repository_by_path(path)
-
+        
         if not repos:
-            if path == '/':
-                raise TracError(_("No repository specified and no default"
-                                  " repository configured."))
-            else:
-                raise ResourceNotFound(_("Repository '%(repo)s' not found",
-                                         repo=reponame or path.strip('/')))
+            raise ResourceNotFound(_("Repository '%(repo)s' not found",
+                                   repo=reponame))
 
         if reponame != repos.reponame:  # Redirect alias
             qs = req.query_string
             req.redirect(req.href.log(repos.reponame or None, path)
-                         + ('?' + qs if qs else ''))
+                         + (qs and '?' + qs or ''))
 
         normpath = repos.normalize_path(path)
-        # if `revs` parameter is given, then we're restricted to the
+        # if `revs` parameter is given, then we're restricted to the 
         # corresponding revision ranges.
-        # If not, then we're considering all revisions since `rev`,
+        # If not, then we're considering all revisions since `rev`, 
         # on that path, in which case `revranges` will be None.
         revranges = None
         if revs:
             try:
-                revranges = self._normalize_ranges(repos, path, revs)
+                revranges = Ranges(revs)
                 rev = revranges.b
             except ValueError:
                 pass
-        rev = repos.normalize_rev(rev)
+        rev = unicode(repos.normalize_rev(rev))
         display_rev = repos.display_rev
 
         # The `history()` method depends on the mode:
         #  * for ''stop on copy'' and ''follow copies'', it's `Node.history()`
         #    unless explicit ranges have been specified
         #  * for ''show only add, delete'' we're using
-        #   `Repository.get_path_history()`
+        #   `Repository.get_path_history()` 
         cset_resource = repos.resource.child('changeset')
-        show_graph = False
         if mode == 'path_history':
             def history():
                 for h in repos.get_path_history(path, rev):
@@ -142,12 +133,12 @@ class LogModule(Component):
                         node_history = list(node.get_history(2))
                         p, rev, chg = node_history[0]
                         if repos.rev_older_than(rev, a):
-                            break  # simply skip, no separator
+                            break # simply skip, no separator
                         if 'CHANGESET_VIEW' in req.perm(cset_resource(id=rev)):
                             if expected_next_item:
                                 # check whether we're continuing previous range
                                 np, nrev, nchg = expected_next_item
-                                if rev != nrev:  # no, we need a separator
+                                if rev != nrev: # no, we need a separator
                                     yield (np, nrev, None)
                             yield node_history[0]
                         if len(node_history) > 1:
@@ -160,9 +151,6 @@ class LogModule(Component):
                 if expected_next_item:
                     yield (expected_next_item[0], expected_next_item[1], None)
         else:
-            show_graph = path == '/' and not verbose \
-                         and not repos.has_linear_changesets
-
             def history():
                 node = get_existing_node(req, repos, path, rev)
                 for h in node.get_history():
@@ -183,7 +171,7 @@ class LogModule(Component):
                 'path': old_path, 'rev': old_rev, 'existing_rev': old_rev,
                 'change': old_chg, 'depth': depth,
             }
-
+            
             if old_chg == Changeset.DELETE:
                 item['existing_rev'] = repos.previous_rev(old_rev, old_path)
             if not (mode == 'path_history' and old_chg == Changeset.EDIT):
@@ -197,7 +185,7 @@ class LogModule(Component):
                     break
                 elif mode == 'path_history':
                     depth -= 1
-            if old_chg is None:  # separator entry
+            if old_chg is None: # separator entry
                 stop_limit = limit
             else:
                 count += 1
@@ -205,27 +193,13 @@ class LogModule(Component):
             if count >= stop_limit:
                 break
             previous_path = old_path
-        if not info:
+        if info == []:
             node = get_existing_node(req, repos, path, rev)
             if repos.rev_older_than(stop_rev, node.created_rev):
                 # FIXME: we should send a 404 error here
                 raise TracError(_("The file or directory '%(path)s' doesn't "
-                                  "exist at revision %(rev)s or at any "
-                                  "previous revision.", path=path,
-                                  rev=display_rev(rev)),
-                                _('Nonexistent path'))
-
-        # Generate graph data
-        graph = {}
-        if show_graph:
-            threads, vertices, columns = \
-                make_log_graph(repos, (item['rev'] for item in info))
-            graph.update(threads=threads, vertices=vertices, columns=columns,
-                         colors=self.graph_colors,
-                         line_width=0.04, dot_radius=0.1)
-            add_script(req, 'common/js/excanvas.js', ie_if='IE')
-            add_script(req, 'common/js/log_graph.js')
-            add_script_data(req, graph=graph)
+                    "exist at revision %(rev)s or at any previous revision.", 
+                    path=path, rev=display_rev(rev)), _('Nonexistent path'))
 
         def make_log_href(path, **args):
             link_rev = rev
@@ -238,7 +212,7 @@ class LogModule(Component):
             return req.href.log(repos.reponame or None, path, **params)
 
         if format in ('rss', 'changelog'):
-            info = [i for i in info if i['change']]  # drop separators
+            info = [i for i in info if i['change']] # drop separators
             if info and count > limit:
                 del info[-1]
         elif info and count >= limit:
@@ -252,16 +226,15 @@ class LogModule(Component):
                 older_revisions_href = make_log_href(next_path, rev=next_rev,
                                                      revs=next_revranges)
                 add_link(req, 'next', older_revisions_href,
-                         _('Revision Log (restarting at %(path)s, rev. '
-                           '%(rev)s)', path=next_path,
-                           rev=display_rev(next_rev)))
+                    _('Revision Log (restarting at %(path)s, rev. %(rev)s)',
+                    path=next_path, rev=display_rev(next_rev)))
             # only show fully 'limit' results, use `change == None` as a marker
             info[-1]['change'] = None
-
+        
         revisions = [i['rev'] for i in info]
         changes = get_changes(repos, revisions, self.log)
         extra_changes = {}
-
+        
         if format == 'changelog':
             for rev in revisions:
                 changeset = changes[rev]
@@ -272,37 +245,38 @@ class LogModule(Component):
                 files = []
                 actions = []
                 for cpath, kind, chg, bpath, brev in changeset.get_changes():
-                    files.append(bpath if chg == Changeset.DELETE else cpath)
+                    files.append(chg == Changeset.DELETE and bpath or cpath)
                     actions.append(chg)
                 cs['files'] = files
                 cs['actions'] = actions
                 extra_changes[rev] = cs
 
         data = {
-            'context': web_context(req, 'source', path, parent=repos.resource),
+            'context': Context.from_request(req, 'source', path,
+                                            parent=repos.resource),
             'reponame': repos.reponame or None, 'repos': repos,
             'path': path, 'rev': rev, 'stop_rev': stop_rev,
             'display_rev': display_rev, 'revranges': revranges,
-            'mode': mode, 'verbose': verbose, 'limit': limit,
+            'mode': mode, 'verbose': verbose, 'limit' : limit,
             'items': info, 'changes': changes, 'extra_changes': extra_changes,
-            'graph': graph,
-            'wiki_format_messages': self.config['changeset']
-                                    .getbool('wiki_format_messages')
+            'wiki_format_messages':
+            self.config['changeset'].getbool('wiki_format_messages')
         }
 
         if format == 'changelog':
             return 'revisionlog.txt', data, 'text/plain'
         elif format == 'rss':
-            data['context'] = web_context(req, 'source',
-                                          path, parent=repos.resource,
-                                          absurls=True)
+            data['email_map'] = Chrome(self.env).get_email_map()
+            data['context'] = Context.from_request(req, 'source', 
+                                                   path, parent=repos.resource,
+                                                   absurls=True)
             return 'revisionlog.rss', data, 'application/rss+xml'
 
         item_ranges = []
         range = []
         for item in info:
-            if item['change'] is None:  # separator
-                if range:  # start new range
+            if item['change'] is None: # separator
+                if range: # start new range
                     range.append(item)
                     item_ranges.append(range)
                     range = []
@@ -323,18 +297,17 @@ class LogModule(Component):
 
         rss_href = make_log_href(path, format='rss', revs=revs,
                                  stop_rev=stop_rev)
-        add_link(req, 'alternate', auth_link(req, rss_href), _('RSS Feed'),
+        add_link(req, 'alternate', rss_href, _('RSS Feed'),
                  'application/rss+xml', 'rss')
         changelog_href = make_log_href(path, format='changelog', revs=revs,
                                        stop_rev=stop_rev)
-        add_link(req, 'alternate', changelog_href, _('ChangeLog'),
-                 'text/plain')
+        add_link(req, 'alternate', changelog_href, _('ChangeLog'), 'text/plain')
 
-        add_ctxtnav(req, _('View Latest Revision'),
+        add_ctxtnav(req, _('View Latest Revision'), 
                     href=req.href.browser(repos.reponame or None, path))
         if 'next' in req.chrome['links']:
             next = req.chrome['links']['next'][0]
-            add_ctxtnav(req, tag.span(tag.a(_('Older Revisions'),
+            add_ctxtnav(req, tag.span(tag.a(_('Older Revisions'), 
                                             href=next['href']),
                                       Markup(' &rarr;')))
 
@@ -344,7 +317,7 @@ class LogModule(Component):
 
     REV_RANGE = r"(?:%s|%s)" % (Ranges.RE_STR, ChangesetModule.CHANGESET_ID)
     #                          int rev ranges or any kind of rev
-
+    
     def get_wiki_syntax(self):
         yield (
             # [...] form, starts with optional intertrac: [T... or [trac ...
@@ -386,7 +359,7 @@ class LogModule(Component):
                 indexes = [sep in match and match.index(sep) for sep in ':@']
                 idx = min([i for i in indexes if i is not False])
                 path, revs = match[:idx], match[idx+1:]
-
+        
         rm = RepositoryManager(self.env)
         try:
             reponame, repos, path = rm.get_repository_by_path(path)
@@ -396,26 +369,23 @@ class LogModule(Component):
                     repos = rm.get_repository(reponame)
 
             if repos:
+                revranges = None
+                if any(c in revs for c in ':-,'):
+                    revranges = self._normalize_ranges(repos, path, revs)
+                    if revranges:
+                        revs = None
                 if 'LOG_VIEW' in formatter.perm:
-                    revranges = None
-                    if any(c in revs for c in ':-,'):
-                        try:
-                            # try to parse into integer rev ranges
-                            revranges = Ranges(revs.replace(':', '-'),
-                                               reorder=True)
-                            revs = str(revranges)
-                        except ValueError:
-                            revranges = self._normalize_ranges(repos, path,
-                                                               revs)
                     if revranges:
                         href = formatter.href.log(repos.reponame or None,
-                                                  path or '/',
-                                                  revs=revs)
+                                                  path or '/', 
+                                                  revs=str(revranges))
                     else:
-                        repos.normalize_rev(revs)  # verify revision
+                        try:
+                            rev = repos.normalize_rev(revs)
+                        except NoSuchChangeset:
+                            rev = None
                         href = formatter.href.log(repos.reponame or None,
-                                                  path or '/',
-                                                  rev=revs or None)
+                                                  path or '/', rev=rev)
                     if query and '?' in href:
                         query = '&' + query[1:]
                     return tag.a(label, class_='source',
@@ -425,28 +395,26 @@ class LogModule(Component):
                 errmsg = _("Repository '%(repo)s' not found", repo=reponame)
             else:
                 errmsg = _("No default repository defined")
-        except TracError as e:
+        except TracError, e:
             errmsg = to_unicode(e)
         return tag.a(label, class_='missing source', title=errmsg)
 
     LOG_LINK_RE = re.compile(r"([^@:]*)[@:]%s?" % REV_RANGE)
 
     def _normalize_ranges(self, repos, path, revs):
+        ranges = revs.replace(':', '-')
         try:
             # fast path; only numbers
-            return Ranges(revs.replace(':', '-'), reorder=True)
+            return Ranges(ranges, reorder=True) 
         except ValueError:
             # slow path, normalize each rev
-            ranges = []
-            for range in revs.split(','):
-                try:
-                    a, b = range.replace(':', '-').split('-')
-                    range = (a, b)
-                except ValueError:
-                    range = (range,)
-                ranges.append('-'.join(str(repos.normalize_rev(r))
-                                       for r in range))
-            ranges = ','.join(ranges)
+            splitted_ranges = re.split(r'([-,])', ranges)
+            try:
+                revs = [repos.normalize_rev(r) for r in splitted_ranges[::2]]
+            except NoSuchChangeset:
+                return None
+            seps = splitted_ranges[1::2] + ['']
+            ranges = ''.join([str(rev)+sep for rev, sep in zip(revs, seps)])
             try:
                 return Ranges(ranges)
             except ValueError:

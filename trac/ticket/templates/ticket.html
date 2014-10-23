@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2007-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -23,16 +13,27 @@
       <py:when test="ticket.exists">#${ticket.id} (${ticket.summary})</py:when>
       <py:otherwise>New Ticket</py:otherwise>
     </title>
-    <script py:if="ticket.exists" type="text/javascript" src="${chrome.htdocs_location}js/threaded_comments.js"></script>
     <script type="text/javascript" py:choose="">
       jQuery(document).ready(function($) {
         $("div.description").find("h1,h2,h3,h4,h5,h6").addAnchor(_("Link to this section"));
         $(".foldable").enableFolding(false, true);
-      <py:when test="ticket.exists">/*<![CDATA[*/
-        $("#attachments").toggleClass("collapsed");
-        $("#trac-up-attachments").click(function () {
-          $("#attachments").removeClass("collapsed");
-          return true;
+      <py:when test="ticket.exists">
+        var args = {realm: "ticket", id: ${ticket.id}, escape_newlines: ${int(preserve_newlines)}}
+        $("#comment").autoPreview("${href.wiki_render()}", args, function(textarea, text, rendered) {
+            $("#ticketchange div.comment").html(rendered);
+            if (rendered)
+              $("#ticketchange").show();
+            else if ($("#ticketchange ul.changes").length == 0)
+              $("#ticketchange").hide();
+        });
+        $("#trac-comment-editor textarea").autoPreview("${href.wiki_render()}", args,
+                                                       function(textarea, text, rendered) {
+          var comment = $("#trac-comment-editor").next("div.comment");
+          comment.html(rendered);
+          if (rendered)
+            comment.show();
+          else
+            comment.hide();
         });
         $("#modify").parent().toggleClass("collapsed");
         $(".trac-topnav a").click(function() { $("#modify").parent().removeClass("collapsed"); });
@@ -48,78 +49,22 @@
         }
         actions.click(updateActionFields);
         updateActionFields();
-
-        function setRevertHandler() {
-          $("button.trac-revert").click(function() {
-            var div = $("div", this);
-            var field_name = div[0].id.substr(7);
-            var field_value = div.text();
-            var input = $("#propertyform *[name=field_" + field_name + "]");
-            if (input.length > 0) {
-              if (input.filter("input[type=radio]").length > 0) {
-                input.val([field_value]);
-              } else if (input.filter("input[type=checkbox]").length > 0) {
-                input.val(field_value == "1" ? [field_value] : []);
-              } else {
-                input.val(field_value);
-              }
-            } else { // Special case for CC checkbox
-              input = $("#propertyform input[name=cc_update]").val([]);
-            }
-            input.change();
-            $(this).closest("li").remove();
-            return false;
-          });
-        }
-        setRevertHandler();
-
-        var comment_focused = false;
-        $("#comment").focus(function() { comment_focused = true; })
-                     .blur(function() { comment_focused = false; });
-        $("#propertyform").autoSubmit({preview: '1'}, function(data, reply) {
-          var items = $(reply);
-          // Update ticket box
-          $("#ticket").replaceWith(items.filter('#ticket'));
-          // Unthread, unrevert and update changelog
-          if (!$('#trac-comments-oldest').checked())
-            $('#trac-comments-oldest').click().change();
-          $("#changelog").replaceWith(items.filter("#changelog"));
-          if ($('#trac-comments-only-toggle').attr('checked'))
-            $('#trac-comments-only-toggle').click().attr('checked', true);
-          // Show warning
-          var new_changes = $("#changelog .trac-new");
-          $("#trac-edit-warning").toggle(new_changes.length != 0);
-          if (new_changes.length != 0)
-            $("#changelog").parent().show().removeClass("collapsed");
-          // Update view time
-          $("#propertyform input[name='view_time']").replaceWith(items.filter("input[name='view_time']"));
-          // Update preview
-          var preview = $("#ticketchange").html(items.filter('#preview').children());
-          var show_preview = preview.children().length != 0;
-          $("#ticketchange").toggle(show_preview);
-          setRevertHandler();
-          // Collapse property form if comment editor has focus
-          if (show_preview && comment_focused)
-            $("#modify").parent().addClass("collapsed");
-        }, "#ticketchange .trac-loading");
-        $("#trac-comment-editor").autoSubmit({preview_comment: '1'}, function(data, reply) {
-          var comment = $("#trac-comment-editor").next("div.comment").html(reply);
-          comment.toggle(comment.children().length != 0);
-        }, "#changelog .trac-loading");
-        /*]]>*/
       </py:when>
       <py:otherwise>
-        $("#propertyform").autoSubmit({preview: '1'}, function(data, reply) {
-          $('#ticket').replaceWith(reply);
-        }, "#ticket .trac-loading");
+        $("#field-summary").focus();
       </py:otherwise>
+      <py:if test="preview_mode">
+        $("#changelog").parent().toggleClass("collapsed");
+        $("#attachments").toggleClass("collapsed");
+        $("#trac-add-comment").scrollToTop();
+      </py:if>
       });
     </script>
   </head>
 
   <body>
-    <py:def function="commentref(prefix, cnum, cls=None)">
-      <a href="#comment:$cnum" class="$cls">$prefix$cnum</a>
+    <py:def function="commentref(prefix, cnum)">
+      <a href="#comment:$cnum">$prefix$cnum</a>
     </py:def>
 
     <div id="content" class="ticket"
@@ -131,50 +76,110 @@
                   has_edit_comment = 'TICKET_EDIT_COMMENT' in perm(ticket.resource);
                   has_property_editor = not version and version != 0 and not cnum_edit
                                         and (can_append or can_modify or can_edit or can_create)">
-
       <div class="trac-topnav" py:if="(ticket.exists or preview_mode) and has_property_editor">
-        <a href="#modify" title="Go to the ticket editor">Modify</a> &darr;
+        <a href="#propertyform" title="Go to the ticket editor">Modify</a> &darr;
       </div>
-      <h1 py:if="not ticket.exists">
-        Create New Ticket <span py:if="preview_mode and ticket.type" class="status">(${ticket.type})</span>
+      <h1 id="trac-ticket-title" py:choose="">
+        <py:when test="ticket.exists">
+          <a href="${href.ticket(ticket.id)}">Ticket #${ticket.id}</a>
+          <span class="status">(${ticket.status}<py:if
+              test="ticket.type"> ${ticket.type}</py:if><py:if
+              test="ticket.resolution">: ${ticket.resolution}</py:if>)</span>
+          <py:choose test="">
+            <py:when test="version is None" />
+            <py:when test="version == 0">
+              &mdash; <i18n:msg>at <a href="#comment:description">Initial Version</a></i18n:msg>
+            </py:when>
+            <py:otherwise>
+              &mdash; <i18n:msg params="version">at <a href="#comment:$version">Version $version</a></i18n:msg>
+            </py:otherwise>
+          </py:choose>
+        </py:when>
+        <py:otherwise>
+          Create New Ticket <span py:if="preview_mode and ticket.type" class="status">(${ticket.type})</span>
+        </py:otherwise>
       </h1>
 
-      <py:if test="ticket.exists">
-        <xi:include href="ticket_box.html" py:with="preview_mode = change_preview.fields"/>
+      <xi:include href="ticket_box.html" py:if="ticket.exists or preview_mode"/>
 
+      <py:if test="ticket.exists">
         <!--! do not show attachments for old versions of this ticket or for new tickets -->
         <py:if test="not version and version != 0 and ticket.exists">
           <xi:include href="list_of_attachments.html"
                       py:with="alist = attachments; foldable = True"/>
         </py:if>
 
-        <div style="${'display: none' if not changes else None}">
-          <div style="position: relative">
-            <form id="prefs" method="get" action="${href.prefs()}" style="position: absolute; right: 0">
-              <div id="trac-comments-order">
-                <input type="radio" id="trac-comments-oldest" name="trac-comments-order" value="oldest" checked="checked" />
-                <label for="trac-comments-oldest">Oldest first</label>
-                <input type="radio" id="trac-comments-newest" name="trac-comments-order" value="newest" />
-                <label for="trac-comments-newest">Newest first</label>
-                <span id="trac-threaded-toggle" style="display: none">
-                  <input type="radio" id="trac-comments-threaded" name="trac-comments-order" value="threaded" />
-                  <label for="trac-comments-threaded">Threaded</label>
-                </span>
-              </div>
-              <div>
-                <input id="trac-comments-only-toggle" type="checkbox" />
-                <label for="trac-comments-only-toggle">Comments only</label>
-              </div>
-            </form>
-          </div>
-
-          <h3 class="foldable">Change History <span class="trac-count">(${len(changes)})</span></h3>
-
+        <div py:if="ticket.exists and changes">
+          <h2 class="foldable">Change History</h2>
           <div id="changelog">
-            <py:for each="change in changes">
-              <div class="change${' trac-new' if change.date > start_time and 'attachment' not in change.fields else None}"
-                   id="${'trac-change-%d-%d' % (change.cnum, to_utimestamp(change.date)) if 'cnum' in change else None}">
+            <py:for each="change in changes"
+                    py:with="can_edit_comment = has_edit_comment or (authname and authname != 'anonymous'
+                                                                     and authname == change.author);
+                             show_editor = can_edit_comment and str(change.cnum) == cnum_edit;
+                             show_history = str(change.cnum) == cnum_hist;
+                             max_version = max(change.comment_history);
+                             comment_version = (max_version, int(cversion or 0))[show_history]">
+              <div class="change" id="${'cnum' in change and 'trac-change-%d' % change.cnum or None}">
+                <h3 class="change">
+                  <span class="threading" py:if="'cnum' in change"
+                        py:with="change_replies = replies.get(str(change.cnum), [])">
+                    <span id="comment:$change.cnum" class="cnum">${commentref('comment:', change.cnum)}</span>
+                    <py:if test="change_replies or 'replyto' in change">
+                      <py:if test="'replyto' in change">
+                        in reply to: ${commentref('&uarr;&nbsp;', change.replyto)}
+                        <py:if test="change_replies">; </py:if>
+                      </py:if>
+                      <py:if test="change_replies">
+                        <i18n:choose numeral="len(change_replies)">
+                          <span i18n:singular="">follow-up:</span>
+                          <span i18n:plural="">follow-ups:</span>
+                        </i18n:choose>
+                        <py:for each="reply in change_replies">
+                          ${commentref('&darr;&nbsp;', reply)}
+                        </py:for></py:if>
+                    </py:if>
+                  </span>
+                  <i18n:msg params="date, author">Changed ${dateinfo(change.date)} ago by ${authorinfo(change.author)}</i18n:msg>
+                </h3>
+                <py:if test="not show_editor and comment_version == max_version">
+                  <form py:if="'cnum' in change and can_edit_comment" method="get" action="#comment:${change.cnum}">
+                    <div class="inlinebuttons">
+                      <input type="hidden" name="cnum_edit" value="${change.cnum}"/>
+                      <input type="submit" value="${_('Edit')}" title="${_('Edit comment %(cnum)s', cnum=change.cnum)}"/>
+                    </div>
+                  </form>
+                  <form py:if="'cnum' in change and can_append" id="reply-to-comment-${change.cnum}"
+                        method="get" action="#comment">
+                    <div class="inlinebuttons">
+                      <input type="hidden" name="replyto" value="${change.cnum}"/>
+                      <input type="submit" value="${_('Reply')}" title="${_('Reply to comment %(cnum)s', cnum=change.cnum)}"/>
+                    </div>
+                  </form>
+                </py:if>
                 <xi:include href="ticket_change.html"/>
+                <div py:if="not show_editor and len(change.comment_history) > 1" py:choose=""
+                     class="trac-lastedit ${comment_version != max_version and 'trac-shade' or None}">
+                  <i18n:msg params="version, date, author" py:when="comment_version != max_version">
+                      Version ${comment_version}, edited ${dateinfo(change.comment_history[comment_version].date)} ago
+                      by ${authorinfo(change.comment_history[comment_version].author)}
+                  </i18n:msg>
+                  <i18n:msg params="date, author" py:otherwise="">
+                      Last edited ${dateinfo(change.comment_history[comment_version].date)} ago
+                      by ${authorinfo(change.comment_history[comment_version].author)}
+                  </i18n:msg>
+                  <py:if test="comment_version > 0">
+                    (<a href="${href.ticket(ticket.id, cnum_hist=change.cnum, cversion=comment_version - 1)
+                               }#comment:${change.cnum}">previous</a>)
+                  </py:if>
+                  <py:if test="comment_version &lt; max_version">
+                    (<a href="${href.ticket(ticket.id, cnum_hist=change.cnum, cversion=comment_version + 1)
+                               }#comment:${change.cnum}">next</a>)
+                  </py:if>
+                  <py:if test="comment_version > 0">
+                    (<a href="${href.ticket(ticket.id, action='comment-diff', cnum=change.cnum, 
+                                            version=comment_version)}">diff</a>)
+                  </py:if>
+                </div>
               </div>
             </py:for>
           </div>
@@ -183,35 +188,43 @@
       <!--! End of the section we don't show on initial new tickets -->
 
       <form py:if="has_property_editor" method="post" id="propertyform"
-            action="${href.ticket(ticket.id) + '#trac-add-comment' if ticket.exists
-                      else href.newticket() + '#ticket'}">
+            action="${ticket.exists and href.ticket(ticket.id) + '#trac-add-comment' or href.newticket()}">
         <!--! Add comment -->
-        <div py:if="ticket.exists and can_append" id="trac-add-comment"
-             class="${classes('field', 'trac-scroll' if preview_mode else None)}">
-          <h3 class="foldable" id="edit">Add Comment</h3>
-          <div>
-            <div id="trac-edit-warning" class="warning system-message"
-                 style="${'display: none' if start_time == ticket['changetime'] else None}"
-                 i18n:msg="">
-              This ticket has been modified since you started editing. You should review the
-              <em class="trac-new">other modifications</em> which have been appended above,
-              and any <em class="trac-conflict">conflicts</em> shown in the preview below.
-              You can nevertheless proceed and submit your changes if you wish so.
-            </div>
-            <!--! Comment field -->
-            <fieldset>
-              <label for="comment" i18n:msg="">You may use
-                <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a>
-                here.
-              </label>
-              <textarea id="comment" name="comment" class="wikitext trac-fullwidth trac-resizable" rows="10" cols="78">
+        <div py:if="ticket.exists and can_append" class="field"
+             py:with="show_comment_preview = (change_preview.fields or change_preview.comment) and cnum_edit is None">
+          <div class="trac-nav">
+            <a href="#content" title="View ticket fields and description">View</a> &uarr;
+          </div>
+          <h2 id="trac-add-comment">
+            <a id="edit" onfocus="$('#comment').get(0).focus()">Add a comment</a>
+          </h2>
+          <!--! Comment field -->
+          <fieldset class="iefix">
+            <label for="comment" i18n:msg="">You may use
+              <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a>
+              here.
+            </label>
+            <textarea id="comment" name="comment" class="wikitext trac-resizable" rows="10" cols="78">
 ${comment}</textarea>
-            </fieldset>
+          </fieldset>
+          <div py:if="preview_mode and chrome.warnings" i18n:msg="" class="warning system-message">
+            Warnings are shown at the <a href="#warning">top of the page</a>. The ticket validation
+            may have failed.
+          </div>
+          <!--! Preview of ticket changes -->
+          <div id="ticketchange" class="ticketdraft" style="${not show_comment_preview and 'display: none' or None}">
+            <h3 class="change" id="${'cnum' in change_preview and 'comment:%d' % change_preview.cnum or None}">
+              <span class="threading" py:if="'replyto' in change_preview">
+                in reply to: ${commentref('&uarr;&nbsp;', change_preview.replyto)}
+              </span>
+              <i18n:msg params="author">Changed by ${authorinfo(change_preview.author)}</i18n:msg>
+            </h3>
+            <xi:include href="ticket_change.html" py:with="change = change_preview"/>
           </div>
         </div>
 
         <div>
-          <h3 py:if="ticket.exists" class="foldable">Modify Ticket</h3>
+          <h2 py:if="ticket.exists" class="foldable">Modify Ticket</h2>
           <div id="modify">
             <!--! Properties -->
             <fieldset id="properties" py:if="can_modify or can_edit or can_create"
@@ -221,35 +234,37 @@ ${comment}</textarea>
                   <py:otherwise>Properties</py:otherwise>
               </legend>
               <table>
-                <col class="th" /><col class="td" /><col class="th" /><col class="td" />
                 <tr py:if="can_modify or can_create">
                   <th><label for="field-summary">Summary:</label></th>
                   <td class="fullrow" colspan="3">
                     <input type="text" id="field-summary" name="field_summary"
-                           class="${'trac-autofocus' if not ticket.exists and not preview_mode else None}"
-                           value="$ticket.summary" />
+                           value="$ticket.summary" size="70" />
                   </td>
                 </tr>
-                <tr py:if="only_for_admin">
-                  <th><label for="field-reporter">Reporter:</label></th>
-                  <td class="fullrow" colspan="3">
-                    <input type="text" id="field-reporter" name="field_reporter"
-                           value="${ticket.reporter}" />
-                  </td>
-                </tr>
-                <tr py:if="can_edit or can_create">
-                  <th><label for="field-description">Description:</label></th>
-                  <td class="fullrow" colspan="3">
-                    <fieldset>
-                      <label for="field-description" id="field-description-help" i18n:msg="">You may use
-                        <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a> here.
-                      </label>
-                      <textarea id="field-description" name="field_description"
-                                class="wikitext trac-fullwidth trac-resizable" rows="10" cols="68">
+                <py:if test="only_for_admin">
+                  <tr>
+                    <th><label for="field-reporter">Reporter:</label></th>
+                    <td class="fullrow" colspan="3">
+                      <input type="text" id="field-reporter" name="field_reporter"
+                             value="${ticket.reporter}" size="70" />
+                    </td>
+                  </tr>
+                </py:if>
+                <py:if test="can_edit or can_create">
+                  <tr>
+                    <th><label for="field-description">Description:</label></th>
+                    <td class="fullrow" colspan="3">
+                      <fieldset class="iefix">
+                        <label for="field-description" id="field-description-help" i18n:msg="">You may use
+                          <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a> here.
+                        </label>
+                        <textarea id="field-description" name="field_description"
+                                  class="wikitext trac-resizable" rows="10" cols="68">
 ${ticket.description}</textarea>
-                    </fieldset>
-                  </td>
-                </tr>
+                      </fieldset>
+                    </td>
+                  </tr>
+                </py:if>
                 <tr py:for="row in group(fields, 2, lambda f: f.type != 'textarea')"
                     py:if="can_modify or can_create"
                     py:with="fullrow = len(row) == 1">
@@ -260,9 +275,8 @@ ${ticket.description}</textarea>
                              py:strip="field.type == 'radio'" i18n:msg="field">${
                         field.edit_label or field.label or field.name}:</label>
                     </th>
-                    <td class="${classes('col' + str(idx + 1), fullrow=fullrow)}"
-                        py:if="idx == 0 or not fullrow"
-                        colspan="${3 if fullrow else None}">
+                    <td class="col${idx + 1}" py:if="idx == 0 or not fullrow"
+                        colspan="${fullrow and 3 or None}">
                       <py:choose test="field.type" py:if="field">
                         <select py:when="'select'" id="field-${field.name}" name="field_${field.name}">
                           <option py:if="field.optional"></option>
@@ -278,12 +292,12 @@ ${ticket.description}</textarea>
                           </optgroup>
                         </select>
                         <textarea py:when="'textarea'" id="field-${field.name}" name="field_${field.name}"
-                                  cols="60" rows="${field.height}"
-                                  class="${'wikitext ' if field.format == 'wiki' else None}trac-resizable">
+                                  cols="${field.width}" rows="${field.height}"
+                                  class="${field.format == 'wiki' and 'wikitext ' or None}trac-resizable">
 ${value}</textarea>
                         <span py:when="'checkbox'">
                           <input type="checkbox" id="field-${field.name}" name="field_${field.name}"
-                                 checked="${value == '1' or None}" value="1" />
+                                 checked="${value == '1' and 'checked' or None}" value="1" />
                           <input type="hidden" name="field_checkbox_${field.name}" value="1" />
                         </span>
                         <label py:when="'radio'"
@@ -292,8 +306,6 @@ ${value}</textarea>
                                  checked="${value == option or None}" />
                           ${option}
                         </label>
-                        <input py:when="'time'" type="text" id="field-${field.name}" title="${field.format_hint}"
-                               name="field_${field.name}" value="${field.edit}" class="trac-${field.format}picker" />
                         <py:otherwise><!--! Text input fields -->
                           <py:choose>
                             <span py:when="field.cc_entry"><!--! Special case for Cc: field -->
@@ -343,13 +355,6 @@ ${value}</textarea>
           </div>
         </div>
 
-        <!--! Preview of ticket changes -->
-        <div py:if="ticket.exists and can_append" id="ticketchange" class="ticketdraft"
-             style="${'display: none' if not (change_preview.fields or change_preview.comment)
-                                         or cnum_edit is not None else None}">
-          <xi:include href="ticket_change.html" py:with="change = change_preview; preview = True"/>
-        </div>
-
         <!--! Author or Reporter -->
         <div py:if="authname == 'anonymous'" class="field">
           <fieldset py:choose="">
@@ -367,7 +372,7 @@ ${value}</textarea>
               </tr>
             </table>
             <p py:if="author_id == 'anonymous'" class="hint">
-              <i18n:msg>E-mail address and user name can be saved in the <a href="${href.prefs()}" class="trac-target-new">Preferences</a>.</i18n:msg>
+              <i18n:msg>E-mail address and user name can be saved in the <a href="${href.prefs()}">Preferences</a>.</i18n:msg>
             </p>
           </fieldset>
         </div>
@@ -381,23 +386,19 @@ ${value}</textarea>
         </p>
 
         <div py:if="ticket.exists" class="trac-nav">
-          <a href="#attachments" id="trac-up-attachments" title="Go to the list of attachments">Attachments</a> &uarr;
-          <a href="#content" id="trac-up-view" title="View the ticket description">Description</a> &uarr;
+          <a href="#attachments" title="Go to the list of attachments">Attachments</a> &uarr;
         </div>
         <div class="buttons">
           <py:if test="ticket.exists">
-            <input type="hidden" name="start_time" value="${to_utimestamp(start_time)}" />
-            <input type="hidden" name="view_time" value="${to_utimestamp(ticket['changetime'])}" />
+            <input type="hidden" name="ts" value="${timestamp}" />
             <input type="hidden" name="replyto" value="${replyto}" />
+            <input type="hidden" name="cnum" value="${cnum}" />
           </py:if>
           <input type="submit" name="preview" value="${_('Preview')}" accesskey="r" />&nbsp;
-          <input type="submit" name="submit" value="${_('Submit changes') if ticket.exists else _('Create ticket')}" class="trac-disable-on-submit" />
+          <input type="submit" name="submit" value="${ticket.exists and _('Submit changes') or _('Create ticket')}" />
         </div>
 
       </form>
-
-      <xi:include href="ticket_box.html" py:if="not ticket.exists"
-                  py:with="hide = not preview_mode; preview_mode = True"/>
 
       <div id="help" i18n:msg="">
         <strong>Note:</strong> See

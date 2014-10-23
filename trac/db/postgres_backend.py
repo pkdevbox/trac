@@ -20,11 +20,10 @@ from genshi import Markup
 
 from trac.core import *
 from trac.config import Option
-from trac.db.api import ConnectionBase, IDatabaseConnector, _parse_db_str
+from trac.db.api import IDatabaseConnector, _parse_db_str
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import ISystemInfoProvider
-from trac.util import get_pkginfo, lazy
-from trac.util.compat import close_fds
+from trac.util import get_pkginfo
+from trac.util.compat import any, close_fds
 from trac.util.text import empty, exception_to_unicode, to_unicode
 from trac.util.translation import _
 
@@ -62,57 +61,46 @@ def assemble_pg_dsn(path, user=None, password=None, host=None, port=None):
 
 class PostgreSQLConnector(Component):
     """Database connector for PostgreSQL.
-
+    
     Database URLs should be of the form:
     {{{
     postgres://user[:password]@host[:port]/database[?schema=my_schema]
     }}}
     """
-    implements(IDatabaseConnector, ISystemInfoProvider)
-
-    required = False
+    implements(IDatabaseConnector)
 
     pg_dump_path = Option('trac', 'pg_dump_path', 'pg_dump',
         """Location of pg_dump for Postgres database backups""")
 
     def __init__(self):
-        self._version = has_psycopg and \
-                        get_pkginfo(psycopg).get('version',
-                                                 psycopg.__version__)
+        self._version = None
         self.error = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'psycopg2', self._version
-
-    # IDatabaseConnector methods
 
     def get_supported_schemes(self):
         if not has_psycopg:
             self.error = _("Cannot load Python bindings for PostgreSQL")
-        yield ('postgres', -1 if self.error else 1)
+        yield ('postgres', self.error and -1 or 1)
 
     def get_connection(self, path, log=None, user=None, password=None,
                        host=None, port=None, params={}):
-        self.required = True
-        return PostgreSQLConnection(path, log, user, password, host, port,
-                                    params)
+        cnx = PostgreSQLConnection(path, log, user, password, host, port,
+                                   params)
+        if not self._version:
+            self._version = get_pkginfo(psycopg).get('version',
+                                                     psycopg.__version__)
+            self.env.systeminfo.append(('psycopg2', self._version))
+            self.required = True
+        return cnx
 
-    def get_exceptions(self):
-        return psycopg
-
-    def init_db(self, path, schema=None, log=None, user=None, password=None,
-                host=None, port=None, params={}):
+    def init_db(self, path, log=None, user=None, password=None, host=None,
+                port=None, params={}):
         cnx = self.get_connection(path, log, user, password, host, port,
                                   params)
         cursor = cnx.cursor()
         if cnx.schema:
             cursor.execute('CREATE SCHEMA "%s"' % cnx.schema)
             cursor.execute('SET search_path TO %s', (cnx.schema,))
-        if schema is None:
-            from trac.db_default import schema
+        from trac.db_default import schema
         for table in schema:
             for stmt in self.to_sql(table):
                 cursor.execute(stmt)
@@ -135,16 +123,16 @@ class PostgreSQLConnector(Component):
         sql.append(',\n'.join(coldefs) + '\n)')
         yield '\n'.join(sql)
         for index in table.indices:
-            unique = 'UNIQUE' if index.unique else ''
+            unique = index.unique and 'UNIQUE' or ''
             yield 'CREATE %s INDEX "%s_%s_idx" ON "%s" ("%s")' % \
-                    (unique, table.name,
+                    (unique, table.name, 
                      '_'.join(index.columns), table.name,
                      '","'.join(index.columns))
 
     def alter_column_types(self, table, columns):
         """Yield SQL statements altering the type of one or more columns of
         a table.
-
+        
         Type changes are specified as a `columns` dict mapping column names
         to `(from, to)` SQL type tuples.
         """
@@ -181,7 +169,7 @@ class PostgreSQLConnector(Component):
             try:
                 p = Popen([self.pg_dump_path, '--version'], stdout=PIPE,
                           close_fds=close_fds)
-            except OSError as e:
+            except OSError, e:
                 raise TracError(_("Unable to run %(path)s: %(msg)s",
                                   path=self.pg_dump_path,
                                   msg=exception_to_unicode(e)))
@@ -200,7 +188,7 @@ class PostgreSQLConnector(Component):
             environ['PGPASSWORD'] = str(db_prop['password'])
         try:
             p = Popen(args, env=environ, stderr=PIPE, close_fds=close_fds)
-        except OSError as e:
+        except OSError, e:
             raise TracError(_("Unable to run %(path)s: %(msg)s",
                               path=self.pg_dump_path,
                               msg=exception_to_unicode(e)))
@@ -213,7 +201,7 @@ class PostgreSQLConnector(Component):
         return dest_file
 
 
-class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
+class PostgreSQLConnection(ConnectionWrapper):
     """Connection wrapper for PostgreSQL."""
 
     poolable = True
@@ -224,7 +212,7 @@ class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
             path = path[1:]
         if 'host' in params:
             host = params['host']
-
+        
         cnx = psycopg.connect(assemble_pg_dsn(path, user, password, host,
                                               port))
 
@@ -239,8 +227,7 @@ class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
             cnx.rollback()
         ConnectionWrapper.__init__(self, cnx, log)
 
-    def cursor(self):
-        return IterableCursor(self.cnx.cursor(), self.log)
+        self._version = self._get_version()
 
     def cast(self, column, type):
         # Temporary hack needed for the union of selects in the search module
@@ -249,62 +236,56 @@ class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
     def concat(self, *args):
         return '||'.join(args)
 
-    def drop_table(self, table):
-        if (self._version or '').startswith(('8.0.', '8.1.')):
-            cursor = self.cursor()
-            cursor.execute("""SELECT table_name FROM information_schema.tables
-                              WHERE table_schema=current_schema()
-                              AND table_name=%s""", (table,))
-            for row in cursor:
-                if row[0] == table:
-                    self.execute("DROP TABLE " + self.quote(table))
-                    break
-        else:
-            self.execute("DROP TABLE IF EXISTS " + self.quote(table))
-
-    def get_column_names(self, table):
-        rows = self.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema=%s AND table_name=%s
-            """, (self.schema, table))
-        return [row[0] for row in rows]
-
-    def get_last_id(self, cursor, table, column='id'):
-        cursor.execute("SELECT CURRVAL(%s)",
-                       (self.quote(self._sequence_name(table, column)),))
-        return cursor.fetchone()[0]
-
-    def get_table_names(self):
-        rows = self.execute("""
-            SELECT table_name FROM information_schema.tables
-            WHERE table_schema=%s""", (self.schema,))
-        return [row[0] for row in rows]
-
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         return "ILIKE %s ESCAPE '/'"
 
     def like_escape(self, text):
         return _like_escape_re.sub(r'/\1', text)
 
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return "LIKE %s ESCAPE '/'"
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return self.like_escape(prefix) + '%'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return '"%s"' % identifier.replace('"', '""')
+
+    def get_last_id(self, cursor, table, column='id'):
+        cursor.execute("SELECT CURRVAL(%s)",
+                       (self.quote(self._sequence_name(table, column)),))
+        return cursor.fetchone()[0]
 
     def update_sequence(self, cursor, table, column='id'):
         cursor.execute("SELECT SETVAL(%%s, (SELECT MAX(%s) FROM %s))"
                        % (self.quote(column), self.quote(table)),
                        (self.quote(self._sequence_name(table, column)),))
 
+    def cursor(self):
+        return IterableCursor(self.cnx.cursor(), self.log)
+
+    def drop_table(self, table):
+        cursor = self.cursor()
+        if self._version and any(self._version.startswith(version)
+                                 for version in ('8.0.', '8.1.')):
+            cursor.execute("""SELECT table_name FROM information_schema.tables
+                              WHERE table_schema=current_schema()
+                              AND table_name=%s""", (table,))
+            for row in cursor:
+                if row[0] == table:
+                    cursor.execute("DROP TABLE " + self.quote(table))
+                    break
+        else:
+            cursor.execute("DROP TABLE IF EXISTS " + self.quote(table))
+
     def _sequence_name(self, table, column):
         return '%s_%s_seq' % (table, column)
 
-    @lazy
-    def _version(self):
+    def _get_version(self):
         cursor = self.cursor()
         cursor.execute('SELECT version()')
         for version, in cursor:

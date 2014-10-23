@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -15,7 +5,7 @@
       xmlns:py="http://genshi.edgewall.org/"
       xmlns:xi="http://www.w3.org/2001/XInclude"
       xmlns:i18n="http://genshi.edgewall.org/i18n"
-      py:with="parent = attachments.parent if attachments else attachment.resource.parent">
+      py:with="parent = attachments and attachments.parent or attachment.resource.parent">
   <xi:include href="layout.html" />
   <head>
     <title py:choose="mode">
@@ -41,25 +31,25 @@
           <div class="field">
             <label>File<py:if test="max_size >= 0">
               <i18n:msg params="value">(size limit ${pretty_size(max_size)})</i18n:msg></py:if>:<br />
-              <input type="file" name="attachment" class="trac-disable-determinant" /></label>
+              <input type="file" name="attachment" /></label>
           </div>
           <fieldset>
             <legend>Attachment Info</legend>
             <py:if test="authname == 'anonymous'">
               <div class="field">
                 <label>Your email or username:<br />
-                  <input type="text" name="author" size="30" value="${attachment.author or author}" />
+                  <input type="text" name="author" size="30" value="$author" />
                 </label>
               </div>
               </py:if>
             <div class="field">
               <label>Description of the file (optional):<br />
-                <input type="text" name="description" size="60" value="$attachment.description"/></label>
+                <input type="text" name="description" size="60" /></label>
             </div>
             <br />
             <py:if test="authname and authname != 'anonymous'">
               <div class="options">
-                <label><input type="checkbox" name="replace" checked="${is_replace or None}" />
+                <label><input type="checkbox" name="replace" />
                   Replace existing attachment of the same name</label>
               </div>
               <br />
@@ -69,7 +59,7 @@
             <input type="hidden" name="action" value="new" />
             <input type="hidden" name="realm" value="$parent.realm" />
             <input type="hidden" name="id" value="$parent.id" />
-            <input type="submit" class="trac-disable trac-disable-on-submit" value="${_('Add attachment')}" />
+            <input type="submit" value="${_('Add attachment')}" />
             <input type="submit" name="cancel" value="${_('Cancel')}" />
           </div>
         </form>
@@ -83,8 +73,8 @@
           <form method="post" action="">
             <div id="delete">
               <input type="hidden" name="action" value="delete" />
-              <input type="submit" class="trac-disable-on-submit" value="${_('Delete attachment')}" />
               <input type="submit" name="cancel" value="${_('Cancel')}" />
+              <input type="submit" value="${_('Delete attachment')}" />
             </div>
           </form>
         </div>
@@ -92,7 +82,8 @@
 
       <py:when test="'list'">
         <h1><a href="${url_of(parent)}">${name_of(parent)}</a></h1>
-        <py:with vars="context = context.child(parent)">
+        <py:with vars="context = context(parent)">
+          <?python add_button_title = _('Attach another file') ?>
           <xi:include href="list_of_attachments.html" py:with="alist = attachments"/>
         </py:with>
       </py:when>
@@ -105,12 +96,12 @@
               <th scope="col" i18n:msg="file,size,author,date">
                 File $attachment.filename,
                 <span title="${_('%(size)s bytes', size=attachment.size)}">${pretty_size(attachment.size)}</span>
-                (added by ${authorinfo(attachment.author)}, ${pretty_dateinfo(attachment.date)})
+                (added by ${authorinfo(attachment.author)}, ${dateinfo(attachment.date)} ago)
               </th>
             </tr>
             <tr>
               <td class="message searchable" xml:space="preserve">
-                ${wiki_to_html(context.child(parent), attachment.description)}
+                ${wiki_to_html(context(parent), attachment.description)}
               </td>
             </tr>
           </tbody>

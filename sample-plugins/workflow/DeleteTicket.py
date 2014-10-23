@@ -1,16 +1,4 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2007-2013 Edgewall Software
-# Copyright (C) 2007 Eli Carter <retracile@gmail.com>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
+from genshi.builder import tag
 
 from trac.core import implements,Component
 from trac.ticket.api import ITicketActionController
@@ -25,11 +13,10 @@ class DeleteTicketActionController(Component):
     Illustrates how to create an action controller with side-effects.
 
     Don't forget to add `DeleteTicketActionController` to the workflow
-    option in the `[ticket]` section in TracIni.
-    If there is no other workflow option, the line will look like this:
-    {{{
+    option in [ticket].
+    If there is no workflow option, the line will look like this:
+
     workflow = ConfigurableTicketWorkflow,DeleteTicketActionController
-    }}}
     """
 
     implements(ITicketActionController, IPermissionRequestor)
@@ -59,5 +46,5 @@ class DeleteTicketActionController(Component):
     def apply_action_side_effects(self, req, ticket, action):
         # Be paranoid here, as this should only be called when
         # action is delete...
-        if action == 'delete':
+        if action == 'delete': 
             ticket.delete()

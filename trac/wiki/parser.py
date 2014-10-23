@@ -23,7 +23,6 @@ import re
 from trac.core import *
 from trac.notification import EMAIL_LOOKALIKE_PATTERN
 
-
 class WikiParser(Component):
     """Wiki text parser."""
 
@@ -43,8 +42,7 @@ class WikiParser(Component):
     STARTBLOCK = "{{{"
     ENDBLOCK_TOKEN = r"\}\}\}"
     ENDBLOCK = "}}}"
-    BULLET_CHARS = u"-*\u2022"
-
+    
     LINK_SCHEME = r"[a-zA-Z][-a-zA-Z0-9+._]*" # as per RFC 2396 + '_'
     INTERTRAC_SCHEME = r"[a-zA-Z.+-]*?" # no digits (for shorthand links)
 
@@ -58,11 +56,11 @@ class WikiParser(Component):
         return r"[/\?#][^%s\]]*|\.\.?(?:[/\?#][^%s\]]*)?" % (sep, sep)
 
     LHREF_RELATIVE_TARGET = _lhref_relative_target(r'\s')
-
-    XML_NAME = r"[\w:](?<!\d)[\w:.-]*?" # See http://www.w3.org/TR/REC-xml/#id
+    
+    XML_NAME = r"[\w:](?<!\d)[\w:.-]*?" # See http://www.w3.org/TR/REC-xml/#id 
 
     PROCESSOR = r"(\s*)#\!([\w+-][\w+-/]*)"
-    PROCESSOR_PARAM = r'''(?P<proc_pname>\w+)=(?P<proc_pval>".*?"|'.*?'|[-,\w]+)'''
+    PROCESSOR_PARAM = r'''(?P<proc_pname>\w+)=(?P<proc_pval>".*?"|'.*?'|\w+)'''
 
     def _set_anchor(name, sep):
         return r'=#(?P<anchorname>%s)(?:%s(?P<anchorlabel>[^\]]*))?' % \
@@ -74,9 +72,9 @@ class WikiParser(Component):
         # Font styles
         r"(?P<bolditalic>!?%s)" % BOLDITALIC_TOKEN,
         r"(?P<bold>!?%s)" % BOLD_TOKEN,
-        r"(?P<bold_wc>!?%s)" % BOLD_TOKEN_WIKICREOLE,
+        r"(?P<bold_wc>!?%s)" % BOLD_TOKEN_WIKICREOLE,        
         r"(?P<italic>!?%s)" % ITALIC_TOKEN,
-        r"(?P<italic_wc>!?%s)" % ITALIC_TOKEN_WIKICREOLE,
+        r"(?P<italic_wc>!?%s)" % ITALIC_TOKEN_WIKICREOLE,        
         r"(?P<underline>!?%s)" % UNDERLINE_TOKEN,
         r"(?P<strike>!?%s)" % STRIKE_TOKEN,
         r"(?P<subscript>!?%s)" % SUBSCRIPT_TOKEN,
@@ -91,7 +89,7 @@ class WikiParser(Component):
 
     _post_rules = [
         # WikiCreole line breaks
-        r"(?P<linebreak_wc>!?\\\\)",
+        r"(?P<linebreak_wc>!?\\\\)", 
         # e-mails
         r"(?P<email>!?%s)" % EMAIL_LOOKALIKE_PATTERN,
         # <wiki:Trac bracket links>
@@ -105,11 +103,10 @@ class WikiParser(Component):
         # [wiki:TracLinks with optional label] or [/relative label]
         (r"(?P<lhref>!?\[(?:"
          r"(?P<rel>%s)|" % LHREF_RELATIVE_TARGET + # ./... or /...
-         r"(?P<lns>%s):(?P<ltgt>%s:(?:%s)|%s|[^\]\s\%s]*))" % \
-         (LINK_SCHEME, LINK_SCHEME, QUOTED_STRING, QUOTED_STRING, u'\u200b') +
+         r"(?P<lns>%s):(?P<ltgt>%s:(?:%s)|%s|[^\]\s]*))" % \
+         (LINK_SCHEME, LINK_SCHEME, QUOTED_STRING, QUOTED_STRING) +
          # wiki:TracLinks or wiki:"trac links" or intertrac:wiki:"trac links"
-         r"(?:[\s%s]+(?P<label>%s|[^\]]*))?\])" % \
-         (u'\u200b', QUOTED_STRING)), # trailing space, optional label
+         r"(?:\s+(?P<label>%s|[^\]]+))?\])" % QUOTED_STRING), # optional label
         # [=#anchor] creation
         r"(?P<anchor>!?\[%s\])" % _set_anchor(XML_NAME, r'\s+'),
         # [[macro]] call or [[WikiCreole link]]
@@ -119,9 +116,8 @@ class WikiParser(Component):
         r"(?P<hanchor>#%s)?\s*$)" % XML_NAME,
         #  * list
         r"(?P<list>^(?P<ldepth>\s*)"
-        ur"(?:[%s]|(?P<lstart>[0-9]+|[a-zA-Z]|[ivxIVX]{1,5})\.)\s)"
-        % (BULLET_CHARS),
-        # definition::
+        r"(?:[-*]|(?P<lstart>[0-9]+|[a-zA-Z]|[ivxIVX]{1,5})\.)\s)",
+        # definition:: 
         r"(?P<definition>^\s+"
         r"((?:%s[^%s]*%s|%s(?:%s{,2}[^%s])*?%s|[^%s%s:]|:[^:])+::)(?:\s+|$))"
         % (INLINE_TOKEN, INLINE_TOKEN, INLINE_TOKEN,
@@ -224,32 +220,3 @@ class WikiParser(Component):
         # obviously still some work to do here ;)
         return wikitext
 
-
-def parse_processor_args(processor_args):
-    """Parse a string containing parameter assignments,
-    and return the corresponding dictionary.
-
-    Isolated keywords are interpreted as `bool` flags, `False` if the keyword
-    is prefixed with "-", `True` otherwise.
-
-    >>> parse_processor_args('ab="c de -f gh=ij" -')
-    {'ab': 'c de -f gh=ij'}
-
-    >>> sorted(parse_processor_args('ab=c de -f gh="ij klmn" p=q-r,s').items())
-    [('ab', 'c'), ('de', True), ('f', False), ('gh', 'ij klmn'), ('p', 'q-r,s')]
-    """
-    args = WikiParser._processor_param_re.split(processor_args)
-    keys = [str(k) for k in args[1::3]] # used as keyword parameters
-    values = [v[1:-1] if v[:1] + v[-1:] in ('""', "''") else v
-              for v in args[2::3]]
-    for flags in args[::3]:
-        for flag in flags.strip().split():
-            if re.match(r'-?\w+$', flag):
-                if flag[0] == '-':
-                    if len(flag) > 1:
-                        keys.append(str(flag[1:]))
-                        values.append(False)
-                else:
-                    keys.append(str(flag))
-                    values.append(True)
-    return dict(zip(keys, values))

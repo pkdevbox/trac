@@ -10,7 +10,7 @@
         .attr("title", title).appendTo(this);
     });
   }
-
+  
   $.fn.checked = function(checked) {
     if (checked == undefined) { // getter
       if (!this.length) return false;
@@ -21,62 +21,7 @@
       });
     }
   }
-
-  // Add a Select All checkbox to each thead in the table.
-  $.fn.addSelectAllCheckboxes = function() {
-    var $table = this;
-    if ($("tr td.sel", $table).length > 0) {
-      $("tr th.sel", $table).append(
-        $('<input type="checkbox" name="toggle_group" />').attr({
-          title: _("Toggle group")
-        }).click(function() {
-          $("tr td.sel input",
-            $(this).closest("thead, tbody").next())
-              .prop("checked", this.checked).change();
-        })
-      );
-      $("tr td.sel", $table).click(function() {
-        var $tbody = $(this).closest("tbody");
-        var $checkboxes = $("tr td.sel input", $tbody);
-        var numSelected = $checkboxes.filter(":checked").length;
-        var noneSelected = numSelected === 0;
-        var allSelected = numSelected === $checkboxes.length;
-        $("tr th.sel input", $tbody.prev())
-          .prop({"checked": allSelected,
-                 "indeterminate": !(noneSelected || allSelected)});
-      });
-    }
-  }
-
-  // Conditionally disable the submit button. Returns a jQuery object.
-  $.fn.disableSubmit = function(determinant) {
-    determinant = $(determinant);
-    var subject = $(this);
-    var isDisabled;
-    if (determinant.is("input:checkbox")) {
-      isDisabled = function () {
-          return determinant.filter(":checked").length === 0;
-      }
-    } else if (determinant.is("input:file")) {
-      isDisabled = function () {
-          return !determinant.val();
-      }
-    } else {
-      return subject;
-    }
-    function toggleDisabled() {
-      subject.prop("disabled", isDisabled);
-      if (subject.prop("disabled")) {
-        subject.attr("title", _("At least one item must be selected"))
-      } else {
-        subject.removeAttr("title");
-      }
-    }
-    determinant.change(toggleDisabled);
-    toggleDisabled();
-    return subject;
-  }
-
+  
   $.fn.enable = function(enabled) {
     if (enabled == undefined) enabled = true;
     return this.each(function() {
@@ -92,7 +37,7 @@
       }
     });
   }
-
+  
   $.fn.getAbsolutePos = function() {
     return this.map(function() {
       var left = this.offsetLeft;
@@ -106,37 +51,14 @@
       return {left: left, top: top};
     });
   }
-
+  
   $.fn.scrollToTop = function() {
     return this.each(function() {
       scrollTo(0, $(this).getAbsolutePos()[0].top);
       return false;
     });
   }
-
-  // Disable the form's submit action after the submit button is pressed by
-  // replacing it with a handler that cancels the action. The handler is
-  // removed when navigating away from the page so that the action will
-  // be enabled when using the back button to return to the page.
-  $.fn.disableOnSubmit = function() {
-    this.click(function() {
-      var form = $(this).closest("form");
-      if (form.hasClass("trac-submit-is-disabled")) {
-        form.bind("submit.prevent-submit", function() {
-          return false;
-        });
-        $(window).on("unload", function() {
-          form.unbind("submit.prevent-submit");
-        });
-      } else {
-        form.addClass("trac-submit-is-disabled");
-        $(window).on("unload", function() {
-          form.removeClass("trac-submit-is-disabled");
-        })
-      }
-    });
-  }
-
+  
   $.loadStyleSheet = function(href, type) {
     type = type || "text/css";
     $(document).ready(function() {
@@ -148,7 +70,7 @@
       }
     });
   }
-
+  
   // Escape special HTML characters (&<>")
   var quote = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"};
 
@@ -157,7 +79,7 @@
       return value;
     return value.replace(/[&<>"]/g, function(c) { return quote[c]; });
   }
-
+  
   function format(str, args, escape) {
     var kwargs = args[args.length - 1];
     return str.replace(/\${?(\w+)}?/g, function(_, k) {
@@ -167,7 +89,7 @@
       else
         result = kwargs[k];
       return escape ? escape(result) : result;
-    });
+    }); 
   }
 
   // Expand positional ($1 .. $9) and keyword ($name) arguments in a string.
@@ -188,6 +110,24 @@
     if (!textarea || textarea.rows == undefined) return;
     $(textarea).height("");
     textarea.rows = rows;
+  }
+
+  // The following are defined for backwards compatibility with releases prior
+  // to Trac 0.11
+  
+  window.addEvent = function(elem, type, func) {
+    $(elem).bind(type, func);
+  }
+  window.addHeadingLinks = function(container, title) {
+    $.each(["h1", "h2", "h3", "h4", "h5", "h6"], function() {
+      $(this, container).addAnchor(title);
+    });
+  }
+  window.enableControl = function(id, enabled) {
+    $("#" + id).enable(enabled);
+  }
+  window.getAncestorByTagName = function(elem, tagName) {
+    return $(elem).parents(tagName).get(0);
   }
 
 })(jQuery);

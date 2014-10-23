@@ -17,7 +17,6 @@
 #         Alec Thomas <alec@swapoff.org>
 
 from trac.core import *
-from trac.util.presentation import classes
 from trac.util.translation import _
 
 
@@ -54,10 +53,10 @@ class IResourceManager(Interface):
                        `'default'`, `'compact'` or `'summary'`.
         :param context: an optional rendering context to allow rendering rich
                         output (like markup containing links)
-        :type context: `ResourceContext`
+        :type context: `Context`
 
         Additional keyword arguments can be given as extra information for
-        some formats.
+        some formats. 
 
         For example, the ticket with the id 123 is represented as:
          - `'#123'` in `'compact'` format,
@@ -111,7 +110,7 @@ class Resource(object):
         while r:
             name = r.realm
             if r.id:
-                name += ':' + unicode(r.id)  # id can be numerical
+                name += ':' + unicode(r.id) # id can be numerical
             if r.version is not None:
                 name += '@' + unicode(r.version)
             path.append(name or '')
@@ -148,7 +147,7 @@ class Resource(object):
         >>> main = Resource('wiki', 'WikiStart')
         >>> repr(main)
         "<Resource u'wiki:WikiStart'>"
-
+        
         >>> Resource(main) is main
         True
 
@@ -160,7 +159,7 @@ class Resource(object):
         >>> repr(main0)
         "<Resource u'wiki:WikiStart@0'>"
 
-        In a copy, if `id` is overridden, then the original `version` value
+        In a copy, if `id` is overriden, then the original `version` value
         will not be reused.
 
         >>> repr(Resource(main3, id="WikiEnd"))
@@ -173,13 +172,13 @@ class Resource(object):
         if isinstance(resource_or_realm, Resource):
             if id is False and version is False and parent is False:
                 return resource_or_realm
-            else:  # copy and override
+            else: # copy and override
                 realm = resource_or_realm.realm
             if id is False:
                 id = resource_or_realm.id
             if version is False:
                 if id == resource_or_realm.id:
-                    version = resource_or_realm.version  # could be 0...
+                    version = resource_or_realm.version # could be 0...
                 else:
                     version = None
             if parent is False:
@@ -204,10 +203,10 @@ class Resource(object):
         Optional keyword arguments can be given to override `id` and
         `version`.
         """
-        return Resource(self if realm is False else realm, id, version, parent)
+        return Resource(realm is False and self or realm, id, version, parent)
 
     # -- methods for retrieving children Resource identifiers
-
+    
     def child(self, realm, id=False, version=False):
         """Retrieve a child resource for a secondary `realm`.
 
@@ -265,13 +264,12 @@ def get_resource_url(env, resource, href, **kwargs):
     This function delegates the work to the resource manager for that
     resource if it implements a `get_resource_url` method, otherwise
     reverts to simple '/realm/identifier' style URLs.
-
+    
     :param env: the `Environment` where `IResourceManager` components live
     :param resource: the `Resource` object specifying the Trac resource
     :param href: an `Href` object used for building the URL
 
-    Additional keyword arguments are translated as query parameters in
-    the URL.
+    Additional keyword arguments are translated as query paramaters in the URL.
 
     >>> from trac.test import EnvironmentStub
     >>> from trac.web.href import Href
@@ -280,19 +278,19 @@ def get_resource_url(env, resource, href, **kwargs):
     >>> main = Resource('generic', 'Main')
     >>> get_resource_url(env, main, href)
     '/trac.cgi/generic/Main'
-
+    
     >>> get_resource_url(env, main(version=3), href)
     '/trac.cgi/generic/Main?version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href)
     '/trac.cgi/generic/Main?version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href, action='diff')
     '/trac.cgi/generic/Main?action=diff&version=3'
-
+    
     >>> get_resource_url(env, main(version=3), href, action='diff', version=5)
     '/trac.cgi/generic/Main?action=diff&version=5'
-
+    
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if manager and hasattr(manager, 'get_resource_url'):
@@ -301,7 +299,6 @@ def get_resource_url(env, resource, href, **kwargs):
     args.update(kwargs)
     return href(resource.realm, resource.id, **args)
 
-
 def get_resource_description(env, resource, format='default', **kwargs):
     """Retrieve a standardized description for the given resource.
 
@@ -309,7 +306,7 @@ def get_resource_description(env, resource, format='default', **kwargs):
     resource if it implements a `get_resource_description` method,
     otherwise reverts to simple presentation of the realm and identifier
     information.
-
+    
     :param env: the `Environment` where `IResourceManager` components live
     :param resource: the `Resource` object specifying the Trac resource
     :param format: which formats to use for the description
@@ -323,13 +320,13 @@ def get_resource_description(env, resource, format='default', **kwargs):
     >>> main = Resource('generic', 'Main')
     >>> get_resource_description(env, main)
     u'generic:Main'
-
+    
     >>> get_resource_description(env, main(version=3))
     u'generic:Main'
 
     >>> get_resource_description(env, main(version=3), format='summary')
     u'generic:Main at version 3'
-
+    
     """
     manager = ResourceSystem(env).get_resource_manager(resource.realm)
     if manager and hasattr(manager, 'get_resource_description'):
@@ -340,36 +337,31 @@ def get_resource_description(env, resource, format='default', **kwargs):
                  name=name, version=resource.version)
     return name
 
-
 def get_resource_name(env, resource):
     return get_resource_description(env, resource)
-
 
 def get_resource_shortname(env, resource):
     return get_resource_description(env, resource, 'compact')
 
-
 def get_resource_summary(env, resource):
     return get_resource_description(env, resource, 'summary')
 
-
 def get_relative_resource(resource, path=''):
     """Build a Resource relative to a reference resource.
-
+    
     :param path: path leading to another resource within the same realm.
     """
     if path in (None, '', '.'):
         return resource
     else:
-        base = unicode(resource.id if path[0] != '/' else '').split('/')
+        base = unicode(path[0] != '/' and resource.id or '').split('/')
         for comp in path.split('/'):
             if comp == '..':
                 if base:
                     base.pop()
             elif comp and comp != '.':
                 base.append(comp)
-        return resource(id='/'.join(base) if base else None)
-
+        return resource(id=base and '/'.join(base) or None)
 
 def get_relative_url(env, resource, href, path='', **kwargs):
     """Build an URL relative to a resource given as reference.
@@ -429,7 +421,6 @@ def get_relative_url(env, resource, href, path='', **kwargs):
     return get_resource_url(env, get_relative_resource(resource, path),
                             href, **kwargs)
 
-
 def render_resource_link(env, context, resource, format='default'):
     """Utility for generating a link `Element` to the given resource.
 
@@ -437,16 +428,11 @@ def render_resource_link(env, context, resource, format='default'):
     in order to directly generate rich content. Otherwise, the textual output
     is wrapped in a link to the resource.
     """
-    from genshi.builder import Fragment, tag
+    from genshi.builder import Element, tag
     link = get_resource_description(env, resource, format, context=context)
-    if not isinstance(link, Fragment):
-        missing = resource_exists(env, resource) is False
-        link = tag.a(link, class_=classes(resource.realm, missing=missing),
-                     href=get_resource_url(env, resource, context.href),
-                     rel='nofollow' if missing else None)
-
+    if not isinstance(link, Element):
+        link = tag.a(link, href=get_resource_url(env, resource, context.href))
     return link
-
 
 def resource_exists(env, resource):
     """Checks for resource existence without actually instantiating a model.

@@ -1,11 +1,4 @@
-/* -*- coding: utf-8 -*- */
-html { overflow-y: scroll }
-body {
- background: #fff;
- color: #000;
- margin: 10px;
- padding: 0;
-}
+body { background: #fff; color: #000; margin: 10px; padding: 0; }
 body, th, tr {
  font: normal 13px Verdana,Arial,'Bitstream Vera Sans',Helvetica,sans-serif;
 }
@@ -57,13 +50,6 @@ span:hover .anchor {
  visibility: visible;
 }
 
-h1:target, h2:target, h3:target, h4:target, h5:target, h6:target,
-span:target {
- background: #ffb;
- box-shadow: .1em .1em .4em .1em #DDA;
- border-radius: .2em;
-}
-
 @media screen {
  a.ext-link .icon {
   background: url(../extlink.gif) left center no-repeat;
@@ -73,7 +59,7 @@ span:target {
   background: url(../envelope.png) left center no-repeat;
   padding-left: 16px;
  }
- a.trac-rawlink, a.trac-ziplink {
+ a.trac-rawlink {
   background: url('../download.png') right center no-repeat;
   padding-right: 16px;
   border-bottom: none;
@@ -90,29 +76,14 @@ input, select, button {
 /* Avoid to inherit white-space of its parent element for IE 11, #11376 */
 textarea { white-space: pre-wrap }
 input, select { vertical-align: middle }
-input[type=button], input[type=submit], input[type=reset], button {
- *overflow: visible; /* Workaround too much margin on button in IE7 */
-}
 input[type=button], input[type=submit], input[type=reset] {
  background: #eee;
  color: #222;
- border: 1px outset #eee;
- border-radius: .3em;
- box-shadow: .1em .1em .4em 0 #888;
- padding: .1em .5em .2em;
- text-shadow: .1em .1em #ddd;
- cursor: pointer;
+ border: 1px outset #ccc;
+ padding: .1em .5em;
 }
 input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover {
- background: #f6f6f6;
- box-shadow: .1em .1em .6em 0 #999;
- text-shadow: .1em .1em #fcfcfc;
-}
-input[type=button]:active, input[type=submit]:active,
-input[type=reset]:active {
- position: relative;
- top: .1em;
- left: .1em;
+ background: #ccb;
 }
 input[type=button][disabled], input[type=submit][disabled],
 input[type=reset][disabled] {
@@ -120,91 +91,37 @@ input[type=reset][disabled] {
  border-style: solid;
  color: #999;
 }
-input[type=text], input.textwidget, textarea {
- border: 1px solid #d7d7d7;
- border-radius: .3em;
-}
+input[type=text], input.textwidget, textarea { border: 1px solid #d7d7d7 }
 input[type=text], input.textwidget { padding: .25em .5em }
 input[type=text]:focus, input.textwidget:focus, textarea:focus {
  border: 1px solid #886;
 }
 option { border-bottom: 1px dotted #d7d7d7 }
-fieldset {
- border: 1px solid #d7d7d7;
- border-radius: .4em;
- margin: 1em 0;
- background: #F7F7F0;
- box-shadow: .1em .1em 1em 0 #E7E7E7 inset;
- padding: 1em;
+fieldset { border: 1px solid #d7d7d7; padding: .5em; margin: 1em 0 }
+p.hint, span.hint { color: #666; font-size: 85%; font-style: italic; margin: .5em 0;
+  padding-left: 1em;
 }
-p.hint, span.hint {
- color: #666;
- font-size: 85%;
- font-style: italic;
- margin: .5em 0;
- padding-left: 1em;
+fieldset.iefix {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
-span.hint { vertical-align: middle; }
-p.help { color: #666; font-size: 90%; margin: 1em .5em .5em; }
-legend {
- color: #999;
- margin-left: .6em;
- padding: 0 .25em;
- font-size: 90%;
- font-weight: bold;
-}
-label.disabled, .disabled span.hint, .disabled p.help, .disabled legend,
-.disabled input, .disabled select, .readonly span.hint, .readonly p.help {
- color: #d7d7d7
-}
+* html fieldset.iefix { width: 98% }
+fieldset.iefix p { margin: 0 }
+legend { color: #999; padding: 0 .25em; font-size: 90%; font-weight: bold }
+label.disabled { color: #d7d7d7 }
 .buttons { margin: .5em .5em .5em 0 }
 .buttons form, .buttons form div { display: inline }
 .buttons input { margin: 1em .5em .1em 0 }
-
-.inlinebuttons input {
- border: 1px solid #ddd;
- border-radius: 1em;
- height: 1.6em;
- padding: 0 .4em .1em;
+.inlinebuttons input { 
  font-size: 70%;
- box-shadow: none;
- margin: 0 .1em .1em;
+ border-width: 1px;
+ border-style: dotted;
+ margin: 0 .1em;
+ padding: 0.1em;
  background: none;
- color: #808080;
- cursor: pointer;
 }
-.uisymbols .inlinebuttons input[type=button],
-.uisymbols .inlinebuttons input[type=submit] {
- font-size: 100%;
-}
-.inlinebuttons input[type=button]:hover,
-.inlinebuttons input[type=submit]:hover {
- background: #f6f6f6;
- color: #333;
- text-shadow: .1em .1em #fcfcfc;
- box-shadow: .1em .1em .6em 0 #999;
-}
-input[type=button].trac-delete,
-input[type=submit].trac-delete {
- color: #d31313;
-}
-input[type=button].trac-delete:hover,
-input[type=submit].trac-delete:hover {
- color: #e31313;
-}
-textarea.trac-fullwidth, input.trac-fullwidth {
- -moz-box-sizing: border-box;
- box-sizing: border-box;
- margin-left: 0;
- margin-right: 0;
- width: 100%;
-}
-textarea.trac-fullwidth { padding: 2px; }
-/* Resource edit forms (detailed view) */
-form.mod { margin: 1em 0 }
-form.mod .field { margin: .5em 0; }
-form.mod .field.description { margin-top: 1em; }
-form.mod .field label { padding-left: .2em }
 
 /* Header */
 #header hr { display: none }
@@ -232,104 +149,55 @@ form.mod .field label { padding-left: .2em }
 
 /* Navigation */
 .nav h2, .nav hr { display: none }
-.nav ul {
+.nav ul { 
  font-size: 10px;
  list-style: none;
  margin: 0;
- padding: 0;
  text-align: right;
 }
 .nav li {
  border-right: 1px solid #d7d7d7;
- display: inline-block;
+ display: inline;
  padding: 0 .75em;
  white-space: nowrap;
- /* IE7 hack to make inline-block effective on block element */
- zoom: 1;
- *display: inline;
 }
 .nav li.last { border-right: none }
 
-/* Meta navigation bar */
-#metanav {
- padding-top: .3em;
-}
-#metanav form.trac-logout {
- display: inline;
- margin: 0;
- padding: 0;
-}
-#metanav form.trac-logout button {
- margin: 0;
- padding: 0;
- border: 0;
- outline: 0;
- background: transparent;
- font-family: inherit;
- font-size: 100%;
- color: #b00;
- border-bottom: 1px dotted #bbb;
- cursor: pointer;
-}
-#metanav form.trac-logout button::-moz-focus-inner { border: 0; padding: 0 }
-#metanav form.trac-logout button:hover { background-color: #eee; color: #555 }
-#metanav form.trac-logout button:active { position: static }
-
 /* Main navigation bar */
 #mainnav {
+ background: #fff url(../topbar_gradient.png) 0 0;
+ border: 1px solid #000;
  font: normal 10px verdana,'Bitstream Vera Sans',helvetica,arial,sans-serif;
- box-shadow: 0 .5em 1.5em #eee;
- border: 1px solid #e4e4e4;
- border-radius: .5em;
  margin: .66em 0 .33em;
+ padding: .2em 0;
 }
-#mainnav li {
- background: white url(../topbar_gradient.png) 0 0;
- border: 1px solid #e4e4e4;
- margin: -1px .3em 0 -.4em;
- padding: .3em 0;
-}
-
-#mainnav .first, #mainnav .first :link {
- border-top-left-radius: .5em;
- border-bottom-left-radius: .5em;
-}
-#mainnav .last, #mainnav .last :link {
- border-top-right-radius: .5em;
- border-bottom-right-radius: .5em;
- margin-right: 0;
-}
-
+#mainnav li { border-right: none; padding: .25em 0 }
 #mainnav :link, #mainnav :visited {
+ background: url(../dots.gif) 0 0 no-repeat;
+ border-right: 1px solid #fff;
  border-bottom: none;
- box-shadow: 0 .1em .3em 0 #999;
+ border-left: 1px solid #555;
  color: #000;
- padding: .3em 20px;
+ padding: .2em 20px;
 }
-
-#mainnav li:hover {
- border: 1px solid #666;
-}
+* html #mainnav :link, * html #mainnav :visited { background-position: 1px 0 }
 #mainnav :link:hover, #mainnav :visited:hover {
- background: #000 url(../topbar_gradient2.png) 0 0 repeat-x;
- color: #eee;
- box-shadow: 0 .1em .6em 0 #666;
-}
-
-#mainnav .active {
- border: 1px solid #666;
+ background-color: #ccc;
+ border-right: 1px solid #ddd;
 }
 #mainnav .active :link, #mainnav .active :visited {
  background: #000 url(../topbar_gradient2.png) 0 0 repeat-x;
+ border-top: none;
+ border-right: 1px solid #000;
  color: #eee;
- text-shadow: 1px 0 #eee;
+ font-weight: bold;
+}
+#mainnav .active :link:hover, #mainnav .active :visited:hover {
+ border-right: 1px solid #000;
 }
 
 /* Context-dependent navigation links */
-#ctxtnav {
- min-height: 1em;
- padding: .4em 0;
-}
+#ctxtnav { min-height: 1em }
 #ctxtnav li ul {
  background: #f7f7f7;
  color: #ccc;
@@ -354,13 +222,9 @@ form.mod .field label { padding-left: .2em }
 }
 
 /* Alternate links */
-#altlinks {
- clear: both;
- margin-top: .4em;
- text-align: center;
-}
+#altlinks { clear: both; text-align: center }
 #altlinks h3 { font-size: 12px; letter-spacing: normal; margin: 0 }
-#altlinks ul { list-style: none; margin: 0; padding: 0 }
+#altlinks ul { list-style: none; margin: 0; padding: 0 0 1em }
 #altlinks li {
  border-right: 1px solid #d7d7d7;
  display: inline;
@@ -387,11 +251,12 @@ form.mod .field label { padding-left: .2em }
 
 /* Footer */
 #footer {
- clear: both;
- color: #bbb;
- font-size: 10px;
- height: 31px;
- padding: .25em 0;
+  clear: both;
+  color: #bbb;
+  font-size: 10px;
+  border-top: 1px solid;
+  height: 31px;
+  padding: .25em 0;
 }
 #footer :link, #footer :visited { color: #bbb; }
 #footer hr { display: none }
@@ -399,33 +264,19 @@ form.mod .field label { padding-left: .2em }
 #footer #tracpowered:hover { background: transparent }
 #footer p { margin: 0 }
 #footer p.left {
- float: left;
- margin-left: 1em;
- padding: 0 1em;
- border-left: 1px solid #d7d7d7;
- border-right: 1px solid #d7d7d7;
+  float: left;
+  margin-left: 1em;
+  padding: 0 1em;
+  border-left: 1px solid #d7d7d7;
+  border-right: 1px solid #d7d7d7;
 }
 #footer p.right {
- float: right;
- text-align: right;
+  float: right;
+  text-align: right;
 }
 
-/* Container for all the elements in the page, usually single child of the body element */
-#content {
- position: relative; /* reference for absolute positioning of children */
-}
+#content { padding-bottom: 2em; position: relative }
 
-/* Information content */
-div.trac-content {
- padding: .5em 1em;
- margin: .3em auto;
- border: 1px solid #e4e4e4;
- border-radius: .5em;
- box-shadow: .2em .3em 1.5em #eee;
-}
-
-/* Help links */
-.uinohelp #help { display: none }
 #help {
  clear: both;
  color: #999;
@@ -438,13 +289,9 @@ div.trac-content {
 
 /* Section folding */
 .foldable :link, .foldable :visited {
- background: url(../expanded.png) 4px 50% no-repeat;
+ background: url(../expanded.png) 0 50% no-repeat;
  border: none;
- border-radius: .3em;
- box-shadow: .1em .1em .3em 0 #bbb;
- color: #222;
- text-shadow: .1em .1em #fcfcfc;
- padding: .3em .5em .3em 20px;
+ padding-left: 16px;
 }
 .foldable :link:hover, .foldable :visited:hover { background-color: transparent }
 .collapsed > .foldable :link, .collapsed > .foldable :visited {
@@ -454,25 +301,12 @@ div.trac-content {
 fieldset > legend.foldable :link, fieldset > legend.foldable :visited {
  color: #666;
  font-size: 110%;
- text-shadow: .1em .1em #ddd;
-}
-.collapsed legend.foldable { background: white }
-
-/* Section with count */
-h2 .trac-count, h3 .trac-count {
- margin-left: .2em;
- vertical-align: baseline;
- color: #999;
- font-size: 90%;
- font-weight: normal;
 }
 
 /* Page preferences form */
 #prefs {
  background: #f7f7f0;
- border: 1px outset #eee;
- border-radius: 1em;
- box-shadow: .2em .2em .7em 0 #777;
+ border: 1px outset #998;
  float: right;
  font-size: 9px;
  padding: .8em;
@@ -484,7 +318,6 @@ h2 .trac-count, h3 .trac-count {
 #prefs fieldset {
  background: transparent;
  border: none;
- box-shadow: none;
  margin: .5em;
  padding: 0;
 }
@@ -509,11 +342,10 @@ h2 .trac-count, h3 .trac-count {
  width: 100%;
 }
 #info th, #info td { font-size: 85%; padding: 2px .5em; vertical-align: top }
-#info th { font-weight: bold; text-align: left }
+#info th { font-weight: bold; text-align: left; white-space: nowrap }
 #info td.message { width: 100% }
 #info .message ul { padding: 0; margin: 0 2em }
 #info .message p { margin: 0; padding: 0 }
-a.trac-diff:after { content: "∆" }
 
 /* Wiki */
 .wikipage { padding-left: 18px }
@@ -521,11 +353,6 @@ a.trac-diff:after { content: "∆" }
 .wikipage table h1, .wikipage table h2, .wikipage table h3 { margin-left: 0px }
 div.compact > p:first-child { margin-top: 0 }
 div.compact > p:last-child { margin-bottom: 0 }
-
-/* Styles related to RTL support */
-.rtl { direction: rtl; }
-.rtl div.wiki-toc { float: left; }
-.rtl .wiki-toc ul ul, .wiki-toc ol ol { padding-right: 1.2em }
 
 a.missing:link, a.missing:visited, a.missing, span.missing,
 a.forbidden, span.forbidden { color: #998 }
@@ -548,31 +375,17 @@ dl.compact dd { margin: 0; padding: 0 }
 pre.wiki, pre.literal-block {
  background: #f7f7f7;
  border: 1px solid #d7d7d7;
- box-shadow: 0 0 1em #eee;
- border-radius: .3em;
  margin: 1em 1.75em;
  padding: .25em;
  overflow: auto;
 }
 
-div.wiki-code {
- margin: 1em 1.75em;
-}
-
-code, tt {
- color: #600;
- border: 1px solid #edc;
- border-radius: .25em;
- padding: 0 0.3em;
- background: #fafafa;
-}
-
-blockquote.citation {
+blockquote.citation { 
  margin: -0.6em 0;
- border-style: solid;
- border-width: 0 0 0 2px;
+ border-style: solid; 
+ border-width: 0 0 0 2px; 
  padding-left: .5em;
- border-color: #b44;
+ border-color: #b44; 
 }
 .citation blockquote.citation { border-color: #4b4; }
 .citation .citation blockquote.citation { border-color: #44b; }
@@ -582,7 +395,6 @@ table.wiki {
  border: 1px solid #ccc;
  border-collapse: collapse;
  border-spacing: 0;
- box-shadow: 0 0 1em #eee; /* from pre.wiki */
 }
 table.wiki td { border: 1px solid #ccc;  padding: .1em .25em; }
 table.wiki th {
@@ -590,11 +402,10 @@ table.wiki th {
  padding: .1em .25em;
  background-color: #f7f7f7;
 }
-table.wiki tbody tr.even { background-color: #fcfcfc }
-table.wiki tbody tr.odd { background-color: #f7f7f7 }
 
 .wikitoolbar {
  margin-top: 0.3em;
+ margin-left: 2px;
  border: solid #d7d7d7;
  border-width: 1px 1px 1px 0;
  height: 18px;
@@ -625,7 +436,7 @@ table.wiki tbody tr.odd { background-color: #f7f7f7 }
 .wikitoolbar a#img { background-position: 0 -128px }
 
 /* Textarea resizer */
-div.trac-resizable { display: table; width: 100% }
+div.trac-resizable { display: table; width: 1px }
 div.trac-resizable > div { display: table-cell }
 div.trac-resizable textarea { display: block; margin-bottom: 0 }
 div.trac-grip {
@@ -647,22 +458,10 @@ div.trac-grip {
 .attachment #preview { margin-top: 1em }
 
 /* Styles for the list of attachments. */
-#attachments > div.attachments {
- padding: 0 0 1em 1em;
-}
-#attachments dl.attachments { margin-left: 2em; padding: 0 }
+#attachments > div { border: 1px outset #996; padding: 1em }
+#attachments .attachments { margin-left: 2em; padding: 0 }
 #attachments dt { display: list-item; list-style: square; }
 #attachments dd { font-style: italic; margin-left: 0; padding-left: 0; }
-#attachments p {
- margin-left: 2em;
- font-size: 90%;
- color: #666;
-}
-#attachments > div.attachments > p {
- float: right;
- margin: .4em 0;
-}
-#attachments span.trac-author { font-style: italic; }
 
 /* Styles for tabular listings such as those used for displaying directory
    contents and report results. */
@@ -671,12 +470,10 @@ table.listing {
  border-bottom: 1px solid #d7d7d7;
  border-collapse: collapse;
  border-spacing: 0;
- box-shadow: .2em .3em 1.5em #eee; /* from .trac-content */
  margin-top: 1em;
  width: 100%;
 }
 table.listing th { text-align: left; padding: 0 1em .1em 0; font-size: 12px }
-table.listing th.sel, table.listing td.sel { text-align: center; width: 1% }
 table.listing thead tr { background: #f7f7f0 }
 table.listing thead th {
  border: 1px solid #d7d7d7;
@@ -709,10 +506,8 @@ table.listing tbody td a:hover, table.listing tbody th a:hover {
 table.listing tbody tr { border-top: 1px solid #ddd }
 table.listing tbody tr.even { background-color: #fcfcfc }
 table.listing tbody tr.odd { background-color: #f7f7f7 }
-table.listing tbody tr:hover td { background: #eed !important }
+table.listing tbody tr:hover { background: #eed !important }
 table.listing tbody tr.focus { background: #ddf !important }
-
-table.listing pre { white-space: pre-wrap }
 
 /* Styles for the page history table
    (extends the styles for "table.listing") */
@@ -727,20 +522,20 @@ table.listing pre { white-space: pre-wrap }
 /* Auto-completion interface */
 .suggestions { background: #fff; border: 1px solid #886; color: #222; }
 .suggestions ul {
- font-family: sans-serif;
- max-height: 20em;
- min-height: 3em;
- list-style: none;
- margin: 0;
- overflow: auto;
- padding: 0;
- width: 440px;
+  font-family: sans-serif;
+  max-height: 20em;
+  min-height: 3em;
+  list-style: none;
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  width: 440px;
 }
 * html .suggestions ul { height: 10em; }
 .suggestions li { background: #fff; cursor: pointer; padding: 2px 5px }
 .suggestions li.selected { background: #b9b9b9 }
 
-/* Styles for the error page */
+/* Styles for the error page (and rst errors) */
 #content.error .message, div.system-message {
  background: #fdc;
  border: 2px solid #d00;
@@ -749,77 +544,26 @@ table.listing pre { white-space: pre-wrap }
  margin: 1em 0;
 }
 #content.error div.message pre, div.system-message pre {
- margin-left: 1em;
- overflow: hidden;
- white-space: normal;
+  margin-left: 1em;
+  overflow: hidden;
+  white-space: normal;
 }
-
-div.system-message p { margin: 0 }
+div.system-message p { margin: 0; }
 div.system-message p.system-message-title { font-weight: bold; }
 
-/* rst errors are less emphasized */
-span.system-message {
- float: left;
- background: #fdc;
- padding: 0.2em;
- margin: 1px;
- border-radius: 0.25em;
-}
-
-/* whole-page admonitions in theme.html */
-div.system-message {
- border-radius: .5em;
- /* taken from #prefs */
- box-shadow: .2em .2em .7em 0 #777;
-}
-
-#warning.system-message, .warning.system-message {
- background: #ffb;
- border: 1px solid #500;
-}
+#warning.system-message, .warning.system-message { background: #ffb; border: 1px solid #000; }
 #warning.system-message li { list-style-type: square; }
 
-#notice.system-message, .notice.system-message {
- background: #dfd;
- border: 1px solid #500;
-}
+#notice.system-message, .notice.system-message { background: #dfd; border: 1px solid #000; }
 #notice.system-message li { list-style-type: square; }
 
-div.system-message .trac-close-msg {
- display: none; /* hidden when no Javascript available */
- float: right;
- font-size: 80%;
- /* taken from .inlinebuttons */
- border: 1px solid #ddd;
- border-radius: 1em;
- height: 1.6em;
- padding: 0 .4em .1em;
- box-shadow: none;
- margin: 0 .1em .1em 0;
- background: none;
- color: #999;
- /* taken from trac-delete */
- color: #d31313;
- /* override */
- height: 1.4em;
-}
-div.system-message .trac-close-msg:hover {
- /* taken from .inlinebuttons */
- background: #f6f6f6;
- color: #333;
- text-shadow: .1em .1em #fcfcfc;
- box-shadow: .1em .1em .6em 0 #999;
-}
-.uisymbols div.system-message .trac-close-msg > span {
- display: none;
-}
-.uisymbols div.system-message .trac-close-msg:after {
- content: "x"; /* or &ndash; "–"; */
-}
-
-/* error.html page */
 #content.error form.newticket { display: inline; }
 #content.error form.newticket textarea { display: none; }
+
+#content.error #systeminfo, #content.error #plugins { margin: 1em; width: auto; }
+#content.error #systeminfo th, #content.error #systeminfo td,
+#content.error #plugins th, #content.error #plugins td { font-size: 90%; }
+#content.error #systeminfo th, #content.error #plugins th { background: #f7f7f7; font-weight: bold; }
 
 #content.error #traceback { margin-left: 1em; }
 #content.error #traceback :link, #content.error #traceback :visited {
@@ -848,13 +592,15 @@ div.system-message .trac-close-msg:hover {
 #content.error #traceback td code { white-space: pre; }
 #content.error #traceback pre { font-size: 95%; }
 
+#content.error #plugins td.file { color: #666; }
+
 #content .paging { margin: 0 0 2em; padding: .5em 0 0;
   font-size: 85%; line-height: 2em; text-align: center;
 }
-#content .paging .current {
+#content .paging .current { 
   padding: .1em .3em;
   border: 1px solid #333;
-  background: #999; color: #fff;
+  background: #999; color: #fff; 
 }
 
 #content .paging :link, #content .paging :visited {
@@ -865,7 +611,7 @@ div.system-message .trac-close-msg:hover {
 #content .paging :link:hover, #content .paging :visited:hover {
   background: #999; color: #fff;  border-color: #333;
 }
-#content .paging .previous a,
+#content .paging .previous a, 
 #content .paging .next a {
   font-size: 150%; font-weight: bold; border: none;
 }
@@ -875,25 +621,6 @@ div.system-message .trac-close-msg:hover {
 }
 
 #content h2 .numresults { color: #666; font-size: 90%; }
-
-/* Styles for the About page */
-#content.about a.logo { border: none; float: right; margin-left: 2em; }
-#content.about a.logo img { display: block; }
-#content.about #python-logo img { width: 140px; height: 56px; }
-#content.about p.copyright { color: #999; font-size: 90%; }
-
-/* Styles for environment info (error and about pages) */
-#environmentinfo h2 { margin-top: 2em; }
-#environmentinfo table { margin: 1em; width: auto; }
-#environmentinfo table th, #environmentinfo table td { border: 1px solid #ddd; font-size: 90%; }
-#environmentinfo table th { background: #f7f7f7; font-weight: bold; white-space: nowrap; }
-#environmentinfo table td.file { color: #666; }
-#environmentinfo table tr.disabled th,
-#environmentinfo table tr.disabled td { color: #999; }
-#environmentinfo #config th, #content.about #config td { padding: 3px; }
-#environmentinfo #config tr.modified { background: #ffd; }
-#environmentinfo #config tr.modified td.value { font-style: italic; }
-#environmentinfo #config td.doc { padding: 3px 1em; }
 
 /* Styles for search word highlighting */
 @media screen {
@@ -905,18 +632,10 @@ div.system-message .trac-close-msg:hover {
 }
 
 @media print {
- #header, #altlinks, #footer, #help, #warning, #notice { display: none }
+ #header, #altlinks, #footer, #help { display: none }
  .nav, form, .buttons form, form .buttons, form .inlinebuttons,
- .noprint, .trac-nav, .trac-topnav,
- #attachments > div.attachments > p {
-  display: none;
+ .noprint, .trac-nav, .trac-topnav {
+   display: none;
  }
  form.printableform { display: block }
- div.code pre { white-space: pre-wrap }
- :link, :visited { border-bottom: none }
- div.trac-content { box-shadow: none }
- .foldable :link, .foldable :visited {
-  text-shadow: none;
-  box-shadow: none;
- }
 }

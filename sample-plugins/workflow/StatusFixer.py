@@ -1,17 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2007-2013 Edgewall Software
-# Copyright (C) 2007 Eli Carter <retracile@gmail.com>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
-
 from genshi.builder import tag
 
 from trac.core import Component, implements
@@ -29,11 +15,10 @@ class StatusFixerActionController(Component):
     status can then be set to some valid state.
 
     Don't forget to add `StatusFixerActionController` to the workflow
-    option in the `[ticket]` section in TracIni.
-    If there is no other workflow option, the line will look like this:
-    {{{
+    option in [ticket].
+    If there is no workflow option, the line will look like this:
+
     workflow = ConfigurableTicketWorkflow,StatusFixerActionController
-    }}}
     """
 
     implements(ITicketActionController, IPermissionRequestor)
@@ -52,11 +37,14 @@ class StatusFixerActionController(Component):
         return actions
 
     def get_all_status(self):
-        """Return all the status that are present in the database,
-        so that queries for status no longer in use can be made.
-        """
-        return [status for status, in
-                self.env.db_query("SELECT DISTINCT status FROM ticket")]
+        """We return all the status that are used in the database so that the
+        user can query for used, but invalid, status."""
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('SELECT DISTINCT status FROM ticket')
+        all_status = [row[0] for row in cursor]
+        cursor.close()
+        return all_status
 
     def render_ticket_action_control(self, req, ticket, action):
         # Need to use the list of all status so you can't manually set

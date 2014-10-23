@@ -1,99 +1,58 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2006-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
-import os
-import socket
 import unittest
 from StringIO import StringIO
 
-import trac.tests.compat
 from trac.util.text import empty, expandtabs, fix_eol, javascript_quote, \
-                           levenshtein_distance, normalize_whitespace, \
-                           print_table, quote_query_string, shorten_line, \
-                           strip_line_ws, stripws, sub_vars, text_width, \
-                           to_js_string, to_unicode, unicode_from_base64, \
-                           unicode_quote, unicode_quote_plus, \
-                           unicode_to_base64, unicode_unquote, \
-                           unicode_urlencode, wrap
+                           to_js_string, normalize_whitespace, to_unicode, \
+                           text_width, print_table, unicode_quote, \
+                           unicode_quote_plus, unicode_unquote, \
+                           unicode_urlencode, wrap, quote_query_string, \
+                           unicode_to_base64, unicode_from_base64, \
+                           levenshtein_distance
 
 
 class ToUnicodeTestCase(unittest.TestCase):
     def test_explicit_charset(self):
         uc = to_unicode('\xc3\xa7', 'utf-8')
-        self.assertIsInstance(uc, unicode)
+        assert isinstance(uc, unicode)
         self.assertEquals(u'\xe7', uc)
 
     def test_explicit_charset_with_replace(self):
         uc = to_unicode('\xc3', 'utf-8')
-        self.assertIsInstance(uc, unicode)
+        assert isinstance(uc, unicode)
         self.assertEquals(u'\xc3', uc)
 
     def test_implicit_charset(self):
         uc = to_unicode('\xc3\xa7')
-        self.assertIsInstance(uc, unicode)
+        assert isinstance(uc, unicode)
         self.assertEquals(u'\xe7', uc)
 
     def test_from_exception_using_unicode_args(self):
         u = u'\uB144'
         try:
             raise ValueError, '%s is not a number.' % u
-        except ValueError as e:
-            self.assertEqual(u'\uB144 is not a number.', to_unicode(e))
+        except ValueError, e:
+            self.assertEquals(u'\uB144 is not a number.', to_unicode(e))
 
     def test_from_exception_using_str_args(self):
         u = u'Das Ger\xe4t oder die Ressource ist belegt'
         try:
             raise ValueError, u.encode('utf-8')
-        except ValueError as e:
-            self.assertEqual(u, to_unicode(e))
-
-    def test_from_windows_error(self):
-        try:
-            os.stat('non/existent/file.txt')
-        except OSError as e:
-            uc = to_unicode(e)
-            self.assertIsInstance(uc, unicode, uc)
-            self.assertTrue(uc.startswith('[Error '), uc)
-            self.assertIn(e.strerror.decode('mbcs'), uc)
-
-    def test_from_socket_error(self):
-        for res in socket.getaddrinfo('127.0.0.1', 65536, 0,
-                                      socket.SOCK_STREAM):
-            af, socktype, proto, canonname, sa = res
-            s = socket.socket(af, socktype, proto)
-            try:
-                s.connect(sa)
-            except socket.error as e:
-                uc = to_unicode(e)
-                self.assertIsInstance(uc, unicode, uc)
-                if hasattr(e, 'strerror'):
-                    self.assertIn(e.strerror.decode('mbcs'), uc)
-
-    if os.name != 'nt':
-        del test_from_windows_error
-        del test_from_socket_error
+        except ValueError, e:
+            self.assertEquals(u, to_unicode(e))
 
 
 class ExpandtabsTestCase(unittest.TestCase):
     def test_empty(self):
         x = expandtabs('', ignoring='\0')
-        self.assertEqual('', x)
+        self.assertEquals('', x)
     def test_ingoring(self):
         x = expandtabs('\0\t', ignoring='\0')
-        self.assertEqual('\0        ', x)
+        self.assertEquals('\0        ', x)
     def test_tabstops(self):
-        self.assertEqual('        ', expandtabs('       \t'))
-        self.assertEqual('                ', expandtabs('\t\t'))
+        self.assertEquals('        ', expandtabs('       \t'))
+        self.assertEquals('                ', expandtabs('\t\t'))
 
 
 class JavascriptQuoteTestCase(unittest.TestCase):
@@ -203,15 +162,15 @@ class PrintTableTestCase(unittest.TestCase):
         headers = ('Version', 'Date', 'Name')
         expected = """\
 
-Version     Date         Name
+Version     Date         Name     
 ----------------------------------
-Trac 0.12 | 2010-06-13 | Babel
-Trac 0.11 | 2008-06-22 | Genshi
-Trac 0.10 | 2006-09-28 | Zengia
-Trac 0.9  | 2005-10-31 | Vodun
-Trac 0.8  | 2004-11-15 | Qualia
-Trac 0.7  | 2004-05-18 | Fulci
-Trac 0.6  | 2004-03-23 | Solanum
+Trac 0.12 | 2010-06-13 | Babel    
+Trac 0.11 | 2008-06-22 | Genshi   
+Trac 0.10 | 2006-09-28 | Zengia   
+Trac 0.9  | 2005-10-31 | Vodun    
+Trac 0.8  | 2004-11-15 | Qualia   
+Trac 0.7  | 2004-05-18 | Fulci    
+Trac 0.6  | 2004-03-23 | Solanum  
 Trac 0.5  | 2004-02-23 | Incognito
 
 """
@@ -228,11 +187,11 @@ Trac 0.5  | 2004-02-23 | Incognito
         )
         expected = u"""\
 
-NoneType | None  |
-bool     | True  | True
+NoneType | None  |      
+bool     | True  | True 
 bool     | False | False
-int      | 0     | 0
-float    | 0.0   | 0.0
+int      | 0     | 0    
+float    | 0.0   | 0.0  
 
 """
         self._validate_print_table(expected, data, sep=' | ', ambiwidth=1)
@@ -245,9 +204,9 @@ float    | 0.0   | 0.0
         headers = ('Obfuscated', 'Email')
         expected = u"""\
 
-Obfuscated      Email
+Obfuscated      Email          
 -------------------------------
-foo@localhost | foo@localhost
+foo@localhost | foo@localhost  
 bar@….com     | bar@example.com
 
 """
@@ -262,9 +221,9 @@ bar@….com     | bar@example.com
         headers = ('Obfuscated', 'Email')
         expected = u"""\
 
-Obfuscated      Email
+Obfuscated      Email          
 -------------------------------
-foo@localhost | foo@localhost
+foo@localhost | foo@localhost  
 bar@….com    | bar@example.com
 
 """
@@ -275,8 +234,7 @@ bar@….com    | bar@example.com
         out = StringIO()
         kwargs['out'] = out
         print_table(data, **kwargs)
-        self.assertEqual(expected.encode('utf-8'),
-                         strip_line_ws(out.getvalue(), leading=False))
+        self.assertEqual(expected.encode('utf-8'), out.getvalue())
 
 
 class WrapTestCase(unittest.TestCase):
@@ -353,20 +311,6 @@ class UnicodeBase64TestCase(unittest.TestCase):
         self.assertEqual(text, unicode_from_base64(text_base64_no_strip))
 
 
-class StripwsTestCase(unittest.TestCase):
-    def test_stripws(self):
-        self.assertEqual(u'stripws',
-                         stripws(u' \u200b\t\u3000stripws \u200b\t\u2008'))
-        self.assertEqual(u'stripws \u3000\t',
-                         stripws(u'\u200b\t\u2008 stripws \u3000\t',
-                                 trailing=False))
-        self.assertEqual(u' \t\u3000stripws',
-                         stripws(u' \t\u3000stripws \u200b\t\u2008',
-                                 leading=False))
-        self.assertEqual(u' \t\u3000stripws \u200b\t\u2008',
-                         stripws(u' \t\u3000stripws \u200b\t\u2008',
-                                 leading=False, trailing=False))
-
 
 class LevenshteinDistanceTestCase(unittest.TestCase):
     def test_distance(self):
@@ -377,49 +321,21 @@ class LevenshteinDistanceTestCase(unittest.TestCase):
         self.assertEqual(0, levenshtein_distance('milestone', 'milestone'))
 
 
-class SubVarsTestCase(unittest.TestCase):
-    def test_sub_vars(self):
-        subtext = sub_vars("$USER's tickets for '$COMPONENT', $MILESTONE",
-                           {'USER': 'user1', 'COMPONENT': 'component1'})
-        self.assertEqual("user1's tickets for 'component1', $MILESTONE",
-                         subtext)
-
-
-class ShortenLineTestCase(unittest.TestCase):
-
-    def test_less_than_maxlen(self):
-        text = '123456789'
-        self.assertEqual(text, shorten_line(text, 10))
-
-    def test_equalto_maxlen(self):
-        text = '1234567890'
-        self.assertEqual(text, shorten_line(text, 10))
-
-    def test_greater_than_maxlen(self):
-        text = 'word word word word'
-        self.assertEqual('word word ...', shorten_line(text, 15))
-        text = 'abcdefghij'
-        self.assertEqual('abcde ...', shorten_line(text, 9))
-
-
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(ToUnicodeTestCase))
-    suite.addTest(unittest.makeSuite(ExpandtabsTestCase))
-    suite.addTest(unittest.makeSuite(UnicodeQuoteTestCase))
-    suite.addTest(unittest.makeSuite(JavascriptQuoteTestCase))
-    suite.addTest(unittest.makeSuite(ToJsStringTestCase))
-    suite.addTest(unittest.makeSuite(QuoteQueryStringTestCase))
-    suite.addTest(unittest.makeSuite(WhitespaceTestCase))
-    suite.addTest(unittest.makeSuite(TextWidthTestCase))
-    suite.addTest(unittest.makeSuite(PrintTableTestCase))
-    suite.addTest(unittest.makeSuite(WrapTestCase))
-    suite.addTest(unittest.makeSuite(FixEolTestCase))
-    suite.addTest(unittest.makeSuite(UnicodeBase64TestCase))
-    suite.addTest(unittest.makeSuite(StripwsTestCase))
-    suite.addTest(unittest.makeSuite(LevenshteinDistanceTestCase))
-    suite.addTest(unittest.makeSuite(SubVarsTestCase))
-    suite.addTest(unittest.makeSuite(ShortenLineTestCase))
+    suite.addTest(unittest.makeSuite(ToUnicodeTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(ExpandtabsTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(UnicodeQuoteTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(JavascriptQuoteTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(ToJsStringTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(QuoteQueryStringTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(WhitespaceTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(TextWidthTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(PrintTableTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(WrapTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(FixEolTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(UnicodeBase64TestCase, 'test'))
+    suite.addTest(unittest.makeSuite(LevenshteinDistanceTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

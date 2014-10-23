@@ -45,11 +45,13 @@ class CachedRepository(Repository):
     has_linear_changesets = False
 
     scope = property(lambda self: self.repos.scope)
-
+    
     def __init__(self, env, repos, log):
         self.env = env
         self.repos = repos
-        self._metadata_id = str(self.repos.id)
+        self._metadata_id = (CachedRepository.__module__ + '.'
+                             + CachedRepository.__name__ + '.metadata:'
+                             + str(self.repos.id))
         Repository.__init__(self, repos.name, repos.params, log)
 
     def close(self):
@@ -57,7 +59,7 @@ class CachedRepository(Repository):
 
     def get_base(self):
         return self.repos.get_base()
-
+        
     def get_quickjump_entries(self, rev):
         return self.repos.get_quickjump_entries(self.normalize_rev(rev))
 
@@ -71,11 +73,13 @@ class CachedRepository(Repository):
         return self.repos.get_changeset_uid(rev)
 
     def get_changesets(self, start, stop):
-        for rev, in self.env.db_query("""
-                SELECT rev FROM revision
-                WHERE repos=%s AND time >= %s AND time < %s
-                ORDER BY time DESC, rev DESC
-                """, (self.id, to_utimestamp(start), to_utimestamp(stop))):
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT rev FROM revision "
+                       "WHERE repos=%s AND time >= %s AND time < %s "
+                       "ORDER BY time DESC, rev DESC",
+                       (self.id, to_utimestamp(start), to_utimestamp(stop)))
+        for rev, in cursor:
             try:
                 yield self.get_changeset(rev)
             except NoSuchChangeset:
@@ -84,37 +88,101 @@ class CachedRepository(Repository):
     def sync_changeset(self, rev):
         cset = self.repos.get_changeset(rev)
         srev = self.db_rev(cset.rev)
-        old_cset = None
+        old_cset = [None]
 
-        with self.env.db_transaction as db:
-            try:
-                old_cset = CachedChangeset(self, cset.rev, self.env)
-            except NoSuchChangeset:
-                old_cset = None
-            if old_cset:
-                db("""UPDATE revision SET time=%s, author=%s, message=%s
-                      WHERE repos=%s AND rev=%s
-                      """, (to_utimestamp(cset.date), cset.author,
-                            cset.message, self.id, srev))
+        @self.env.with_transaction()
+        def do_sync(db):
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT time,author,message FROM revision
+                WHERE repos=%s AND rev=%s
+                """, (self.id, srev))
+            for time, author, message in cursor:
+                old_cset[0] = Changeset(self.repos, cset.rev, message, author,
+                                        from_utimestamp(time))
+            if old_cset[0]:
+                cursor.execute("""
+                    UPDATE revision SET time=%s, author=%s, message=%s
+                    WHERE repos=%s AND rev=%s
+                    """, (to_utimestamp(cset.date), cset.author, cset.message,
+                          self.id, srev))
             else:
-                self.insert_changeset(cset.rev, cset)
-        return old_cset
+                self._insert_changeset(cursor, cset.rev, cset)
+        return old_cset[0]
 
     @cached('_metadata_id')
-    def metadata(self):
+    def metadata(self, db):
         """Retrieve data for the cached `metadata` attribute."""
-        return dict(self.env.db_query("""
-                SELECT name, value FROM repository
-                WHERE id=%%s AND name IN (%s)
-                """ % ','.join(['%s'] * len(CACHE_METADATA_KEYS)),
-                (self.id,) + CACHE_METADATA_KEYS))
+        cursor = db.cursor()
+        cursor.execute("SELECT name, value FROM repository "
+                       "WHERE id=%%s AND name IN (%s)" % 
+                       ','.join(['%s'] * len(CACHE_METADATA_KEYS)),
+                       (self.id,) + CACHE_METADATA_KEYS)
+        return dict(cursor)
 
     def sync(self, feedback=None, clean=False):
         if clean:
-            self.remove_cache()
+            self.log.info('Cleaning cache')
+            @self.env.with_transaction()
+            def do_clean(db):
+                cursor = db.cursor()
+                cursor.execute("DELETE FROM revision WHERE repos=%s",
+                               (self.id,))
+                cursor.execute("DELETE FROM node_change WHERE repos=%s",
+                               (self.id,))
+                cursor.executemany("""
+                    DELETE FROM repository WHERE id=%s AND name=%s
+                    """, [(self.id, k) for k in CACHE_METADATA_KEYS])
+                cursor.executemany("""
+                    INSERT INTO repository (id,name,value) VALUES (%s,%s,%s)
+                    """, [(self.id, k, '') for k in CACHE_METADATA_KEYS])
+                del self.metadata
 
         metadata = self.metadata
-        self.save_metadata(metadata)
+        
+        @self.env.with_transaction()
+        def do_transaction(db):
+            cursor = db.cursor()
+            invalidate = False
+    
+            # -- check that we're populating the cache for the correct
+            #    repository
+            repository_dir = metadata.get(CACHE_REPOSITORY_DIR)
+            if repository_dir:
+                # directory part of the repo name can vary on case insensitive
+                # fs
+                if os.path.normcase(repository_dir) \
+                        != os.path.normcase(self.name):
+                    self.log.info("'repository_dir' has changed from %r to %r",
+                                  repository_dir, self.name)
+                    raise TracError(_("The repository directory has changed, "
+                                      "you should resynchronize the "
+                                      "repository with: trac-admin $ENV "
+                                      "repository resync '%(reponame)s'",
+                                      reponame=self.reponame or '(default)'))
+            elif repository_dir is None: # 
+                self.log.info('Storing initial "repository_dir": %s',
+                              self.name)
+                cursor.execute("""
+                    INSERT INTO repository (id,name,value) VALUES (%s,%s,%s)
+                    """, (self.id, CACHE_REPOSITORY_DIR, self.name))
+                invalidate = True
+            else: # 'repository_dir' cleared by a resync
+                self.log.info('Resetting "repository_dir": %s', self.name)
+                cursor.execute("""
+                    UPDATE repository SET value=%s WHERE id=%s AND name=%s
+                    """, (self.name, self.id, CACHE_REPOSITORY_DIR))
+                invalidate = True
+    
+            # -- insert a 'youngeset_rev' for the repository if necessary
+            if metadata.get(CACHE_YOUNGEST_REV) is None:
+                cursor.execute("""
+                    INSERT INTO repository (id,name,value) VALUES (%s,%s,%s)
+                    """, (self.id, CACHE_YOUNGEST_REV, ''))
+                invalidate = True
+    
+            if invalidate:
+                del self.metadata
 
         # -- retrieve the youngest revision in the repository and the youngest
         #    revision cached so far
@@ -143,7 +211,7 @@ class CachedRepository(Repository):
             else:
                 try:
                     next_youngest = self.repos.oldest_rev
-                    # Ugly hack needed because doing that everytime in
+                    # Ugly hack needed because doing that everytime in 
                     # oldest_rev suffers from horrendeous performance (#5213)
                     if self.repos.scope != '/' and not \
                             self.repos.has_node('/', next_youngest):
@@ -159,28 +227,34 @@ class CachedRepository(Repository):
             srev = self.db_rev(next_youngest)
 
             # 0. first check if there's no (obvious) resync in progress
-            with self.env.db_query as db:
-                for rev, in db(
-                        "SELECT rev FROM revision WHERE repos=%s AND rev=%s",
-                        (self.id, srev)):
-                    # already there, but in progress, so keep ''previous''
-                    # notion of 'youngest'
-                    self.repos.clear(youngest_rev=youngest)
-                    return
+            db = self.env.get_read_db()
+            cursor = db.cursor()
+            cursor.execute("""
+               SELECT rev FROM revision WHERE repos=%s AND rev=%s
+               """, (self.id, srev))
+            for rev, in cursor:
+                # already there, but in progress, so keep ''previous''
+                # notion of 'youngest'
+                self.repos.clear(youngest_rev=youngest)
+                return
 
             # prepare for resyncing (there might still be a race
             # condition at this point)
             while next_youngest is not None:
                 srev = self.db_rev(next_youngest)
-
-                with self.env.db_transaction as db:
+                exit = [False]
+                
+                @self.env.with_transaction()
+                def do_transaction(db):
+                    cursor = db.cursor()
+                    
                     self.log.info("Trying to sync revision [%s]",
                                   next_youngest)
                     cset = self.repos.get_changeset(next_youngest)
                     try:
                         # steps 1. and 2.
-                        self.insert_changeset(next_youngest, cset)
-                    except Exception as e: # *another* 1.1. resync attempt won
+                        self._insert_changeset(cursor, next_youngest, cset)
+                    except Exception, e: # *another* 1.1. resync attempt won
                         self.log.warning('Revision %s already cached: %r',
                                          next_youngest, e)
                         # the other resync attempts is also
@@ -190,15 +264,19 @@ class CachedRepository(Repository):
                         self.repos.clear(youngest_rev=youngest)
                         # FIXME: This aborts a containing transaction
                         db.rollback()
+                        exit[0] = True
                         return
-
+    
                     # 3. update 'youngest_rev' metadata (minimize
                     # possibility of failures at point 0.)
-                    db("""
+                    cursor.execute("""
                         UPDATE repository SET value=%s WHERE id=%s AND name=%s
                         """, (str(next_youngest), self.id, CACHE_YOUNGEST_REV))
                     del self.metadata
 
+                if exit[0]:
+                    return
+                
                 # 4. iterate (1. should always succeed now)
                 youngest = next_youngest
                 next_youngest = self.repos.next_rev(next_youngest)
@@ -207,80 +285,12 @@ class CachedRepository(Repository):
                 if feedback:
                     feedback(youngest)
 
-    def remove_cache(self):
-        """Remove the repository cache."""
-        self.log.info("Cleaning cache")
-        with self.env.db_transaction as db:
-            db("DELETE FROM revision WHERE repos=%s",
-               (self.id,))
-            db("DELETE FROM node_change WHERE repos=%s",
-               (self.id,))
-            db.executemany("DELETE FROM repository WHERE id=%s AND name=%s",
-                           [(self.id, k) for k in CACHE_METADATA_KEYS])
-            db.executemany("""
-                  INSERT INTO repository (id, name, value)
-                  VALUES (%s, %s, %s)
-                  """, [(self.id, k, '') for k in CACHE_METADATA_KEYS])
-            del self.metadata
-
-    def save_metadata(self, metadata):
-        """Save the repository metadata."""
-        with self.env.db_transaction as db:
-            invalidate = False
-
-            # -- check that we're populating the cache for the correct
-            #    repository
-            repository_dir = metadata.get(CACHE_REPOSITORY_DIR)
-            if repository_dir:
-                # directory part of the repo name can vary on case insensitive
-                # fs
-                if os.path.normcase(repository_dir) \
-                        != os.path.normcase(self.name):
-                    self.log.info("'repository_dir' has changed from %r to %r",
-                                  repository_dir, self.name)
-                    raise TracError(_("The repository directory has changed, "
-                                      "you should resynchronize the "
-                                      "repository with: trac-admin $ENV "
-                                      "repository resync '%(reponame)s'",
-                                      reponame=self.reponame or '(default)'))
-            elif repository_dir is None: #
-                self.log.info('Storing initial "repository_dir": %s',
-                              self.name)
-                db("""INSERT INTO repository (id, name, value)
-                      VALUES (%s, %s, %s)
-                      """, (self.id, CACHE_REPOSITORY_DIR, self.name))
-                invalidate = True
-            else: # 'repository_dir' cleared by a resync
-                self.log.info('Resetting "repository_dir": %s', self.name)
-                db("UPDATE repository SET value=%s WHERE id=%s AND name=%s",
-                   (self.name, self.id, CACHE_REPOSITORY_DIR))
-                invalidate = True
-
-            # -- insert a 'youngeset_rev' for the repository if necessary
-            if metadata.get(CACHE_YOUNGEST_REV) is None:
-                db("""INSERT INTO repository (id, name, value)
-                      VALUES (%s, %s, %s)
-                      """, (self.id, CACHE_YOUNGEST_REV, ''))
-                invalidate = True
-
-            if invalidate:
-                del self.metadata
-
-    def insert_changeset(self, rev, cset):
-        """Create revision and node_change records for the given changeset
-        instance."""
-        with self.env.db_transaction as db:
-            self._insert_changeset(db, rev, cset)
-
-    def _insert_changeset(self, db, rev, cset):
-        """:deprecated: since 1.1.2, use `insert_changeset` instead. Will
-                        be removed in 1.3.1.
-        """
+    def _insert_changeset(self, cursor, rev, cset):
         srev = self.db_rev(rev)
         # 1. Attempt to resync the 'revision' table.  In case of
         # concurrent syncs, only such insert into the `revision` table
         # will succeed, the others will fail and raise an exception.
-        db("""
+        cursor.execute("""
             INSERT INTO revision (repos,rev,time,author,message)
             VALUES (%s,%s,%s,%s,%s)
             """, (self.id, srev, to_utimestamp(cset.date),
@@ -292,7 +302,7 @@ class CachedRepository(Repository):
                            (path, kind, action, bpath, brev))
             kind = _inverted_kindmap[kind]
             action = _inverted_actionmap[action]
-            db("""
+            cursor.execute("""
                 INSERT INTO node_change
                     (repos,rev,path,node_type,change_type,base_path,
                      base_rev)
@@ -309,22 +319,25 @@ class CachedRepository(Repository):
         last = self.normalize_rev(last)
         slast = self.db_rev(last)
         node = self.get_node(path, last)    # Check node existence
-        with self.env.db_query as db:
-            if first is None:
-                first = db("""
-                    SELECT rev FROM node_change
-                    WHERE repos=%s AND rev<=%s AND path=%s
-                      AND change_type IN ('A', 'C', 'M')
-                    ORDER BY rev DESC LIMIT 1
-                    """, (self.id, slast, path))
-                first = int(first[0][0]) if first else 0
-            sfirst = self.db_rev(first)
-            return [int(rev) for rev, in db("""
-                    SELECT DISTINCT rev FROM node_change
-                    WHERE repos=%%s AND rev>=%%s AND rev<=%%s
-                      AND (path=%%s OR path %s)""" % db.prefix_match(),
-                    (self.id, sfirst, slast, path,
-                     db.prefix_match_value(path + '/')))]
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        if first is None:
+            cursor.execute("SELECT rev FROM node_change "
+                           "WHERE repos=%s AND rev<=%s "
+                           "  AND path=%s "
+                           "  AND change_type IN ('A', 'C', 'M') "
+                           "ORDER BY rev DESC LIMIT 1",
+                           (self.id, slast, path))
+            first = 0
+            for row in cursor:
+                first = int(row[0])
+        sfirst = self.db_rev(first)
+        cursor.execute("SELECT DISTINCT rev FROM node_change "
+                       "WHERE repos=%%s AND rev>=%%s AND rev<=%%s "
+                       " AND (path=%%s OR path %s)" % db.prefix_match(),
+                       (self.id, sfirst, slast, path,
+                        db.prefix_match_value(path + '/')))
+        return [int(row[0]) for row in cursor]
 
     def _get_changed_revs(self, node_infos):
         if not node_infos:
@@ -410,35 +423,31 @@ class CachedRepository(Repository):
 
     def _next_prev_rev(self, direction, rev, path=''):
         srev = self.db_rev(rev)
-        with self.env.db_query as db:
-            # the changeset revs are sequence of ints:
-            sql = "SELECT rev FROM node_change WHERE repos=%s AND " + \
-                  "rev" + direction + "%s"
-            args = [self.id, srev]
+        db = self.env.get_db_cnx()
+        # the changeset revs are sequence of ints:
+        sql = "SELECT rev FROM node_change WHERE repos=%s AND " + \
+              "rev" + direction + "%s"
+        args = [self.id, srev]
 
-            if path:
-                path = path.lstrip('/')
-                # changes on path itself or its children
-                sql += " AND (path=%s OR path " + db.prefix_match()
-                args.extend((path, db.prefix_match_value(path + '/')))
-                # deletion of path ancestors
-                components = path.lstrip('/').split('/')
-                parents = ','.join(('%s',) * len(components))
-                sql += " OR (path IN (" + parents + ") AND change_type='D'))"
-                for i in range(1, len(components) + 1):
-                    args.append('/'.join(components[:i]))
+        if path:
+            path = path.lstrip('/')
+            # changes on path itself or its children
+            sql += " AND (path=%s OR path " + db.prefix_match()
+            args.extend((path, db.prefix_match_value(path + '/')))
+            # deletion of path ancestors
+            components = path.lstrip('/').split('/')
+            parents = ','.join(('%s',) * len(components))
+            sql += " OR (path IN (" + parents + ") AND change_type='D'))"
+            for i in range(1, len(components) + 1):
+                args.append('/'.join(components[:i]))
 
-            sql += " ORDER BY rev" + (" DESC" if direction == '<' else "") \
-                   + " LIMIT 1"
-
-            for rev, in db(sql, args):
-                return int(rev)
-
-    def parent_revs(self, rev):
-        if self.has_linear_changesets:
-            return Repository.parent_revs(self, rev)
-        else:
-            return self.repos.parent_revs(rev)
+        sql += " ORDER BY rev" + (direction == '<' and " DESC" or "") \
+               + " LIMIT 1"
+        
+        cursor = db.cursor()
+        cursor.execute(sql, args)
+        for rev, in cursor:
+            return int(rev)
 
     def rev_older_than(self, rev1, rev2):
         return self.repos.rev_older_than(self.normalize_rev(rev1),
@@ -472,10 +481,10 @@ class CachedRepository(Repository):
         """Convert a revision from its representation in the database."""
         return rev
 
-    def get_changes(self, old_path, old_rev, new_path, new_rev,
+    def get_changes(self, old_path, old_rev, new_path, new_rev, 
                     ignore_ancestry=1):
         return self.repos.get_changes(old_path, self.normalize_rev(old_rev),
-                                      new_path, self.normalize_rev(new_rev),
+                                      new_path, self.normalize_rev(new_rev), 
                                       ignore_ancestry)
 
 
@@ -483,24 +492,28 @@ class CachedChangeset(Changeset):
 
     def __init__(self, repos, rev, env):
         self.env = env
-        for _date, author, message in self.env.db_query("""
-                SELECT time, author, message FROM revision
-                WHERE repos=%s AND rev=%s
-                """, (repos.id, repos.db_rev(rev))):
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT time,author,message FROM revision "
+                       "WHERE repos=%s AND rev=%s",
+                       (repos.id, repos.db_rev(rev)))
+        row = cursor.fetchone()
+        if row:
+            _date, author, message = row
             date = from_utimestamp(_date)
             Changeset.__init__(self, repos, repos.rev_db(rev), message, author,
                                date)
-            break
         else:
             raise NoSuchChangeset(rev)
 
     def get_changes(self):
-        for path, kind, change, base_path, base_rev in sorted(
-                self.env.db_query("""
-                SELECT path, node_type, change_type, base_path, base_rev
-                FROM node_change WHERE repos=%s AND rev=%s
-                ORDER BY path
-                """, (self.repos.id, self.repos.db_rev(self.rev)))):
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("SELECT path,node_type,change_type,base_path,base_rev "
+                       "FROM node_change WHERE repos=%s AND rev=%s "
+                       "ORDER BY path",
+                       (self.repos.id, self.repos.db_rev(self.rev)))
+        for path, kind, change, base_path, base_rev in sorted(cursor):
             kind = _kindmap[kind]
             change = _actionmap[change]
             yield path, kind, change, base_path, self.repos.rev_db(base_rev)

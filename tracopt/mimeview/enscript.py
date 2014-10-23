@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2004-2013 Edgewall Software
+# Copyright (C) 2004-2009 Edgewall Software
 # Copyright (C) 2004 Daniel Lundin <daniel@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # All rights reserved.
@@ -114,8 +114,8 @@ class EnscriptRenderer(Component):
         for the conversion and `quality` is the quality ratio
         associated to this conversion.
         That can also be used to override the default
-        quality ratio used by the Enscript render, which is 2.
-        (''since 0.10'')""")
+        quality ratio used by the Enscript render, which is 2
+        (''since 0.10'').""")
 
     def __init__(self):
         self._types = None
@@ -136,7 +136,7 @@ class EnscriptRenderer(Component):
         mimetype = mimetype.split(';', 1)[0] # strip off charset
         mode = self._types[mimetype][0]
         cmdline += ' --color -h -q --language=html -p - -E%s' % mode
-        self.log.debug("Enscript command line: %s" % cmdline)
+        self.env.log.debug("Enscript command line: %s" % cmdline)
 
         np = NaivePopen(cmdline, content.encode('utf-8'), capturestderr=1)
         if np.errorlevel or np.err:
@@ -151,7 +151,7 @@ class EnscriptRenderer(Component):
         i = odata.find('<PRE>')
         beg = i > 0 and i + 6
         i = odata.rfind('</PRE>')
-        end = i if i > 0 else len(odata)
+        end = i > 0 and i or len(odata)
 
         odata = EnscriptDeuglifier().format(odata[beg:end].decode('utf-8'))
         return [Markup(line) for line in odata.splitlines()]

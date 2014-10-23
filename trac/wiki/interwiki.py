@@ -19,9 +19,8 @@ import re
 from genshi.builder import tag
 
 from trac.cache import cached
-from trac.config import ConfigSection
 from trac.core import *
-from trac.util.translation import _, N_
+from trac.util.translation import _
 from trac.wiki.api import IWikiChangeListener, IWikiMacroProvider
 from trac.wiki.parser import WikiParser
 from trac.wiki.formatter import split_url_into_path_query_fragment
@@ -31,21 +30,6 @@ class InterWikiMap(Component):
     """InterWiki map manager."""
 
     implements(IWikiChangeListener, IWikiMacroProvider)
-
-    interwiki_section = ConfigSection('interwiki',
-        """Every option in the `[interwiki]` section defines one InterWiki
-        prefix. The option name defines the prefix. The option value defines
-        the URL, optionally followed by a description separated from the URL
-        by whitespace. Parametric URLs are supported as well.
-
-        '''Example:'''
-        {{{
-        [interwiki]
-        MeatBall = http://www.usemod.com/cgi-bin/mb.pl?
-        PEP = http://www.python.org/peps/pep-$1.html Python Enhancement Proposal $1
-        tsvn = tsvn: Interact with TortoiseSvn
-        }}}
-        """)
 
     _page_name = 'InterMapTxt'
     _interwiki_re = re.compile(r"(%s)[ \t]+([^ \t]+)(?:[ \t]+#(.*))?" %
@@ -68,7 +52,7 @@ class InterWikiMap(Component):
         """Replace "$1" by the first args, "$2" by the second, etc."""
         def setarg(match):
             num = int(match.group()[1:])
-            return args[num - 1] if 0 < num <= len(args) else ''
+            return 0 < num <= len(args) and args[num-1] or ''
         return re.sub(InterWikiMap._argspec_re, setarg, txt)
 
     def _expand_or_append(self, txt, args):
@@ -76,16 +60,16 @@ class InterWikiMap(Component):
         if not args:
             return txt
         expanded = self._expand(txt, args)
-        return txt + args[0] if expanded == txt else expanded
+        return expanded == txt and txt + args[0] or expanded
 
     def url(self, ns, target):
         """Return `(url, title)` for the given InterWiki `ns`.
-
+        
         Expand the colon-separated `target` arguments.
         """
         ns, url, title = self[ns]
-        maxargnum = max([0] + [int(a[1:]) for a in
-                               re.findall(InterWikiMap._argspec_re, url)])
+        maxargnum = max([0]+[int(a[1:]) for a in
+                             re.findall(InterWikiMap._argspec_re, url)])
         target, query, fragment = split_url_into_path_query_fragment(target)
         if maxargnum > 0:
             args = target.split(':', (maxargnum - 1))
@@ -94,7 +78,7 @@ class InterWikiMap(Component):
         url = self._expand_or_append(url, args)
         ntarget, nquery, nfragment = split_url_into_path_query_fragment(url)
         if query and nquery:
-            nquery = '%s&%s' % (nquery, query[1:])
+            nquery = '%s&%s' % (nquery, query[1:]) 
         else:
             nquery = nquery or query
         nfragment = fragment or nfragment # user provided takes precedence
@@ -124,13 +108,13 @@ class InterWikiMap(Component):
             del self.interwiki_map
 
     @cached
-    def interwiki_map(self):
-        """Map from upper-cased namespaces to (namespace, prefix, title)
+    def interwiki_map(self, db):
+        """Map from upper-cased namespaces to (namespace, prefix, title) 
         values.
         """
         from trac.wiki.model import WikiPage
         map = {}
-        content = WikiPage(self.env, InterWikiMap._page_name).text
+        content = WikiPage(self.env, InterWikiMap._page_name, db=db).text
         in_map = False
         for line in content.split('\n'):
             if in_map:
@@ -141,16 +125,10 @@ class InterWikiMap(Component):
                     if m:
                         prefix, url, title = m.groups()
                         url = url.strip()
-                        title = title.strip() if title else prefix
+                        title = title and title.strip() or prefix
                         map[prefix.upper()] = (prefix, url, title)
             elif line.startswith('----'):
                 in_map = True
-        for prefix, value in self.interwiki_section.options():
-            value = value.split(None, 1)
-            if value:
-                url = value[0].strip()
-                title = value[1].strip() if len(value) > 1 else prefix
-                map[prefix.upper()] = (prefix, url, title)
         return map
 
     # IWikiMacroProvider methods
@@ -158,10 +136,8 @@ class InterWikiMap(Component):
     def get_macros(self):
         yield 'InterWiki'
 
-    def get_macro_description(self, name):
-        return 'messages', \
-               N_("Provide a description list for the known InterWiki "
-                  "prefixes.")
+    def get_macro_description(self, name): 
+        return "Provide a description list for the known InterWiki prefixes."
 
     def expand_macro(self, formatter, name, content):
         interwikis = []
@@ -170,10 +146,10 @@ class InterWikiMap(Component):
             interwikis.append({
                 'prefix': prefix, 'url': url, 'title': title,
                 'rc_url': self._expand_or_append(url, ['RecentChanges']),
-                'description': url if title == prefix else title})
+                'description': title == prefix and url or title})
 
-        return tag.table(tag.tr(tag.th(tag.em(_("Prefix"))),
-                                tag.th(tag.em(_("Site")))),
+        return tag.table(tag.tr(tag.th(tag.em("Prefix")),
+                                tag.th(tag.em("Site"))),
                          [tag.tr(tag.td(tag.a(w['prefix'], href=w['rc_url'])),
                                  tag.td(tag.a(w['description'],
                                               href=w['url'])))

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2006-2013 Edgewall Software
+# Copyright (C)2006-2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -102,7 +102,7 @@ class PhpRendererTestCase(unittest.TestCase):
                          u'<span class="code-keyword">; </span>'
                          u'<span class="code-lang">?&gt;</span>', result[0])
         self.assertEqual(1, len(result))
-
+    
     def test_way_too_many_nbsp(self):
         """
         Regression test for a tiny part of #1676
@@ -140,8 +140,8 @@ def suite():
     suite = unittest.TestSuite()
     php = locate("php")
     if php:
-        suite.addTest(unittest.makeSuite(PhpDeuglifierTestCase))
-        suite.addTest(unittest.makeSuite(PhpRendererTestCase))
+        suite.addTest(unittest.makeSuite(PhpDeuglifierTestCase, 'test'))
+        suite.addTest(unittest.makeSuite(PhpRendererTestCase, 'test'))
     else:
         print("SKIP: tracopt/mimeview/tests/php.py (php cli binary, 'php', "
               "not found)")

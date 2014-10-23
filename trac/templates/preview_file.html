@@ -1,13 +1,4 @@
-<!--!  Copyright (C) 2010-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
-
+<!--!
 Display a div for visualizing a preview of a file content.
 
 Arguments:
@@ -26,7 +17,7 @@ Arguments:
     <p py:when="not preview.rendered">
       <py:choose>
         <py:when test="preview.max_file_size_reached"><i18n:msg params="size">
-          <strong>HTML preview not available</strong>, since the file size exceeds ${pretty_size(preview.max_file_size)}.
+          <strong>HTML preview not available</strong>, since the file size exceeds $preview.max_file_size bytes.
         </i18n:msg></py:when>
         <py:otherwise><i18n:msg>
           <strong>HTML preview not available</strong>, since no preview renderer could handle it.

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2005-2013 Edgewall Software
+# Copyright (C) 2005-2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -16,12 +16,20 @@ import unittest
 from trac.web.tests import api, auth, cgi_frontend, chrome, href, session, \
                            wikisyntax, main
 
+try:
+    import neo_cgi
+    from trac.web.tests import clearsilver
+except ImportError:
+    clearsilver = None
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(api.suite())
     suite.addTest(auth.suite())
     suite.addTest(cgi_frontend.suite())
     suite.addTest(chrome.suite())
+    if clearsilver:
+        suite.addTest(clearsilver.suite())
     suite.addTest(href.suite())
     suite.addTest(session.suite())
     suite.addTest(wikisyntax.suite())

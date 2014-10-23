@@ -42,7 +42,8 @@ It is necessary to setup a configuration for the InterTrac facility.
 This configuration has to be done in the TracIni file, `[intertrac]` section.
 
 Example configuration:
-{{{#!ini
+{{{
+...
 [intertrac]
 # -- Example of setting up an alias:
 t = trac

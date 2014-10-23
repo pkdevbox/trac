@@ -10,16 +10,10 @@
 #
 # Author: Matthew Good <matt@matt-good.net>
 
-from __future__ import absolute_import
-
-import os
-import pygments
-import re
 from datetime import datetime
+import os
 from pkg_resources import resource_filename
-from pygments.formatters.html import HtmlFormatter
-from pygments.lexers import get_all_lexers, get_lexer_by_name
-from pygments.styles import get_all_styles, get_style_by_name
+import re
 
 from trac.core import *
 from trac.config import ListOption, Option
@@ -35,6 +29,15 @@ from trac.web.chrome import add_notice, add_stylesheet
 from genshi import QName, Stream
 from genshi.core import Attrs, START, END, TEXT
 
+# Kludge to workaround the lack of absolute imports in Python version prior to
+# 2.5
+pygments = __import__('pygments', {}, {}, ['lexers', 'styles', 'formatters'])
+get_all_lexers = pygments.lexers.get_all_lexers
+get_lexer_by_name = pygments.lexers.get_lexer_by_name
+HtmlFormatter = pygments.formatters.html.HtmlFormatter
+get_all_styles = pygments.styles.get_all_styles
+get_style_by_name = pygments.styles.get_style_by_name
+
 __all__ = ['PygmentsRenderer']
 
 
@@ -43,8 +46,6 @@ class PygmentsRenderer(Component):
 
     implements(ISystemInfoProvider, IHTMLPreviewRenderer,
                IPreferencePanelProvider, IRequestHandler)
-
-    is_valid_default_handler = False
 
     default_style = Option('mimeviewer', 'pygments_default_style', 'trac',
         """The default style to use for Pygments syntax highlighting.""")
@@ -85,21 +86,15 @@ class PygmentsRenderer(Component):
         self._types = None
 
     # ISystemInfoProvider methods
-
+    
     def get_system_info(self):
         version = get_pkginfo(pygments).get('version')
         # if installed from source, fallback to the hardcoded version info
         if not version and hasattr(pygments, '__version__'):
             version = pygments.__version__
         yield 'Pygments', version
-
+    
     # IHTMLPreviewRenderer methods
-
-    def get_extra_mimetypes(self):
-        for lexname, aliases, _, mimetypes in get_all_lexers():
-            name = aliases[0] if aliases else lexname
-            for mimetype in mimetypes:
-                yield mimetype, aliases
 
     def get_quality_ratio(self, mimetype):
         # Extend default MIME type to mode mappings with configured ones
@@ -140,8 +135,6 @@ class PygmentsRenderer(Component):
                 add_notice(req, _('Your preferences have been saved.'))
             req.redirect(req.href.prefs(panel or None))
 
-        for style in sorted(styles):
-            add_stylesheet(req, '/pygments/%s.css' % style, title=style.title())
         output = self._generate('html', self.EXAMPLE)
         return 'prefs_pygments.html', {
             'output': output,
@@ -161,7 +154,7 @@ class PygmentsRenderer(Component):
         style = req.args['style']
         try:
             style_cls = get_style_by_name(style)
-        except ValueError as e:
+        except ValueError, e:
             raise HTTPNotFound(e)
 
         parts = style_cls.__module__.split('.')
@@ -190,7 +183,7 @@ class PygmentsRenderer(Component):
     def _init_types(self):
         self._types = {}
         for lexname, aliases, _, mimetypes in get_all_lexers():
-            name = aliases[0] if aliases else lexname
+            name = aliases and aliases[0] or lexname
             for mimetype in mimetypes:
                 self._types[mimetype] = (name, self.QUALITY_RATIO)
 

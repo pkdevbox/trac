@@ -19,11 +19,8 @@
 #         Matthew Good <trac@matt-good.net>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-from __future__ import print_function
-
 import pkg_resources
 import os
-import socket
 import select
 import sys
 from SocketServer import ThreadingMixIn
@@ -102,6 +99,13 @@ class TracHTTPServer(ThreadingMixIn, WSGIServer):
         WSGIServer.__init__(self, server_address, application,
                             request_handler=request_handlers[bool(use_http_11)])
 
+    if sys.version_info < (2, 6):
+        def serve_forever(self, poll_interval=0.5):
+            while True:
+                r, w, e = select.select([self], [], [], poll_interval)
+                if self in r:
+                    self.handle_request()
+
 
 class TracHTTPRequestHandler(WSGIRequestHandler):
 
@@ -110,7 +114,6 @@ class TracHTTPRequestHandler(WSGIRequestHandler):
     def address_string(self):
         # Disable reverse name lookups
         return self.client_address[:2][0]
-
 
 class TracHTTP11RequestHandler(TracHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -130,8 +133,8 @@ def main():
 
         env_name, filename, realm = info
         if env_name in auths:
-            print('Ignoring duplicate authentication option for project: %s'
-                  % env_name, file=sys.stderr)
+            print >> sys.stderr, 'Ignoring duplicate authentication option ' \
+                                 'for project: %s' % env_name
         else:
             auths[env_name] = cls(os.path.abspath(filename), realm)
 
@@ -146,7 +149,7 @@ def main():
             setattr(parser.values, option.dest, int(value, 8))
         except ValueError:
             raise OptionValueError('Invalid octal umask value: %r' % value)
-
+    
     parser.add_option('-a', '--auth', action='callback', type='string',
                       metavar='DIGESTAUTH', callback=_auth_callback,
                       callback_args=(DigestAuthentication,),
@@ -192,47 +195,14 @@ def main():
                           help='run in the background as a daemon')
         parser.add_option('--pidfile', action='store',
                           dest='pidfile',
-                          help='when daemonizing, file to which to write pid')
+                          help='When daemonizing, file to which to write pid')
         parser.add_option('--umask', action='callback', type='string',
                           dest='umask', metavar='MASK', callback=_octal,
-                          help='when daemonizing, file mode creation mask '
+                          help='When daemonizing, file mode creation mask '
                           'to use, in octal notation (default 022)')
 
-        try:
-            import grp, pwd
-
-            def _group(option, opt_str, value, parser):
-                try:
-                    value = int(value)
-                except ValueError:
-                    try:
-                        value = grp.getgrnam(value)[2]
-                    except KeyError:
-                        raise OptionValueError('group not found: %r' % value)
-                setattr(parser.values, option.dest, value)
-
-            def _user(option, opt_str, value, parser):
-                try:
-                    value = int(value)
-                except ValueError:
-                    try:
-                        value = pwd.getpwnam(value)[2]
-                    except KeyError:
-                        raise OptionValueError('user not found: %r' % value)
-                setattr(parser.values, option.dest, value)
-
-            parser.add_option('--group', action='callback', type='string',
-                              dest='group', metavar='GROUP', callback=_group,
-                              help='the group to run as')
-            parser.add_option('--user', action='callback', type='string',
-                              dest='user', metavar='USER', callback=_user,
-                              help='the user to run as')
-        except ImportError:
-            pass
-
     parser.set_defaults(port=None, hostname='', base_path='', daemonize=False,
-                        protocol='http', http11=True, umask=022, user=None,
-                        group=None)
+                        protocol='http', http11=True, umask=022)
     options, args = parser.parse_args()
 
     if not args and not options.env_parent_dir:
@@ -280,26 +250,19 @@ def main():
 
     if options.protocol == 'http':
         def serve():
+            httpd = TracHTTPServer(server_address, wsgi_app,
+                                   options.env_parent_dir, args,
+                                   use_http_11=options.http11)
+
+            print 'Server starting in PID %i.' % os.getpid()
             addr, port = server_address
             if not addr or addr == '0.0.0.0':
-                loc = '0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
+                print 'Serving on 0.0.0.0:%s view at http://127.0.0.1:%s/%s' \
                        % (port, port, base_path)
             else:
-                loc = 'http://%s:%s/%s' % (addr, port, base_path)
-
-            try:
-                httpd = TracHTTPServer(server_address, wsgi_app,
-                                       options.env_parent_dir, args,
-                                       use_http_11=options.http11)
-            except socket.error as e:
-                print("Error starting Trac server on %s" % loc)
-                print("[Errno %s] %s" % e.args)
-                sys.exit(1)
-
-            print("Server starting in PID %s." % os.getpid())
-            print("Serving on %s" % loc)
+                print 'Serving on http://%s:%s/%s' % (addr, port, base_path)
             if options.http11:
-                print("Using HTTP/1.1 protocol version")
+                print 'Using HTTP/1.1 protocol version'
             httpd.serve_forever()
     elif options.protocol in ('scgi', 'ajp', 'fcgi'):
         def serve():
@@ -310,31 +273,25 @@ def main():
                 from trac.web.fcgi_frontend import FlupMiddleware
                 flup_app = FlupMiddleware(flup_app)
             ret = server_cls(flup_app, bindAddress=server_address).run()
-            sys.exit(42 if ret else 0) # if SIGHUP exit with status 42
+            sys.exit(ret and 42 or 0) # if SIGHUP exit with status 42
 
     try:
         if options.daemonize:
             daemon.daemonize(pidfile=options.pidfile, progname='tracd',
                              umask=options.umask)
-        if options.group is not None:
-            os.setgid(options.group)
-        if options.user is not None:
-            os.setuid(options.user)
 
         if options.autoreload:
             def modification_callback(file):
-                print("Detected modification of %s, restarting." % file,
-                      file=sys.stderr)
+                print >> sys.stderr, 'Detected modification of %s, ' \
+                                     'restarting.' % file
             autoreload.main(serve, modification_callback)
         else:
             serve()
 
-    except OSError as e:
-        print("%s: %s" % (e.__class__.__name__, e), file=sys.stderr)
+    except OSError:
         sys.exit(1)
     except KeyboardInterrupt:
         pass
-
 
 if __name__ == '__main__':
     pkg_resources.require('Trac==%s' % VERSION)

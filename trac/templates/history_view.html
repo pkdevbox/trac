@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -25,7 +15,7 @@
     <div id="content" class="ticket">
       <h1 i18n:msg="name">Change History for <a href="${url or url_of(resource)}">${name or name_of(resource)}</a></h1>
 
-      <form py:if="history" id="history" class="printableform" method="get" action="">
+      <form py:if="history" class="printableform" method="get" action="">
         <div class="buttons">
           <input type="hidden" name="action" value="${diff_action or 'diff'}" />
           <input py:for="k, v in diff_args or []" type="hidden" name="$k" value="$v"/>
@@ -42,7 +32,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr py:for="idx, item in enumerate(history)" class="${'odd' if idx % 2 else 'even'}">
+            <tr py:for="idx, item in enumerate(history)" class="${idx % 2 and 'odd' or 'even'}">
               <td class="diff">
                 <input type="radio" name="old_version" value="$item.version"
                        checked="${idx == 1 or None}" />
@@ -52,11 +42,11 @@
               <td class="version">
                 <a href="${item.url or url_of(resource, version=item.version)}" title="View this version">$item.version</a>
               </td>
-              <td class="date">${pretty_dateinfo(item.date, dateonly=True)}</td>
+              <td class="date">${dateinfo(item.date)}</td>
               <td class="author"
-                  title="${_('IP-Address: %(ipnr)s', ipnr=item.ipnr)
-                           if show_ip_addresses and item.ipnr else None}">${authorinfo(item.author)}</td>
-              <td class="comment">${wiki_to_oneliner(context.child(resource), item.comment, shorten=True)}</td>
+                  title="${show_ip_addresses and item.ipnr 
+                           and _('IP-Address: %(ipnr)s', ipnr=item.ipnr) or None}">${authorinfo(item.author)}</td>
+              <td class="comment">${wiki_to_oneliner(context(resource), item.comment, shorten=True)}</td>
             </tr>
           </tbody>
         </table>

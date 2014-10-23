@@ -1,17 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2007-2013 Edgewall Software
-# Copyright (C) 2007 Eli Carter <retracile@gmail.com>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
 
 import sys
 import getopt
@@ -74,7 +61,7 @@ digraph G {
         if show_perms:
             label += attributes['permissions']
         if 'set_resolution' in attributes:
-            label += ['(' + attributes['set_resolution'] + ')']
+            label += ['(' + attributes['set_resolution'] + ')'] 
         for oldstate in attributes['oldstates']:
             color = color_scheme.get_color(attributes['name'])
             digraph_lines.append(
@@ -122,7 +109,7 @@ if __name__ == '__main__':
             show_ops = True
         elif option in ('-p', '--permissions'):
             show_perms = True
-
+            
     if not args:
         sys.stderr.write('Syntax error: config filename required.\n')
         usage(sys.stderr)

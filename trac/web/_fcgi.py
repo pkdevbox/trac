@@ -435,7 +435,7 @@ def encode_pair(name, value):
         s += struct.pack('!L', valueLength | 0x80000000L)
 
     return s + name + value
-
+    
 class Record(object):
     """
     A FastCGI Record.
@@ -461,7 +461,7 @@ class Record(object):
         while length:
             try:
                 data = sock.recv(length)
-            except socket.error as e:
+            except socket.error, e:
                 if e[0] == errno.EAGAIN:
                     select.select([sock], [], [])
                     continue
@@ -484,7 +484,7 @@ class Record(object):
 
         if length < FCGI_HEADER_LEN:
             raise EOFError
-
+        
         self.version, self.type, self.requestId, self.contentLength, \
                       self.paddingLength = struct.unpack(FCGI_Header, header)
 
@@ -492,7 +492,7 @@ class Record(object):
                              'contentLength = %d' %
                              (sock.fileno(), self.type, self.requestId,
                               self.contentLength))
-
+        
         if self.contentLength:
             try:
                 self.contentData, length = self._recvall(sock,
@@ -518,7 +518,7 @@ class Record(object):
         while length:
             try:
                 sent = sock.send(data)
-            except socket.error as e:
+            except socket.error, e:
                 if e[0] == errno.EAGAIN:
                     select.select([], [sock], [])
                     continue
@@ -544,7 +544,7 @@ class Record(object):
             self._sendall(sock, self.contentData)
         if self.paddingLength:
             self._sendall(sock, '\x00'*self.paddingLength)
-
+            
 class Request(object):
     """
     Represents a single FastCGI request.
@@ -579,16 +579,16 @@ class Request(object):
         if __debug__: _debug(1, 'protocolStatus = %d, appStatus = %d' %
                              (protocolStatus, appStatus))
 
-        try:
-            self._flush()
-            self._end(appStatus, protocolStatus)
-        except socket.error as e:
-            if e[0] != errno.EPIPE:
-                raise
+        try: 
+            self._flush() 
+            self._end(appStatus, protocolStatus) 
+        except socket.error, e: 
+            if e[0] != errno.EPIPE: 
+                raise 
 
     def _end(self, appStatus=0L, protocolStatus=FCGI_REQUEST_COMPLETE):
         self._conn.end_request(self, appStatus, protocolStatus)
-
+        
     def _flush(self):
         self.stdout.close()
         self.stderr.close()
@@ -601,14 +601,14 @@ class CGIRequest(Request):
         self.role = FCGI_RESPONDER
         self.flags = 0
         self.aborted = False
-
+        
         self.server = server
         self.params = dict(os.environ)
         self.stdin = sys.stdin
         self.stdout = StdoutWrapper(sys.stdout) # Oh, the humanity!
         self.stderr = sys.stderr
         self.data = StringIO.StringIO()
-
+        
     def _end(self, appStatus=0L, protocolStatus=FCGI_REQUEST_COMPLETE):
         sys.exit(appStatus)
 
@@ -649,7 +649,7 @@ class Connection(object):
         except:
             pass
         self._sock.close()
-
+        
     def run(self):
         """Begin processing data from the socket."""
         self._keepGoing = True
@@ -658,7 +658,7 @@ class Connection(object):
                 self.process_input()
             except EOFError:
                 break
-            except (select.error, socket.error) as e:
+            except (select.error, socket.error), e:
                 if e[0] == errno.EBADF: # Socket was closed by Request.
                     break
                 raise
@@ -810,7 +810,7 @@ class Connection(object):
         outrec.contentData = struct.pack(FCGI_UnknownTypeBody, inrec.type)
         outrec.contentLength = FCGI_UnknownTypeBody_LEN
         self.writeRecord(outrec)
-
+        
 class MultiplexedConnection(Connection):
     """
     A version of Connection capable of handling multiple requests
@@ -837,7 +837,7 @@ class MultiplexedConnection(Connection):
         self._lock.release()
 
         super(MultiplexedConnection, self)._cleanupSocket()
-
+        
     def writeRecord(self, rec):
         # Must use locking to prevent intermingling of Records from different
         # threads.
@@ -896,7 +896,7 @@ class MultiplexedConnection(Connection):
             super(MultiplexedConnection, self)._do_data(inrec)
         finally:
             self._lock.release()
-
+        
 class Server(object):
     """
     The FastCGI server.
@@ -984,7 +984,7 @@ class Server(object):
                                  socket.SOCK_STREAM)
             try:
                 sock.getpeername()
-            except socket.error as e:
+            except socket.error, e:
                 if e[0] == errno.ENOTSOCK:
                     # Not a socket, assume CGI context.
                     isFCGI = False
@@ -1042,7 +1042,7 @@ class Server(object):
     def _restoreSignalHandlers(self):
         for signum,handler in self._oldSIGs:
             signal.signal(signum, handler)
-
+        
     def _hupHandler(self, signum, frame):
         self._hupReceived = True
         self._keepGoing = False
@@ -1071,7 +1071,7 @@ class Server(object):
         while self._keepGoing:
             try:
                 r, w, e = select.select([sock], [], [], timeout)
-            except select.error as e:
+            except select.error, e:
                 if e[0] == errno.EINTR:
                     continue
                 raise
@@ -1079,7 +1079,7 @@ class Server(object):
             if r:
                 try:
                     clientSock, addr = sock.accept()
-                except socket.error as e:
+                except socket.error, e:
                     if e[0] in (errno.EINTR, errno.EAGAIN):
                         continue
                     raise
@@ -1150,7 +1150,7 @@ class WSGIServer(Server):
 
         Set multithreaded to False if your application is not MT-safe.
         """
-        if 'handler' in kw:
+        if kw.has_key('handler'):
             del kw['handler'] # Doesn't make sense to let this through
         super(WSGIServer, self).__init__(**kw)
 
@@ -1267,7 +1267,7 @@ class WSGIServer(Server):
                 finally:
                     if hasattr(result, 'close'):
                         result.close()
-            except socket.error as e:
+            except socket.error, e:
                 if e[0] != errno.EPIPE:
                     raise # Don't let EPIPE propagate beyond server
         finally:
@@ -1278,9 +1278,9 @@ class WSGIServer(Server):
 
     def _sanitizeEnv(self, environ):
         """Ensure certain values are present, if required by WSGI."""
-        if 'SCRIPT_NAME' not in environ:
+        if not environ.has_key('SCRIPT_NAME'):
             environ['SCRIPT_NAME'] = ''
-        if 'PATH_INFO' not in environ:
+        if not environ.has_key('PATH_INFO'):
             environ['PATH_INFO'] = ''
 
         # If any of these are missing, it probably signifies a broken
@@ -1289,12 +1289,12 @@ class WSGIServer(Server):
                              ('SERVER_NAME', 'localhost'),
                              ('SERVER_PORT', '80'),
                              ('SERVER_PROTOCOL', 'HTTP/1.0')]:
-            if name not in environ:
+            if not environ.has_key(name):
                 environ['wsgi.errors'].write('%s: missing FastCGI param %s '
                                              'required by WSGI!\n' %
                                              (self.__class__.__name__, name))
                 environ[name] = default
-
+            
 if __name__ == '__main__':
     def test_app(environ, start_response):
         """Probably not the most efficient example."""

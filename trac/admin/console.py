@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-#
+# 
 # Copyright (C) 2003-2010 Edgewall Software
 # All rights reserved.
 #
@@ -13,6 +13,7 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 import cmd
+import locale
 import os.path
 import pkg_resources
 from shlex import shlex
@@ -21,8 +22,7 @@ import sys
 import traceback
 
 from trac import __version__ as VERSION
-from trac.admin.api import AdminCommandError, AdminCommandManager, \
-                           get_console_locale
+from trac.admin import AdminCommandError, AdminCommandManager
 from trac.core import TracError
 from trac.env import Environment
 from trac.ticket.model import *
@@ -31,29 +31,31 @@ from trac.util.html import html
 from trac.util.text import console_print, exception_to_unicode, printout, \
                            printerr, raw_input, to_unicode, \
                            getpreferredencoding
-from trac.util.translation import _, ngettext, has_babel, cleandoc_
+from trac.util.translation import _, ngettext, get_negotiated_locale, has_babel
 from trac.versioncontrol.api import RepositoryManager
 from trac.wiki.admin import WikiAdmin
 from trac.wiki.macros import WikiMacroBase
 
-
 TRAC_VERSION = pkg_resources.get_distribution('Trac').version
 rl_completion_suppress_append = None
-
+LANG = os.environ.get('LANG')
 
 def find_readline_lib():
     """Return the name (and possibly the full path) of the readline library
     linked to the readline module.
     """
     import readline
-    with open(readline.__file__, "rb") as f:
+    f = open(readline.__file__, "rb")
+    try:
         data = f.read()
+    finally:
+        f.close()
     import re
     m = re.search('\0([^\0]*libreadline[^\0]*)\0', data)
     if m:
         return m.group(1)
     return None
-
+    
 
 class TracAdmin(cmd.Cmd):
     intro = ''
@@ -64,8 +66,6 @@ class TracAdmin(cmd.Cmd):
     prompt = "Trac> "
     envname = None
     __env = None
-    needs_upgrade = None
-    cmd_mgr = None
 
     def __init__(self, envdir=None):
         cmd.Cmd.__init__(self)
@@ -75,7 +75,7 @@ class TracAdmin(cmd.Cmd):
             for c in '-/:()\\':
                 delims = delims.replace(c, '')
             readline.set_completer_delims(delims)
-
+            
             # Work around trailing space automatically inserted by libreadline
             # until Python gets fixed, see http://bugs.python.org/issue5833
             import ctypes
@@ -108,16 +108,16 @@ class TracAdmin(cmd.Cmd):
             rv = cmd.Cmd.onecmd(self, line) or 0
         except SystemExit:
             raise
-        except AdminCommandError as e:
+        except AdminCommandError, e:
             printerr(_("Error: %(msg)s", msg=to_unicode(e)))
             if e.show_usage:
                 print
                 self.do_help(e.cmd or self.arg_tokenize(line)[0])
             rv = 2
-        except TracError as e:
+        except TracError, e:
             printerr(exception_to_unicode(e))
             rv = 2
-        except Exception as e:
+        except Exception, e:
             printerr(exception_to_unicode(e))
             rv = 2
             if self.env_check():
@@ -145,13 +145,12 @@ Type:  '?' or 'help' for help on commands.
         self.prompt = "Trac [%s]> " % self.envname
         if env is not None:
             self.__env = env
-            self.cmd_mgr = AdminCommandManager(env)
 
     def env_check(self):
         if not self.__env:
             try:
                 self._init_env()
-            except Exception:
+            except:
                 return False
         return True
 
@@ -161,21 +160,20 @@ Type:  '?' or 'help' for help on commands.
             if not self.__env:
                 self._init_env()
             return self.__env
-        except Exception as e:
+        except Exception, e:
             printerr(_("Failed to open environment: %(err)s",
                        err=exception_to_unicode(e, traceback=True)))
             sys.exit(1)
 
     def _init_env(self):
         self.__env = env = Environment(self.envname)
-        negotiated = None
         # fixup language according to env settings
         if has_babel:
-            negotiated = get_console_locale(env)
+            default = env.config.get('trac', 'default_language', '')
+            negotiated = get_negotiated_locale([LANG, default])
             if negotiated:
                 translation.activate(negotiated)
-        self.cmd_mgr = AdminCommandManager(env)
-
+        
     ##
     ## Utility methods
     ##
@@ -204,7 +202,7 @@ Type:  '?' or 'help' for help on commands.
         paragraphs = re.split(r'(?m)(?:^[ \t]*\n){1,}', text)
         return [re.sub(r'(?m)\s+', ' ', each.strip())
                 for each in paragraphs]
-
+    
     @classmethod
     def print_doc(cls, docs, stream=None, short=False, long=False):
         if stream is None:
@@ -216,7 +214,7 @@ Type:  '?' or 'help' for help on commands.
             max_len = max(len(doc[0]) for doc in docs)
             for (cmd, args, doc) in docs:
                 paragraphs = cls.split_help_text(doc)
-                console_print(stream, '%s  %s' % (cmd.ljust(max_len),
+                console_print(stream, '%s  %s' % (cmd.ljust(max_len), 
                                                   paragraphs[0]))
         else:
             import textwrap
@@ -226,14 +224,14 @@ Type:  '?' or 'help' for help on commands.
                 console_print(stream, '    %s\n' % paragraphs[0])
                 if (long or len(docs) == 1) and len(paragraphs) > 1:
                     for paragraph in paragraphs[1:]:
-                        console_print(stream, textwrap.fill(paragraph, 79,
+                        console_print(stream, textwrap.fill(paragraph, 79, 
                             initial_indent='    ', subsequent_indent='    ')
                             + '\n')
 
     ##
     ## Command dispatcher
     ##
-
+    
     def complete_line(self, text, line, cmd_only=False):
         if rl_completion_suppress_append is not None:
             rl_completion_suppress_append.value = 1
@@ -241,9 +239,10 @@ Type:  '?' or 'help' for help on commands.
         if line and line[-1] == ' ':    # Space starts new argument
             args.append('')
         if self.env_check():
+            cmd_mgr = AdminCommandManager(self.env)
             try:
-                comp = self.cmd_mgr.complete_command(args, cmd_only)
-            except Exception as e:
+                comp = cmd_mgr.complete_command(args, cmd_only)
+            except Exception, e:
                 printerr()
                 printerr(_('Completion error: %(err)s',
                            err=exception_to_unicode(e)))
@@ -257,31 +256,24 @@ Type:  '?' or 'help' for help on commands.
             return comp.complete(text)
         except AttributeError:
             return self.word_complete(text, comp)
-
+        
     def completenames(self, text, line, begidx, endidx):
         return self.complete_line(text, line, True)
-
+        
     def completedefault(self, text, line, begidx, endidx):
         return self.complete_line(text, line)
-
+        
     def default(self, line):
         try:
             if not self.__env:
                 self._init_env()
-            if self.needs_upgrade is None:
-                self.needs_upgrade = self.__env.needs_upgrade()
-        except TracError as e:
+        except TracError, e:
             raise AdminCommandError(to_unicode(e))
-        except Exception as e:
+        except Exception, e:
             raise AdminCommandError(exception_to_unicode(e))
         args = self.arg_tokenize(line)
-        if args[0] == 'upgrade':
-            self.needs_upgrade = None
-        elif self.needs_upgrade:
-            raise TracError(_('The Trac Environment needs to be upgraded.\n\n'
-                              'Run "trac-admin %(path)s upgrade"',
-                              path=self.envname))
-        return self.cmd_mgr.execute_command(*args)
+        cmd_mgr = AdminCommandManager(self.env)
+        return cmd_mgr.execute_command(*args)
 
     ##
     ## Available Commands
@@ -299,14 +291,14 @@ Type:  '?' or 'help' for help on commands.
 
     def complete_help(self, text, line, begidx, endidx):
         return self.complete_line(text, line[5:], True)
-
+        
     def do_help(self, line=None):
         arg = self.arg_tokenize(line)
         if arg[0]:
             cmd_mgr = None
             doc = getattr(self, "_help_" + arg[0], None)
             if doc is None and self.env_check():
-                cmd_mgr = self.cmd_mgr
+                cmd_mgr = AdminCommandManager(self.env)
                 doc = cmd_mgr.get_command_help(arg)
             if doc:
                 self.print_doc(doc)
@@ -334,7 +326,7 @@ Type:  '?' or 'help' for help on commands.
                     )
                 printout(_("Invoking trac-admin without command starts "
                            "interactive mode.\n"))
-            env = self.env if self.env_check() else None
+            env = self.env_check() and self.env or None
             self.print_doc(self.all_docs(env), short=True)
 
 
@@ -355,10 +347,10 @@ Type:  '?' or 'help' for help on commands.
     _help_initenv = [
         ('initenv', '[<projectname> <db> [<repostype> <repospath>]]',
          """Create and initialize a new environment
-
+         
          If no arguments are given, then the required parameters are requested
          interactively.
-
+         
          One or more optional arguments --inherit=PATH can be used to specify
          the "[inherit] file" option at environment creation time, so that only
          the options not already specified in one of the global configuration
@@ -375,7 +367,7 @@ Type:  '?' or 'help' for help on commands.
         printout(_("Creating a new Trac environment at %(envname)s",
                    envname=self.envname))
         printout(_("""
-Trac will first ask a few questions about your environment
+Trac will first ask a few questions about your environment 
 in order to initialize and prepare the project database.
 
  Please enter the name of your project.
@@ -384,7 +376,7 @@ in order to initialize and prepare the project database.
         dp = 'My Project'
         returnvals.append(raw_input(_("Project Name [%(default)s]> ",
                                       default=dp)).strip() or dp)
-        printout(_("""
+        printout(_(""" 
  Please specify the connection string for the database to use.
  By default, a local SQLite database is created in the environment
  directory. It is also possible to use an already existing
@@ -413,7 +405,7 @@ in order to initialize and prepare the project database.
             initenv_error(_("Base directory '%(env)s' does not exist. Please "
                             "create it manually and retry.",
                             env=os.path.dirname(self.envname)))
-            return 2
+            return 2            
 
         arg = self.arg_tokenize(line)
         inherit_paths = []
@@ -456,7 +448,7 @@ in order to initialize and prepare the project database.
             try:
                 self.__env = Environment(self.envname, create=True,
                                          options=options)
-            except Exception as e:
+            except Exception, e:
                 initenv_error(_('Failed to create environment.'))
                 printerr(e)
                 traceback.print_exc()
@@ -464,8 +456,8 @@ in order to initialize and prepare the project database.
 
             # Add a few default wiki pages
             printout(_(" Installing default wiki pages"))
-            pages_dir = pkg_resources.resource_filename('trac.wiki',
-                                                        'default-pages')
+            pages_dir = pkg_resources.resource_filename('trac.wiki', 
+                                                        'default-pages') 
             WikiAdmin(self.__env).load_pages(pages_dir)
 
             if repository_dir:
@@ -474,20 +466,20 @@ in order to initialize and prepare the project database.
                     if repos:
                         printout(_(" Indexing default repository"))
                         repos.sync(self._resync_feedback)
-                except TracError as e:
+                except TracError, e:
                     printerr(_("""
 ---------------------------------------------------------------------
 Warning: couldn't index the default repository.
 
-This can happen for a variety of reasons: wrong repository type,
+This can happen for a variety of reasons: wrong repository type, 
 no appropriate third party library for this repository type,
 no actual repository at the specified repository path...
 
-You can nevertheless start using your Trac environment, but
-you'll need to check again your trac.ini file and the [trac]
+You can nevertheless start using your Trac environment, but 
+you'll need to check again your trac.ini file and the [trac] 
 repository_type and repository_path settings.
 """))
-        except Exception as e:
+        except Exception, e:
             initenv_error(to_unicode(e))
             traceback.print_exc()
             return 2
@@ -523,11 +515,9 @@ Congratulations!
     def _resync_feedback(self, rev):
         sys.stdout.write(' [%s]\r' % rev)
         sys.stdout.flush()
-
+        
 
 class TracAdminHelpMacro(WikiMacroBase):
-    _domain = 'messages'
-    _description = cleandoc_(
     """Display help for trac-admin commands.
 
     Examples:
@@ -537,7 +527,7 @@ class TracAdminHelpMacro(WikiMacroBase):
     [[TracAdminHelp(wiki export)]]  # the "wiki export" command
     [[TracAdminHelp(upgrade)]]      # the upgrade command
     }}}
-    """)
+    """
 
     def expand_macro(self, formatter, name, content):
         if content:
@@ -559,8 +549,14 @@ def run(args=None):
     """Main entry point."""
     if args is None:
         args = sys.argv[1:]
+    locale = None
     if has_babel:
-        translation.activate(get_console_locale())
+        import babel
+        try:
+            locale = get_negotiated_locale([LANG]) or babel.Locale.default()
+        except babel.UnknownLocaleError:
+            pass
+        translation.activate(locale)
     warn_setuptools_issue()
     admin = TracAdmin()
     if len(args) > 0:

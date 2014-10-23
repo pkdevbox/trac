@@ -14,19 +14,15 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from abc import ABCMeta, abstractmethod
 try:
-    from base64 import b64decode, b64encode
+    from base64 import b64decode
 except ImportError:
     from base64 import decodestring as b64decode
-    from base64 import encodestring as b64encode
-from hashlib import md5, sha1
 import os
 import re
 import sys
 import time
 import urllib2
-import urlparse
 
 from genshi.builder import tag
 
@@ -34,34 +30,31 @@ from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
 from trac.web.chrome import INavigationContributor
-from trac.util import hex_entropy, md5crypt
+from trac.util import hex_entropy, md5, md5crypt
 from trac.util.concurrency import threading
 from trac.util.translation import _, tag_
 
 
 class LoginModule(Component):
     """User authentication manager.
+    
+    This component implements user authentication based on HTTP authentication
+    provided by the web-server, combined with cookies for communicating the
+    login information across the whole site.
 
-    This component implements user authentication based on HTTP
-    authentication provided by the web-server, combined with cookies
-    for communicating the login information across the whole site.
-
-    This mechanism expects that the web-server is setup so that a
-    request to the path '/login' requires authentication (such as
-    Basic or Digest). The login name is then stored in the database
-    and associated with a unique key that gets passed back to the user
-    agent using the 'trac_auth' cookie. This cookie is used to
-    identify the user in subsequent requests to non-protected
+    This mechanism expects that the web-server is setup so that a request to the
+    path '/login' requires authentication (such as Basic or Digest). The login
+    name is then stored in the database and associated with a unique key that
+    gets passed back to the user agent using the 'trac_auth' cookie. This cookie
+    is used to identify the user in subsequent requests to non-protected
     resources.
     """
 
     implements(IAuthenticator, INavigationContributor, IRequestHandler)
 
-    is_valid_default_handler = False
-
     check_ip = BoolOption('trac', 'check_auth_ip', 'false',
          """Whether the IP address of the user should be checked for
-         authentication. (''since 0.9'')""")
+         authentication (''since 0.9'').""")
 
     ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
         """Whether login names should be converted to lower case
@@ -69,17 +62,16 @@ class LoginModule(Component):
 
     auth_cookie_lifetime = IntOption('trac', 'auth_cookie_lifetime', 0,
         """Lifetime of the authentication cookie, in seconds.
-
-        This value determines how long the browser will cache
-        authentication information, and therefore, after how much
-        inactivity a user will have to log in again. The value
-        of 0 makes the cookie expire at the end of the browsing
-        session. (''since 0.12'')""")
-
+        
+        This value determines how long the browser will cache authentication
+        information, and therefore, after how much inactivity a user will have
+        to log in again. The default value of 0 makes the cookie expire at the
+        end of the browsing session. (''since 0.12'')""")
+    
     auth_cookie_path = Option('trac', 'auth_cookie_path', '',
-        """Path for the authentication cookie. Set this to the common
-        base path of several Trac instances if you want them to share
-        the cookie.  (''since 0.12'')""")
+        """Path for the authentication cookie. Set this to the common base path
+        of several Trac instances if you want them to share the cookie.
+        (''since 0.12'')""")
 
     # IAuthenticator methods
 
@@ -87,9 +79,8 @@ class LoginModule(Component):
         authname = None
         if req.remote_user:
             authname = req.remote_user
-        elif 'trac_auth' in req.incookie:
-            authname = self._get_name_for_cookie(req,
-                                                 req.incookie['trac_auth'])
+        elif req.incookie.has_key('trac_auth'):
+            authname = self._get_name_for_cookie(req, req.incookie['trac_auth'])
 
         if not authname:
             return None
@@ -109,10 +100,7 @@ class LoginModule(Component):
             yield ('metanav', 'login', _('logged in as %(user)s',
                                          user=req.authname))
             yield ('metanav', 'logout',
-                   tag.form(tag.div(tag.button(_('Logout'),
-                                               name='logout', type='submit')),
-                            action=req.href.logout(), method='post',
-                            id='logout', class_='trac-logout'))
+                   tag.a(_('Logout'), href=req.href.logout()))
         else:
             yield ('metanav', 'login',
                    tag.a(_('Login'), href=req.href.login()))
@@ -134,17 +122,16 @@ class LoginModule(Component):
     def _do_login(self, req):
         """Log the remote user in.
 
-        This function expects to be called when the remote user name
-        is available. The user name is inserted into the `auth_cookie`
-        table and a cookie identifying the user on subsequent requests
-        is sent back to the client.
+        This function expects to be called when the remote user name is
+        available. The user name is inserted into the `auth_cookie` table and a
+        cookie identifying the user on subsequent requests is sent back to the
+        client.
 
-        If the Authenticator was created with `ignore_case` set to
-        true, then the authentication name passed from the web server
-        in req.remote_user will be converted to lower case before
-        being used. This is to avoid problems on installations
-        authenticating against Windows which is not case sensitive
-        regarding user names and domain names
+        If the Authenticator was created with `ignore_case` set to true, then 
+        the authentication name passed from the web server in req.remote_user
+        will be converted to lower case before being used. This is to avoid
+        problems on installations authenticating against Windows which is not
+        case sensitive regarding user names and domain names
         """
         if not req.remote_user:
             # TRANSLATOR: ... refer to the 'installation documentation'. (link)
@@ -163,51 +150,44 @@ class LoginModule(Component):
             raise TracError(_('Already logged in as %(user)s.',
                               user=req.authname))
 
-        with self.env.db_transaction as db:
+        cookie = hex_entropy()
+        @self.env.with_transaction()
+        def store_session_cookie(db):
+            cursor = db.cursor()
             # Delete cookies older than 10 days
-            db("DELETE FROM auth_cookie WHERE time < %s",
-               (int(time.time()) - 86400 * 10,))
-            # Insert a new cookie if we haven't already got one
-            cookie = None
-            trac_auth = req.incookie.get('trac_auth')
-            if trac_auth is not None:
-                name = self._cookie_to_name(req, trac_auth)
-                cookie = trac_auth.value if name == remote_user else None
-            if cookie is None:
-                cookie = hex_entropy()
-                db("""
-                    INSERT INTO auth_cookie (cookie, name, ipnr, time)
-                         VALUES (%s, %s, %s, %s)
-                   """, (cookie, remote_user, req.remote_addr,
-                         int(time.time())))
+            cursor.execute("DELETE FROM auth_cookie WHERE time < %s",
+                           (int(time.time()) - 86400 * 10,))
+            cursor.execute("INSERT INTO auth_cookie (cookie,name,ipnr,time) "
+                           "VALUES (%s, %s, %s, %s)",
+                           (cookie, remote_user, req.remote_addr,
+                            int(time.time())))
         req.authname = remote_user
         req.outcookie['trac_auth'] = cookie
         req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
                                              or req.base_path or '/'
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
         if self.auth_cookie_lifetime > 0:
             req.outcookie['trac_auth']['expires'] = self.auth_cookie_lifetime
 
     def _do_logout(self, req):
         """Log the user out.
 
-        Simply deletes the corresponding record from the auth_cookie
-        table.
+        Simply deletes the corresponding record from the auth_cookie table.
         """
-        if req.method != 'POST':
-            return
         if req.authname == 'anonymous':
             # Not logged in
             return
 
-        if 'trac_auth' in req.incookie:
-            self.env.db_transaction("DELETE FROM auth_cookie WHERE cookie=%s",
-                                    (req.incookie['trac_auth'].value,))
-        else:
-            self.env.db_transaction("DELETE FROM auth_cookie WHERE name=%s",
-                                    (req.authname,))
+        @self.env.with_transaction()
+        def delete_session_cookie(db):
+            cursor = db.cursor()
+            if 'trac_auth' in req.incookie:
+                cursor.execute("DELETE FROM auth_cookie WHERE cookie=%s",
+                               (req.incookie['trac_auth'].value,))
+            else:
+                cursor.execute("DELETE FROM auth_cookie WHERE name=%s",
+                               (req.authname,))
         self._expire_cookie(req)
         custom_redirect = self.config['metanav'].get('logout.redirect')
         if custom_redirect:
@@ -216,8 +196,8 @@ class LoginModule(Component):
             req.redirect(custom_redirect)
 
     def _expire_cookie(self, req):
-        """Instruct the user agent to drop the auth cookie by setting
-        the "expires" property to a date in the past.
+        """Instruct the user agent to drop the auth cookie by setting the
+        "expires" property to a date in the past.
         """
         req.outcookie['trac_auth'] = ''
         req.outcookie['trac_auth']['path'] = self.auth_cookie_path \
@@ -225,41 +205,33 @@ class LoginModule(Component):
         req.outcookie['trac_auth']['expires'] = -10000
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
-
-    def _cookie_to_name(self, req, cookie):
-        # This is separated from _get_name_for_cookie(), because the
-        # latter is overridden in AccountManager.
-        if self.check_ip:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s AND ipnr=%s"
-            args = (cookie.value, req.remote_addr)
-        else:
-            sql = "SELECT name FROM auth_cookie WHERE cookie=%s"
-            args = (cookie.value,)
-        for name, in self.env.db_query(sql, args):
-            return name
 
     def _get_name_for_cookie(self, req, cookie):
-        name = self._cookie_to_name(req, cookie)
-        if name is None:
-            # The cookie is invalid (or has been purged from the
-            # database), so tell the user agent to drop it as it is
-            # invalid
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        if self.check_ip:
+            cursor.execute("SELECT name FROM auth_cookie "
+                           "WHERE cookie=%s AND ipnr=%s",
+                           (cookie.value, req.remote_addr))
+        else:
+            cursor.execute("SELECT name FROM auth_cookie WHERE cookie=%s",
+                           (cookie.value,))
+        row = cursor.fetchone()
+        if not row:
+            # The cookie is invalid (or has been purged from the database), so
+            # tell the user agent to drop it as it is invalid
             self._expire_cookie(req)
-        return name
+            return None
+
+        return row[0]
 
     def _redirect_back(self, req):
         """Redirect the user back to the URL she came from."""
         referer = self._referer(req)
         if referer:
-            if not referer.startswith(('http://', 'https://')):
-                # Make URL absolute
-                scheme, host = urlparse.urlparse(req.base_url)[:2]
-                referer = urlparse.urlunparse((scheme, host, referer, None,
-                                               None, None))
             pos = req.base_url.find(':')
             base_scheme = req.base_url[:pos]
-            base_noscheme = req.base_url[pos:]
+            base_noscheme = req.base_url[pos:]  
             base_noscheme_norm = base_noscheme.rstrip('/')
             referer_noscheme = referer[referer.find(':'):]
             # only redirect to referer if it is from the same site
@@ -277,11 +249,8 @@ class LoginModule(Component):
 
 class HTTPAuthentication(object):
 
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
     def do_auth(self, environ, start_response):
-        pass
+        raise NotImplementedError
 
 
 class PasswordFileAuthentication(HTTPAuthentication):
@@ -292,17 +261,18 @@ class PasswordFileAuthentication(HTTPAuthentication):
         self._lock = threading.Lock()
 
     def check_reload(self):
-        with self._lock:
+        self._lock.acquire()
+        try:
             mtime = os.stat(self.filename).st_mtime
             if mtime > self.mtime:
                 self.mtime = mtime
                 self.load(self.filename)
-
+        finally:
+            self._lock.release()
 
 class BasicAuthentication(PasswordFileAuthentication):
 
     def __init__(self, htpasswd, realm):
-        # FIXME pass a logger
         self.realm = realm
         try:
             import crypt
@@ -316,7 +286,6 @@ class BasicAuthentication(PasswordFileAuthentication):
         PasswordFileAuthentication.__init__(self, htpasswd)
 
     def load(self, filename):
-        # FIXME use a logger
         self.hash = {}
         fd = open(filename, 'r')
         for line in fd:
@@ -326,26 +295,23 @@ class BasicAuthentication(PasswordFileAuthentication):
             try:
                 u, h = line.split(':')
             except ValueError:
-                print>>sys.stderr, 'Warning: invalid password line in %s: ' \
-                    '%s' % (filename, line)
+                print >> sys.stderr, 'Warning: invalid password line in %s: ' \
+                                     '%s' % (filename, line)
                 continue
-            if '$' in h or h.startswith('{SHA}') or self.crypt:
+            if '$' in h or self.crypt:
                 self.hash[u] = h
             else:
-                print>>sys.stderr, 'Warning: cannot parse password for ' \
-                    'user "%s" without the "crypt" module' % u
+                print >> sys.stderr, 'Warning: cannot parse password for ' \
+                                    'user "%s" without the "crypt" module' % u
 
         if self.hash == {}:
-            print>>sys.stderr, "Warning: found no users in file:", filename
+            print >> sys.stderr, "Warning: found no users in file:", filename
 
     def test(self, user, password):
         self.check_reload()
         the_hash = self.hash.get(user)
         if the_hash is None:
             return False
-
-        if the_hash.startswith('{SHA}'):
-            return b64encode(sha1(password).digest()) == the_hash[5:]
 
         if not '$' in the_hash:
             return self.crypt(password, the_hash[:2]) == the_hash
@@ -369,22 +335,19 @@ class BasicAuthentication(PasswordFileAuthentication):
 
 
 class DigestAuthentication(PasswordFileAuthentication):
-    """A simple HTTP digest authentication implementation
-    (:rfc:`2617`)."""
+    """A simple HTTP digest authentication implementation (RFC 2617)."""
 
     MAX_NONCES = 100
 
     def __init__(self, htdigest, realm):
-        # FIXME pass a logger
         self.active_nonces = []
         self.realm = realm
         PasswordFileAuthentication.__init__(self, htdigest)
 
     def load(self, filename):
-        """Load account information from apache style htdigest files,
-        only users from the specified realm are used
+        """Load account information from apache style htdigest files, only
+        users from the specified realm are used
         """
-        # FIXME use a logger
         self.hash = {}
         fd = open(filename, 'r')
         for line in fd.readlines():
@@ -394,14 +357,14 @@ class DigestAuthentication(PasswordFileAuthentication):
             try:
                 u, r, a1 = line.split(':')
             except ValueError:
-                print>>sys.stderr, 'Warning: invalid digest line in %s: %s' \
-                    % (filename, line)
+                print >> sys.stderr, 'Warning: invalid digest line in %s: %s' \
+                                     % (filename, line)
                 continue
             if r == self.realm:
                 self.hash[u] = a1
         if self.hash == {}:
-            print>>sys.stderr, "Warning: found no users in realm:", self.realm
-
+            print >> sys.stderr, "Warning: found no users in realm:", self.realm
+        
     def parse_auth_header(self, authorization):
         values = {}
         for value in urllib2.parse_http_list(authorization):
@@ -437,12 +400,12 @@ class DigestAuthentication(PasswordFileAuthentication):
                          'nc', 'cnonce']
         # Invalid response?
         for key in required_keys:
-            if key not in auth:
+            if not auth.has_key(key):
                 self.send_auth_request(environ, start_response)
                 return None
         # Unknown user?
         self.check_reload()
-        if auth['username'] not in self.hash:
+        if not self.hash.has_key(auth['username']):
             self.send_auth_request(environ, start_response)
             return None
 

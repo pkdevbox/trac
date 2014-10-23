@@ -27,7 +27,7 @@ class ITimelineEventProvider(Interface):
 
     def get_timeline_filters(req):
         """Return a list of filters that this event provider supports.
-
+        
         Each filter must be a (name, label) tuple, where `name` is the internal
         name, and `label` is a human-readable name for display.
 
@@ -62,10 +62,12 @@ class ITimelineEventProvider(Interface):
     def render_timeline_event(context, field, event):
         """Display the title of the event in the given context.
 
-        :param context: the `RenderingContext` object that can be used for
+        :param context: the rendering `Context` object that can be used for
                         rendering
         :param field: what specific part information from the event should
                       be rendered: can be the 'title', the 'description' or
                       the 'url'
         :param event: the event tuple, as returned by `get_timeline_events`
         """
+
+

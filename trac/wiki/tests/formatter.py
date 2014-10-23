@@ -1,45 +1,20 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2004-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
-
 import difflib
 import os
 import re
 import unittest
-
-# Python 2.7 `assertMultiLineEqual` calls `safe_repr(..., short=True)`
-# which breaks our custom failure display in WikiTestCase.
-
-try:
-    from unittest.util import safe_repr
-    unittest.case.safe_repr = lambda obj, short=False: safe_repr(obj, False)
-except ImportError:
-    pass
-
 from datetime import datetime
 
 from trac.core import Component, TracError, implements
-from trac.test import Mock, MockPerm, EnvironmentStub, locale_en
+from trac.mimeview import Context
+from trac.test import Mock, MockPerm, EnvironmentStub
 from trac.util.datefmt import utc
 from trac.util.html import html
-from trac.util.text import strip_line_ws, to_unicode
-from trac.web.chrome import web_context
+from trac.util.text import to_unicode
 from trac.web.href import Href
 from trac.wiki.api import IWikiSyntaxProvider
-from trac.wiki.formatter import (HtmlFormatter, InlineHtmlFormatter,
-                                 OutlineFormatter)
+from trac.wiki.formatter import HtmlFormatter, InlineHtmlFormatter
 from trac.wiki.macros import WikiMacroBase
 from trac.wiki.model import WikiPage
-
 
 # We need to supply our own macro because the real macros
 # can not be loaded using our 'fake' environment.
@@ -123,7 +98,7 @@ class SampleResolver(Component):
     def _format_link(self, formatter, ns, target, label):
         kind, module = 'text', 'stuff'
         try:
-            kind = 'odd' if int(target) % 2 else 'even'
+            kind = int(target) % 2 and 'odd' or 'even'
             module = 'thing'
         except ValueError:
             pass
@@ -147,19 +122,17 @@ class WikiTestCase(unittest.TestCase):
         self._teardown = teardown
 
         req = Mock(href=Href('/'), abs_href=Href('http://www.example.com/'),
-                   chrome={}, session={},
-                   authname='anonymous', perm=MockPerm(), tz=utc, args={},
-                   locale=locale_en, lc_time=locale_en)
+                   authname='anonymous', perm=MockPerm(), tz=None, args={})
         if context:
             if isinstance(context, tuple):
-                context = web_context(req, *context)
+                context = Context.from_request(req, *context)
         else:
-            context = web_context(req, 'wiki', 'WikiStart')
+            context = Context.from_request(req, 'wiki', 'WikiStart')
         self.context = context
 
         all_test_components = [
-                HelloWorldMacro, DivHelloWorldMacro, TableHelloWorldMacro,
-                DivCodeMacro, DivCodeElementMacro, DivCodeStreamMacro,
+                HelloWorldMacro, DivHelloWorldMacro, TableHelloWorldMacro, 
+                DivCodeMacro, DivCodeElementMacro, DivCodeStreamMacro, 
                 NoneMacro, WikiProcessorSampleMacro, SampleResolver]
         self.env = EnvironmentStub(enable=['trac.*'] + all_test_components)
         # -- macros support
@@ -201,11 +174,10 @@ class WikiTestCase(unittest.TestCase):
         """Testing WikiFormatter"""
         formatter = self.formatter()
         v = unicode(formatter.generate(**self.generate_opts))
-        v = v.replace('\r', '').replace(u'\u200b', '') # FIXME: keep ZWSP
-        v = strip_line_ws(v, leading=False)
+        v = v.replace('\r', '').replace(u'\u200b', '')
         try:
-            self.assertEqual(self.correct, v)
-        except AssertionError as e:
+            self.assertEquals(self.correct, v)
+        except AssertionError, e:
             msg = to_unicode(e)
             match = re.match(r"u?'(.*)' != u?'(.*)'", msg)
             if match:
@@ -216,7 +188,7 @@ class WikiTestCase(unittest.TestCase):
                 wiki = repr(self.input).replace(r'\n', '\n')
                 diff = ''.join(list(difflib.unified_diff(g1, g2, 'expected',
                                                          'actual')))
-                # Tip: sometimes, 'expected' and 'actual' differ only by
+                # Tip: sometimes, 'expected' and 'actual' differ only by 
                 #      whitespace, so it can be useful to visualize them, e.g.
                 # expected = expected.replace(' ', '.')
                 # actual = actual.replace(' ', '.')
@@ -246,20 +218,6 @@ class EscapeNewLinesTestCase(WikiTestCase):
     def formatter(self):
         return HtmlFormatter(self.env, self.context, self.input)
 
-class OutlineTestCase(WikiTestCase):
-    def formatter(self):
-        from StringIO import StringIO
-        class Outliner(object):
-            flavor = 'outliner'
-            def __init__(self, env, context, input):
-                self.outliner = OutlineFormatter(env, context)
-                self.input = input
-            def generate(self):
-                out = StringIO()
-                self.outliner.format(self.input, out)
-                return out.getvalue()
-        return Outliner(self.env, self.context, self.input)
-
 
 def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
     suite = unittest.TestSuite()
@@ -268,7 +226,7 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
         next_line = 1
         line = 0
         for title, test in zip(tests[1::2], tests[2::2]):
-            title = title.lstrip('=').strip()
+            title = title.lstrip('=').strip()            
             if line != next_line:
                 line = next_line
             if not test or test == '\n':
@@ -277,9 +235,10 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
             if 'SKIP' in title or 'WONTFIX' in title:
                 continue
             blocks = test.split('-' * 30 + '\n')
-            if len(blocks) < 5:
-                blocks.extend([None,] * (5 - len(blocks)))
-            input, page, oneliner, page_escape_nl, outline = blocks[:5]
+            page_escape_nl = oneliner = None
+            if len(blocks) < 4:
+                blocks.extend([None,] * (4 - len(blocks)))
+            input, page, oneliner, page_escape_nl = blocks[:4]
             if page:
                 page = WikiTestCase(
                     title, input, page, filename, line, setup,
@@ -292,11 +251,7 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
                 page_escape_nl = EscapeNewLinesTestCase(
                     title, input, page_escape_nl, filename, line, setup,
                     teardown, context)
-            if outline:
-                outline = OutlineTestCase(
-                    title, input, outline, filename, line, setup,
-                    teardown, context)
-            for tc in [page, oneliner, page_escape_nl, outline]:
+            for tc in [page, oneliner, page_escape_nl]:
                 if tc:
                     suite.addTest(tc)
     if data:
@@ -308,7 +263,7 @@ def suite(data=None, setup=None, file=__file__, teardown=None, context=None):
                 data = open(testfile, 'r').read().decode('utf-8')
                 add_test_cases(data, testfile)
             else:
-                print('no ' + testfile)
+                print 'no ', testfile
     return suite
 
 if __name__ == '__main__':

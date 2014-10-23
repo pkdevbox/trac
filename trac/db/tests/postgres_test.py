@@ -1,15 +1,4 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2009-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
 import re
 import unittest
@@ -22,13 +11,13 @@ from trac.test import EnvironmentStub
 class PostgresTableCreationSQLTest(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub()
-
+    
     def _unroll_generator(self, generator):
         items = []
         for item in generator:
             items.append(item)
         return items
-
+    
     def _normalize_sql(self, sql_generator):
         normalized_commands = []
         whitespace_regex = re.compile(r'\s+')
@@ -38,7 +27,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
             command = whitespace_regex.sub(' ', command)
             normalized_commands.append(command)
         return normalized_commands
-
+    
     def test_quote_table_name(self):
         table = Table('foo bar')
         table[Column('name'),]
@@ -47,7 +36,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         self.assertEqual(1, len(sql_commands))
         self.assertEqual('CREATE TABLE "foo bar" ( "name" text)',
                          sql_commands[0])
-
+    
     def test_quote_column_names(self):
         table = Table('foo')
         table[Column('my name'),]
@@ -56,7 +45,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
         self.assertEqual(1, len(sql_commands))
         self.assertEqual('CREATE TABLE "foo" ( "my name" text)',
                          sql_commands[0])
-
+    
     def test_quote_compound_primary_key_declaration(self):
         table = Table('foo bar', key=['my name', 'your name'])
         table[Column('my name'), Column('your name'),]
@@ -67,7 +56,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
                        '"your name" text, CONSTRAINT "foo bar_pk" ' +\
                        'PRIMARY KEY ("my name","your name"))'
         self.assertEqual(expected_sql, sql_commands[0])
-
+    
     def test_quote_index_declaration(self):
         table = Table('foo')
         table[Column('my name'), Index(['my name'])]
@@ -78,10 +67,10 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
                          sql_commands[0])
         index_sql = 'CREATE INDEX "foo_my name_idx" ON "foo" ("my name")'
         self.assertEqual(index_sql, sql_commands[1])
-
+    
     def test_quote_index_declaration_for_multiple_indexes(self):
         table = Table('foo')
-        table[Column('a'), Column('b'),
+        table[Column('a'), Column('b'), 
               Index(['a', 'b'])]
         sql_generator = PostgreSQLConnector(self.env).to_sql(table)
         sql_commands = self._normalize_sql(sql_generator)
@@ -127,7 +116,7 @@ class PostgresTableCreationSQLTest(unittest.TestCase):
 class PostgresTableAlterationSQLTest(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub()
-
+    
     def test_alter_column_types(self):
         connector = PostgreSQLConnector(self.env)
         sql = connector.alter_column_types('milestone',
@@ -160,8 +149,8 @@ class PostgresTableAlterationSQLTest(unittest.TestCase):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(PostgresTableCreationSQLTest))
-    suite.addTest(unittest.makeSuite(PostgresTableAlterationSQLTest))
+    suite.addTest(unittest.makeSuite(PostgresTableCreationSQLTest, 'test'))
+    suite.addTest(unittest.makeSuite(PostgresTableAlterationSQLTest, 'test'))
     return suite
 
 

@@ -15,14 +15,13 @@
 
 import pkg_resources
 import re
-from inspect import cleandoc
 
 from genshi.builder import tag
 
 from trac.util.concurrency import ThreadLocal, threading
 
 
-__all__ = ['gettext', 'ngettext', 'gettext_noop', 'ngettext_noop',
+__all__ = ['gettext', 'ngettext', 'gettext_noop', 'ngettext_noop', 
            'tgettext', 'tgettext_noop', 'tngettext', 'tngettext_noop']
 
 def safefmt(string, kwargs):
@@ -41,10 +40,9 @@ def dgettext_noop(domain, string, **kwargs):
     return gettext_noop(string, **kwargs)
 
 N_ = _noop = lambda string: string
-cleandoc_ = cleandoc
 
 def ngettext_noop(singular, plural, num, **kwargs):
-    string = singular if num == 1 else plural
+    string = (plural, singular)[num == 1]
     kwargs.setdefault('num', num)
     return safefmt(string, kwargs)
 
@@ -59,13 +57,13 @@ def _tag_kwargs(trans, kwargs):
     return tag(*trans_elts)
 
 def tgettext_noop(string, **kwargs):
-    return _tag_kwargs(string, kwargs) if kwargs else string
+    return kwargs and _tag_kwargs(string, kwargs) or string
 
 def dtgettext_noop(domain, string, **kwargs):
     return tgettext_noop(string, **kwargs)
 
 def tngettext_noop(singular, plural, num, **kwargs):
-    string = singular if num == 1 else plural
+    string = (plural, singular)[num == 1]
     kwargs.setdefault('num', num)
     return _tag_kwargs(string, kwargs)
 
@@ -130,9 +128,12 @@ try:
         # Public API
 
         def add_domain(self, domain, env_path, locales_dir):
-            with self._plugin_domains_lock:
+            self._plugin_domains_lock.acquire()
+            try:
                 domains = self._plugin_domains.setdefault(env_path, {})
                 domains[domain] = locales_dir
+            finally:
+                self._plugin_domains_lock.release()
 
         def make_activable(self, get_locale, env_path=None):
             self._current.args = (get_locale, env_path)
@@ -146,28 +147,26 @@ try:
             t = Translations.load(locale_dir, locale or 'en_US')
             if not isinstance(t, Translations):
                 t = self._null_translations
-            else:
-                self._add(t, Translations.load(locale_dir, locale or 'en_US',
-                                               'tracini'))
-                if env_path:
-                    with self._plugin_domains_lock:
-                        domains = self._plugin_domains.get(env_path, {})
-                        domains = domains.items()
-                    for domain, dirname in domains:
-                        self._add(t, Translations.load(dirname, locale,
-                                                       domain))
+            elif env_path:
+                self._plugin_domains_lock.acquire()
+                try:
+                    domains = self._plugin_domains.get(env_path, {}).items()
+                finally:
+                    self._plugin_domains_lock.release()
+                for domain, dirname in domains:
+                    self._add(t, Translations.load(dirname, locale, domain))
             self._current.translations = t
             self._activate_failed = False
-
+         
         def deactivate(self):
             self._current.args = None
             t, self._current.translations = self._current.translations, None
             return t
-
+         
         def reactivate(self, t):
             if t:
                 self._current.translations = t
-
+    
         @property
         def active(self):
             return self._current.translations or self._null_translations
@@ -231,7 +230,7 @@ try:
         def tgettext(self, string, **kwargs):
             def _tgettext():
                 trans = self.active.ugettext(string)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_tgettext)
             return _tgettext()
@@ -239,7 +238,7 @@ try:
         def dtgettext(self, domain, string, **kwargs):
             def _dtgettext():
                 trans = self.active.dugettext(domain, string)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_dtgettext)
             return _dtgettext()
@@ -260,12 +259,12 @@ try:
                 trans = self.active.dungettext(domain, singular, plural, num)
                 if '%(num)' in trans:
                     kwargs.update(num=num)
-                return _tag_kwargs(trans, kwargs) if kwargs else trans
+                return kwargs and _tag_kwargs(trans, kwargs) or trans
             if not self.isactive:
                 return LazyProxy(_dtngettext)
             return _dtngettext()
 
-
+    
     translations = TranslationsProxy()
 
     def domain_functions(domain, *symbols):
@@ -274,7 +273,7 @@ try:
         :param domain: domain used for partial instantiation
         :param symbols: remaining parameters are the name of commonly used
                         translation function which will be bound to the domain
-
+                        
         Note: the symbols can also be given as an iterable in the 2nd argument.
         """
         if symbols and not isinstance(symbols[0], basestring):
@@ -295,18 +294,18 @@ try:
             return lambda *args, **kw: _functions[symbol](domain, *args, **kw)
         return [wrapdomain(s) for s in symbols]
 
-    gettext = translations.gettext
-    _ = gettext
-    dgettext = translations.dgettext
-    ngettext = translations.ngettext
-    dngettext = translations.dngettext
-    tgettext = translations.tgettext
-    tag_ = tgettext
-    dtgettext = translations.dtgettext
-    tngettext = translations.tngettext
-    tagn_ = tngettext
-    dtngettext = translations.dtngettext
-
+    gettext = translations.gettext 
+    _ = gettext 
+    dgettext = translations.dgettext 
+    ngettext = translations.ngettext 
+    dngettext = translations.dngettext 
+    tgettext = translations.tgettext 
+    tag_ = tgettext 
+    dtgettext = translations.dtgettext 
+    tngettext = translations.tngettext 
+    tagn_ = tngettext 
+    dtngettext = translations.dtngettext 
+    
     def deactivate():
         """Deactivate translations.
         :return: the current Translations, if any
@@ -340,23 +339,18 @@ try:
         translations are available.
         """
         try:
-            locales = [dirname for dirname
-                       in pkg_resources.resource_listdir('trac', 'locale')
-                       if '.' not in dirname
-                       and pkg_resources.resource_exists(
-                        'trac', 'locale/%s/LC_MESSAGES/messages.mo' % dirname)]
-            return locales
+            return [dirname for dirname
+                    in pkg_resources.resource_listdir('trac', 'locale')
+                    if '.' not in dirname]
         except Exception:
             return []
 
     def get_negotiated_locale(preferred_locales):
         def normalize(locale_ids):
-            return [id.replace('-', '_') for id in locale_ids if id]
+            return [id.replace('_', '-') for id in locale_ids if id]
         available_locales = get_available_locales()
-        if 'en_US' not in available_locales:
-            available_locales.append('en_US')
         locale = Locale.negotiate(normalize(preferred_locales),
-                                  normalize(available_locales))
+                                  normalize(available_locales), sep='-')
         if locale and str(locale) not in available_locales:
             # The list of get_available_locales() must include locale
             # identifier from str(locale), but zh_* don't be included after
@@ -370,7 +364,6 @@ try:
     has_babel = True
 
 except ImportError: # fall back on 0.11 behavior, i18n functions are no-ops
-    Locale = None
     gettext = _ = gettext_noop
     dgettext = dgettext_noop
     ngettext = ngettext_noop
@@ -381,7 +374,7 @@ except ImportError: # fall back on 0.11 behavior, i18n functions are no-ops
     dtngettext = dtngettext_noop
 
     translations = NullTranslationsBabel()
-
+    
     def activate(locale, env_path=None):
         pass
 

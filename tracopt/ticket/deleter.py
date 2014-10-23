@@ -19,8 +19,6 @@ from trac.core import Component, TracError, implements
 from trac.ticket.model import Ticket
 from trac.ticket.web_ui import TicketModule
 from trac.util import get_reporter_id
-from trac.util.datefmt import from_utimestamp
-from trac.util.presentation import captioned_button
 from trac.util.translation import _
 from trac.web.api import IRequestFilter, IRequestHandler, ITemplateStreamFilter
 from trac.web.chrome import ITemplateProvider, add_notice, add_stylesheet
@@ -28,13 +26,13 @@ from trac.web.chrome import ITemplateProvider, add_notice, add_stylesheet
 
 class TicketDeleter(Component):
     """Ticket and ticket comment deleter.
-
+    
     This component allows deleting ticket comments and complete tickets. For
     users having `TICKET_ADMIN` permission, it adds a "Delete" button next to
     each "Reply" button on the page. The button in the ticket description
     requests deletion of the complete ticket, and the buttons in the change
     history request deletion of a single comment.
-
+    
     '''Comment and ticket deletion are irreversible (and therefore
     ''dangerous'') operations.''' For that reason, a confirmation step is
     requested. The confirmation page shows the ticket box (in the case of a
@@ -45,7 +43,7 @@ class TicketDeleter(Component):
                IRequestHandler)
 
     # ITemplateProvider methods
-
+    
     def get_htdocs_dirs(self):
         return []
 
@@ -54,57 +52,50 @@ class TicketDeleter(Component):
         return [resource_filename(__name__, 'templates')]
 
     # ITemplateStreamFilter methods
-
+    
     def filter_stream(self, req, method, filename, stream, data):
-        if filename not in ('ticket.html', 'ticket_preview.html'):
+        if filename != 'ticket.html':
             return stream
         ticket = data.get('ticket')
         if not (ticket and ticket.exists
                 and 'TICKET_ADMIN' in req.perm(ticket.resource)):
             return stream
-
+        
         # Insert "Delete" buttons for ticket description and each comment
         def delete_ticket():
             return tag.form(
                 tag.div(
                     tag.input(type='hidden', name='action', value='delete'),
-                    tag.input(type='submit',
-                              value=captioned_button(req, u'–', # 'EN DASH'
-                                                     _("Delete")),
-                              title=_('Delete ticket'),
-                              class_="trac-delete"),
-                    class_="inlinebuttons"),
+                    tag.input(type='submit', value=_('Delete'),
+                              title=_('Delete ticket')),
+                    class_='inlinebuttons'),
                 action='#', method='get')
-
+        
         def delete_comment():
             for event in buffer:
-                cnum, cdate = event[1][1].get('id')[12:].split('-', 1)
+                cnum = event[1][1].get('id')[12:]
                 return tag.form(
                     tag.div(
                         tag.input(type='hidden', name='action',
                                   value='delete-comment'),
                         tag.input(type='hidden', name='cnum', value=cnum),
-                        tag.input(type='hidden', name='cdate', value=cdate),
-                        tag.input(type='submit',
-                                  value=captioned_button(req, u'–', # 'EN DASH'
-                                                         _("Delete")),
-                                  title=_('Delete comment %(num)s', num=cnum),
-                                  class_="trac-delete"),
-                        class_="inlinebuttons"),
+                        tag.input(type='submit', value=_('Delete'),
+                                  title=_('Delete comment %(num)s',
+                                          num=cnum)),
+                        class_='inlinebuttons'),
                     action='#', method='get')
-
+            
         buffer = StreamBuffer()
         return stream | Transformer('//div[@class="description"]'
                                     '/h3[@id="comment:description"]') \
             .after(delete_ticket).end() \
-            .select('//div[starts-with(@class, "change")]/@id') \
+            .select('//div[@class="change"]/@id') \
             .copy(buffer).end() \
-            .select('//div[starts-with(@class, "change") and @id]'
-                    '/div[@class="trac-ticket-buttons"]') \
-            .prepend(delete_comment)
+            .select('//div[@class="change" and @id]/h3[@class="change"]') \
+            .after(delete_comment)
 
     # IRequestFilter methods
-
+    
     def pre_process_request(self, req, handler):
         if handler is not TicketModule(self.env):
             return handler
@@ -127,44 +118,42 @@ class TicketDeleter(Component):
         req.perm('ticket', id).require('TICKET_ADMIN')
         ticket = Ticket(self.env, id)
         action = req.args['action']
-        cnum = req.args.get('cnum')
         if req.method == 'POST':
             if 'cancel' in req.args:
                 href = req.href.ticket(id)
                 if action == 'delete-comment':
-                    href += '#comment:%s' % cnum
+                    href += '#comment:%s' % req.args.get('cnum')
                 req.redirect(href)
-
+            
             if action == 'delete':
                 ticket.delete()
                 add_notice(req, _('The ticket #%(id)s has been deleted.',
                                   id=ticket.id))
                 req.redirect(req.href())
-
+            
             elif action == 'delete-comment':
-                cdate = from_utimestamp(long(req.args.get('cdate')))
-                ticket.delete_change(cdate=cdate)
+                cnum = int(req.args.get('cnum'))
+                ticket.delete_change(cnum)
                 add_notice(req, _('The ticket comment %(num)s on ticket '
                                   '#%(id)s has been deleted.',
                                   num=cnum, id=ticket.id))
                 req.redirect(req.href.ticket(id))
-
+            
         tm = TicketModule(self.env)
         data = tm._prepare_data(req, ticket)
         tm._insert_ticket_data(req, ticket, data,
                                get_reporter_id(req, 'author'), {})
-        data.update(action=action, cdate=None)
-
+        data.update(action=action, del_cnum=None)
+        
         if action == 'delete-comment':
-            data['cdate'] = req.args.get('cdate')
-            cdate = from_utimestamp(long(data['cdate']))
+            cnum = int(req.args.get('cnum'))
+            data['del_cnum'] = cnum
             for change in data['changes']:
-                if change.get('date') == cdate:
+                if change.get('cnum') == cnum:
                     data['change'] = change
-                    data['cnum'] = change.get('cnum')
                     break
             else:
                 raise TracError(_('Comment %(num)s not found', num=cnum))
-
+        
         add_stylesheet(req, 'common/css/ticket.css')
         return 'ticket_delete.html', data, None

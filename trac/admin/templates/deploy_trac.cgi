@@ -25,14 +25,14 @@ try:
         if 'TRAC_ENV' in os.environ:
             egg_cache = os.path.join(os.environ['TRAC_ENV'], '.egg-cache')
         elif 'TRAC_ENV_PARENT_DIR' in os.environ:
-            egg_cache = os.path.join(os.environ['TRAC_ENV_PARENT_DIR'],
+            egg_cache = os.path.join(os.environ['TRAC_ENV_PARENT_DIR'], 
                                      '.egg-cache')
         pkg_resources.set_extraction_path(egg_cache)
     from trac.web import cgi_frontend
     cgi_frontend.run()
 except SystemExit:
     raise
-except Exception as e:
+except Exception, e:
     import sys
     import traceback
 

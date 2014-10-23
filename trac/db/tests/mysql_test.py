@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2010-2013 Edgewall Software
+# Copyright (C) 2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -13,7 +13,6 @@
 
 import unittest
 
-import trac.tests.compat
 from trac.db.mysql_backend import MySQLConnector
 from trac.db.schema import Table, Column, Index
 from trac.test import EnvironmentStub, Mock
@@ -22,7 +21,7 @@ from trac.test import EnvironmentStub, Mock
 class MySQLTableAlterationSQLTest(unittest.TestCase):
     def setUp(self):
         self.env = EnvironmentStub()
-
+    
     def test_alter_column_types(self):
         connector = MySQLConnector(self.env)
         sql = connector.alter_column_types('milestone',
@@ -65,18 +64,22 @@ class MySQLTableAlterationSQLTest(unittest.TestCase):
 
         sql = list(connector.to_sql(tab, utf8_size=3))
         self.assertEqual(2, len(sql))
-        self.assertIn(' PRIMARY KEY (`col1`(166),`col2`(166))', sql[0])
-        self.assertIn(' blah_col2_idx ON blah (`col2`(255))', sql[1])
+        self.assertTrue(' PRIMARY KEY (`col1`(166),`col2`(166))' in sql[0],
+                        repr(sql[0]))
+        self.assertTrue(' blah_col2_idx ON blah (`col2`(255))' in sql[1],
+                        repr(sql[1]))
 
         sql = list(connector.to_sql(tab, utf8_size=4))
         self.assertEqual(2, len(sql))
-        self.assertIn(' PRIMARY KEY (`col1`(125),`col2`(125))', sql[0])
-        self.assertIn(' blah_col2_idx ON blah (`col2`(191))', sql[1])
+        self.assertTrue(' PRIMARY KEY (`col1`(125),`col2`(125))' in sql[0],
+                        repr(sql[0]))
+        self.assertTrue(' blah_col2_idx ON blah (`col2`(191))' in sql[1],
+                        repr(sql[1]))
 
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(MySQLTableAlterationSQLTest))
+    suite.addTest(unittest.makeSuite(MySQLTableAlterationSQLTest, 'test'))
     return suite
 
 

@@ -1,76 +1,14 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2005-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
-import os.path
-import shutil
 import sys
-import tempfile
 import unittest
 from StringIO import StringIO
 
-import trac.tests.compat
-from trac import perm
 from trac.core import TracError
-from trac.test import EnvironmentStub, Mock, MockPerm, locale_en
-from trac.util import create_file
+from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.util.datefmt import utc
 from trac.util.text import shorten_line
 from trac.web.api import Request, RequestDone, parse_arg_list
-from tracopt.perm.authz_policy import AuthzPolicy
-
-
-class RequestHandlerPermissionsTestCaseBase(unittest.TestCase):
-
-    authz_policy = None
-
-    def setUp(self, module_class):
-        self.path = tempfile.mkdtemp(prefix='trac-')
-        if self.authz_policy is not None:
-            self.authz_file = os.path.join(self.path, 'authz_policy.conf')
-            create_file(self.authz_file, self.authz_policy)
-            self.env = EnvironmentStub(enable=['trac.*', AuthzPolicy],
-                                       path=self.path)
-            self.env.config.set('authz_policy', 'authz_file', self.authz_file)
-            self.env.config.set('trac', 'permission_policies',
-                                'AuthzPolicy, DefaultPermissionPolicy')
-        else:
-            self.env = EnvironmentStub(path=self.path)
-        self.req_handler = module_class(self.env)
-
-    def tearDown(self):
-        self.env.reset_db()
-        shutil.rmtree(self.path)
-
-    def create_request(self, authname='anonymous', **kwargs):
-        kw = {'perm': perm.PermissionCache(self.env, authname), 'args': {},
-              'href': self.env.href, 'abs_href': self.env.abs_href,
-              'tz': utc, 'locale': None, 'lc_time': locale_en,
-              'chrome': {'notices': [], 'warnings': []},
-              'method': None, 'get_header': lambda v: None}
-        kw.update(kwargs)
-        return Mock(**kw)
-
-    def get_navigation_items(self, req):
-        return self.req_handler.get_navigation_items(req)
-
-    def grant_perm(self, username, *actions):
-        permsys = perm.PermissionSystem(self.env)
-        for action in actions:
-            permsys.grant_permission(username, action)
-
-    def process_request(self, req):
-        self.assertTrue(self.req_handler.match_request(req))
-        return self.req_handler.process_request(req)
 
 
 def _make_environ(scheme='http', server_name='example.org',
@@ -185,6 +123,10 @@ class RequestTestCase(unittest.TestCase):
         def start_response(status, headers):
             return write
         environ = self._make_environ(method='HEAD')
+        req = Request(environ, start_response)
+        req.send_header('Content-Type', 'text/plain;charset=utf-8')
+        # we didn't set Content-Length, so we get a RuntimeError for that
+        self.assertRaises(RuntimeError, req.write, u'Föö')
 
         req = Request(environ, start_response)
         req.send_header('Content-Type', 'text/plain;charset=utf-8')
@@ -202,7 +144,7 @@ class RequestTestCase(unittest.TestCase):
         req = Request(environ, None)
         self.assertEqual('Set-Cookie: key=value1',
                          str(req.incookie).rstrip(';'))
-
+        
     def test_read(self):
         environ = self._make_environ(**{'wsgi.input': StringIO('test input')})
         req = Request(environ, None)
@@ -341,21 +283,21 @@ class SendErrorTestCase(unittest.TestCase):
                       result['headers'])
         return content
 
+    def assertIn(self, member, container, msg=None):
+        if member not in container:
+            raise self.failureException(msg or '%r not in %r' %
+                                               (member, container))
+
+    def assertNotIn(self, member, container, msg=None):
+        if member in container:
+            raise self.failureException(msg or '%r in %r' %
+                                               (member, container))
+
 
 class ParseArgListTestCase(unittest.TestCase):
 
     def test_qs_str(self):
         args = parse_arg_list('k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
-        self.assertTrue(unicode, type(args[0][0]))
-        self.assertTrue(unicode, type(args[0][1]))
-        self.assertEqual(u'kéy', args[0][0])
-        self.assertEqual(u'resumé', args[0][1])
-        self.assertTrue(unicode, type(args[1][0]))
-        self.assertEqual(u'résumé', args[1][0])
-
-    def test_qs_str_with_prefix(self):
-        """The leading `?` should be stripped from the query string."""
-        args = parse_arg_list('?k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
         self.assertTrue(unicode, type(args[0][0]))
         self.assertTrue(unicode, type(args[0][1]))
         self.assertEqual(u'kéy', args[0][0])
@@ -375,11 +317,10 @@ class ParseArgListTestCase(unittest.TestCase):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(RequestTestCase))
-    suite.addTest(unittest.makeSuite(SendErrorTestCase))
-    suite.addTest(unittest.makeSuite(ParseArgListTestCase))
+    suite.addTest(unittest.makeSuite(RequestTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(SendErrorTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(ParseArgListTestCase, 'test'))
     return suite
 
-
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

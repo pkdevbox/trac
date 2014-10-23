@@ -17,7 +17,6 @@ import os
 import signal
 import sys
 
-
 def daemonize(pidfile=None, progname=None, stdin='/dev/null',
               stdout='/dev/null', stderr='/dev/null', umask=022):
     """Fork a daemon process."""
@@ -26,19 +25,22 @@ def daemonize(pidfile=None, progname=None, stdin='/dev/null',
         # process running
         pidfile = os.path.abspath(pidfile)
         if os.path.exists(pidfile):
-            with open(pidfile) as fileobj:
+            fileobj = open(pidfile)
+            try:
                 try:
                     pid = int(fileobj.read())
                 except ValueError:
                     sys.exit('Invalid pid in file %s\nPlease remove it to '
                              'proceed' % pidfile)
+            finally:
+                fileobj.close()
 
             try: # signal the process to see if it is still running
                 os.kill(pid, 0)
                 if not progname:
                     progname = os.path.basename(sys.argv[0])
                 sys.exit('%s is already running with pid %s' % (progname, pid))
-            except OSError as e:
+            except OSError, e:
                 if e.errno != errno.ESRCH:
                     raise
 
@@ -46,7 +48,7 @@ def daemonize(pidfile=None, progname=None, stdin='/dev/null',
         try:
             fileobj = open(pidfile, 'a+')
             fileobj.close()
-        except IOError as e:
+        except IOError, e:
             from trac.util.text import exception_to_unicode
             sys.exit('Error writing to pid file: %s' % exception_to_unicode(e))
 
@@ -79,15 +81,18 @@ def daemonize(pidfile=None, progname=None, stdin='/dev/null',
         # Register signal handlers to ensure atexit hooks are called on exit
         for signum in [signal.SIGTERM, signal.SIGHUP]:
             signal.signal(signum, handle_signal)
-
+        
         # Create/update the pid file, and register a hook to remove it when the
         # process exits
         def remove_pidfile():
             if os.path.exists(pidfile):
                 os.remove(pidfile)
         atexit.register(remove_pidfile)
-        with open(pidfile, 'w') as fileobj:
+        fileobj = open(pidfile, 'w')
+        try:
             fileobj.write(str(os.getpid()))
+        finally:
+            fileobj.close()
 
 
 def handle_signal(signum, frame):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#
+# 
 # Copyright (C)2006-2009 Edgewall Software
 # All rights reserved.
 #
@@ -11,17 +11,14 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-import os
 import os.path
 import sys
 import traceback
 
 from trac.core import *
 from trac.util.text import levenshtein_distance
-from trac.util.translation import _, get_negotiated_locale, has_babel
+from trac.util.translation import _
 
-
-LANG = os.environ.get('LANG')
 
 console_date_format = '%Y-%m-%d'
 console_datetime_format = '%Y-%m-%d %H:%M:%S'
@@ -35,14 +32,14 @@ class IAdminPanelProvider(Interface):
 
     def get_admin_panels(req):
         """Return a list of available admin panels.
-
+        
         The items returned by this function must be tuples of the form
         `(category, category_label, page, page_label)`.
         """
 
     def render_admin_panel(req, category, page, path_info):
         """Process a request for an admin panel.
-
+        
         This function should return a tuple of the form `(template, data)`,
         where `template` is the name of the template to use and `data` is the
         data to be passed to the template.
@@ -61,21 +58,21 @@ class IAdminCommandProvider(Interface):
     """Extension point interface for adding commands to the console
     administration interface `trac-admin`.
     """
-
+    
     def get_admin_commands():
         """Return a list of available admin commands.
-
+        
         The items returned by this function must be tuples of the form
         `(command, args, help, complete, execute)`, where `command` contains
         the space-separated command and sub-command names, `args` is a string
         describing the command arguments and `help` is the help text. The
         first paragraph of the help text is taken as a short help, shown in the
         list of commands.
-
+        
         `complete` is called to auto-complete the command arguments, with the
         current list of arguments as its only argument. It should return a list
         of relevant values for the last argument in the list.
-
+        
         `execute` is called to execute the command, with the command arguments
         passed as positional arguments.
         """
@@ -83,9 +80,9 @@ class IAdminCommandProvider(Interface):
 
 class AdminCommandManager(Component):
     """trac-admin command manager."""
-
+    
     providers = ExtensionPoint(IAdminCommandProvider)
-
+    
     def get_command_help(self, args=[]):
         """Return help information for a set of commands."""
         commands = []
@@ -96,7 +93,7 @@ class AdminCommandManager(Component):
                     commands.append(cmd[:3])
         commands.sort()
         return commands
-
+        
     def complete_command(self, args, cmd_only=False):
         """Perform auto-completion on the given arguments."""
         comp = []
@@ -113,7 +110,7 @@ class AdminCommandManager(Component):
                         return []
                     return cmd[3](args[len(parts):]) or []
         return comp
-
+        
     def execute_command(self, *args):
         """Execute a command given by a list of arguments."""
         args = list(args)
@@ -125,10 +122,10 @@ class AdminCommandManager(Component):
                     fargs = args[len(parts):]
                     try:
                         return f(*fargs)
-                    except AdminCommandError as e:
+                    except AdminCommandError, e:
                         e.cmd = ' '.join(parts)
                         raise
-                    except TypeError as e:
+                    except TypeError, e:
                         tb = traceback.extract_tb(sys.exc_info()[2])
                         if len(tb) == 1:
                             raise AdminCommandError(_("Invalid arguments"),
@@ -195,21 +192,3 @@ def get_dir_list(path, dirs_only=False):
         except OSError:
             pass
     return result
-
-
-def get_console_locale(env=None, lang=LANG):
-    """Return negotiated locale for console by LANG environment and
-    [trac] default_language."""
-    if has_babel:
-        from babel.core import Locale, UnknownLocaleError, parse_locale
-        try:
-            lang = '_'.join(filter(None, parse_locale(lang)))
-        except:
-            lang = None
-        default = env.config.get('trac', 'default_language', '') \
-                  if env else None
-        try:
-            return get_negotiated_locale([lang, default]) or Locale.default()
-        except UnknownLocaleError:
-            pass
-    return None

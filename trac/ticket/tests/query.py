@@ -1,30 +1,18 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2004-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
-from trac.test import Mock, EnvironmentStub, MockPerm, locale_en
+from trac.mimeview import Context
+from trac.test import Mock, EnvironmentStub, MockPerm
 from trac.ticket.model import Ticket
 from trac.ticket.query import Query, QueryModule, TicketQueryMacro
 from trac.util.datefmt import utc
-from trac.web.chrome import web_context
 from trac.web.href import Href
 from trac.wiki.formatter import LinkFormatter
-from trac.wiki.tests import formatter
 
 import unittest
 import difflib
 
 # Note: we don't want to replicate 1:1 all the SQL dialect abstraction
-#       methods from the trac.db layer here.
+#       methods from the trac.db layer here. 
 
 class QueryTestCase(unittest.TestCase):
 
@@ -47,9 +35,9 @@ class QueryTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
-        self.req = Mock(href=self.env.href, authname='anonymous', tz=utc,
-                        locale=locale_en, lc_time=locale_en)
-
+        self.db = self.env.get_db_cnx()
+        self.req = Mock(href=self.env.href, authname='anonymous', tz=utc)
+        
     def tearDown(self):
         self.env.reset_db()
 
@@ -105,7 +93,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
-          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
+          'cast_priority': self.env.get_db_cnx().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
 
@@ -117,7 +105,7 @@ ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='' DESC,%(cast_priority)s DESC,t.id""" % {
-          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
+          'cast_priority': self.env.get_db_cnx().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
 
@@ -189,7 +177,7 @@ ORDER BY COALESCE(t.milestone,'')='' DESC,COALESCE(milestone.completed,0)=0 DESC
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
-          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
+          'cast_priority': self.env.get_db_cnx().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
 
@@ -226,7 +214,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(self.req)
 
@@ -238,7 +226,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') NOT %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(self.req)
 
@@ -250,7 +238,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         self.assertEqual(['someone%'], args)
         tickets = query.execute(self.req)
 
@@ -262,7 +250,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         self.assertEqual(['%someone'], args)
         tickets = query.execute(self.req)
 
@@ -270,7 +258,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.env.config.set('ticket-custom', 'foo', 'text')
         query = Query.from_string(self.env, 'foo=something', order='id')
         sql, args = query.get_sql()
-        foo = self.env.get_read_db().quote('foo')
+        foo = self.db.quote('foo')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value,t.%s AS %s
 FROM (
@@ -287,7 +275,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % ((foo,) * 4))
         self.env.config.set('ticket-custom', 'foo', 'text')
         query = Query(self.env, group='foo', order='id')
         sql, args = query.get_sql()
-        foo = self.env.get_read_db().quote('foo')
+        foo = self.db.quote('foo')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value,t.%s AS %s
 FROM (
@@ -396,7 +384,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s OR COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         tickets = query.execute(self.req)
 
     def test_constrained_by_empty_value_contains(self):
@@ -441,7 +429,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((%(cast_time)s>=%%s AND %(cast_time)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
+          'cast_time': self.env.get_db_cnx().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
 
@@ -454,7 +442,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((NOT (%(cast_time)s>=%%s AND %(cast_time)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
+          'cast_time': self.env.get_db_cnx().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
 
@@ -467,7 +455,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((%(cast_time)s>=%%s))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
+          'cast_time': self.env.get_db_cnx().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L], args)
         tickets = query.execute(self.req)
 
@@ -480,7 +468,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((%(cast_time)s<%%s))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
+          'cast_time': self.env.get_db_cnx().cast('t.time', 'int64')})
         self.assertEqual([1220227200000000L], args)
         tickets = query.execute(self.req)
 
@@ -493,7 +481,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((%(cast_changetime)s>=%%s AND %(cast_changetime)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_changetime': self.env.get_read_db().cast('t.changetime', 'int64')})
+          'cast_changetime': self.env.get_db_cnx().cast('t.changetime', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
 
@@ -506,7 +494,7 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((COALESCE(t.keywords,'') %(like)s AND COALESCE(t.keywords,'') NOT %(like)s AND COALESCE(t.keywords,'') %(like)s)))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_db_cnx().like()})
         self.assertEqual(['%foo%', '%bar%', '%baz%'], args)
         tickets = query.execute(self.req)
 
@@ -573,13 +561,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
 
     def test_csv_escape(self):
         query = Mock(get_columns=lambda: ['col1'],
-                     execute=lambda r: [{'id': 1,
-                                         'col1': 'value, needs escaped'}],
+                     execute=lambda r,c: [{'id': 1,
+                                           'col1': 'value, needs escaped'}],
                      time_fields=['time', 'changetime'])
         content, mimetype = QueryModule(self.env).export_csv(
                                 Mock(href=self.env.href, perm=MockPerm()),
                                 query)
-        self.assertEqual('\xef\xbb\xbfcol1\r\n"value, needs escaped"\r\n',
+        self.assertEqual('col1\r\n"value, needs escaped"\r\n',
                          content)
 
     def test_csv_obfuscation(self):
@@ -590,27 +578,27 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
             __contains__ = has_permission
 
         query = Mock(get_columns=lambda: ['owner', 'reporter', 'cc'],
-                     execute=lambda r: [{'id': 1,
-                                         'owner': 'joe@example.org',
-                                         'reporter': 'foo@example.org',
-                                         'cc': 'cc1@example.org, cc2'}],
+                     execute=lambda r,c: [{'id': 1,
+                                           'owner': 'joe@example.org',
+                                           'reporter': 'foo@example.org',
+                                           'cc': 'cc1@example.org, cc2'}],
                      time_fields=['time', 'changetime'])
         req = Mock(href=self.env.href, perm=NoEmailView())
         content, mimetype = QueryModule(self.env).export_csv(req, query)
-        self.assertEqual(u'\uFEFFowner,reporter,cc\r\n'
+        self.assertEqual(u'owner,reporter,cc\r\n'
                          u'joe@…,foo@…,"cc1@…, cc2"\r\n',
                          content.decode('utf-8'))
         req = Mock(href=self.env.href, perm=MockPerm())
         content, mimetype = QueryModule(self.env).export_csv(req, query)
         self.assertEqual(
-            u'\uFEFFowner,reporter,cc\r\n'
-            u'joe@example.org,foo@example.org,"cc1@example.org, cc2"\r\n',
+            'owner,reporter,cc\r\n'
+            'joe@example.org,foo@example.org,"cc1@example.org, cc2"\r\n',
             content.decode('utf-8'))
 
     def test_template_data(self):
         req = Mock(href=self.env.href, perm=MockPerm(), authname='anonymous',
-                   tz=None, locale=None)
-        context = web_context(req, 'query')
+                   tz=None)
+        context = Context.from_request(req, 'query')
 
         query = Query.from_string(self.env, 'owner=$USER&order=id')
         tickets = query.execute(req)
@@ -629,7 +617,7 @@ class QueryLinksTestCase(unittest.TestCase):
         self.env = EnvironmentStub(default_data=True)
         self.query_module = QueryModule(self.env)
         req = Mock(perm=MockPerm(), args={}, href=Href('/'))
-        self.formatter = LinkFormatter(self.env, web_context(req))
+        self.formatter = LinkFormatter(self.env, Context.from_request(req))
 
     def tearDown(self):
         self.env.reset_db()
@@ -651,7 +639,7 @@ class TicketQueryMacroTestCase(unittest.TestCase):
         self.assertEqual(query, qs)
         self.assertEqual(kwargs, kw)
         self.assertEqual(format, f)
-
+    
     def test_owner_and_milestone(self):
         self.assertQueryIs('owner=joe, milestone=milestone1',
                            'owner=joe&milestone=milestone1',
@@ -663,7 +651,7 @@ class TicketQueryMacroTestCase(unittest.TestCase):
                            'owner=joe&or&milestone=milestone1',
                            dict(col='status|summary', max='0', order='id'),
                            'list')
-
+    
     def test_format_arguments(self):
         self.assertQueryIs('owner=joe, milestone=milestone1, col=component|severity, max=15, order=component, format=compact',
                            'owner=joe&milestone=milestone1',
@@ -679,268 +667,13 @@ class TicketQueryMacroTestCase(unittest.TestCase):
                            r'owner=joe|jack&milestone=this\&that\|here,now',
                            dict(col='status|summary', max='0', order='id'),
                            'list')
-
-QUERY_TEST_CASES = u"""
-============================== TicketQuery(format=progress)
-[[TicketQuery(format=progress)]]
-------------------------------
-<p>
-</p><div class="trac-progress">
-
-  <table xmlns="http://www.w3.org/1999/xhtml" class="progress">
-    <tr>
-      <td class="closed" style="width: 33%">
-        <a href="/query?status=closed&amp;group=resolution&amp;max=0&amp;order=time" title="1/3 closed"></a>
-      </td><td class="open" style="width: 67%">
-        <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id" title="2/3 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">33%</p>
-
-  <p class="legend">
-    <span class="first interval">
-      <a href="/query?max=0&amp;order=id">Total number of tickets: 3</a>
-    </span>
-    <span class="interval">
-      - <a href="/query?status=closed&amp;group=resolution&amp;max=0&amp;order=time">closed: 1</a>
-    </span><span class="interval">
-      - <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id">active: 2</a>
-    </span>
-  </p>
-</div><p>
-</p>
-------------------------------
-============================== TicketQuery(reporter=santa, format=progress)
-[[TicketQuery(reporter=santa, format=progress)]]
-------------------------------
-<p>
-</p><div class="trac-progress">
-
-  <table xmlns="http://www.w3.org/1999/xhtml" class="progress">
-    <tr>
-      <td class="closed" style="display: none">
-        <a href="/query?status=closed&amp;reporter=santa&amp;group=resolution&amp;max=0&amp;order=time" title="0/1 closed"></a>
-      </td><td class="open" style="width: 100%">
-        <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;max=0&amp;order=id" title="1/1 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">0%</p>
-
-  <p class="legend">
-    <span class="first interval">
-      <a href="/query?reporter=santa&amp;max=0&amp;order=id">Total number of tickets: 1</a>
-    </span>
-    <span class="interval">
-      - <a href="/query?status=closed&amp;reporter=santa&amp;group=resolution&amp;max=0&amp;order=time">closed: 0</a>
-    </span><span class="interval">
-      - <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;max=0&amp;order=id">active: 1</a>
-    </span>
-  </p>
-</div><p>
-</p>
-------------------------------
-============================== TicketQuery(reporter=santa&or&owner=santa, format=progress)
-[[TicketQuery(reporter=santa&or&owner=santa, format=progress)]]
-------------------------------
-<p>
-</p><div class="trac-progress">
-
-  <table xmlns="http://www.w3.org/1999/xhtml" class="progress">
-    <tr>
-      <td class="closed" style="width: 50%">
-        <a href="/query?status=closed&amp;reporter=santa&amp;or&amp;owner=santa&amp;status=closed&amp;group=resolution&amp;max=0&amp;order=time" title="1/2 closed"></a>
-      </td><td class="open" style="width: 50%">
-        <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;or&amp;owner=santa&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id" title="1/2 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">50%</p>
-
-  <p class="legend">
-    <span class="first interval">
-      <a href="/query?reporter=santa&amp;or&amp;owner=santa&amp;max=0&amp;order=id">Total number of tickets: 2</a>
-    </span>
-    <span class="interval">
-      - <a href="/query?status=closed&amp;reporter=santa&amp;or&amp;owner=santa&amp;status=closed&amp;group=resolution&amp;max=0&amp;order=time">closed: 1</a>
-    </span><span class="interval">
-      - <a href="/query?status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;or&amp;owner=santa&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id">active: 1</a>
-    </span>
-  </p>
-</div><p>
-</p>
-------------------------------
-============================== TicketQuery(format=progress, group=project)
-[[TicketQuery(format=progress, group=project)]]
-------------------------------
-<p>
-</p><div class="trac-groupprogress">
-  <table xmlns="http://www.w3.org/1999/xhtml" summary="Ticket completion status for each project">
-    <tr>
-      <th scope="row">
-        <i><a href="/query?project=&amp;max=0&amp;order=id">(none)</a></i>
-
-
-      </th>
-      <td>
-
-
-  <table class="progress" style="width: 40%">
-    <tr>
-      <td class="closed" style="display: none">
-        <a href="/query?project=&amp;status=closed&amp;group=resolution&amp;max=0&amp;order=time" title="0/1 closed"></a>
-      </td><td class="open" style="width: 100%">
-        <a href="/query?project=&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id" title="1/1 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">0 / 1</p>
-
-
-
-      </td>
-    </tr><tr>
-      <th scope="row">
-
-
-        <a href="/query?project=xmas&amp;max=0&amp;order=id">xmas</a>
-      </th>
-      <td>
-
-
-  <table class="progress" style="width: 80%">
-    <tr>
-      <td class="closed" style="width: 50%">
-        <a href="/query?project=xmas&amp;status=closed&amp;group=resolution&amp;max=0&amp;order=time" title="1/2 closed"></a>
-      </td><td class="open" style="width: 50%">
-        <a href="/query?project=xmas&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id" title="1/2 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">1 / 2</p>
-
-
-
-      </td>
-    </tr>
-  </table>
-</div><p>
-</p>
-------------------------------
-============================== TicketQuery(reporter=santa, format=progress, group=project)
-[[TicketQuery(reporter=santa, format=progress, group=project)]]
-------------------------------
-<p>
-</p><div class="trac-groupprogress">
-  <table xmlns="http://www.w3.org/1999/xhtml" summary="Ticket completion status for each project">
-    <tr>
-      <th scope="row">
-
-
-        <a href="/query?project=xmas&amp;reporter=santa&amp;max=0&amp;order=id">xmas</a>
-      </th>
-      <td>
-
-
-  <table class="progress" style="width: 80%">
-    <tr>
-      <td class="closed" style="display: none">
-        <a href="/query?project=xmas&amp;status=closed&amp;reporter=santa&amp;group=resolution&amp;max=0&amp;order=time" title="0/1 closed"></a>
-      </td><td class="open" style="width: 100%">
-        <a href="/query?project=xmas&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;max=0&amp;order=id" title="1/1 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">0 / 1</p>
-
-
-
-      </td>
-    </tr>
-  </table>
-</div><p>
-</p>
-------------------------------
-============================== TicketQuery(reporter=santa&or&owner=santa, format=progress, group=project)
-[[TicketQuery(reporter=santa&or&owner=santa, format=progress, group=project)]]
-------------------------------
-<p>
-</p><div class="trac-groupprogress">
-  <table xmlns="http://www.w3.org/1999/xhtml" summary="Ticket completion status for each project">
-    <tr>
-      <th scope="row">
-
-
-        <a href="/query?project=xmas&amp;reporter=santa&amp;or&amp;owner=santa&amp;project=xmas&amp;max=0&amp;order=id">xmas</a>
-      </th>
-      <td>
-
-
-  <table class="progress" style="width: 80%">
-    <tr>
-      <td class="closed" style="width: 50%">
-        <a href="/query?project=xmas&amp;status=closed&amp;reporter=santa&amp;or&amp;owner=santa&amp;project=xmas&amp;status=closed&amp;group=resolution&amp;max=0&amp;order=time" title="1/2 closed"></a>
-      </td><td class="open" style="width: 50%">
-        <a href="/query?project=xmas&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;reporter=santa&amp;or&amp;owner=santa&amp;project=xmas&amp;status=assigned&amp;status=new&amp;status=accepted&amp;status=reopened&amp;max=0&amp;order=id" title="1/2 active"></a>
-      </td>
-    </tr>
-  </table>
-
-  <p class="percent">1 / 2</p>
-
-
-
-      </td>
-    </tr>
-  </table>
-</div><p>
-</p>
-------------------------------
-"""
-
-def ticket_setup(tc):
-    tc.env.config.set('ticket-custom', 'project', 'text')
-    ticket = Ticket(tc.env)
-    ticket.values.update({'reporter': 'santa',
-                          'summary': 'This is the summary',
-                          'status': 'new',
-                          'project': 'xmas'})
-    ticket.insert()
-    ticket = Ticket(tc.env)
-    ticket.values.update({'owner': 'elf',
-                          'summary': 'This is another summary',
-                          'status': 'assigned'})
-    ticket.insert()
-    ticket = Ticket(tc.env)
-    ticket.values.update({'owner': 'santa',
-                          'summary': 'This is th third summary',
-                          'status': 'closed',
-                          'project': 'xmas'})
-    ticket.insert()
-
-    tc.env.config.set('milestone-groups', 'closed.status', 'closed')
-    tc.env.config.set('milestone-groups', 'closed.query_args', 'group=resolution,order=time')
-    tc.env.config.set('milestone-groups', 'closed.overall_completion', 'true')
-    tc.env.config.set('milestone-groups', 'active.status', '*')
-    tc.env.config.set('milestone-groups', 'active.css_class', 'open')
-
-def ticket_teardown(tc):
-    tc.env.reset_db()
+        
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(QueryTestCase))
-    suite.addTest(unittest.makeSuite(QueryLinksTestCase))
-    suite.addTest(unittest.makeSuite(TicketQueryMacroTestCase))
-    suite.addTest(formatter.suite(QUERY_TEST_CASES, ticket_setup, __file__,
-                                  ticket_teardown))
+    suite.addTest(unittest.makeSuite(QueryTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(QueryLinksTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(TicketQueryMacroTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

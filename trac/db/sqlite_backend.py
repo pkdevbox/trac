@@ -20,9 +20,8 @@ import weakref
 
 from trac.config import ListOption
 from trac.core import *
-from trac.db.api import ConnectionBase, IDatabaseConnector
+from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import ISystemInfoProvider
 from trac.util import get_pkginfo, getuser
 from trac.util.translation import _
 
@@ -128,45 +127,29 @@ def _to_sql(table):
     sql.append(',\n'.join(coldefs) + '\n);')
     yield '\n'.join(sql)
     for index in table.indices:
-        unique = 'UNIQUE' if index.unique else ''
+        unique = index.unique and 'UNIQUE' or ''
         yield "CREATE %s INDEX %s_%s_idx ON %s (%s);" % (unique, table.name,
               '_'.join(index.columns), table.name, ','.join(index.columns))
 
 
 class SQLiteConnector(Component):
     """Database connector for SQLite.
-
+    
     Database URLs should be of the form:
     {{{
     sqlite:path/to/trac.db
     }}}
     """
-    implements(IDatabaseConnector, ISystemInfoProvider)
+    implements(IDatabaseConnector)
 
-    required = False
-
-    extensions = ListOption('sqlite', 'extensions',
+    extensions = ListOption('sqlite', 'extensions', 
         doc="""Paths to sqlite extensions, relative to Trac environment's
         directory or absolute. (''since 0.12'')""")
 
-    memory_cnx = None
-
     def __init__(self):
-        self._version = have_pysqlite  and \
-                        get_pkginfo(sqlite).get('version',
-                                                '%d.%d.%s'
-                                                % sqlite.version_info)
+        self._version = None
         self.error = None
         self._extensions = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'SQLite', sqlite_version_string
-            yield 'pysqlite', self._version
-
-    # IDatabaseConnector methods
 
     def get_supported_schemes(self):
         if not have_pysqlite:
@@ -178,10 +161,15 @@ class SQLiteConnector(Component):
         elif (2, 5, 2) <= sqlite.version_info < (2, 5, 5):
             self.error = _("PySqlite 2.5.2 - 2.5.4 break Trac, please use "
                            "2.5.5 or higher")
-        yield ('sqlite', -1 if self.error else 1)
+        yield ('sqlite', self.error and -1 or 1)
 
     def get_connection(self, path, log=None, params={}):
-        self.required = True
+        if not self._version:
+            self._version = get_pkginfo(sqlite).get(
+                'version', '%d.%d.%s' % sqlite.version_info)
+            self.env.systeminfo.extend([('SQLite', sqlite_version_string),
+                                        ('pysqlite', self._version)])
+            self.required = True
         # construct list of sqlite extension libraries
         if self._extensions is None:
             self._extensions = []
@@ -190,35 +178,22 @@ class SQLiteConnector(Component):
                     extpath = os.path.join(self.env.path, extpath)
                 self._extensions.append(extpath)
         params['extensions'] = self._extensions
-        if path == ':memory:':
-            if not self.memory_cnx:
-                self.memory_cnx = SQLiteConnection(path, log, params)
-            return self.memory_cnx
-        else:
-            return SQLiteConnection(path, log, params)
+        return SQLiteConnection(path, log, params)
 
-    def get_exceptions(self):
-        return sqlite
-
-    def init_db(self, path, schema=None, log=None, params={}):
+    def init_db(self, path, log=None, params={}):
         if path != ':memory:':
             # make the directory to hold the database
             if os.path.exists(path):
-                raise TracError(_("Database already exists at %(path)s",
+                raise TracError(_('Database already exists at %(path)s',
                                   path=path))
             dir = os.path.dirname(path)
             if not os.path.exists(dir):
                 os.makedirs(dir)
-            if isinstance(path, unicode): # needed with 2.4.0
-                path = path.encode('utf-8')
-            # this direct connect will create the database if needed
-            cnx = sqlite.connect(path,
-                                 timeout=int(params.get('timeout', 10000)))
-        else:
-            cnx = self.get_connection(path, log, params)
+        if isinstance(path, unicode): # needed with 2.4.0
+            path = path.encode('utf-8')
+        cnx = sqlite.connect(path, timeout=int(params.get('timeout', 10000)))
         cursor = cnx.cursor()
-        if schema is None:
-            from trac.db_default import schema
+        from trac.db_default import schema
         for table in schema:
             for stmt in self.to_sql(table):
                 cursor.execute(stmt)
@@ -230,7 +205,7 @@ class SQLiteConnector(Component):
     def alter_column_types(self, table, columns):
         """Yield SQL statements altering the type of one or more columns of
         a table.
-
+        
         Type changes are specified as a `columns` dict mapping column names
         to `(from, to)` SQL type tuples.
         """
@@ -258,7 +233,7 @@ class SQLiteConnector(Component):
         return dest_file
 
 
-class SQLiteConnection(ConnectionBase, ConnectionWrapper):
+class SQLiteConnection(ConnectionWrapper):
     """Connection wrapper for SQLite."""
 
     __slots__ = ['_active_cursors', '_eager']
@@ -299,7 +274,7 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
             for ext in extensions:
                 cnx.load_extension(ext)
             cnx.enable_load_extension(False)
-
+       
         ConnectionWrapper.__init__(self, cnx, log)
 
     def cursor(self):
@@ -325,25 +300,8 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
     def concat(self, *args):
         return '||'.join(args)
 
-    def drop_table(self, table):
-        cursor = self.cursor()
-        cursor.execute("DROP TABLE IF EXISTS " + self.quote(table))
-
-    def get_column_names(self, table):
-        cursor = self.cnx.cursor()
-        rows = cursor.execute("PRAGMA table_info(%s)"
-                              % self.quote(table))
-        return [row[1] for row in rows]
-
-    def get_last_id(self, cursor, table, column='id'):
-        return cursor.lastrowid
-
-    def get_table_names(self):
-        rows = self.execute("""
-            SELECT name FROM sqlite_master WHERE type='table'""")
-        return [row[0] for row in rows]
-
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         if sqlite_version >= (3, 1, 0):
             return "LIKE %s ESCAPE '/'"
         else:
@@ -356,15 +314,25 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
             return text
 
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return 'GLOB %s'
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return _glob_escape_re.sub(lambda m: '[%s]' % m.group(0), prefix) + '*'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return "`%s`" % identifier.replace('`', '``')
 
+    def get_last_id(self, cursor, table, column='id'):
+        return cursor.lastrowid
+    
     def update_sequence(self, cursor, table, column='id'):
         # SQLite handles sequence updates automagically
         # http://www.sqlite.org/autoinc.html
         pass
+
+    def drop_table(self, table):
+        cursor = self.cursor()
+        cursor.execute("DROP TABLE IF EXISTS " + self.quote(table))

@@ -1,17 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2008-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
-
+#!/usr/bin/python
 from trac.tests.functional import *
 
 
@@ -42,8 +29,8 @@ class RegressionTestRev5883(FunctionalTwillTestCaseSetup):
 
 def functionalSuite(suite=None):
     if not suite:
-        import trac.tests.functional
-        suite = trac.tests.functional.functionalSuite()
+        import trac.tests.functional.testcases
+        suite = trac.tests.functional.testcases.functionalSuite()
     suite.addTest(RegressionTestRev5883())
     return suite
 

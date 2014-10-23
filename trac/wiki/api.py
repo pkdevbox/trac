@@ -24,15 +24,14 @@ from trac.cache import cached
 from trac.config import BoolOption, ListOption
 from trac.core import *
 from trac.resource import IResourceManager
-from trac.util.text import unquote_label
+from trac.util.compat import all
 from trac.util.translation import _
 from trac.wiki.parser import WikiParser
 
 
 class IWikiChangeListener(Interface):
-    """Components that want to get notified about the creation,
-    deletion and modification of wiki pages should implement that
-    interface.
+    """Extension point interface for components that should get notified about
+    the creation, deletion and modification of wiki pages.
     """
 
     def wiki_page_added(page):
@@ -47,46 +46,42 @@ class IWikiChangeListener(Interface):
     def wiki_page_version_deleted(page):
         """Called when a version of a page has been deleted."""
 
-    def wiki_page_renamed(page, old_name):
-        """Called when a page has been renamed."""
+    def wiki_page_renamed(page, old_name): 
+        """Called when a page has been renamed.""" 
 
 
 class IWikiPageManipulator(Interface):
-    """Components that need to do specific pre- and post- processing of
-    wiki page changes have to implement this interface.
-
-    Unlike change listeners, a manipulator can reject changes being
-    committed to the database.
+    """Extension point interface for components that need to do specific
+    pre and post processing of wiki page changes.
+    
+    Unlike change listeners, a manipulator can reject changes being committed
+    to the database.
     """
 
     def prepare_wiki_page(req, page, fields):
         """Validate a wiki page before rendering it.
 
-        :param page: is the `WikiPage` being viewed.
-
-        :param fields: is a dictionary which contains the wiki `text`
-          of the page, initially identical to `page.text` but it can
-          eventually be transformed in place before being used as
-          input to the formatter.
+        `page` is the `WikiPage` being viewed.
+        `fields` is a dictionary which contains the wiki `text` of the page,
+        initially identical to `page.text` but it  can eventually be
+        transformed in place before being used as input to the formatter.
         """
 
     def validate_wiki_page(req, page):
         """Validate a wiki page after it's been populated from user input.
 
-        :param page: is the `WikiPage` being edited.
-
-        :return: a list of `(field, message)` tuples, one for each
-          problem detected. `field` can be `None` to indicate an
-          overall problem with the page. Therefore, a return value of
-          `[]` means everything is OK.
+        `page` is the `WikiPage` being edited.
+        
+        Must return a list of `(field, message)` tuples, one for each problem
+        detected. `field` can be `None` to indicate an overall problem with the
+        page. Therefore, a return value of `[]` means everything is OK.
         """
 
 
 class IWikiMacroProvider(Interface):
-    """Augment the Wiki markup with new Wiki macros.
+    """Extension point interface for components that provide Wiki macros
 
-    .. versionchanged :: 0.12
-       new Wiki processors can also be added that way.
+    New Wiki processors can also be added that way. (''since 0.12'')
     """
 
     def get_macros():
@@ -94,104 +89,64 @@ class IWikiMacroProvider(Interface):
         """
 
     def get_macro_description(name):
-        """Return a tuple of a domain name to translate and plain text
-        description of the macro or only the description with the specified
-        name.
+        """Return a plain text description of the macro with the specified
+        name."""
 
-        .. versionchanged :: 1.0
-           `get_macro_description` can return a domain to translate the
-           description.
-        """
-
-    def is_inline(content):
-        """Return `True` if the content generated is an inline XHTML element.
-
-        .. versionadded :: 1.0
-        """
+    def render_macro(req, name, content):
+        """Return the HTML output of the macro (deprecated)"""
 
     def expand_macro(formatter, name, content, args=None):
         """Called by the formatter when rendering the parsed wiki text.
 
-        .. versionadded:: 0.11
+        This form is preferred over `render_macro`, as you get the
+        formatter, which knows the current `.context` (and the `.req`,
+        but ideally you shouldn't use it in your macros). (''since 0.11'')
 
-        .. versionchanged:: 0.12
-           added the `args` parameter
+        `name` is the name by which the macro has been called; remember
+        that via `get_macros`, multiple names could be associated to this
+        macros. Note that the macro names are case sensitive.
+        
+        `content` is the content of the macro call. When called using macro
+        syntax (`[[Macro(content)]]`), this is the string contained between
+        parentheses, usually containing macro arguments. When called using wiki
+        processor syntax (`{{{!#Macro ...}}}`), it is the content of the
+        processor block, that is, the text starting on the line following the
+        macro name.
 
-        :param formatter: the wiki `Formatter` currently processing
-          the wiki markup
-
-        :param name: is the name by which the macro has been called;
-          remember that via `get_macros`, multiple names could be
-          associated to this macros. Note that the macro names are
-          case sensitive.
-
-        :param content: is the content of the macro call. When called
-          using macro syntax (`[[Macro(content)]]`), this is the
-          string contained between parentheses, usually containing
-          macro arguments. When called using wiki processor syntax
-          (`{{{!#Macro ...}}}`), it is the content of the processor
-          block, that is, the text starting on the line following the
-          macro name.
-
-        :param args: will be a dictionary containing the named
-          parameters passed when using the Wiki processor syntax.
-
-          The named parameters can be specified when calling the macro
-          using the wiki processor syntax::
-
-            {{{#!Macro arg1=value1 arg2="value 2"`
-            ... some content ...
-            }}}
-
-          In this example, `args` will be
-          `{'arg1': 'value1', 'arg2': 'value 2'}`
-          and `content` will be `"... some content ..."`.
-
-          If no named parameters are given like in::
-
-            {{{#!Macro
-            ...
-            }}}
-
-          then `args` will be `{}`. That makes it possible to
-          differentiate the above situation from a call
-          made using the macro syntax::
-
-             [[Macro(arg1=value1, arg2="value 2", ... some content...)]]
-
-          in which case `args` will always be `None`.  Here `content`
-          will be the
-          `"arg1=value1, arg2="value 2", ... some content..."` string.
-          If like in this example, `content` is expected to contain
-          some arguments and named parameters, one can use the
-          `parse_args` function to conveniently extract them.
+        `args` will be a dictionary containing the named parameters which you
+        can specify when calling the macro using the wiki processor syntax:
+        `{{{#!Macro arg1=value1 arg2="value 2"`. In this example, `args` will
+        be `{'arg1': 'value1', 'arg2': 'value 2'}`).
+        If no named parameters are given, `args` will be `{}`. That makes it
+        possible to differentiate with a call using the macro syntax, in which
+        case `args` will be `None` (see `parse_args` for a convenient way to
+        extract arguments and name parameters from the `content` inside the
+        parentheses, in the latter situation). (''since 0.12'')
         """
 
 
 class IWikiSyntaxProvider(Interface):
-    """Enrich the Wiki syntax with new markup."""
-
+ 
     def get_wiki_syntax():
         """Return an iterable that provides additional wiki syntax.
 
-        Additional wiki syntax correspond to a pair of `(regexp, cb)`,
+        Additional wiki syntax correspond to a pair of (regexp, cb),
         the `regexp` for the additional syntax and the callback `cb`
-        which will be called if there's a match.  That function is of
-        the form `cb(formatter, ns, match)`.
+        which will be called if there's a match.
+        That function is of the form cb(formatter, ns, match).
         """
-
+ 
     def get_link_resolvers():
-        """Return an iterable over `(namespace, formatter)` tuples.
+        """Return an iterable over (namespace, formatter) tuples.
 
-        Each formatter should be a function of the form::
-
-          def format(formatter, ns, target, label, fullmatch=None):
-              pass
-
+        Each formatter should be a function of the form:
+        {{{#!python
+        def format(formatter, ns, target, label, fullmatch=None):
+            pass
+        }}}
         and should return some HTML fragment. The `label` is already
-        HTML escaped, whereas the `target` is not. The `fullmatch`
-        argument is optional, and is bound to the regexp match object
-        for the link.
+        HTML escaped, whereas the `target` is not. The `fullmatch` argument
+        is optional, and is bound to the regexp match object for the link.
         """
 
 
@@ -199,24 +154,24 @@ def parse_args(args, strict=True):
     """Utility for parsing macro "content" and splitting them into arguments.
 
     The content is split along commas, unless they are escaped with a
-    backquote (see example below).
-
-    :param args: a string containing macros arguments
+    backquote (like this: \,).
+    
+    :param args: macros arguments, as plain text
     :param strict: if `True`, only Python-like identifiers will be
-                   recognized as keyword arguments
+                   recognized as keyword arguments 
 
-    Example usage::
+    Example usage:
 
-      >>> parse_args('')
-      ([], {})
-      >>> parse_args('Some text')
-      (['Some text'], {})
-      >>> parse_args('Some text, mode= 3, some other arg\, with a comma.')
-      (['Some text', ' some other arg, with a comma.'], {'mode': ' 3'})
-      >>> parse_args('milestone=milestone1,status!=closed', strict=False)
-      ([], {'status!': 'closed', 'milestone': 'milestone1'})
-
-    """
+    >>> parse_args('')
+    ([], {})
+    >>> parse_args('Some text')
+    (['Some text'], {})
+    >>> parse_args('Some text, mode= 3, some other arg\, with a comma.')
+    (['Some text', ' some other arg, with a comma.'], {'mode': ' 3'})
+    >>> parse_args('milestone=milestone1,status!=closed', strict=False)
+    ([], {'status!': 'closed', 'milestone': 'milestone1'})
+    
+    """    
     largs, kwargs = [], {}
     if args:
         for arg in re.split(r'(?<!\\),', args):
@@ -254,42 +209,41 @@ class WikiSystem(Component):
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
 
     ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
-        """Enable/disable highlighting CamelCase links to missing pages.
-        (''since 0.9'')""")
+        """Enable/disable highlighting CamelCase links to missing pages
+        (''since 0.9'').""")
 
     split_page_names = BoolOption('wiki', 'split_page_names', 'false',
-        """Enable/disable splitting the WikiPageNames with space characters.
-        (''since 0.10'')""")
+        """Enable/disable splitting the WikiPageNames with space characters
+        (''since 0.10'').""")
 
     render_unsafe_content = BoolOption('wiki', 'render_unsafe_content', 'false',
         """Enable/disable the use of unsafe HTML tags such as `<script>` or
-        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor].
+        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor]
+        (''since 0.10.4'').
 
         For public sites where anonymous users can edit the wiki it is
-        recommended to leave this option disabled.
-
-        (''since 0.10.4'')""")
+        recommended to leave this option disabled (which is the default).""")
 
     safe_schemes = ListOption('wiki', 'safe_schemes',
-        'cvs, file, ftp, git, irc, http, https, news, sftp, smb, ssh, svn, '
-        'svn+ssh',
+        'cvs,file,ftp,git,irc,http,https,news,sftp,smb,ssh,svn,svn+ssh',
         doc="""List of URI schemes considered "safe", that will be rendered as
         external links even if `[wiki] render_unsafe_content` is `false`.
         (''since 0.11.8'')""")
 
     @cached
-    def pages(self):
+    def pages(self, db):
         """Return the names of all existing wiki pages."""
-        return set(name for name, in
-                   self.env.db_query("SELECT DISTINCT name FROM wiki"))
+        cursor = db.cursor()
+        cursor.execute("SELECT DISTINCT name FROM wiki")
+        return set(row[0] for row in cursor)
 
     # Public API
 
     def get_pages(self, prefix=None):
         """Iterate over the names of existing Wiki pages.
 
-        :param prefix: if given, only names that start with that
-          prefix are included.
+        If the `prefix` parameter is given, only names that start with that
+        prefix are included.
         """
         for page in self.pages:
             if not prefix or page.startswith(prefix):
@@ -298,12 +252,6 @@ class WikiSystem(Component):
     def has_page(self, pagename):
         """Whether a page with the specified name exists."""
         return pagename.rstrip('/') in self.pages
-
-    def resolve_relative_name(self, pagename, referrer):
-        """Resolves a pagename relative to a referrer pagename."""
-        if pagename.startswith(('./', '../')) or pagename in ('.', '..'):
-            return self._resolve_relative_name(pagename, referrer)
-        return pagename
 
     # IWikiSyntaxProvider methods
 
@@ -323,10 +271,10 @@ class WikiSystem(Component):
 
     def make_label_from_target(self, target):
         """Create a label from a wiki target.
-
-        A trailing fragment and query string is stripped. Then, leading ./,
-        ../ and / elements are stripped, except when this would lead to an
-        empty label. Finally, if `split_page_names` is true, the label
+        
+        A trailing fragment and query string is stripped. Then, leading `./`,
+        `../` and '/' elements are stripped, except when this would lead to an
+        empty label. Finally, if `[wiki] split_page_names` is true, the label
         is split accordingly.
         """
         label = target.split('#', 1)[0].split('?', 1)[0]
@@ -347,13 +295,13 @@ class WikiSystem(Component):
             r"(?=:(?:\Z|\s)|[^:\w%(upper)s%(lower)s]|\s|\Z)"
             # what should follow it
             % {'upper': self.Lu, 'lower': self.Ll, 'xml': self.XML_NAME})
-
+        
         # Regular WikiPageNames
         def wikipagename_link(formatter, match, fullmatch):
             return self._format_link(formatter, 'wiki', match,
                                      self.format_page_name(match),
                                      self.ignore_missing_pages, match)
-
+        
         # Start after any non-word char except '/', with optional relative or
         # absolute prefix
         yield (r"!?(?<![\w/])(?:\.?\.?/)*"
@@ -370,7 +318,7 @@ class WikiSystem(Component):
                wikipagename_with_label_link)
 
         # MoinMoin's ["internal free link"] and ["free link" with label]
-        def internal_free_link(fmt, m, fullmatch):
+        def internal_free_link(fmt, m, fullmatch): 
             page = fullmatch.group('ifl_page')[1:-1]
             label = fullmatch.group('ifl_label')
             if label is None:
@@ -406,11 +354,11 @@ class WikiSystem(Component):
             referrer = formatter.resource.id
         if pagename.startswith('/'):
             pagename = pagename.lstrip('/')
-        elif pagename.startswith(('./', '../')) or pagename in ('.', '..'):
+        elif pagename.startswith('./') or pagename.startswith('../') \
+                                                or pagename in ('.', '..'):
             pagename = self._resolve_relative_name(pagename, referrer)
         else:
             pagename = self._resolve_scoped_name(pagename, referrer)
-        label = unquote_label(label)
         if 'WIKI_VIEW' in formatter.perm('wiki', pagename, version):
             href = formatter.href.wiki(pagename, version=version) + query \
                    + fragment
@@ -437,11 +385,11 @@ class WikiSystem(Component):
             if comp == '..':
                 if base:
                     base.pop()
-            elif comp != '.':
+            elif comp and comp != '.':
                 base.extend(components[i:])
                 break
         return '/'.join(base)
-
+    
     def _resolve_scoped_name(self, pagename, referrer):
         referrer = referrer.split('/')
         if len(referrer) == 1:           # Non-hierarchical referrer
@@ -510,6 +458,8 @@ class WikiSystem(Component):
         """
         if resource.version is None:
             return resource.id in self.pages
-        return bool(self.env.db_query(
-            "SELECT name FROM wiki WHERE name=%s AND version=%s",
-            (resource.id, resource.version)))
+        db = self.env.get_read_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT name FROM wiki WHERE name=%s AND version=%s",
+                       (resource.id, resource.version))
+        return bool(cursor.fetchall())

@@ -16,127 +16,51 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 #
 
-from hashlib import md5
-
 from genshi.template.text import NewTextTemplate
 
 from trac.core import *
 from trac.config import *
 from trac.notification import NotifyEmail
 from trac.ticket.api import TicketSystem
-from trac.ticket.model import Ticket
-from trac.util.datefmt import format_date_or_datetime, get_timezone, \
-                              to_utimestamp
-from trac.util.text import obfuscate_email_address, shorten_line, \
-                           text_width, wrap
+from trac.util import md5
+from trac.util.datefmt import to_utimestamp
+from trac.util.text import obfuscate_email_address, text_width, wrap
 from trac.util.translation import deactivate, reactivate
-
 
 class TicketNotificationSystem(Component):
 
     always_notify_owner = BoolOption('notification', 'always_notify_owner',
                                      'false',
-        """Always send notifications to the ticket ''owner''.
-        (''since 0.9'')""")
+        """Always send notifications to the ticket owner (''since 0.9'').""")
 
     always_notify_reporter = BoolOption('notification',
                                         'always_notify_reporter',
                                         'false',
-        """Always send notifications to the ticket ''reporter''.""")
+        """Always send notifications to any address in the ''reporter''
+        field.""")
 
     always_notify_updater = BoolOption('notification', 'always_notify_updater',
                                        'true',
-        """Always send notifications to the user who causes the ticket
-        change and to any previous updater of the ticket.""")
-
-    ticket_subject_template = Option('notification', 'ticket_subject_template',
+        """Always send notifications to the person who causes the ticket 
+        property change and to any previous updater of that ticket.""")
+        
+    ticket_subject_template = Option('notification', 'ticket_subject_template', 
                                      '$prefix #$ticket.id: $summary',
-        """A Genshi text template snippet used to get the notification
-        subject.
+        """A Genshi text template snippet used to get the notification subject.
 
-        The template variables are documented on the
-        [TracNotification#Customizingthee-mailsubject TracNotification] page.
-        (''since 0.11'')""")
-
-    batch_subject_template = Option('notification', 'batch_subject_template',
-                                    '$prefix Batch modify: $tickets_descr',
-        """Like `ticket_subject_template` but for batch modifications.
-        (''since 1.0'')""")
+        By default, the subject template is `$prefix #$ticket.id: $summary`.
+        `$prefix` being the value of the `smtp_subject_prefix` option.
+        ''(since 0.11)''""")
 
     ambiguous_char_width = Option('notification', 'ambiguous_char_width',
                                   'single',
-        """Width of ambiguous characters that should be used in the table
-        of the notification mail.
+        """Which width of ambiguous characters (e.g. 'single' or
+        'double') should be used in the table of notification mail.
 
-        If `single`, the same width as characters in US-ASCII. This is
-        expected by most users. If `double`, twice the width of
-        US-ASCII characters.  This is expected by CJK users. (''since
-        0.12.2'')""")
-
-
-def get_ticket_notification_recipients(env, config, tktid, prev_cc=None,
-                                       modtime=None):
-    """Returns notifications recipients.
-
-    :since 1.0.2: the `config` parameter is no longer used.
-    :since 1.0.2: the `prev_cc` parameter is deprecated.
-    """
-    section = env.config['notification']
-    always_notify_reporter = section.getbool('always_notify_reporter')
-    always_notify_owner = section.getbool('always_notify_owner')
-    always_notify_updater = section.getbool('always_notify_updater')
-
-    cc_recipients = set(prev_cc or [])
-    to_recipients = set()
-    tkt = Ticket(env, tktid)
-
-    # CC field is stored as comma-separated string. Parse to list.
-    to_list = lambda cc: cc.replace(',', ' ').split()
-
-    # Backward compatibility
-    if not modtime:
-        modtime = tkt['changetime']
-
-    # Harvest email addresses from the cc, reporter, and owner fields
-    if tkt['cc']:
-        cc_recipients.update(to_list(tkt['cc']))
-    if always_notify_reporter:
-        to_recipients.add(tkt['reporter'])
-    if always_notify_owner:
-        to_recipients.add(tkt['owner'])
-
-    # Harvest email addresses from the author field of ticket_change(s)
-    if always_notify_updater:
-        for author, ticket in env.db_query("""
-                SELECT DISTINCT author, ticket FROM ticket_change
-                WHERE ticket=%s
-                """, (tktid, )):
-            to_recipients.add(author)
-
-    # Harvest previous owner and cc list
-    author = None
-    for changelog in tkt.get_changelog(modtime):
-        author, field, old = changelog[1:4]
-        if field == 'owner' and always_notify_owner:
-            to_recipients.add(old)
-        elif field == 'cc':
-            cc_recipients.update(to_list(old))
-
-    # Suppress the updater from the recipients if necessary
-    updater = author or tkt['reporter']
-    if not always_notify_updater:
-        filter_out = True
-        if always_notify_reporter and updater == tkt['reporter']:
-            filter_out = False
-        if always_notify_owner and updater == tkt['owner']:
-            filter_out = False
-        if filter_out:
-            to_recipients.discard(updater)
-    elif updater:
-        to_recipients.add(updater)
-
-    return list(to_recipients), list(cc_recipients), \
-           tkt['reporter'], tkt['owner']
+        If 'single', the same width as characters in US-ASCII. This is
+        expected by most users. If 'double', twice the width of
+        US-ASCII characters.  This is expected by CJK users. ''(since
+        0.12.2)''""")
 
 
 class TicketNotifyEmail(NotifyEmail):
@@ -151,10 +75,11 @@ class TicketNotifyEmail(NotifyEmail):
 
     def __init__(self, env):
         NotifyEmail.__init__(self, env)
+        self.prev_cc = []
         ambiguous_char_width = env.config.get('notification',
                                               'ambiguous_char_width',
                                               'single')
-        self.ambiwidth = 2 if ambiguous_char_width == 'double' else 1
+        self.ambiwidth = (1, 2)[ambiguous_char_width == 'double']
 
     def notify(self, ticket, newticket=True, modtime=None):
         """Send ticket change notification e-mail (untranslated)"""
@@ -179,17 +104,15 @@ class TicketNotifyEmail(NotifyEmail):
         change_data = {}
         link = self.env.abs_href.ticket(ticket.id)
         summary = self.ticket['summary']
-        author = None
-
+        
         if not self.newticket and modtime:  # Ticket change
             from trac.ticket.web_ui import TicketModule
             for change in TicketModule(self.env).grouped_changelog_entries(
-                                                ticket, when=modtime):
+                                                ticket, self.db, when=modtime):
                 if not change['permanent']: # attachment with same time...
                     continue
-                author = change['author']
                 change_data.update({
-                    'author': self.obfuscate_email(author),
+                    'author': self.obfuscate_email(change['author']),
                     'comment': wrap(change['comment'], self.COLS, ' ', ' ',
                                     '\n', self.ambiwidth)
                     })
@@ -218,24 +141,21 @@ class TicketNotifyEmail(NotifyEmail):
                         chgcc = ''
                         if delcc:
                             chgcc += wrap(" * cc: %s (removed)" %
-                                          ', '.join(delcc),
+                                          ', '.join(delcc), 
                                           self.COLS, ' ', ' ', '\n',
                                           self.ambiwidth) + '\n'
                         if addcc:
                             chgcc += wrap(" * cc: %s (added)" %
-                                          ', '.join(addcc),
+                                          ', '.join(addcc), 
                                           self.COLS, ' ', ' ', '\n',
                                           self.ambiwidth) + '\n'
                         if chgcc:
                             changes_body += chgcc
+                        self.prev_cc += old and self.parse_cc(old) or []
                     else:
                         if field in ['owner', 'reporter']:
                             old = self.obfuscate_email(old)
                             new = self.obfuscate_email(new)
-                        elif field in ticket.time_fields:
-                            format = ticket.fields.by_name(field).get('format')
-                            old = self.format_time_field(old, format)
-                            new = self.format_time_field(new, format)
                         newv = new
                         length = 7 + len(field)
                         spacer_old, spacer_new = ' ', ' '
@@ -254,10 +174,7 @@ class TicketNotifyEmail(NotifyEmail):
                         changes_body += ' %s%s' % (chg, '\n')
                     if newv:
                         change_data[field] = {'oldvalue': old, 'newvalue': new}
-
-        if newticket:
-            author = ticket['reporter']
-
+        
         ticket_values = ticket.values.copy()
         ticket_values['id'] = ticket.id
         ticket_values['description'] = wrap(
@@ -266,7 +183,7 @@ class TicketNotifyEmail(NotifyEmail):
             ambiwidth=self.ambiwidth)
         ticket_values['new'] = self.newticket
         ticket_values['link'] = link
-
+        
         subject = self.format_subj(summary)
         if not self.newticket:
             subject = 'Re: ' + subject
@@ -279,11 +196,11 @@ class TicketNotifyEmail(NotifyEmail):
             'changes_descr': changes_descr,
             'change': change_data
             })
-        NotifyEmail.notify(self, ticket.id, subject, author)
+        NotifyEmail.notify(self, ticket.id, subject)
 
     def format_props(self):
         tkt = self.ticket
-        fields = [f for f in tkt.fields
+        fields = [f for f in tkt.fields 
                   if f['name'] not in ('summary', 'cc', 'time', 'changetime')]
         width = [0, 0, 0, 0]
         i = 0
@@ -294,9 +211,6 @@ class TicketNotifyEmail(NotifyEmail):
             if not fname in tkt.values:
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fval.find('\n') != -1:
                 continue
             if fname in ['owner', 'reporter']:
@@ -309,7 +223,7 @@ class TicketNotifyEmail(NotifyEmail):
         width_r = width[2] + width[3] + 5
         half_cols = (self.COLS - 1) / 2
         if width_l + width_r + 1 > self.COLS:
-            if ((width_l > half_cols and width_r > half_cols) or
+            if ((width_l > half_cols and width_r > half_cols) or 
                     (width[0] > half_cols / 2 or width[2] > half_cols / 2)):
                 width_l = half_cols
                 width_r = half_cols
@@ -317,7 +231,7 @@ class TicketNotifyEmail(NotifyEmail):
                 width_l = min((self.COLS - 1) * 2 / 3, width_l)
                 width_r = self.COLS - width_l - 1
             else:
-                width_r = min((self.COLS - 1) * 2 / 3, width_r)
+                width_r = min((self.COLS - 1) * 2 / 3, width_r)         
                 width_l = self.COLS - width_r - 1
         sep = width_l * '-' + '+' + width_r * '-'
         txt = sep + '\n'
@@ -327,12 +241,9 @@ class TicketNotifyEmail(NotifyEmail):
         width_lr = [width_l, width_r]
         for f in [f for f in fields if f['name'] != 'description']:
             fname = f['name']
-            if fname not in tkt.values:
+            if not tkt.values.has_key(fname):
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fname in ['owner', 'reporter']:
                 fval = self.obfuscate_email(fval)
             if f['type'] == 'textarea' or '\n' in unicode(fval):
@@ -407,31 +318,75 @@ class TicketNotifyEmail(NotifyEmail):
     def format_subj(self, summary):
         template = self.config.get('notification','ticket_subject_template')
         template = NewTextTemplate(template.encode('utf8'))
-
+                                                
         prefix = self.config.get('notification', 'smtp_subject_prefix')
-        if prefix == '__default__':
+        if prefix == '__default__': 
             prefix = '[%s]' % self.env.project_name
-
+        
         data = {
             'prefix': prefix,
             'summary': summary,
             'ticket': self.ticket,
             'env': self.env,
         }
-
+        
         return template.generate(**data).render('text', encoding=None).strip()
 
-    def format_time_field(self, value, format):
-        tzinfo = get_timezone(self.config.get('trac', 'default_timezone'))
-        return format_date_or_datetime(format, value, tzinfo=tzinfo) \
-               if value else ''
-
     def get_recipients(self, tktid):
-        torecipients, ccrecipients, reporter, owner = \
-            get_ticket_notification_recipients(self.env, self.config, tktid,
-                                               modtime=self.modtime)
-        self.reporter = reporter
-        self.owner = owner
+        notify_reporter = self.config.getbool('notification',
+                                              'always_notify_reporter')
+        notify_owner = self.config.getbool('notification',
+                                           'always_notify_owner')
+        notify_updater = self.config.getbool('notification', 
+                                             'always_notify_updater')
+
+        ccrecipients = self.prev_cc
+        torecipients = []
+        cursor = self.db.cursor()
+        
+        # Harvest email addresses from the cc, reporter, and owner fields
+        cursor.execute("SELECT cc,reporter,owner FROM ticket WHERE id=%s",
+                       (tktid,))
+        row = cursor.fetchone()
+        if row:
+            ccrecipients += row[0] and row[0].replace(',', ' ').split() or []
+            self.reporter = row[1]
+            self.owner = row[2]
+            if notify_reporter:
+                torecipients.append(row[1])
+            if notify_owner:
+                torecipients.append(row[2])
+
+        # Harvest email addresses from the author field of ticket_change(s)
+        if notify_updater:
+            cursor.execute("SELECT DISTINCT author,ticket FROM ticket_change "
+                           "WHERE ticket=%s", (tktid,))
+            for author, ticket in cursor:
+                torecipients.append(author)
+
+        # Suppress the updater from the recipients
+        updater = None
+        cursor.execute("SELECT author FROM ticket_change WHERE ticket=%s "
+                       "ORDER BY time DESC LIMIT 1", (tktid,))
+        for updater, in cursor:
+            break
+        else:
+            cursor.execute("SELECT reporter FROM ticket WHERE id=%s",
+                           (tktid,))
+            for updater, in cursor:
+                break
+
+        if not notify_updater:
+            filter_out = True
+            if notify_reporter and (updater == self.reporter):
+                filter_out = False
+            if notify_owner and (updater == self.owner):
+                filter_out = False
+            if filter_out:
+                torecipients = [r for r in torecipients if r and r != updater]
+        elif updater:
+            torecipients.append(updater)
+
         return (torecipients, ccrecipients)
 
     def get_message_id(self, rcpt, modtime=None):
@@ -468,66 +423,3 @@ class TicketNotifyEmail(NotifyEmail):
             return text
         else:
             return obfuscate_email_address(text)
-
-
-class BatchTicketNotifyEmail(NotifyEmail):
-    """Notification of ticket batch modifications."""
-
-    template_name = "batch_ticket_notify_email.txt"
-
-    def __init__(self, env):
-        NotifyEmail.__init__(self, env)
-
-    def notify(self, tickets, new_values, comment, action, author):
-        """Send batch ticket change notification e-mail (untranslated)"""
-        t = deactivate()
-        try:
-            self._notify(tickets, new_values, comment, action, author)
-        finally:
-            reactivate(t)
-
-    def _notify(self, tickets, new_values, comment, action, author):
-        self.tickets = tickets
-        self.reporter = ''
-        self.owner = ''
-        changes_descr = '\n'.join(['%s to %s' % (prop, val)
-                                  for (prop, val) in new_values.iteritems()])
-        tickets_descr = ', '.join(['#%s' % t for t in tickets])
-        subject = self.format_subj(tickets_descr)
-        link = self.env.abs_href.query(id=','.join([str(t) for t in tickets]))
-        self.data.update({
-            'tickets_descr': tickets_descr,
-            'changes_descr': changes_descr,
-            'comment': comment,
-            'action': action,
-            'author': author,
-            'subject': subject,
-            'ticket_query_link': link,
-            })
-        NotifyEmail.notify(self, tickets, subject, author)
-
-    def format_subj(self, tickets_descr):
-        template = self.config.get('notification','batch_subject_template')
-        template = NewTextTemplate(template.encode('utf8'))
-
-        prefix = self.config.get('notification', 'smtp_subject_prefix')
-        if prefix == '__default__':
-            prefix = '[%s]' % self.env.project_name
-
-        data = {
-            'prefix': prefix,
-            'tickets_descr': tickets_descr,
-            'env': self.env,
-        }
-        subj = template.generate(**data).render('text', encoding=None).strip()
-        return shorten_line(subj)
-
-    def get_recipients(self, tktids):
-        alltorecipients = set()
-        allccrecipients = set()
-        for t in tktids:
-            torecipients, ccrecipients, reporter, owner = \
-                get_ticket_notification_recipients(self.env, self.config, t)
-            alltorecipients.update(torecipients)
-            allccrecipients.update(ccrecipients)
-        return list(alltorecipients), list(allccrecipients)

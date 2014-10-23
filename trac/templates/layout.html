@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -20,10 +10,7 @@
     <title py:with="title = list(select('title/text()'))">
       <py:if test="title">${title} – </py:if>${project.name or 'Trac'}
     </title>
-    <py:if test="chrome.content_type == 'text/html'">
-      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-      <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    </py:if>
+    <meta py:if="chrome.content_type == 'text/html'" http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta py:for="meta in chrome.metas" py:attrs="meta"/>
     <!--[if IE]><script type="text/javascript">
       if (/^#__msie303:/.test(window.location.hash))
@@ -31,14 +18,12 @@
     </script><![endif]-->
     <py:if test="chrome.links">
       <py:for each="rel, links in chrome.links.items()">
-        <py:for each="link in links">
-          <link rel="${rel}" py:attrs="link" />
-        </py:for>
+        <link rel="${rel}" py:for="link in links" py:attrs="link" />
       </py:for>
     </py:if>
     <py:if test="not defined('trac_error_rendering') and 'SEARCH_VIEW' in perm" id="search">
       <link type="application/opensearchdescription+xml" rel="search"
-            href="${href.search('opensearch')}"
+            href="${href.search('opensearch')}" 
             title="${_('Search %(project)s', project=project.name)}"/>
     </py:if>
     <script py:if="chrome.script_data" type="text/javascript">
@@ -46,28 +31,10 @@
       var ${key}=${to_json(value)};
       </py:for>
     </script>
-    <py:for each="script in chrome.scripts">
-      ${script.prefix}<script type="${script.type}" charset="${script.charset}" src="${script.href}"></script>${script.suffix}
-    </py:for>
-    <script type="text/javascript">
-      jQuery(document).ready(function($) {
-        <py:if test="chrome.warnings or chrome.notices">
-        $(".trac-close-msg").show().click(function () {
-          $(this).closest(".system-message").hide();
-          return false;
-        });
-        </py:if>
-        $(".trac-autofocus").focus();
-        $(".trac-target-new").attr("target", "_blank");
-        if ($.ui) { /* is jquery-ui added? */
-          $(".trac-datepicker:not([readonly])").datepicker();
-          $(".trac-datetimepicker:not([readonly])").datetimepicker();
-        }
-        $(".trac-disable").disableSubmit(".trac-disable-determinant");
-        setTimeout(function() { $(".trac-scroll").scrollToTop() }, 1);
-        $(".trac-disable-on-submit").disableOnSubmit();
-      });
-    </script>
+    <script py:for="script in chrome.scripts" type="${script.type}" src="${script.href}"></script>
+    ${Markup('&lt;!--[if lt IE 7]&gt;')}
+    <script type="text/javascript" src="${chrome.htdocs_location}js/ie_pre7_hacks.js"></script>
+    ${Markup('&lt;![endif]--&gt;')}
     ${select("*[local-name() != 'title']|text()|comment()")}
   </head></py:match>
 
@@ -84,9 +51,7 @@
       var ${key}=${to_json(value)};
       </py:for>
     </script>
-    <py:for each="script in chrome.late_scripts">
-      ${script.prefix}<script type="${script.type}" charset="${script.charset}" src="${script.href}"></script>${script.suffix}
-    </py:for>
+    <script py:for="script in chrome.late_scripts" type="${script.type}" src="${script.href}"></script>
 
     <div id="altlinks" py:if="'alternate' in chrome.links">
       <h3>Download in other formats:</h3>

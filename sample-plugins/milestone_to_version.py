@@ -1,17 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2009-2013 Edgewall Software
-# Copyright (C) 2009 Remy Blank <remy.blank@pobox.com>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
-
 import re
 
 from trac.config import Option
@@ -70,7 +56,7 @@ class MilestoneToVersion(Component):
             version = Version(self.env)
             version.name = version_name
             version.time = milestone.completed
-            version.insert()
+            version.insert()             
             self.log.info('New version "%s" created from completed milstone '
                           '"%s".' % (version.name, milestone.name))
 

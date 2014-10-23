@@ -1,7 +1,7 @@
 div.code {
  background: #f7f7f7;
  border: 1px solid #d7d7d7;
- border-radius: .3em;
+ margin: 1em 1.75em;
  padding: .25em;
  overflow: auto
 }
@@ -15,7 +15,7 @@ table.code {
  border: 1px solid #ddd;
  border-spacing: 0;
  border-top: 0;
- border-collapse: collapse;
+ border-collapse: collapse; 
  empty-cells: show;
  font-size: 12px;
  line-height: 130%;
@@ -65,9 +65,6 @@ table.code tbody th :link, table.code tbody th :visited {
 table.code tbody th :link:hover, table.code tbody th :visited:hover {
  color: #000;
 }
-table.code tbody tr:hover td {
- background: #eed;
-}
 table.code td {
  font: normal 11px monospace;
  overflow: hidden;
@@ -91,7 +88,7 @@ table.code tr.hilite td {
 .c_commentlinedoc, .h_comment,.pl_commentline, .p_commentblock,
 .p_commentline, .hphp_comment, .hphp_commentblock, .hphp_commentline,
 .yaml_comment {
- color: #998;
+ color: #998; 
  font-style: italic;
 }
 

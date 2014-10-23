@@ -1,27 +1,10 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2006-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
 import unittest
-from datetime import datetime, timedelta
 
-from trac.test import locale_en
-from trac.ticket.query import QueryModule
-from trac.ticket.report import ReportModule
-from trac.ticket.roadmap import RoadmapModule
-from trac.ticket.model import Milestone, Ticket
-from trac.util.datefmt import format_datetime, pretty_timedelta, utc
+from trac.ticket.model import Ticket
+from trac.ticket.roadmap import Milestone
 from trac.wiki.tests import formatter
-
 
 TICKET_TEST_CASES = u"""
 ============================== ticket: link resolver
@@ -49,8 +32,8 @@ ticket:12-14,33
 ticket:12,33?order=created
 ------------------------------
 <p>
-<a href="/query?id=12-14%2C33" title="Tickets 12-14, 33">ticket:12-14,33</a>
-<a href="/query?id=12%2C33&amp;order=created" title="Tickets 12, 33">ticket:12,33?order=created</a>
+<a href="/query?id=12-14%2C33" title="Tickets 12-14,33">ticket:12-14,33</a>
+<a href="/query?id=12%2C33&amp;order=created" title="Tickets 12,33">ticket:12,33?order=created</a>
 </p>
 ------------------------------
 ============================== ticket link shorthand form
@@ -67,8 +50,8 @@ ticket:12,33?order=created
 #1,3,5,7
 ------------------------------
 <p>
-<a href="/query?id=1-5%2C42" title="Tickets 1-5, 42">#1-5,42</a>
-<a href="/query?id=1%2C3%2C5%2C7" title="Tickets 1, 3, 5, 7">#1,3,5,7</a>
+<a href="/query?id=1-5%2C42" title="Tickets 1-5,42">#1-5,42</a>
+<a href="/query?id=1%2C3%2C5%2C7" title="Tickets 1,3,5,7">#1,3,5,7</a>
 </p>
 ------------------------------
 ============================== ticket link shorthand form with long ranges (#10111 regression)
@@ -123,7 +106,7 @@ trac:#2041
 #trac²⁰⁴¹
 </p>
 ------------------------------
-""" # "
+""" # " 
 
 def ticket_setup(tc):
     config = tc.env.config
@@ -150,7 +133,7 @@ REPORT_TEST_CASES = u"""
 ------------------------------
 <p>
 <a class="report" href="/report/1">{1}</a>, <a class="report" href="/report/2">{2}</a>
-<a class="missing report" title="report does not exist">{12}</a>, {abc}
+<a class="report" href="/report/12">{12}</a>, {abc}
 </p>
 ------------------------------
 ============================== escaping the above
@@ -169,14 +152,6 @@ REPORT_TEST_CASES = u"""
 </p>
 ------------------------------
 &amp;#1; &amp;#23;
-============================== report link with non-digits
-report:blah
-------------------------------
-<p>
-<a class="missing report" title="report does not exist">report:blah</a>
-</p>
-------------------------------
-<a class="missing report" title="report does not exist">report:blah</a>
 ============================== InterTrac for reports
 trac:report:1
 [trac:report:1 Trac r1]
@@ -206,16 +181,8 @@ trac:report:1
 """ # '
 
 def report_setup(tc):
-    def create_report(tc, id):
-        tc.env.db_transaction("""
-            INSERT INTO report (id,title,query,description)
-            VALUES (%s,%s,'SELECT 1','')""", (id, 'Report %s' % id))
-    create_report(tc, 1)
-    create_report(tc, 2)
-
-
-dt_past = datetime.now(utc) - timedelta(days=1)
-dt_future = datetime.now(utc) + timedelta(days=1)
+    db = tc.env.get_db_cnx()
+    # TBD
 
 
 MILESTONE_TEST_CASES = u"""
@@ -223,15 +190,11 @@ MILESTONE_TEST_CASES = u"""
 milestone:foo
 [milestone:boo Milestone Boo]
 [milestone:roo Milestone Roo]
-[milestone:woo Milestone Woo]
-[milestone:zoo Milestone Zoo]
 ------------------------------
 <p>
 <a class="missing milestone" href="/milestone/foo" rel="nofollow">milestone:foo</a>
-<a class="milestone" href="/milestone/boo" title="No date set">Milestone Boo</a>
-<a class="closed milestone" href="/milestone/roo" title="Completed %(dt_past)s ago (%(datestr_past)s)">Milestone Roo</a>
-<a class="milestone" href="/milestone/woo" title="Due in %(dt_future)s (%(datestr_future)s)">Milestone Woo</a>
-<a class="milestone" href="/milestone/zoo" title="%(dt_past)s late (%(datestr_past)s)">Milestone Zoo</a>
+<a class="milestone" href="/milestone/boo">Milestone Boo</a>
+<a class="closed milestone" href="/milestone/roo">Milestone Roo</a>
 </p>
 ------------------------------
 ============================== milestone: link resolver + arguments
@@ -240,35 +203,23 @@ milestone:?action=new
 ------------------------------
 <p>
 <a class="missing milestone" href="/milestone/?action=new" rel="nofollow">milestone:?action=new</a>
-<a class="milestone" href="/milestone/boo#KnownIssues" title="No date set">Known Issues for 1.0</a>
+<a class="milestone" href="/milestone/boo#KnownIssues">Known Issues for 1.0</a>
 </p>
 ------------------------------
-""" % {'dt_past': pretty_timedelta(dt_past),
-       'dt_future': pretty_timedelta(dt_future),
-       'datestr_past': format_datetime(dt_past, locale=locale_en, tzinfo=utc),
-       'datestr_future': format_datetime(dt_future, locale=locale_en,
-                                         tzinfo=utc)} #"
+""" #"
 
 def milestone_setup(tc):
+    from datetime import datetime
+    from trac.util.datefmt import utc
     boo = Milestone(tc.env)
     boo.name = 'boo'
     boo.completed = boo.due = None
     boo.insert()
     roo = Milestone(tc.env)
     roo.name = 'roo'
-    roo.completed = dt_past
+    roo.completed = datetime.now(utc)
     roo.due = None
     roo.insert()
-    woo = Milestone(tc.env)
-    woo.name = 'woo'
-    woo.completed = None
-    woo.due = dt_future
-    woo.insert()
-    zoo = Milestone(tc.env)
-    zoo.name = 'zoo'
-    zoo.completed = None
-    zoo.due = dt_past
-    zoo.insert()
 
 def milestone_teardown(tc):
     tc.env.reset_db()
@@ -330,18 +281,11 @@ Reopened tickets: [[TicketQuery(status=reopened)]]
 Reopened tickets: <span class="query_no_results">No results</span>
 </p>
 ------------------------------
-============================== TicketQuery macro: no results, count 0 (raw)
-Reopened tickets: [[TicketQuery(status=reopened, format=rawcount)]]
-------------------------------
-<p>
-Reopened tickets: <span class="query_count" title="0 tickets matching status=reopened, max=0, order=id">0</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: no results, count 0
 Reopened tickets: [[TicketQuery(status=reopened, format=count)]]
 ------------------------------
 <p>
-Reopened tickets: <a href="/query?status=reopened&amp;max=0&amp;order=id" title="0 tickets matching status=reopened, max=0, order=id">0</a>
+Reopened tickets: <span class="query_count" title="0 tickets for which status=reopened&amp;max=0&amp;order=id">0</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: no results, compact form
@@ -358,18 +302,11 @@ New tickets: [[TicketQuery(status=new)]]
 New tickets: </p><div><dl class="wiki compact"><dt><a class="new" href="/ticket/1" title="This is the summary">#1</a></dt><dd>This is the summary</dd></dl></div><p>
 </p>
 ------------------------------
-============================== TicketQuery macro: one result, count 1 (raw)
-New tickets: [[TicketQuery(status=new, format=rawcount)]]
-------------------------------
-<p>
-New tickets: <span class="query_count" title="1 ticket matching status=new, max=0, order=id">1</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: one result, count 1
 New tickets: [[TicketQuery(status=new, format=count)]]
 ------------------------------
 <p>
-New tickets: <a href="/query?status=new&amp;max=0&amp;order=id" title="1 ticket matching status=new, max=0, order=id">1</a>
+New tickets: <span class="query_count" title="1 tickets for which status=new&amp;max=0&amp;order=id">1</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: one result, compact form
@@ -403,18 +340,11 @@ New tickets: [[TicketQuery(status=new, order=reporter)]]
 New tickets: </p><div><dl class="wiki compact"><dt><a class="new" href="/ticket/2" title="This is another summary">#2</a></dt><dd>This is another summary</dd><dt><a class="new" href="/ticket/1" title="This is the summary">#1</a></dt><dd>This is the summary</dd></dl></div><p>
 </p>
 ------------------------------
-============================== TicketQuery macro: two results, count 2 (raw)
-New tickets: [[TicketQuery(status=new, order=reporter, format=rawcount)]]
-------------------------------
-<p>
-New tickets: <span class="query_count" title="2 tickets matching status=new, max=0, order=reporter">2</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: two results, count 2
 New tickets: [[TicketQuery(status=new, order=reporter, format=count)]]
 ------------------------------
 <p>
-New tickets: <a href="/query?status=new&amp;max=0&amp;order=reporter" title="2 tickets matching status=new, max=0, order=reporter">2</a>
+New tickets: <span class="query_count" title="2 tickets for which status=new&amp;max=0&amp;order=reporter">2</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: two results, compact form
@@ -444,88 +374,25 @@ def query2_teardown(tc):
 
 COMMENT_TEST_CASES = u"""
 ============================== comment: link resolver (deprecated)
-comment:ticket:1:1 (deprecated)
-[comment:ticket:1:1 see above] (deprecated)
-comment:ticket:1:description (deprecated)
-[comment:ticket:1:description see descr] (deprecated)
-comment:ticket:2:1 (deprecated)
-comment:ticket:2:3 (deprecated)
-comment:ticket:3:1 (deprecated)
-comment:tiket:2:1 (deprecated)
-comment:ticket:two:1 (deprecated)
-comment:ticket:2:1a (deprecated)
-comment:ticket:2:one (deprecated)
-comment:ticket:1: (deprecated)
-comment:ticket::2 (deprecated)
-comment:ticket:: (deprecated)
+comment:ticket:123:2 (deprecated)
+[comment:ticket:123:2 see above] (deprecated)
+[comment:ticket:123:description see descr] (deprecated)
 ------------------------------
 <p>
-<a class="new ticket" href="/ticket/1#comment:1" title="Comment 1 for Ticket #1">comment:ticket:1:1</a> (deprecated)
-<a class="new ticket" href="/ticket/1#comment:1" title="Comment 1 for Ticket #1">see above</a> (deprecated)
-<a class="new ticket" href="/ticket/1#comment:description" title="Description for Ticket #1">comment:ticket:1:description</a> (deprecated)
-<a class="new ticket" href="/ticket/1#comment:description" title="Description for Ticket #1">see descr</a> (deprecated)
-<a class="ticket" href="/ticket/2#comment:1" title="Comment 1">comment:ticket:2:1</a> (deprecated)
-<a class="missing ticket" title="ticket comment does not exist">comment:ticket:2:3</a> (deprecated)
-<a class="missing ticket" title="ticket does not exist">comment:ticket:3:1</a> (deprecated)
-comment:tiket:2:1 (deprecated)
-comment:ticket:two:1 (deprecated)
-comment:ticket:2:1a (deprecated)
-comment:ticket:2:one (deprecated)
-comment:ticket:1: (deprecated)
-comment:ticket::2 (deprecated)
-comment:ticket:: (deprecated)
+<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">comment:ticket:123:2</a> (deprecated)
+<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">see above</a> (deprecated)
+<a href="/ticket/123#comment:description" title="Comment description for Ticket #123">see descr</a> (deprecated)
 </p>
 ------------------------------
 ============================== comment: link resolver
-comment:1
-[comment:1 see above]
-comment:description
-[comment:description see descr]
-comment:
-comment:one
-comment:1a
+comment:2:ticket:123
+[comment:2:ticket:123 see above]
+[comment:description:ticket:123 see descr]
 ------------------------------
 <p>
-<a class="ticket" href="/ticket/2#comment:1" title="Comment 1">comment:1</a>
-<a class="ticket" href="/ticket/2#comment:1" title="Comment 1">see above</a>
-<a class="ticket" href="/ticket/2#comment:description" title="Description">comment:description</a>
-<a class="ticket" href="/ticket/2#comment:description" title="Description">see descr</a>
-comment:
-comment:one
-comment:1a
-</p>
-------------------------------
-============================== comment: link resolver with ticket number
-comment:1:ticket:1
-[comment:1:ticket:1 see above]
-comment:description:ticket:1
-[comment:description:ticket:1 see descr]
-comment:1:ticket:2
-comment:3:ticket:2
-comment:1:ticket:3
-comment:2:tiket:1
-comment:1:ticket:two
-comment:one:ticket:1
-comment:1a:ticket:1
-comment:ticket:1
-comment:2:ticket:
-comment::ticket:
-------------------------------
-<p>
-<a class="new ticket" href="/ticket/1#comment:1" title="Comment 1 for Ticket #1">comment:1:ticket:1</a>
-<a class="new ticket" href="/ticket/1#comment:1" title="Comment 1 for Ticket #1">see above</a>
-<a class="new ticket" href="/ticket/1#comment:description" title="Description for Ticket #1">comment:description:ticket:1</a>
-<a class="new ticket" href="/ticket/1#comment:description" title="Description for Ticket #1">see descr</a>
-<a class="ticket" href="/ticket/2#comment:1" title="Comment 1">comment:1:ticket:2</a>
-<a class="missing ticket" title="ticket comment does not exist">comment:3:ticket:2</a>
-<a class="missing ticket" title="ticket does not exist">comment:1:ticket:3</a>
-comment:2:tiket:1
-comment:1:ticket:two
-comment:one:ticket:1
-comment:1a:ticket:1
-comment:ticket:1
-comment:2:ticket:
-comment::ticket:
+<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">comment:2:ticket:123</a>
+<a href="/ticket/123#comment:2" title="Comment 2 for Ticket #123">see above</a>
+<a href="/ticket/123#comment:description" title="Comment description for Ticket #123">see descr</a>
 </p>
 ------------------------------
 """ # "
@@ -539,24 +406,6 @@ comment::ticket:
 # As it's a problem with a temp workaround, I think there's no need
 # to fix it for now.
 
-def comment_setup(tc):
-    ticket1 = Ticket(tc.env)
-    ticket1.values.update({'reporter': 'santa',
-                            'summary': 'This is the summary for ticket 1',
-                            'status': 'new'})
-    ticket1.insert()
-    ticket1.save_changes(comment='This is the comment for ticket 1')
-    ticket2 = Ticket(tc.env)
-    ticket2.values.update({'reporter': 'claws',
-                           'summary': 'This is the summary for ticket 2',
-                           'status': 'closed'})
-    ticket2.insert()
-    ticket2.save_changes(comment='This is the comment for ticket 2')
-
-def comment_teardown(tc):
-    tc.env.reset_db()
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(formatter.suite(TICKET_TEST_CASES, ticket_setup, __file__,
@@ -568,9 +417,9 @@ def suite():
                                   ticket_teardown))
     suite.addTest(formatter.suite(QUERY2_TEST_CASES, query2_setup, __file__,
                                   query2_teardown))
-    suite.addTest(formatter.suite(COMMENT_TEST_CASES, comment_setup, __file__,
-                                  comment_teardown, ('ticket', 2)))
+    suite.addTest(formatter.suite(COMMENT_TEST_CASES, file=__file__))
     return suite
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')
+

@@ -1,17 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2007-2013 Edgewall Software
-# Copyright (C) 2007 Christian Boos <cboos@edgewall.org>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
-
 from fnmatch import fnmatchcase
 
 from trac.config import Option
@@ -24,7 +10,7 @@ url = "$URL$"
 class PublicWikiPolicy(Component):
     """Allow public access to some wiki pages.
 
-    This is a sample permission policy plugin illustrating how to check
+    This is a sample permission policy plugin illustrating how to check 
     permission on realms.
 
     Don't forget to integrate that plugin in the appropriate place in the
@@ -64,13 +50,14 @@ class PublicWikiPolicy(Component):
                     if fnmatchcase(resource.id, pattern):
                         return True
                 else: # ... it's a realm
-                    return True
+                    return True 
                     # this policy ''may'' grant permissions on some wiki pages
         else: # coarse-grained permission check
-            #
+            # 
             # support for the legacy permission checks: no resource specified
             # and realm information in the action name itself.
             #
             if action.startswith('WIKI_'):
                 return True
                 # this policy ''may'' grant permissions on some wiki pages
+

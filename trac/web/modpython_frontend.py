@@ -109,7 +109,7 @@ class ModPythonGateway(WSGIGateway):
         self._send_headers()
         try:
             self.req.sendfile(fileobj.name)
-        except IOError as e:
+        except IOError, e:
             if 'client closed connection' not in str(e):
                 raise
 
@@ -117,17 +117,18 @@ class ModPythonGateway(WSGIGateway):
         self._send_headers()
         try:
             self.req.write(data)
-        except IOError as e:
+        except IOError, e:
             if 'client closed connection' not in str(e):
                 raise
 
 _first = True
 _first_lock = threading.Lock()
-
+            
 def handler(req):
     global _first
-    with _first_lock:
-        if _first:
+    try:
+        _first_lock.acquire()
+        if _first: 
             _first = False
             options = req.get_options()
             egg_cache = options.get('PYTHON_EGG_CACHE')
@@ -140,6 +141,8 @@ def handler(req):
             if egg_cache:
                 pkg_resources.set_extraction_path(egg_cache)
             reload(sys.modules['trac.web'])
+    finally:
+        _first_lock.release()
     pkg_resources.require('Trac==%s' % VERSION)
     gateway = ModPythonGateway(req, req.get_options())
     from trac.web.main import dispatch_request

@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -38,22 +28,20 @@
 
       <!-- This currently crashes Genshi's extractor if you add i18n:msg -->
       <p class="hint" py:with="now = datetime.now(utc);
-                               nowtz = selected_tz.normalize(now.astimezone(selected_tz));
-                               formatted = format_time(now, 'iso8601', tzinfo=req.tz)"
+                               nowtz = selected_tz.normalize(now.astimezone(selected_tz))"
                       py:choose="">
-        <i18n:msg params="time">
-          Example: The current time is <strong>${format_time(now, 'iso8601', tzinfo=utc)}</strong> (UTC).
-        </i18n:msg>
+        <i18n:msg params="time">Example: The current time is <strong>${format_time(now, 'iso8601', tzinfo=utc)}</strong> (UTC).</i18n:msg>
         <br />
         <py:when test="session_tzname">
           <i18n:msg params="tz, formatted">
             In your time zone ${nowtz.tzname()}, this would be displayed as
-            <strong>$formatted</strong>.
+            <strong>${format_time(now, 'iso8601', tzinfo=req.tz)}</strong>.
           </i18n:msg>
         </py:when>
         <py:otherwise>
           <i18n:msg params="formatted">
-            In the default time zone, this would be displayed as <strong>$formatted</strong>.
+            In the default time zone, this would be displayed as
+            <strong>${format_time(now, 'iso8601', tzinfo=req.tz)}</strong>.
           </i18n:msg>
         </py:otherwise>
       </p>
@@ -63,38 +51,6 @@
         A positive offset is used to indicate a timezone at the east of Greenwich, i.e. ahead of Universal Time.
       </p>
 
-    </div>
-
-    <div class="field" py:with="session_lc_time = settings.session.get('lc_time')">
-      <label>Date format:
-        <select name="lc_time">
-          <option value="">Default date format</option>
-          <option value="locale" py:if="locales and languages"
-                  selected="${session_lc_time == 'locale' or None}">Your language setting</option>
-          <option value="iso8601"
-                  selected="${session_lc_time == 'iso8601' or None}">ISO 8601 format</option>
-        </select>
-      </label>
-
-      <p class="hint">Configuring your date format will result in formatting
-      and parsing datetime displayed on this site to use your date format
-      instead of that of the server.</p>
-    </div>
-
-    <div class="field" py:with="session_dateinfo = settings.session.get('dateinfo')">
-      <label>Date relative/absolute format:
-        <select name="dateinfo">
-          <option value="">Default format</option>
-          <option value="relative"
-                  selected="${session_dateinfo == 'relative' or None}">Relative format</option>
-          <option value="absolute"
-                  selected="${session_dateinfo == 'absolute' or None}">Absolute format</option>
-        </select>
-      </label>
-
-      <p class="hint">Configuring your relative/absolute format will result in
-      formatting datetime displayed on this site to use your format instead of
-      that of the server.</p>
     </div>
 
   </body>
