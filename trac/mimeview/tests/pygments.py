@@ -11,8 +11,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import absolute_import
-
 import os
 import unittest
 
@@ -20,26 +18,24 @@ from genshi.core import Stream, TEXT
 from genshi.input import HTMLParser
 
 try:
-    import pygments
+    pygments = __import__('pygments', {}, {}, [])
     have_pygments = True
 except ImportError:
     have_pygments = False
 
 import trac.tests.compat
-from trac.mimeview.api import LineNumberAnnotator, Mimeview
+from trac.mimeview.api import Mimeview
 if have_pygments:
     from trac.mimeview.pygments import PygmentsRenderer
 from trac.test import EnvironmentStub, Mock
 from trac.web.chrome import Chrome, web_context
 from trac.web.href import Href
-from trac.wiki.formatter import format_to_html
 
 
 class PygmentsRendererTestCase(unittest.TestCase):
 
     def setUp(self):
-        self.env = EnvironmentStub(enable=[Chrome, LineNumberAnnotator,
-                                           PygmentsRenderer])
+        self.env = EnvironmentStub(enable=[Chrome, PygmentsRenderer])
         self.pygments = Mimeview(self.env).renderers[0]
         self.req = Mock(base_path='', chrome={}, args={},
                         abs_href=Href('/'), href=Href('/'),
@@ -55,10 +51,10 @@ class PygmentsRendererTestCase(unittest.TestCase):
             (expected_id, expected_id))
 
     def _test(self, expected_id, result):
-        expected = unicode(self._expected(expected_id))
-        result = unicode(result)
-        #print("\nE: " + repr(expected))
-        #print("\nR: " + repr(result))
+        expected = str(self._expected(expected_id))
+        result = str(result)
+        #print "\nE: " + repr(expected)
+        #print "\nR: " + repr(result)
         expected, result = expected.splitlines(), result.splitlines()
         for exp, res in zip(expected, result):
             self.assertEqual(exp, res)
@@ -85,66 +81,6 @@ def hello():
 """)
         self.assertTrue(result)
         self._test('python_hello_mimeview', result)
-
-    def test_python_with_lineno(self):
-        result = format_to_html(self.env, self.context, """\
-{{{#!text/x-python lineno
-print 'this is a python sample'
-a = b+3
-z = "this is a string"
-print 'this is the end of the python sample'
-}}}
-""")
-        self.assertTrue(result)
-        self._test('python_with_lineno_1', result)
-
-        result = format_to_html(self.env, self.context, """\
-{{{#!text/x-python lineno=3
-print 'this is a python sample'
-a = b+3
-z = "this is a string"
-print 'this is the end of the python sample'
-}}}
-""")
-        self.assertTrue(result)
-        self._test('python_with_lineno_2', result)
-
-    def test_python_with_lineno_and_markups(self):
-        """Python highlighting with Pygments and lineno annotator
-        """
-        result = format_to_html(self.env, self.context, """\
-{{{#!text/x-python lineno=3 id=b marks=4-5
-print 'this is a python sample'
-a = b+3
-z = "this is a string"
-print 'this is the end of the python sample'
-}}}
-""")
-        self.assertTrue(result)
-        self._test('python_with_lineno_and_markups', result)
-
-    def test_python_with_invalid_arguments(self):
-        result = format_to_html(self.env, self.context, """\
-{{{#!text/x-python lineno=-10
-print 'this is a python sample'
-a = b+3
-z = "this is a string"
-print 'this is the end of the python sample'
-}}}
-""")
-        self.assertTrue(result)
-        self._test('python_with_invalid_arguments_1', result)
-
-        result = format_to_html(self.env, self.context, """\
-{{{#!text/x-python lineno=a id=d marks=a-b
-print 'this is a python sample'
-a = b+3
-z = "this is a string"
-print 'this is the end of the python sample'
-}}}
-""")
-        self.assertTrue(result)
-        self._test('python_with_invalid_arguments_2', result)
 
     def test_newline_content(self):
         """
@@ -193,7 +129,7 @@ def suite():
     if have_pygments:
         suite.addTest(unittest.makeSuite(PygmentsRendererTestCase))
     else:
-        print('SKIP: mimeview/tests/pygments (no pygments installed)')
+        print 'SKIP: mimeview/tests/pygments (no pygments installed)'
     return suite
 
 if __name__ == '__main__':

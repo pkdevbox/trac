@@ -46,11 +46,9 @@ class SearchModule(Component):
     RESULTS_PER_PAGE = 10
 
     min_query_length = IntOption('search', 'min_query_length', 3,
-        """Minimum length of query string allowed when performing a search.
-        """)
+        """Minimum length of query string allowed when performing a search.""")
 
-    default_disabled_filters = ListOption('search',
-                                          'default_disabled_filters',
+    default_disabled_filters = ListOption('search', 'default_disabled_filters',
         doc="""Specifies which search filters should be disabled by
                default on the search page. This will also restrict the
                filters for the quick search function. The filter names
@@ -60,7 +58,7 @@ class SearchModule(Component):
                the `get_search_filters()` method, the first member of
                returned tuple. Once disabled, search filters can still
                be manually enabled by the user on the search page.
-               (''since 0.12'')""")
+               (since 0.12)""")
 
     # INavigationContributor methods
 
@@ -80,8 +78,7 @@ class SearchModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        return re.match(r'/search(?:/opensearch)?$', req.path_info) \
-               is not None
+        return re.match(r'/search(?:/opensearch)?$', req.path_info) is not None
 
     def process_request(self, req):
         req.perm.assert_permission('SEARCH_VIEW')
@@ -142,8 +139,7 @@ class SearchModule(Component):
     # IRequestHandler helper methods
 
     def _get_selected_filters(self, req, available_filters):
-        """Return selected filters or the default filters if none was
-        selected.
+        """Return selected filters or the default filters if none was selected.
         """
         filters = [f[0] for f in available_filters if f[0] in req.args]
         if not filters:
@@ -161,7 +157,7 @@ class SearchModule(Component):
     def _check_quickjump(self, req, kwd):
         """Look for search shortcuts"""
         noquickjump = int(req.args.get('noquickjump', '0'))
-        # Source quickjump  FIXME: delegate to ISearchSource.search_quickjump
+        # Source quickjump   FIXME: delegate to ISearchSource.search_quickjump
         quickjump_href = None
         if kwd[0] == '/':
             quickjump_href = req.href.browser(kwd)
@@ -179,7 +175,7 @@ class SearchModule(Component):
             if not quickjump_href.startswith(req.base_path or '/'):
                 noquickjump = True
             if noquickjump:
-                return {'href': quickjump_href, 'name': tag.em(name),
+                return {'href': quickjump_href, 'name': tag.EM(name),
                         'description': description}
             else:
                 req.redirect(quickjump_href)
@@ -239,7 +235,7 @@ class SearchModule(Component):
 
         results.current_page = {'href': None, 'class': 'current',
                                 'string': str(results.page + 1),
-                                'title': None}
+                                'title':None}
 
         if results.has_next_page:
             next_href = req.href.search(zip(filters, ['on'] * len(filters)),

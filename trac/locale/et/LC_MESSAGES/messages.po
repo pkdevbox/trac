@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Trac\n"
 "Report-Msgid-Bugs-To: http://trac.edgewall.org/\n"
-"POT-Creation-Date: 2013-02-02 15:20+0100\n"
+"POT-Creation-Date: 2013-01-27 11:21+0900\n"
 "PO-Revision-Date: 2012-10-29 18:34+0000\n"
 "Last-Translator: boamaod\n"
 "Language-Team: Estonian "
@@ -18,7 +18,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 0.9.6dev-r0\n"
+"Generated-By: Babel 0.9.6\n"
 
 #: tracopt/mimeview/php.py:96
 msgid ""
@@ -42,12 +42,13 @@ msgid ""
 msgstr ""
 
 #: tracopt/ticket/clone.py:60
+#, fuzzy
 msgid "Clone"
-msgstr "Klooni"
+msgstr "suletud"
 
 #: tracopt/ticket/clone.py:61
 msgid "Create a copy of this ticket"
-msgstr "Tee sellest sedelist koopia"
+msgstr ""
 
 #: tracopt/ticket/commit_updater.py:275
 msgid ""
@@ -180,7 +181,7 @@ msgstr ""
 "%(oldrev)s) ning sihtmärk on %(newnode)s (%(newpath)s revisjonis "
 "%(newrev)s)."
 
-#: tracopt/versioncontrol/svn/svn_fs.py:817
+#: tracopt/versioncontrol/svn/svn_fs.py:823
 #, python-format
 msgid "svn blame failed on %(path)s: %(error)s"
 msgstr "svn blame ebaõnnestus sõlmes %(path)s: %(error)s"
@@ -356,9 +357,9 @@ msgstr "Üleslaetud faile ei ole"
 msgid "Can't upload empty file"
 msgstr "Tühja faili ei saa saata"
 
-#: trac/attachment.py:709
-#, fuzzy, python-format
-msgid "Maximum attachment size: %(num)s"
+#: trac/attachment.py:708
+#, python-format
+msgid "Maximum attachment size: %(num)s bytes"
 msgstr "Maksimaalne manuse suurus: %(num)s baiti"
 
 #: trac/attachment.py:709
@@ -396,14 +397,15 @@ msgstr ""
 msgid "%(attachment)s (delete)"
 msgstr " %(attachment)s (kustuta)"
 
-#: trac/attachment.py:804
+#: trac/attachment.py:803
 #, fuzzy, python-format
-msgid "Maximum total attachment size: %(num)s"
+msgid "Maximum total attachment size: %(num)s bytes"
 msgstr "Maksimaalne manuse suurus: %(num)s baiti"
 
 #: trac/attachment.py:804
+#, fuzzy
 msgid "Download failed"
-msgstr "Allalaadimine ebaõnnestus"
+msgstr "Saatmine ebaõnnestus"
 
 #: trac/attachment.py:892 trac/versioncontrol/web_ui/browser.py:669
 #: trac/wiki/web_ui.py:73
@@ -443,7 +445,7 @@ msgid "Size"
 msgstr "Suurus"
 
 #: trac/attachment.py:1070 trac/templates/history_view.html:30
-#: trac/ticket/templates/ticket.html:354
+#: trac/ticket/templates/ticket.html:350
 #: trac/versioncontrol/templates/revisionlog.html:112
 msgid "Author"
 msgstr "Autor"
@@ -453,8 +455,8 @@ msgid "Date"
 msgstr "Kuupäev"
 
 #: trac/attachment.py:1071 trac/templates/attachment.html:93
-#: trac/ticket/api.py:321 trac/ticket/templates/ticket.html:383
-#: trac/ticket/templates/ticket_box.html:93
+#: trac/ticket/api.py:299 trac/ticket/templates/ticket.html:379
+#: trac/ticket/templates/ticket_box.html:92
 msgid "Description"
 msgstr "Kirjeldus"
 
@@ -470,7 +472,7 @@ msgstr "Konfiguratsiooni viga"
 #: trac/config.py:265
 #, python-format
 msgid "Error reading '%(file)s', make sure it is readable."
-msgstr "Viga '%(file)s' lugemisel, kontrolli faili õigusi."
+msgstr ""
 
 #: trac/config.py:420
 #, python-format
@@ -563,7 +565,7 @@ msgstr "Keskkonna kopeerimise ajal tekkisid järgnevad vead:"
 
 #: trac/env.py:965
 msgid "Backing up database ..."
-msgstr "Teen andmebaasist varukoopiat ..."
+msgstr ""
 
 #: trac/env.py:970
 msgid "Hotcopy done."
@@ -653,13 +655,11 @@ msgid "Header length is too short"
 msgstr "Päise pikkus on ebapiisav"
 
 #: trac/perm.py:56
-#, python-format
+#, fuzzy, python-format
 msgid ""
 "%(perm)s privileges are required to perform this operation on "
 "%(resource)s. You don't have the required permissions."
-msgstr ""
-"%(resource)s ressursil selle toimingu tegemiseks on vajalikud %(perm)s "
-"õigused. Sinul need õigused puuduvad."
+msgstr "%(resource)s tegevuse sooritamiseks on vaja %(perm)s õiguseid."
 
 #: trac/perm.py:58
 #, python-format
@@ -667,8 +667,6 @@ msgid ""
 "%(perm)s privileges are required to perform this operation. You don't "
 "have the required permissions."
 msgstr ""
-"Selleks toiminguks vajalikud %(perm)s õigused. Sinul need õigused "
-"puuduvad."
 
 #: trac/perm.py:64
 msgid "Insufficient privileges to perform this operation."
@@ -685,7 +683,7 @@ msgstr "Kasutaja"
 
 #: trac/perm.py:656 trac/admin/templates/admin_perms.html:63
 #: trac/ticket/templates/batch_modify.html:37
-#: trac/ticket/templates/ticket.html:325
+#: trac/ticket/templates/ticket.html:321
 msgid "Action"
 msgstr "Tegevus"
 
@@ -698,9 +696,9 @@ msgid "All upper-cased tokens are reserved for permission names"
 msgstr "Kõik suurtähtedega tähised on reserveeritud õiguste nimede jaoks"
 
 #: trac/perm.py:675
-#, python-format
+#, fuzzy, python-format
 msgid "The user %(user)s already has permission %(action)s."
-msgstr "Kasutajal %(user)s on %(action)s õigused juba olemas."
+msgstr "Subjektile %(user)s on antud õigus %(action)s ."
 
 #: trac/perm.py:689
 #, python-format
@@ -996,12 +994,13 @@ msgid "Unknown administration panel"
 msgstr "Tundmatu halduspaneel"
 
 #: trac/admin/web_ui.py:133
+#, fuzzy
 msgid "Untitled"
-msgstr "Pealkiri puudub"
+msgstr "Pealkiri"
 
 #: trac/admin/web_ui.py:192 trac/ticket/admin.py:66 trac/ticket/admin.py:95
 #: trac/ticket/admin.py:275 trac/ticket/admin.py:455 trac/ticket/admin.py:607
-#: trac/ticket/admin.py:690 trac/ticket/report.py:247
+#: trac/ticket/admin.py:690 trac/ticket/report.py:248
 #: trac/ticket/roadmap.py:779 trac/versioncontrol/admin.py:215
 msgid "Your changes have been saved."
 msgstr "Sinu muudatused on salvestatud."
@@ -1167,35 +1166,38 @@ msgid "URL:"
 msgstr "URL:"
 
 #: trac/admin/templates/admin_basics.html:29
-#: trac/ticket/templates/ticket.html:239
+#: trac/ticket/templates/ticket.html:237
 msgid "Description:"
 msgstr "Kirjeldus:"
 
 #: trac/admin/templates/admin_basics.html:35
+#, fuzzy
 msgid "Default timezone:"
-msgstr "Vaikimisi ajavöönd:"
+msgstr "Vaikimisi ajavöönd"
 
 #: trac/admin/templates/admin_basics.html:37
+#, fuzzy
 msgid "Server's local time zone"
-msgstr "Serveri kohalik ajavöönd"
+msgstr "Vaikimisi ajavöönd"
 
 #: trac/admin/templates/admin_basics.html:44
+#, fuzzy
 msgid "Default language:"
-msgstr "Vaikimisi keel:"
+msgstr "vaikimisi keel"
 
 #: trac/admin/templates/admin_basics.html:46
 #: trac/admin/templates/admin_basics.html:55
 msgid "Browser's language"
-msgstr "Brauseri keel"
+msgstr ""
 
 #: trac/admin/templates/admin_basics.html:53
 msgid "Default date format:"
-msgstr "Vaikimisi kuupäeva vorming:"
+msgstr ""
 
 #: trac/admin/templates/admin_basics.html:57
 #: trac/prefs/templates/prefs_datetime.html:65
 msgid "ISO 8601 format"
-msgstr "ISO 8601 vorming"
+msgstr ""
 
 #: trac/admin/templates/admin_basics.html:63
 #: trac/admin/templates/admin_components.html:99
@@ -1257,7 +1259,7 @@ msgid "Add"
 msgstr "Lisa"
 
 #: trac/admin/templates/admin_components.html:80 trac/ticket/admin.py:210
-#: trac/ticket/api.py:315 trac/ticket/web_ui.py:1498
+#: trac/ticket/api.py:293 trac/ticket/web_ui.py:1455
 msgid "Owner"
 msgstr "Omanik"
 
@@ -1418,7 +1420,7 @@ msgstr "Tähtaeg"
 msgid "Completed"
 msgstr "Valminud"
 
-#: trac/admin/templates/admin_milestones.html:107 trac/ticket/web_ui.py:200
+#: trac/admin/templates/admin_milestones.html:107 trac/ticket/web_ui.py:194
 msgid "Tickets"
 msgstr "Sedelid"
 
@@ -1539,7 +1541,7 @@ msgid "License:"
 msgstr "Litsents:"
 
 #: trac/admin/templates/admin_plugins.html:124 trac/ticket/admin.py:77
-#: trac/ticket/api.py:328
+#: trac/ticket/api.py:306
 msgid "Component"
 msgstr "Komponent"
 
@@ -1713,7 +1715,7 @@ msgstr "Teie eelistused on salvestatud."
 #: trac/mimeview/rst.py:125 trac/mimeview/rst.py:148
 #, python-format
 msgid "%(link)s is not a valid TracLink"
-msgstr "%(link)s ei ole korrektne TracLink"
+msgstr "%(link)s pole korrektne TracLink"
 
 #: trac/prefs/web_ui.py:56 trac/prefs/templates/prefs.html:16
 msgid "Preferences"
@@ -1745,7 +1747,7 @@ msgstr "Edasijõudnutele"
 
 #: trac/prefs/web_ui.py:167
 msgid "The session has been loaded."
-msgstr "Sessioon on laetud."
+msgstr "Sessioon on laaditud."
 
 #: trac/prefs/templates/prefs.html:10
 msgid "Preferences:"
@@ -1848,9 +1850,11 @@ msgstr ""
 "            [1:%(formatted)s]."
 
 #: trac/prefs/templates/prefs_datetime.html:45
-#, python-format
+#, fuzzy, python-format
 msgid "In the default time zone, this would be displayed as [1:%(formatted)s]."
-msgstr "Vaikimisi ajavööndis näidatakse seda [1:%(formatted)s]."
+msgstr ""
+"Vaikimisi ajavööndis näidatakse seda järgnevalt:\n"
+"            [1:%(formatted)s]."
 
 #: trac/prefs/templates/prefs_datetime.html:51
 msgid ""
@@ -1866,16 +1870,18 @@ msgstr ""
 "ees."
 
 #: trac/prefs/templates/prefs_datetime.html:59
+#, fuzzy
 msgid "Date format:"
-msgstr "Kuupäeva vorming:"
+msgstr "Süsteemi informatsioon:"
 
 #: trac/prefs/templates/prefs_datetime.html:61
+#, fuzzy
 msgid "Default date format"
-msgstr "Vaikimisi kuupäeva vorming"
+msgstr "Vaikimisi ajavöönd"
 
 #: trac/prefs/templates/prefs_datetime.html:63
 msgid "Your language setting"
-msgstr "Sinu keeleseadistus"
+msgstr ""
 
 #: trac/prefs/templates/prefs_datetime.html:69
 #, fuzzy
@@ -1891,19 +1897,21 @@ msgstr ""
 
 #: trac/prefs/templates/prefs_datetime.html:75
 msgid "Date relative/absolute format:"
-msgstr "Kuupäeva suhteline või absoluutvorm:"
+msgstr ""
 
 #: trac/prefs/templates/prefs_datetime.html:77
+#, fuzzy
 msgid "Default format"
-msgstr "Vaikimisi vorm"
+msgstr "(vaikimisi)"
 
 #: trac/prefs/templates/prefs_datetime.html:79
 msgid "Relative format"
-msgstr "Suhteline"
+msgstr ""
 
 #: trac/prefs/templates/prefs_datetime.html:81
+#, fuzzy
 msgid "Absolute format"
-msgstr "Absoluutne"
+msgstr "Süsteemi informatsioon"
 
 #: trac/prefs/templates/prefs_datetime.html:85
 #, fuzzy
@@ -1971,8 +1979,9 @@ msgid "Language:"
 msgstr "Keel:"
 
 #: trac/prefs/templates/prefs_language.html:17
+#, fuzzy
 msgid "Default language"
-msgstr "Vaikimisi keel"
+msgstr "vaikimisi keel"
 
 #: trac/prefs/templates/prefs_language.html:23
 msgid ""
@@ -1985,12 +1994,13 @@ msgstr ""
 "      serveri oma asemel."
 
 #: trac/prefs/templates/prefs_language.html:27
+#, fuzzy
 msgid ""
 "The [1:Default language] option uses the browser's\n"
 "        language negotiation feature to select the appropriate language."
 msgstr ""
-"[1:Default language] valik kasutab brauseri\n"
-"        automaatset keeleseadistuse oskust õige keele valimiseks."
+"[1:Vaikimisi keel] valik kasutab sinu brauseri\n"
+"        automaatset keelevalikuoskust."
 
 #: trac/prefs/templates/prefs_pygments.html:37
 msgid ""
@@ -2046,17 +2056,18 @@ msgstr ""
 "Otsingupäring on liiga lühike. Päring peab olema vähemalt %(num)s märgi "
 "pikkune."
 
-#: trac/search/web_ui.py:245 trac/ticket/query.py:781 trac/ticket/report.py:459
+#: trac/search/web_ui.py:245 trac/ticket/query.py:785 trac/ticket/report.py:459
 msgid "Next Page"
 msgstr "Järgmine leht"
 
-#: trac/search/web_ui.py:251 trac/ticket/query.py:786 trac/ticket/report.py:462
+#: trac/search/web_ui.py:251 trac/ticket/query.py:790 trac/ticket/report.py:462
 msgid "Previous Page"
 msgstr "Eelmine leht"
 
 #: trac/search/templates/search.html:11
+#, fuzzy
 msgid "Search Results"
-msgstr "Otsingu tulemused"
+msgstr "Tulemusi ei ole"
 
 #: trac/search/templates/search.html:43
 #: trac/ticket/templates/query_results.html:20
@@ -2144,12 +2155,13 @@ msgid "System Information"
 msgstr "Süsteemi informatsioon"
 
 #: trac/templates/about.html:56
+#, fuzzy
 msgid "Package"
-msgstr "Pakett"
+msgstr "muudatus"
 
 #: trac/templates/about.html:56 trac/templates/about.html:69
 #: trac/templates/history_view.html:28 trac/ticket/admin.py:431
-#: trac/ticket/api.py:329
+#: trac/ticket/api.py:307
 msgid "Version"
 msgstr "Versioon"
 
@@ -2158,8 +2170,9 @@ msgid "Installed Plugins"
 msgstr "Paigaldatud lisamoodulid"
 
 #: trac/templates/about.html:69
+#, fuzzy
 msgid "Location"
-msgstr "Asukoht"
+msgstr "Asukoht:"
 
 #: trac/templates/about.html:77 trac/templates/error.html:192
 #: trac/web/main.py:589
@@ -2205,7 +2218,7 @@ msgstr "(mahupiirang %(value)s)"
 msgid "Attachment Info"
 msgstr "Manuse info"
 
-#: trac/templates/attachment.html:40 trac/ticket/templates/ticket.html:359
+#: trac/templates/attachment.html:40 trac/ticket/templates/ticket.html:355
 #: trac/wiki/templates/wiki_edit_form.html:42
 msgid "Your email or username:"
 msgstr "Sinu e-post või kasutajanimi:"
@@ -2235,7 +2248,7 @@ msgid "Attach another file"
 msgstr "Manusta veel faile"
 
 #: trac/templates/attachment.html:98 trac/templates/list_of_attachments.html:21
-#: trac/templates/macros.html:19 trac/util/text.py:622
+#: trac/templates/macros.html:19 trac/util/text.py:621
 #: trac/versioncontrol/templates/browser.html:189
 #: trac/versioncontrol/templates/dir_entries.html:17
 #, python-format
@@ -2324,7 +2337,7 @@ msgstr "Tühikumuutused"
 
 #: trac/templates/diff_options.html:50
 #: trac/ticket/templates/milestone_view.html:57
-#: trac/ticket/templates/query.html:223
+#: trac/ticket/templates/query.html:220
 #: trac/ticket/templates/report_view.html:49
 #: trac/ticket/templates/roadmap.html:28
 #: trac/timeline/templates/timeline.html:36
@@ -2418,7 +2431,7 @@ msgstr "Lisatud"
 msgid "Removed"
 msgstr "Eemaldatud"
 
-#: trac/templates/diff_view.html:70 trac/ticket/api.py:358
+#: trac/templates/diff_view.html:70 trac/ticket/api.py:336
 #: trac/versioncontrol/templates/changeset.html:204
 #: trac/versioncontrol/templates/revisionlog.html:92 trac/wiki/admin.py:197
 msgid "Modified"
@@ -2641,19 +2654,20 @@ msgstr ""
 
 #: trac/templates/list_of_attachments.html:28
 #: trac/templates/list_of_attachments.html:44
-#: trac/ticket/templates/ticket.html:382
+#: trac/ticket/templates/ticket.html:378
 msgid "Attachments"
 msgstr "Manused"
 
 #: trac/templates/list_of_attachments.html:38
 #: trac/templates/list_of_attachments.html:54
+#, fuzzy
 msgid "Download all attachments as:"
-msgstr "Lae kõik manused alla selles vormis:"
+msgstr "Lisa manus"
 
 #: trac/templates/list_of_attachments.html:39
 #: trac/templates/list_of_attachments.html:55
 msgid ".zip"
-msgstr ".zip"
+msgstr ""
 
 #: trac/templates/macros.html:37 trac/templates/macros.html:38
 msgid "Previous"
@@ -2668,8 +2682,10 @@ msgid "(The file is empty)"
 msgstr "(Fail on tühi)"
 
 #: trac/templates/preview_file.html:19
-#, fuzzy, python-format
-msgid "[1:HTML preview not available], since the file size exceeds %(size)s."
+#, python-format
+msgid ""
+"[1:HTML preview not available], since the file size exceeds %(size)s "
+"bytes."
 msgstr "[1:HTML preview not available], kuna faili suurus ületab %(size)s baiti."
 
 #: trac/templates/preview_file.html:22
@@ -2755,7 +2771,7 @@ msgstr "Komponent %(name)s on juba olemas."
 msgid "The component \"%(name)s\" has been added."
 msgstr "Komponent \"%(name)s\" on lisatud."
 
-#: trac/ticket/admin.py:122 trac/ticket/model.py:908 trac/ticket/model.py:927
+#: trac/ticket/admin.py:122 trac/ticket/model.py:859 trac/ticket/model.py:878
 msgid "Invalid component name."
 msgstr "Vigane komponendi nimi."
 
@@ -2772,7 +2788,7 @@ msgstr "Ühtki komponenti ei ole valitud"
 msgid "The selected components have been removed."
 msgstr "Valitud komponendid on eemaldatud."
 
-#: trac/ticket/admin.py:235 trac/ticket/api.py:327
+#: trac/ticket/admin.py:235 trac/ticket/api.py:305
 msgid "Milestone"
 msgstr "Verstapost"
 
@@ -2794,7 +2810,7 @@ msgstr "Verstapost %(name)s on juba olemas."
 msgid "The milestone \"%(name)s\" has been added."
 msgstr "Verstapost \"%(name)s\" on lisatud."
 
-#: trac/ticket/admin.py:305 trac/ticket/model.py:1087 trac/ticket/model.py:1109
+#: trac/ticket/admin.py:305 trac/ticket/model.py:1038 trac/ticket/model.py:1060
 msgid "Invalid milestone name."
 msgstr "Vigane verstaposti nimi."
 
@@ -2821,7 +2837,7 @@ msgstr "Versioon %(name)s on juba olemas."
 msgid "The version \"%(name)s\" has been added."
 msgstr "Versioon \"%(name)s\" on lisatud."
 
-#: trac/ticket/admin.py:484 trac/ticket/model.py:1214 trac/ticket/model.py:1232
+#: trac/ticket/admin.py:484 trac/ticket/model.py:1165 trac/ticket/model.py:1183
 msgid "Invalid version name."
 msgstr "Vigane versiooni nimi."
 
@@ -2888,7 +2904,7 @@ msgstr "Võimalikud väärtused"
 msgid "Invalid up/down value: %(value)s"
 msgstr "Vigane üles/alla väärtus %(value)s"
 
-#: trac/ticket/admin.py:777 trac/ticket/api.py:326
+#: trac/ticket/admin.py:777 trac/ticket/api.py:304
 msgid "Priority"
 msgstr "Prioriteet"
 
@@ -2896,7 +2912,7 @@ msgstr "Prioriteet"
 msgid "Priorities"
 msgstr "Prioriteedid"
 
-#: trac/ticket/admin.py:783 trac/ticket/api.py:331
+#: trac/ticket/admin.py:783 trac/ticket/api.py:309
 msgid "Resolution"
 msgstr "Resolutsioon"
 
@@ -2904,7 +2920,7 @@ msgstr "Resolutsioon"
 msgid "Resolutions"
 msgstr "Resolutsioonid"
 
-#: trac/ticket/admin.py:789 trac/ticket/api.py:330
+#: trac/ticket/admin.py:789 trac/ticket/api.py:308
 msgid "Severity"
 msgstr "Tõsidus"
 
@@ -2929,80 +2945,75 @@ msgstr "<number> peab olema number"
 msgid "Ticket #%(num)s and all associated data removed."
 msgstr "Sedel #%(num)s ja kõik seotud andmed on kustutatud."
 
-#: trac/ticket/api.py:279
+#: trac/ticket/api.py:257
 msgid "Attachment"
 msgstr "Manus"
 
-#: trac/ticket/api.py:309
+#: trac/ticket/api.py:287
 msgid "Summary"
 msgstr "Kokkuvõte"
 
-#: trac/ticket/api.py:311 trac/ticket/templates/ticket.html:355
+#: trac/ticket/api.py:289 trac/ticket/templates/ticket.html:351
 msgid "Reporter"
 msgstr "Raporteerija"
 
-#: trac/ticket/api.py:324 trac/versioncontrol/admin.py:113
+#: trac/ticket/api.py:302 trac/versioncontrol/admin.py:113
 #: trac/versioncontrol/templates/admin_repositories.html:125
 msgid "Type"
 msgstr "Tüüp"
 
-#: trac/ticket/api.py:325
+#: trac/ticket/api.py:303
 msgid "Status"
 msgstr "Olek"
 
-#: trac/ticket/api.py:350
+#: trac/ticket/api.py:328
 msgid "Keywords"
 msgstr "Märksõnad"
 
-#: trac/ticket/api.py:352
+#: trac/ticket/api.py:330
 msgid "Cc"
 msgstr "Cc"
 
-#: trac/ticket/api.py:356
+#: trac/ticket/api.py:334
 msgid "Created"
 msgstr "Loodud"
 
-#: trac/ticket/api.py:504
-#, python-format
+#: trac/ticket/api.py:480
+#, fuzzy, python-format
 msgid "Tickets %(ranges)s"
-msgstr "Sedelid %(ranges)s"
+msgstr ""
 
-#: trac/ticket/api.py:528
+#: trac/ticket/api.py:504
 #, python-format
 msgid "Comment %(cnum)s for Ticket #%(id)s"
 msgstr "Sedeli #%(id)s kommentaar %(cnum)s"
 
-#: trac/ticket/api.py:553
+#: trac/ticket/api.py:529
 #, python-format
 msgid "Ticket #%(shortname)s"
 msgstr "Sedel #%(shortname)s"
 
-#: trac/ticket/batch.py:63
-#, python-format
-msgid "The changes could not be saved: %(message)s"
-msgstr ""
-
-#: trac/ticket/batch.py:106
+#: trac/ticket/batch.py:95
 #, fuzzy
 msgid "add"
 msgstr "lisatud"
 
-#: trac/ticket/batch.py:107
+#: trac/ticket/batch.py:96
 #, fuzzy
 msgid "remove"
 msgstr "eemaldatud"
 
-#: trac/ticket/batch.py:108
+#: trac/ticket/batch.py:97
 #, fuzzy
 msgid "add / remove"
 msgstr "eemaldatud"
 
-#: trac/ticket/batch.py:109
+#: trac/ticket/batch.py:98
 #, fuzzy
 msgid "set to"
 msgstr "määratud"
 
-#: trac/ticket/batch.py:191
+#: trac/ticket/batch.py:180
 #, python-format
 msgid ""
 "The changes have been saved, but an error occurred while sending "
@@ -3130,163 +3141,163 @@ msgstr ""
 msgid "Enable JavaScript to display the workflow graph."
 msgstr ""
 
-#: trac/ticket/model.py:155
+#: trac/ticket/model.py:120
 #, python-format
 msgid "Ticket %(id)s does not exist."
 msgstr "Sedelit %(id)s ei eksisteeri."
 
-#: trac/ticket/model.py:156
+#: trac/ticket/model.py:121
 msgid "Invalid ticket number"
 msgstr "Vigane sedeli number"
 
-#: trac/ticket/model.py:194
+#: trac/ticket/model.py:157
 msgid "Multi-values fields not supported yet"
 msgstr "Multi-väärtustega väljad ei ole veel toetatud"
 
-#: trac/ticket/model.py:734
+#: trac/ticket/model.py:685
 #, python-format
 msgid "%(type)s %(name)s does not exist."
 msgstr "%(type)s %(name)s ei eksisteeri."
 
-#: trac/ticket/model.py:776 trac/ticket/model.py:801
+#: trac/ticket/model.py:727 trac/ticket/model.py:752
 #, python-format
 msgid "Invalid %(type)s name."
 msgstr "Vigane %(type)s nimi."
 
-#: trac/ticket/model.py:880
+#: trac/ticket/model.py:831
 #, python-format
 msgid "Component %(name)s does not exist."
 msgstr "Komponent %(name)s ei eksisteerig."
 
-#: trac/ticket/model.py:1025
+#: trac/ticket/model.py:976
 #, python-format
 msgid "Milestone %(name)s does not exist."
 msgstr "Verstapost %(name)s ei eksisteeri."
 
-#: trac/ticket/model.py:1026
+#: trac/ticket/model.py:977
 msgid "Invalid milestone name"
 msgstr "Vigane verstaposti nimi"
 
-#: trac/ticket/model.py:1165
+#: trac/ticket/model.py:1116
 msgid "Open (by due date)"
 msgstr "Avatud (tähtaja järgi)"
 
-#: trac/ticket/model.py:1166
+#: trac/ticket/model.py:1117
 msgid "Open (no due date)"
 msgstr "Avatud (tähtaeg pudub)"
 
-#: trac/ticket/model.py:1169
+#: trac/ticket/model.py:1120
 msgid "Closed"
 msgstr "Suletud"
 
-#: trac/ticket/model.py:1186
+#: trac/ticket/model.py:1137
 #, python-format
 msgid "Version %(name)s does not exist."
 msgstr "Versioon %(name)s ei eksisteeri."
 
-#: trac/ticket/query.py:60
+#: trac/ticket/query.py:59
 msgid "Invalid query constraint value"
 msgstr "Vigane päring piirangu väärtus"
 
-#: trac/ticket/query.py:94
+#: trac/ticket/query.py:93
 #, python-format
 msgid "Query page %(page)s is invalid."
 msgstr "Vigane päringu leht: %(page)s."
 
-#: trac/ticket/query.py:109
+#: trac/ticket/query.py:108
 #, python-format
 msgid "Query max %(max)s is invalid."
 msgstr "Päringu parameeter max %(max)s on vigane."
 
-#: trac/ticket/query.py:168
+#: trac/ticket/query.py:167
 msgid "Query filter requires field and constraints separated by a \"=\""
 msgstr "Päringu filter nõuab välja ja piirangute eraldamist märgiga \"=\""
 
-#: trac/ticket/query.py:181
+#: trac/ticket/query.py:180
 msgid "Query filter requires field name"
 msgstr "Päringu filter nõuab välja nime"
 
-#: trac/ticket/query.py:314
+#: trac/ticket/query.py:313
 #, python-format
 msgid "Page %(page)s is beyond the number of pages in the query"
 msgstr "Lehekülg %(page)s on suurem kui päringus olevate lehekülgede arv"
 
-#: trac/ticket/query.py:571
+#: trac/ticket/query.py:573
 #, python-format
 msgid "Invalid ticket id list: %(value)s"
 msgstr "Vigane sedeli id loetelu: %(value)s"
 
-#: trac/ticket/query.py:670 trac/ticket/query.py:678
+#: trac/ticket/query.py:672 trac/ticket/query.py:680
 msgid "contains"
 msgstr "contains"
 
-#: trac/ticket/query.py:671 trac/ticket/query.py:679
+#: trac/ticket/query.py:673 trac/ticket/query.py:681
 msgid "doesn't contain"
 msgstr "ei sisalda"
 
-#: trac/ticket/query.py:672
+#: trac/ticket/query.py:674
 msgid "begins with"
 msgstr "algab"
 
-#: trac/ticket/query.py:673
+#: trac/ticket/query.py:675
 msgid "ends with"
 msgstr "lõppeb"
 
-#: trac/ticket/query.py:674 trac/ticket/query.py:682 trac/ticket/query.py:686
+#: trac/ticket/query.py:676 trac/ticket/query.py:684 trac/ticket/query.py:688
 msgid "is"
 msgstr "on"
 
-#: trac/ticket/query.py:675 trac/ticket/query.py:683 trac/ticket/query.py:687
+#: trac/ticket/query.py:677 trac/ticket/query.py:685 trac/ticket/query.py:689
 msgid "is not"
 msgstr "ei ole"
 
-#: trac/ticket/query.py:717 trac/ticket/query.py:723
+#: trac/ticket/query.py:721 trac/ticket/query.py:727
 msgid "Ticket"
 msgstr "Sedel"
 
-#: trac/ticket/query.py:794 trac/ticket/report.py:468
+#: trac/ticket/query.py:798 trac/ticket/report.py:468
 #, python-format
 msgid "Page %(num)d"
 msgstr "Lehekülg %(num)d"
 
-#: trac/ticket/query.py:843 trac/ticket/report.py:327 trac/ticket/report.py:627
-#: trac/ticket/web_ui.py:146 trac/timeline/web_ui.py:235
+#: trac/ticket/query.py:847 trac/ticket/report.py:328 trac/ticket/report.py:627
+#: trac/ticket/web_ui.py:140 trac/timeline/web_ui.py:235
 #: trac/versioncontrol/web_ui/log.py:319
 msgid "RSS Feed"
 msgstr "RSS voog"
 
-#: trac/ticket/query.py:845 trac/ticket/report.py:329 trac/ticket/report.py:629
-#: trac/ticket/web_ui.py:142
+#: trac/ticket/query.py:849 trac/ticket/report.py:330 trac/ticket/report.py:629
+#: trac/ticket/web_ui.py:136
 msgid "Comma-delimited Text"
 msgstr "Komaeraldatud tekst"
 
-#: trac/ticket/query.py:847 trac/ticket/report.py:331 trac/ticket/report.py:631
-#: trac/ticket/web_ui.py:144
+#: trac/ticket/query.py:851 trac/ticket/report.py:332 trac/ticket/report.py:631
+#: trac/ticket/web_ui.py:138
 msgid "Tab-delimited Text"
 msgstr "Tab-eraldatud tekst"
 
-#: trac/ticket/query.py:869 trac/ticket/report.py:130
+#: trac/ticket/query.py:873 trac/ticket/report.py:131
 msgid "View Tickets"
 msgstr "Sirvi sedeleid"
 
-#: trac/ticket/query.py:1082 trac/ticket/query.py:1093
-#: trac/ticket/report.py:196 trac/ticket/templates/report_list.html:57
+#: trac/ticket/query.py:1086 trac/ticket/query.py:1097
+#: trac/ticket/report.py:197 trac/ticket/templates/report_list.html:57
 msgid "Custom Query"
 msgstr "Oma päring"
 
-#: trac/ticket/query.py:1092 trac/ticket/report.py:186
-#: trac/ticket/report.py:187 trac/ticket/report.py:189
+#: trac/ticket/query.py:1096 trac/ticket/report.py:187
+#: trac/ticket/report.py:188 trac/ticket/report.py:190
 #: trac/ticket/templates/report_list.html:10
 #: trac/ticket/templates/report_list.html:28
 msgid "Available Reports"
 msgstr "Saadaolevad raportid"
 
-#: trac/ticket/query.py:1192
+#: trac/ticket/query.py:1195
 #, python-format
 msgid "[Error: %(error)s]"
 msgstr "[Viga: %(error)s]"
 
-#: trac/ticket/query.py:1198
+#: trac/ticket/query.py:1201
 msgid ""
 "Wiki macro listing tickets that match certain criteria.\n"
 "\n"
@@ -3313,8 +3324,6 @@ msgid ""
 " - '''compact''' -- the tickets are presented as a comma-separated\n"
 "   list of ticket IDs.\n"
 " - '''count''' -- only the count of matching tickets is displayed\n"
-" - '''rawcount''' -- only the count of matching tickets is displayed,\n"
-"   not even with a link to the corresponding query //(since 1.1.1)//\n"
 " - '''table'''  -- a view similar to the custom query view (but without\n"
 "   the controls)\n"
 " - '''progress''' -- a view similar to the milestone progress bars\n"
@@ -3347,72 +3356,65 @@ msgid ""
 "but is deprecated."
 msgstr ""
 
-#: trac/ticket/query.py:1313
-#, fuzzy, python-format
-msgid "%(num)s ticket matching %(criteria)s"
-msgid_plural "%(num)s tickets matching %(criteria)s"
-msgstr[0] ""
-msgstr[1] ""
-
-#: trac/ticket/query.py:1383
+#: trac/ticket/query.py:1378
 #, python-format
 msgid "Ticket completion status for each %(group)s"
 msgstr ""
 
-#: trac/ticket/query.py:1398
+#: trac/ticket/query.py:1393
 msgid "No results"
 msgstr "Tulemusi ei ole"
 
-#: trac/ticket/query.py:1416
+#: trac/ticket/query.py:1411
 #, python-format
 msgid "%(groupvalue)s %(groupname)s tickets matching %(query)s"
 msgstr "päringule %(query)s vastavad %(groupvalue)s %(groupname)s sedelid"
 
-#: trac/ticket/query.py:1440
+#: trac/ticket/query.py:1435
 #, python-format
 msgid "%(groupvalue)s %(groupname)s tickets:"
 msgstr "%(groupvalue)s %(groupname)s sedelid:"
 
-#: trac/ticket/report.py:222
+#: trac/ticket/report.py:223
 msgid "The report has been created."
 msgstr "Raport on loodud."
 
-#: trac/ticket/report.py:232
+#: trac/ticket/report.py:233
 #, python-format
 msgid "The report {%(id)d} has been deleted."
 msgstr "Raport {%(id)d} on kustutatud."
 
-#: trac/ticket/report.py:256
+#: trac/ticket/report.py:257
 #, python-format
 msgid "Delete Report {%(num)s} %(title)s"
 msgstr "Kustutat raport {%(num)s} %(title)s"
 
-#: trac/ticket/report.py:261 trac/ticket/report.py:272
-#: trac/ticket/report.py:351
+#: trac/ticket/report.py:262 trac/ticket/report.py:273
+#: trac/ticket/report.py:352
 #, python-format
 msgid "Report {%(num)s} does not exist."
 msgstr "Raportit {%(num)s} ei eksisteeri."
 
-#: trac/ticket/report.py:262 trac/ticket/report.py:273
-#: trac/ticket/report.py:352
+#: trac/ticket/report.py:263 trac/ticket/report.py:274
+#: trac/ticket/report.py:353
 msgid "Invalid Report Number"
 msgstr "Vigane raporti number"
 
-#: trac/ticket/report.py:285
+#: trac/ticket/report.py:286
 msgid "Create New Report"
 msgstr "Loo uus raport"
 
-#: trac/ticket/report.py:289
+#: trac/ticket/report.py:290
 #, python-format
 msgid "Edit Report {%(num)d} %(title)s"
 msgstr "Muuda raportit {%(num)d} %(title)s"
 
-#: trac/ticket/report.py:356
+#: trac/ticket/report.py:357
 #, python-format
 msgid "Report failed: %(error)s"
 msgstr "Raport ebaõnnestus: %(error)s"
 
-#: trac/ticket/report.py:371
+#: trac/ticket/report.py:372
 #, python-format
 msgid "When specified, the report number should be \"%(num)s\"."
 msgstr "Raporti numbri määramisel peaks see olema \"%(num)s\"."
@@ -3522,91 +3524,93 @@ msgid "You must provide a name for the milestone."
 msgstr "Verstapostile peab nime panema."
 
 #: trac/ticket/roadmap.py:877
-#, python-format
+#, fuzzy, python-format
 msgid "Milestone \"%(name)s\""
-msgstr "Verstapost \"%(name)s\""
+msgstr "Verstapost %(name)s"
 
 #: trac/ticket/roadmap.py:891
+#, fuzzy
 msgid "Previous Milestone"
-msgstr "Eelmine verstapost"
+msgstr "Eelmine versioon"
 
 #: trac/ticket/roadmap.py:891
+#, fuzzy
 msgid "Next Milestone"
-msgstr "Järgmine verstapost"
+msgstr "Kustuta verstapost"
 
 #: trac/ticket/roadmap.py:892
 msgid "Back to Roadmap"
-msgstr "Tagasi tegevusplaani juurde"
+msgstr ""
 
-#: trac/ticket/web_ui.py:66
+#: trac/ticket/web_ui.py:65
 msgid "Invalid Ticket"
 msgstr "Vigane sedel"
 
-#: trac/ticket/web_ui.py:168 trac/ticket/templates/ticket.html:14
+#: trac/ticket/web_ui.py:162 trac/ticket/templates/ticket.html:14
 msgid "New Ticket"
 msgstr "Uus sedel"
 
-#: trac/ticket/web_ui.py:184
+#: trac/ticket/web_ui.py:178
 msgid "id can't be set for a new ticket request."
 msgstr "Uue sedeli päringus ei saa id-d määrata."
 
-#: trac/ticket/web_ui.py:234 trac/ticket/web_ui.py:286
+#: trac/ticket/web_ui.py:228 trac/ticket/web_ui.py:279
 #: trac/versioncontrol/web_ui/changeset.py:1042
 #, python-format
 msgid "%(title)s: %(message)s"
 msgstr "%(title)s: %(message)s"
 
-#: trac/ticket/web_ui.py:248
+#: trac/ticket/web_ui.py:242
 msgid "Tickets opened and closed"
 msgstr "Avatud ja suletud sedelid"
 
-#: trac/ticket/web_ui.py:250
+#: trac/ticket/web_ui.py:244
 msgid "Ticket updates"
 msgstr "Sedelite muudatused"
 
-#: trac/ticket/web_ui.py:280 trac/ticket/web_ui.py:1193
+#: trac/ticket/web_ui.py:273 trac/ticket/web_ui.py:1166
 #, python-format
 msgid "%(labels)s changed"
 msgid_plural "%(labels)s changed"
 msgstr[0] "%(labels)s muudetud"
 msgstr[1] "%(labels)s muudetud"
 
-#: trac/ticket/web_ui.py:399
+#: trac/ticket/web_ui.py:392
 #, fuzzy, python-format
 msgid "Ticket %(ticketref)s (%(summary)s) created"
 msgstr "Sedel %(ticketref)s (%(summary)s) created"
 
-#: trac/ticket/web_ui.py:400
+#: trac/ticket/web_ui.py:393
 #, fuzzy, python-format
 msgid "Ticket %(ticketref)s (%(summary)s) reopened"
 msgstr "Sedel %(ticketref)s (%(summary)s) reopened"
 
-#: trac/ticket/web_ui.py:401
+#: trac/ticket/web_ui.py:394
 #, fuzzy, python-format
 msgid "Ticket %(ticketref)s (%(summary)s) closed"
 msgstr "Sedel %(ticketref)s (%(summary)s) closed"
 
-#: trac/ticket/web_ui.py:402
+#: trac/ticket/web_ui.py:395
 #, fuzzy, python-format
 msgid "Ticket %(ticketref)s (%(summary)s) updated"
 msgstr "Sedel %(ticketref)s (%(summary)s) updated"
 
-#: trac/ticket/web_ui.py:436
+#: trac/ticket/web_ui.py:424
 #, fuzzy, python-format
 msgid "Tickets %(ticketids)s"
 msgstr "Sedel %(ticketids)s"
 
-#: trac/ticket/web_ui.py:438
+#: trac/ticket/web_ui.py:426
 #, python-format
 msgid "Tickets %(ticketlist)s batch updated"
 msgstr ""
 
-#: trac/ticket/web_ui.py:589
+#: trac/ticket/web_ui.py:576
 #, python-format
 msgid "The action \"%(name)s\" is not available."
 msgstr "Tegevus \"%(name)s\" ei ole kättesaadaval."
 
-#: trac/ticket/web_ui.py:615
+#: trac/ticket/web_ui.py:602
 #, python-format
 msgid ""
 "Please review your configuration, probably starting with %(section)s in "
@@ -3615,132 +3619,132 @@ msgstr ""
 "Palun kontrolli oma konfiguratsiooni, arvatavasti alates %(section)s oma "
 "%(tracini)s."
 
-#: trac/ticket/web_ui.py:673 trac/ticket/web_ui.py:921
+#: trac/ticket/web_ui.py:660 trac/ticket/web_ui.py:895
 #, python-format
 msgid "Ticket #%(id)s"
 msgstr "Sedel #%(id)s"
 
-#: trac/ticket/web_ui.py:727
+#: trac/ticket/web_ui.py:713
 msgid "Previous Ticket"
 msgstr "Eelmine sedel"
 
-#: trac/ticket/web_ui.py:727
+#: trac/ticket/web_ui.py:713
 msgid "Next Ticket"
 msgstr "Järgmine sedel"
 
-#: trac/ticket/web_ui.py:728
+#: trac/ticket/web_ui.py:714
 msgid "Back to Query"
 msgstr "Tagasi päringusse"
 
-#: trac/ticket/web_ui.py:838 trac/ticket/web_ui.py:987
-#: trac/ticket/web_ui.py:995
+#: trac/ticket/web_ui.py:812 trac/ticket/web_ui.py:961
+#: trac/ticket/web_ui.py:969
 msgid "Ticket History"
 msgstr "Sedeli ajalugu"
 
-#: trac/ticket/web_ui.py:842 trac/ticket/web_ui.py:1042
+#: trac/ticket/web_ui.py:816 trac/ticket/web_ui.py:1016
 #, python-format
 msgid "Back to Ticket #%(num)s"
 msgstr "Tagasi sedelile #%(num)s"
 
-#: trac/ticket/web_ui.py:884
+#: trac/ticket/web_ui.py:858
 msgid "No differences to show"
 msgstr "Erinevused puuduvad"
 
-#: trac/ticket/web_ui.py:927 trac/ticket/web_ui.py:984
-#: trac/ticket/web_ui.py:992 trac/ticket/web_ui.py:1063
-#: trac/ticket/web_ui.py:1108 trac/ticket/web_ui.py:1115
+#: trac/ticket/web_ui.py:901 trac/ticket/web_ui.py:958
+#: trac/ticket/web_ui.py:966 trac/ticket/web_ui.py:1037
+#: trac/ticket/web_ui.py:1082 trac/ticket/web_ui.py:1089
 #: trac/wiki/web_ui.py:449 trac/wiki/web_ui.py:455 trac/wiki/web_ui.py:653
 #: trac/wiki/web_ui.py:667
 #, python-format
 msgid "Version %(num)s"
 msgstr "Versioon %(num)s"
 
-#: trac/ticket/web_ui.py:930 trac/ticket/web_ui.py:1066
+#: trac/ticket/web_ui.py:904 trac/ticket/web_ui.py:1040
 msgid "Initial Version"
 msgstr "Esialgne versioon"
 
-#: trac/ticket/web_ui.py:930 trac/ticket/web_ui.py:1066
+#: trac/ticket/web_ui.py:904 trac/ticket/web_ui.py:1040
 msgid "initial"
 msgstr "esialgne"
 
-#: trac/ticket/web_ui.py:949
+#: trac/ticket/web_ui.py:923
 #, python-format
 msgid "Property %(label)s %(rendered)s"
 msgstr "Omadus %(label)s %(rendered)s"
 
-#: trac/ticket/web_ui.py:994 trac/ticket/web_ui.py:1117
+#: trac/ticket/web_ui.py:968 trac/ticket/web_ui.py:1091
 #: trac/versioncontrol/web_ui/changeset.py:371 trac/wiki/web_ui.py:468
 msgid "Previous Change"
 msgstr "Eelmine muudatus"
 
-#: trac/ticket/web_ui.py:994 trac/ticket/web_ui.py:1117
+#: trac/ticket/web_ui.py:968 trac/ticket/web_ui.py:1091
 #: trac/versioncontrol/web_ui/changeset.py:371 trac/wiki/web_ui.py:468
 msgid "Next Change"
 msgstr "Järgmine muudatus"
 
-#: trac/ticket/web_ui.py:1000
+#: trac/ticket/web_ui.py:974
 msgid "Ticket Diff"
 msgstr "Sedelite erinevused"
 
-#: trac/ticket/web_ui.py:1021
+#: trac/ticket/web_ui.py:995
 msgid "''Initial version''"
 msgstr "''esialgne versioon''"
 
-#: trac/ticket/web_ui.py:1034 trac/ticket/web_ui.py:1111
-#: trac/ticket/web_ui.py:1118
+#: trac/ticket/web_ui.py:1008 trac/ticket/web_ui.py:1085
+#: trac/ticket/web_ui.py:1092
 msgid "Ticket Comment History"
 msgstr "Sedeli kommentaaride ajalugu"
 
-#: trac/ticket/web_ui.py:1036 trac/ticket/web_ui.py:1060
-#: trac/ticket/web_ui.py:1125
+#: trac/ticket/web_ui.py:1010 trac/ticket/web_ui.py:1034
+#: trac/ticket/web_ui.py:1099
 #, python-format
 msgid "Ticket #%(num)s, comment %(cnum)d"
 msgstr "Sedel #%(num)s, kommentaar %(cnum)d"
 
-#: trac/ticket/web_ui.py:1083
+#: trac/ticket/web_ui.py:1057
 #, python-format
 msgid "No version %(version)d for comment %(cnum)d on ticket #%(ticket)s"
 msgstr "Kommentaari %(cnum)d version %(version)d sedeli #%(ticket)s puudub"
 
-#: trac/ticket/web_ui.py:1123
+#: trac/ticket/web_ui.py:1097
 msgid "Ticket Comment Diff"
 msgstr "Sedeli kommentaari erinevused"
 
-#: trac/ticket/web_ui.py:1197
+#: trac/ticket/web_ui.py:1170
 #, python-format
 msgid "%(labels)s set"
 msgid_plural "%(labels)s set"
 msgstr[0] "%(labels)s set"
 msgstr[1] "%(labels)s set"
 
-#: trac/ticket/web_ui.py:1201
+#: trac/ticket/web_ui.py:1174
 #, python-format
 msgid "%(labels)s deleted"
 msgid_plural "%(labels)s deleted"
 msgstr[0] "%(labels)s kustutatud"
 msgstr[1] "%(labels)s kustutatud"
 
-#: trac/ticket/web_ui.py:1202 trac/ticket/web_ui.py:1814
+#: trac/ticket/web_ui.py:1175 trac/ticket/web_ui.py:1755
 msgid "; "
 msgstr "; "
 
-#: trac/ticket/web_ui.py:1223
+#: trac/ticket/web_ui.py:1196
 msgid "No permission to edit the ticket description."
 msgstr "Sedeli kirjelduse muutmise õigused puuduvad."
 
-#: trac/ticket/web_ui.py:1229
+#: trac/ticket/web_ui.py:1202
 msgid "No permission to change the ticket reporter."
 msgstr "Sedeli raporteerija muutmise õigused puuduvad."
 
-#: trac/ticket/web_ui.py:1234
+#: trac/ticket/web_ui.py:1207
 msgid "No permission to change ticket fields."
 msgstr "Sedeli väljade muutmise õigused puuduvad."
 
-#: trac/ticket/web_ui.py:1243
+#: trac/ticket/web_ui.py:1216
 msgid "No permissions to add a comment."
 msgstr "Kommentaari lisamiseks puuduvad õigused."
 
-#: trac/ticket/web_ui.py:1250
+#: trac/ticket/web_ui.py:1223
 msgid ""
 "Sorry, can not save your changes. This ticket has been modified by "
 "someone else since you started"
@@ -3748,49 +3752,49 @@ msgstr ""
 "Muudatusi ei saanud salvestada. Veel keegi teine alustas vahepeal sedeli "
 "muutmist"
 
-#: trac/ticket/web_ui.py:1257
+#: trac/ticket/web_ui.py:1230
 msgid "Tickets must contain a summary."
 msgstr "Sedel peab kokkuvõtet sisaldama."
 
-#: trac/ticket/web_ui.py:1275
+#: trac/ticket/web_ui.py:1248
 #, python-format
 msgid "field %(name)s must be set"
 msgstr "väli %(name)s peab olema määratud"
 
-#: trac/ticket/web_ui.py:1281
+#: trac/ticket/web_ui.py:1254
 #, python-format
 msgid "Ticket description is too long (must be less than %(num)s characters)"
 msgstr "Sedeli kirjeldus on liiga pikk (peab olema lühem kui %(num)s tähte)"
 
-#: trac/ticket/web_ui.py:1288
+#: trac/ticket/web_ui.py:1261
 #, python-format
 msgid "Ticket comment is too long (must be less than %(num)s characters)"
 msgstr "Sedeli kommentaar on liiga pikk (peab olema lühem kui %(num)s tähte)"
 
-#: trac/ticket/web_ui.py:1301
+#: trac/ticket/web_ui.py:1274
 msgid "Invalid comment threading identifier"
 msgstr "Vigane kommentaari lõimuidentifikaator"
 
-#: trac/ticket/web_ui.py:1324
+#: trac/ticket/web_ui.py:1281
 #, python-format
 msgid "The ticket field '%(field)s' is invalid: %(message)s"
 msgstr "Sedeli väli '%(field)s' on vigane: %(message)s"
 
-#: trac/ticket/web_ui.py:1343
+#: trac/ticket/web_ui.py:1300
 #, python-format
 msgid ""
 "The ticket has been created, but an error occurred while sending "
 "notifications: %(message)s"
 msgstr "Sedel sai loodud, aga märguande saatmisel tekkis viga: %(message)s"
 
-#: trac/ticket/web_ui.py:1348
+#: trac/ticket/web_ui.py:1305
 #, python-format
 msgid ""
 "The ticket %(ticketref)s has been created. You can now attach the desired"
 " files."
 msgstr "Sedel %(ticketref)s on loodud. Nüüd võib selle külge faile manustada."
 
-#: trac/ticket/web_ui.py:1354
+#: trac/ticket/web_ui.py:1311
 #, python-format
 msgid ""
 "The ticket %(ticketref)s has been created, but you don't have permission "
@@ -3798,11 +3802,11 @@ msgid ""
 msgstr "Sedel %(ticketref)s on loodud, aga sul ei ole õigusi selle vaatamiseks."
 
 #. TRANSLATOR: The 'change' has been saved... (link)
-#: trac/ticket/web_ui.py:1381
+#: trac/ticket/web_ui.py:1338
 msgid "change"
 msgstr "muudatus"
 
-#: trac/ticket/web_ui.py:1387
+#: trac/ticket/web_ui.py:1344
 #, python-format
 msgid ""
 "The %(change)s has been saved, but an error occurred while sending "
@@ -3811,79 +3815,79 @@ msgstr ""
 "%(change)s on salvestatud, kuid märguannete saatmisel tekkis viga: "
 "%(message)s"
 
-#: trac/ticket/web_ui.py:1525
+#: trac/ticket/web_ui.py:1482
 msgid "Add to Cc"
 msgstr "Lisa Cc:sse"
 
-#: trac/ticket/web_ui.py:1526
+#: trac/ticket/web_ui.py:1483
 msgid "Remove from Cc"
 msgstr "Kõrvalda Cc:st"
 
-#: trac/ticket/web_ui.py:1527
+#: trac/ticket/web_ui.py:1484
 msgid "Add/Remove from Cc"
 msgstr "Lisa/Kõrvalda Cc:st"
 
-#: trac/ticket/web_ui.py:1528
+#: trac/ticket/web_ui.py:1485
 msgid "<Author field>"
 msgstr "<Autori väli>"
 
-#: trac/ticket/web_ui.py:1561 trac/ticket/templates/query.html:116
+#: trac/ticket/web_ui.py:1518 trac/ticket/templates/query.html:114
 msgid "yes"
 msgstr "jah"
 
-#: trac/ticket/web_ui.py:1561 trac/ticket/templates/query.html:119
+#: trac/ticket/web_ui.py:1518 trac/ticket/templates/query.html:117
 msgid "no"
 msgstr "ei"
 
-#: trac/ticket/web_ui.py:1783
+#: trac/ticket/web_ui.py:1724
 msgid "set"
 msgstr "määratud"
 
-#: trac/ticket/web_ui.py:1783
+#: trac/ticket/web_ui.py:1724
 msgid "unset"
 msgstr "määramata"
 
-#: trac/ticket/web_ui.py:1786 trac/versioncontrol/templates/changeset.html:189
+#: trac/ticket/web_ui.py:1727 trac/versioncontrol/templates/changeset.html:189
 #: trac/versioncontrol/templates/revisionlog.txt:12
 msgid "modified"
 msgstr "muutmine"
 
 #. TRANSLATOR: modified ('diff') (link)
-#: trac/ticket/web_ui.py:1791 trac/ticket/templates/ticket_change.html:155
+#: trac/ticket/web_ui.py:1732 trac/ticket/templates/ticket_change.html:155
 #: trac/wiki/web_ui.py:747
 msgid "diff"
 msgstr "diff"
 
-#: trac/ticket/web_ui.py:1792
+#: trac/ticket/web_ui.py:1733
 #, python-format
 msgid "modified (%(diff)s)"
 msgstr "muudetud (%(diff)s)"
 
-#: trac/ticket/web_ui.py:1810
+#: trac/ticket/web_ui.py:1751
 #, python-format
 msgid "%(items)s added"
 msgid_plural "%(items)s added"
 msgstr[0] "%(items)s lisatud"
 msgstr[1] "%(items)s lisatud"
 
-#: trac/ticket/web_ui.py:1812
+#: trac/ticket/web_ui.py:1753
 #, python-format
 msgid "%(items)s removed"
 msgid_plural "%(items)s removed"
 msgstr[0] "%(items)s eemaldatud"
 msgstr[1] "%(items)s eemaldatud"
 
-#: trac/ticket/web_ui.py:1821
+#: trac/ticket/web_ui.py:1762
 #, python-format
 msgid "%(value)s deleted"
 msgstr "%(value)s kustutatud"
 
-#: trac/ticket/web_ui.py:1823
+#: trac/ticket/web_ui.py:1764
 #, python-format
 msgid "set to %(value)s"
 msgstr "määratud %(value)s"
 
-#: trac/ticket/web_ui.py:1826
+#: trac/ticket/web_ui.py:1767
 #, python-format
 msgid "changed from %(old)s to %(new)s"
 msgstr "muudetud %(old)s -> %(new)s"
@@ -3981,7 +3985,7 @@ msgid "Retarget associated open tickets to milestone:"
 msgstr "Määra seotud avatud sedelid verstapostile:"
 
 #: trac/ticket/templates/milestone_edit.html:106
-#: trac/ticket/templates/ticket.html:392
+#: trac/ticket/templates/ticket.html:388
 #: trac/ticket/templates/ticket_change.html:116
 #: trac/wiki/templates/wiki_edit_form.html:66
 #: trac/wiki/templates/wiki_edit_form.html:71
@@ -4040,7 +4044,7 @@ msgstr "%(stat_title)s by"
 msgid "Edit milestone"
 msgstr "Muuda verstaposti"
 
-#: trac/ticket/templates/query.html:37
+#: trac/ticket/templates/query.html:35
 #: trac/ticket/templates/report_view.html:21
 #: trac/ticket/templates/report_view.html:97
 #, python-format
@@ -4049,23 +4053,23 @@ msgid_plural "%(num)s matches"
 msgstr[0] "%(num)s vaste"
 msgstr[1] "%(num)s vastet"
 
-#: trac/ticket/templates/query.html:46
+#: trac/ticket/templates/query.html:44
 msgid "Filters"
 msgstr "Filtrid"
 
-#: trac/ticket/templates/query.html:47
+#: trac/ticket/templates/query.html:45
 msgid "Query filters"
 msgstr "Päringufiltrid"
 
-#: trac/ticket/templates/query.html:53 trac/ticket/templates/query.html:158
+#: trac/ticket/templates/query.html:51 trac/ticket/templates/query.html:155
 msgid "Or"
 msgstr "Või"
 
-#: trac/ticket/templates/query.html:81
+#: trac/ticket/templates/query.html:79
 msgid "or"
 msgstr "või"
 
-#: trac/ticket/templates/query.html:130
+#: trac/ticket/templates/query.html:127
 msgid ""
 "[1:between]\n"
 "                            [2:]\n"
@@ -4077,63 +4081,63 @@ msgstr ""
 "                            [3:and]\n"
 "                            [4:]"
 
-#: trac/ticket/templates/query.html:144
+#: trac/ticket/templates/query.html:141
 msgid "And"
 msgstr "Ja"
 
-#: trac/ticket/templates/query.html:177
+#: trac/ticket/templates/query.html:174
 msgid "Columns"
 msgstr "Veerud"
 
-#: trac/ticket/templates/query.html:190
+#: trac/ticket/templates/query.html:187
 msgid "Group results by"
 msgstr "Grupeeri tulemused"
 
-#: trac/ticket/templates/query.html:201
+#: trac/ticket/templates/query.html:198
 msgid "descending"
 msgstr "kahanevalt"
 
-#: trac/ticket/templates/query.html:205
+#: trac/ticket/templates/query.html:202
 msgid "Show under each result:"
 msgstr "Näita iga tulemuse all:"
 
-#: trac/ticket/templates/query.html:215
+#: trac/ticket/templates/query.html:212
 #: trac/ticket/templates/report_view.html:27
 msgid "Max items per page"
 msgstr "Max arv tulemusi leheküljel"
 
-#: trac/ticket/templates/query.html:238
+#: trac/ticket/templates/query.html:235
 #, python-format
 msgid "Edit report {%(id)s} corresponding to this query"
 msgstr "Muuda sellele päringule vastavat raportit {%(id)s}"
 
-#: trac/ticket/templates/query.html:238
+#: trac/ticket/templates/query.html:235
 msgid "Edit query"
 msgstr "Muuda päringut"
 
-#: trac/ticket/templates/query.html:247
+#: trac/ticket/templates/query.html:244
 msgid "Save query"
 msgstr "Salvesta päring"
 
-#: trac/ticket/templates/query.html:247
+#: trac/ticket/templates/query.html:244
 #, python-format
 msgid "Save updated query in report {%(id)s}"
 msgstr "Salvesta uuendatud päring raportis {%(id)s}"
 
-#: trac/ticket/templates/query.html:247
+#: trac/ticket/templates/query.html:244
 msgid "Create new report from current query"
 msgstr "Loo sellest päringust uus raport"
 
-#: trac/ticket/templates/query.html:255
+#: trac/ticket/templates/query.html:252
 #, python-format
 msgid "Delete report {%(id)s} corresponding to this query"
 msgstr "Kustuta sellele päringule vastav raport {%(id)s}"
 
-#: trac/ticket/templates/query.html:255
+#: trac/ticket/templates/query.html:252
 msgid "Delete query"
 msgstr "Kustuta päring"
 
-#: trac/ticket/templates/query.html:262
+#: trac/ticket/templates/query.html:259
 msgid ""
 "[1:Note:] See [2:TracQuery]\n"
 "        for help on using queries."
@@ -4142,9 +4146,9 @@ msgstr ""
 "        päringute kohta abi saamiseks."
 
 #: trac/ticket/templates/query_results.html:25
-#, python-format
+#, fuzzy, python-format
 msgid "%(grouplabel)s: %(groupname)s [1:(%(count)s)]"
-msgstr "%(grouplabel)s: %(groupname)s [1:(%(count)s)]"
+msgstr ""
 
 #: trac/ticket/templates/query_results.html:37
 msgid "(ascending)"
@@ -4174,11 +4178,11 @@ msgstr "Vaata sedelit"
 msgid "View milestone"
 msgstr "Vaata verstapost"
 
-#: trac/ticket/templates/query_results.html:96
+#: trac/ticket/templates/query_results.html:95
 msgid "(this ticket)"
 msgstr "(see sedel)"
 
-#: trac/ticket/templates/query_results.html:112
+#: trac/ticket/templates/query_results.html:111
 msgid "(more results for this group on next page)"
 msgstr "(järgmisel leheküljel on veel selle grupi tulemusi)"
 
@@ -4233,44 +4237,44 @@ msgid "Save report"
 msgstr "Salvesta raport"
 
 #: trac/ticket/templates/report_list.html:33
+#, fuzzy
 msgid "Show Descriptions"
-msgstr "Näita kirjeldusi"
+msgstr "Näita kõiki kirjeldusi"
 
 #: trac/ticket/templates/report_list.html:45
 msgid "Clear"
-msgstr "Tühjenda"
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:45
 msgid "Forget last query"
-msgstr "Unusta viimane päring"
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:48
 msgid "Return to Last Query"
-msgstr "Tagasi viimasesse päringusse"
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:51
 msgid ""
 "Continue browsing through the current list of results,\n"
 "              from the last selected report or custom query."
 msgstr ""
-"Jätka viimasest raportist või oma päringust\n"
-"              saadud tulemuste loetelu sirvimist."
 
 #: trac/ticket/templates/report_list.html:60
 msgid "Compose a new ticket query by selecting filters and columns to display."
-msgstr "Koosta uus sedelipäring valides filtrid ja veerud mida näidata."
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:65
 msgid "SQL reports and saved custom queries"
-msgstr "SQL raportid ja salvestatud päringud"
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:67
+#, fuzzy
 msgid "Sort by:"
-msgstr "Sorteeri:"
+msgstr "Raporteeris:"
 
 #: trac/ticket/templates/report_list.html:70
 msgid "Identifier"
-msgstr "Identifikaator"
+msgstr ""
 
 #: trac/ticket/templates/report_list.html:73 trac/wiki/admin.py:197
 msgid "Title"
@@ -4338,48 +4342,48 @@ msgstr "Verstapost:"
 msgid "Add new milestone"
 msgstr "Lisa verstapost"
 
-#: trac/ticket/templates/ticket.html:134
+#: trac/ticket/templates/ticket.html:132
 #, fuzzy
 msgid "Go to the ticket editor"
 msgstr "Mine redaktorisse"
 
-#: trac/ticket/templates/ticket.html:134
+#: trac/ticket/templates/ticket.html:132
 #, fuzzy
 msgid "Modify"
 msgstr "muutmine"
 
-#: trac/ticket/templates/ticket.html:136
+#: trac/ticket/templates/ticket.html:134
 msgid "Create New Ticket"
 msgstr "Loo uus sedel"
 
-#: trac/ticket/templates/ticket.html:154
+#: trac/ticket/templates/ticket.html:152
 msgid "Oldest first"
 msgstr ""
 
-#: trac/ticket/templates/ticket.html:156
+#: trac/ticket/templates/ticket.html:154
 msgid "Newest first"
 msgstr ""
 
-#: trac/ticket/templates/ticket.html:159
+#: trac/ticket/templates/ticket.html:157
 #, fuzzy
 msgid "Threaded"
 msgstr "loodud"
 
-#: trac/ticket/templates/ticket.html:164
+#: trac/ticket/templates/ticket.html:162
 #, fuzzy
 msgid "Comments only"
 msgstr "kommentaar:"
 
-#: trac/ticket/templates/ticket.html:169
+#: trac/ticket/templates/ticket.html:167
 msgid "Change History"
 msgstr "Muudatuste ajalugu"
 
-#: trac/ticket/templates/ticket.html:188
+#: trac/ticket/templates/ticket.html:186
 #, fuzzy
 msgid "Add Comment"
 msgstr "Lisa kommentaar"
 
-#: trac/ticket/templates/ticket.html:190
+#: trac/ticket/templates/ticket.html:188
 msgid ""
 "This ticket has been modified since you started editing. You should "
 "review the\n"
@@ -4389,7 +4393,7 @@ msgid ""
 " wish so."
 msgstr ""
 
-#: trac/ticket/templates/ticket.html:200
+#: trac/ticket/templates/ticket.html:198
 #, fuzzy
 msgid ""
 "You may use\n"
@@ -4399,27 +4403,27 @@ msgstr ""
 "Siin võib kasutada\n"
 "              [1:WikiFormatting]."
 
-#: trac/ticket/templates/ticket.html:211
+#: trac/ticket/templates/ticket.html:209
 msgid "Modify Ticket"
 msgstr "Muuda sedelit"
 
-#: trac/ticket/templates/ticket.html:217
+#: trac/ticket/templates/ticket.html:215
 msgid "Change Properties"
 msgstr "Muuda omadusi"
 
-#: trac/ticket/templates/ticket.html:218
+#: trac/ticket/templates/ticket.html:216
 msgid "Properties"
 msgstr "Omadused"
 
-#: trac/ticket/templates/ticket.html:222
+#: trac/ticket/templates/ticket.html:220
 msgid "Summary:"
 msgstr "Kokkuvõte:"
 
-#: trac/ticket/templates/ticket.html:230
+#: trac/ticket/templates/ticket.html:228
 msgid "Reporter:"
 msgstr "Raporteerija:"
 
-#: trac/ticket/templates/ticket.html:242
+#: trac/ticket/templates/ticket.html:240
 msgid ""
 "You may use\n"
 "                          [1:WikiFormatting] here."
@@ -4427,54 +4431,54 @@ msgstr ""
 "Siin võib kasutada\n"
 "                          [1:WikiFormatting]."
 
-#: trac/ticket/templates/ticket.html:258
+#: trac/ticket/templates/ticket.html:256
 #: trac/ticket/templates/ticket_box.html:75
 #, python-format
 msgid "%(field)s:"
 msgstr "%(field)s:"
 
-#: trac/ticket/templates/ticket.html:299
+#: trac/ticket/templates/ticket.html:295
 msgid "This checkbox allows you to add or remove yourself from the CC list."
 msgstr ""
 "See linnuke võimaldab sul end lisada või eemaldada koopia saajate "
 "loetelust."
 
-#: trac/ticket/templates/ticket.html:305
+#: trac/ticket/templates/ticket.html:301
 msgid "Space or comma delimited email addresses and usernames are accepted."
 msgstr ""
 "Siia sobivad tühiku või komaga eraldatud e-posti aadressid ja "
 "kasutajanimed."
 
-#: trac/ticket/templates/ticket.html:368
+#: trac/ticket/templates/ticket.html:364
 #: trac/wiki/templates/wiki_edit_form.html:46
 msgid "E-mail address and user name can be saved in the [1:Preferences]."
 msgstr "E-posti aadressi ja kasutajanime saab salvestada [1:Preferences]."
 
-#: trac/ticket/templates/ticket.html:376
+#: trac/ticket/templates/ticket.html:372
 msgid "I have files to attach to this ticket"
 msgstr "Mul on faile mida sellele sedelile manustada"
 
-#: trac/ticket/templates/ticket.html:382
+#: trac/ticket/templates/ticket.html:378
 msgid "Go to the list of attachments"
 msgstr "Vaata manuste nimekirja"
 
-#: trac/ticket/templates/ticket.html:383
+#: trac/ticket/templates/ticket.html:379
 #, fuzzy
 msgid "View the ticket description"
 msgstr "Sedeli kirjelduse muutmise õigused puuduvad."
 
-#: trac/ticket/templates/ticket.html:391
+#: trac/ticket/templates/ticket.html:387
 #: trac/ticket/templates/ticket_change.html:114
 #: trac/wiki/templates/wiki_edit.html:95 trac/wiki/templates/wiki_edit.html:153
 #: trac/wiki/templates/wiki_edit_form.html:64
 msgid "Preview"
 msgstr "Eelvaade"
 
-#: trac/ticket/templates/ticket.html:392
+#: trac/ticket/templates/ticket.html:388
 msgid "Create ticket"
 msgstr "Loo sedel"
 
-#: trac/ticket/templates/ticket.html:400
+#: trac/ticket/templates/ticket.html:396
 msgid ""
 "[1:Note:] See\n"
 "        [2:TracTickets] for help on using\n"
@@ -4520,17 +4524,17 @@ msgstr "Raporteeris:"
 msgid "Owned by:"
 msgstr "Vastutav isik:"
 
-#: trac/ticket/templates/ticket_box.html:97
+#: trac/ticket/templates/ticket_box.html:96
 #, python-format
 msgid "(last modified by %(author)s)"
 msgstr "(viimati muutsid: %(author)s)"
 
-#: trac/ticket/templates/ticket_box.html:106
+#: trac/ticket/templates/ticket_box.html:105
 #: trac/ticket/templates/ticket_change.html:72
 msgid "Reply"
 msgstr "Vasta"
 
-#: trac/ticket/templates/ticket_box.html:106
+#: trac/ticket/templates/ticket_box.html:105
 msgid "Reply, quoting this description"
 msgstr "Vasta, tsiteerides kirjeldust"
 
@@ -4570,8 +4574,6 @@ msgid ""
 "[1:[2:%(name)s]][3:​]\n"
 "          added"
 msgstr ""
-"[1:[2:%(name)s]][3:​]\n"
-"          lisatud"
 
 #: trac/ticket/templates/ticket_change.html:88
 #, python-format
@@ -4672,53 +4674,42 @@ msgstr "Eelnev periood"
 msgid "Next Period"
 msgstr "Järgnev periood"
 
-#: trac/timeline/web_ui.py:294 trac/timeline/web_ui.py:317
-#: trac/web/chrome.py:869
-#, fuzzy, python-format
-msgid "in %(relative)s"
-msgstr ""
-
-#: trac/timeline/web_ui.py:298 trac/timeline/web_ui.py:315
-#, fuzzy, python-format
-msgid "on %(date)s at %(time)s"
-msgstr ""
-
-#: trac/timeline/web_ui.py:301 trac/web/chrome.py:871
-#, fuzzy, python-format
-msgid "%(relative)s ago"
-msgstr ""
-
-#: trac/timeline/web_ui.py:303 trac/timeline/web_ui.py:363
-#, python-format
-msgid "See timeline at %(absolutetime)s"
-msgstr ""
-
-#: trac/timeline/web_ui.py:309
+#: trac/timeline/web_ui.py:290
 #, python-format
 msgid "at %(iso8601)s"
 msgstr ""
 
-#: trac/timeline/web_ui.py:311
+#: trac/timeline/web_ui.py:294
 #, fuzzy, python-format
-msgid "on %(date)s"
+msgid "on %(date)s at %(time)s"
 msgstr ""
 
-#: trac/timeline/web_ui.py:319
+#: trac/timeline/web_ui.py:295
 #, fuzzy, python-format
 msgid "See timeline %(relativetime)s ago"
 msgstr ""
 
+#: trac/timeline/web_ui.py:298 trac/web/chrome.py:865 trac/web/chrome.py:867
+#, fuzzy, python-format
+msgid "%(relativetime)s ago"
+msgstr ""
+
+#: trac/timeline/web_ui.py:300 trac/timeline/web_ui.py:344
+#, python-format
+msgid "See timeline at %(absolutetime)s"
+msgstr ""
+
 #. TRANSLATOR: ...want to see the 'other kinds of events' from... (link)
-#: trac/timeline/web_ui.py:410
+#: trac/timeline/web_ui.py:391
 msgid "other kinds of events"
 msgstr "teist tüüpi sündmused"
 
-#: trac/timeline/web_ui.py:415
+#: trac/timeline/web_ui.py:396
 #, python-format
 msgid "Event provider %(name)s failed for filters %(kinds)s: "
 msgstr "Sündmusepakkuja %(name)s viga filtri %(kinds)s suhtes: "
 
-#: trac/timeline/web_ui.py:418
+#: trac/timeline/web_ui.py:399
 #, python-format
 msgid ""
 "You may want to see the %(other_events)s from the Timeline or notify your"
@@ -4843,7 +4834,7 @@ msgid_plural "%(num)i seconds"
 msgstr[0] "%(num)i sekund"
 msgstr[1] "%(num)i sekundit"
 
-#: trac/util/datefmt.py:465
+#: trac/util/datefmt.py:464
 #, python-format
 msgid ""
 "\"%(date)s\" is an invalid date, or the date format is not known. Try "
@@ -4852,11 +4843,11 @@ msgstr ""
 "\"%(date)s\" on vigane kuupäev, või on tegemist tundmatu "
 "kuupäevavorminguga. Proovi selle asemel \"%(hint)s\"."
 
-#: trac/util/datefmt.py:467 trac/util/datefmt.py:475
+#: trac/util/datefmt.py:466 trac/util/datefmt.py:474
 msgid "Invalid Date"
 msgstr "Vigane kuupäev"
 
-#: trac/util/datefmt.py:473
+#: trac/util/datefmt.py:472
 #, python-format
 msgid ""
 "The date \"%(date)s\" is outside valid range. Try a date closer to "
@@ -5299,10 +5290,6 @@ msgid ""
 "            [3:%(size)s]\n"
 "          ]"
 msgstr ""
-"[1:\n"
-"            [2:File size:]\n"
-"            [3:%(size)s]\n"
-"          ]"
 
 #: trac/versioncontrol/templates/browser.html:200
 msgid "Repository Index"
@@ -5625,7 +5612,7 @@ msgstr "Vaata faili"
 #: trac/versioncontrol/templates/repository_index.html:22
 #: trac/versioncontrol/web_ui/browser.py:823
 msgid "Download as Zip archive"
-msgstr "Lae alla zip-arhiivina"
+msgstr ""
 
 #: trac/versioncontrol/templates/dir_entries.html:22
 #: trac/versioncontrol/templates/repository_index.html:26
@@ -6118,16 +6105,16 @@ msgstr "Oled juba sisse logitud kasutajana %(user)s."
 msgid "Error with navigation contributor \"%(name)s\""
 msgstr "Viga navigatsioonipakkujas \"%(name)s\""
 
-#: trac/web/chrome.py:1037
+#: trac/web/chrome.py:1029
 msgid "(unknown template location)"
 msgstr "(tundmatu mallide asukoht)"
 
-#: trac/web/chrome.py:1038
+#: trac/web/chrome.py:1030
 #, python-format
 msgid "Genshi %(error)s error while rendering template %(location)s"
 msgstr "Genshi %(error)s viga, mis tekkis malli %(location)s renderdamisel"
 
-#: trac/web/chrome.py:1086 trac/web/chrome.py:1094
+#: trac/web/chrome.py:1078 trac/web/chrome.py:1086
 msgid "anonymous"
 msgstr "anonüümne"
 
@@ -6237,11 +6224,11 @@ msgstr "SID"
 
 #: trac/web/session.py:417
 msgid "Auth"
-msgstr "Autent"
+msgstr ""
 
 #: trac/web/session.py:417
 msgid "Last Visit"
-msgstr "Viimane külastus"
+msgstr "Viimatine külastus"
 
 #: trac/web/session.py:418
 msgid "Email"
@@ -6250,7 +6237,7 @@ msgstr "E-post"
 #: trac/web/session.py:427
 #, python-format
 msgid "Session '%(sid)s' already exists"
-msgstr "Seanss '%(sid)s' on juba olemas"
+msgstr "Sessioon '%(sid)s' on juba olemas"
 
 #: trac/web/session.py:438
 #, python-format
@@ -6260,18 +6247,18 @@ msgstr "Vigane atribuut '%(attr)s'"
 #: trac/web/session.py:445
 #, python-format
 msgid "Session '%(sid)s' not found"
-msgstr "Seanssi '%(sid)s' ei leitud"
+msgstr "Sessiooni '%(sid)s' ei leidu"
 
 #: trac/wiki/admin.py:113
 #, python-format
 msgid "Page '%(page)s' not found"
-msgstr ""
+msgstr "Lehte '%(page)s' ei leidu"
 
 #: trac/wiki/admin.py:118 trac/wiki/model.py:127 trac/wiki/model.py:174
 #: trac/wiki/web_ui.py:119
 #, python-format
 msgid "Invalid Wiki page name '%(name)s'"
-msgstr ""
+msgstr "Vigane viki lehe nimi '%(name)s'"
 
 #: trac/wiki/admin.py:123
 #, python-format
@@ -6573,8 +6560,9 @@ msgid ""
 msgstr ""
 
 #: trac/wiki/macros.py:775
+#, fuzzy
 msgid "(no default)"
-msgstr "(vaikimisi seadistus puudub)"
+msgstr "(vaikimisi)"
 
 #: trac/wiki/macros.py:795
 msgid ""
@@ -7100,4 +7088,18 @@ msgid "The following pages have a name similar to this page, and may be related:
 msgstr ""
 "Järgmistel lehekülgedel on sellele lehele sarnane nimi, ja nad võivad "
 "olla seotud:"
+
+#~ msgid ""
+#~ "Welcome to trac-admin %(version)s\n"
+#~ "Interactive Trac administration console.\n"
+#~ "Copyright (C) 2003-2012 Edgewall Software\n"
+#~ "\n"
+#~ "Type:  '?' or 'help' for help on commands.\n"
+#~ "        "
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Copyright © 2003-2012\n"
+#~ "        [1:Edgewall Software]"
+#~ msgstr ""
 

@@ -16,8 +16,6 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
-from __future__ import print_function
-
 import cgi
 import dircache
 import fnmatch
@@ -35,16 +33,15 @@ from genshi.output import DocType
 from genshi.template import TemplateLoader
 
 from trac import __version__ as TRAC_VERSION
-from trac.config import BoolOption, ConfigurationError, ExtensionOption, \
-                        Option, OrderedExtensionsOption
+from trac.config import BoolOption, ExtensionOption, Option, \
+                        OrderedExtensionsOption
 from trac.core import *
 from trac.env import open_environment
 from trac.loader import get_plugin_info, match_plugins_to_frames
 from trac.perm import PermissionCache, PermissionError
 from trac.resource import ResourceNotFound
 from trac.util import arity, get_frame_info, get_last_traceback, hex_entropy, \
-                      lazy, read_file, safe_repr, translation, \
-                      warn_setuptools_issue
+                      read_file, safe_repr, translation, warn_setuptools_issue
 from trac.util.concurrency import threading
 from trac.util.datefmt import format_datetime, localtz, timezone, user_time
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode
@@ -97,8 +94,8 @@ class RequestDispatcher(Component):
 
     filters = OrderedExtensionsOption('trac', 'request_filters',
                                       IRequestFilter,
-        doc="""Ordered list of filters to apply to all requests.
-            (''since 0.10'')""")
+        doc="""Ordered list of filters to apply to all requests
+            (''since 0.10'').""")
 
     default_handler = ExtensionOption('trac', 'default_handler',
                                       IRequestHandler, 'WikiModule',
@@ -107,7 +104,7 @@ class RequestDispatcher(Component):
 
         Options include `TimelineModule`, `RoadmapModule`,
         `BrowserModule`, `QueryModule`, `ReportModule`, `TicketModule`
-        and `WikiModule`. (''since 0.9'')""")
+        and `WikiModule`. The default is `WikiModule`. (''since 0.9'')""")
 
     default_timezone = Option('trac', 'default_timezone', '',
         """The default timezone to use""")
@@ -137,7 +134,7 @@ class RequestDispatcher(Component):
         for authenticator in self.authenticators:
             try:
                 authname = authenticator.authenticate(req)
-            except TracError as e:
+            except TracError, e:
                 self.log.error("Can't authenticate using %s: %s",
                                authenticator.__class__.__name__,
                                exception_to_unicode(e, traceback=True))
@@ -176,18 +173,18 @@ class RequestDispatcher(Component):
                 # Select the component that should handle the request
                 chosen_handler = None
                 try:
-                    for handler in self._request_handlers.values():
+                    for handler in self.handlers:
                         if handler.match_request(req):
                             chosen_handler = handler
                             break
-                    if not chosen_handler and \
-                            (not req.path_info or req.path_info == '/'):
-                        chosen_handler = self._get_valid_default_handler(req)
+                    if not chosen_handler:
+                        if not req.path_info or req.path_info == '/':
+                            chosen_handler = self.default_handler
                     # pre-process any incoming request, whether a handler
                     # was found or not
                     chosen_handler = \
                         self._pre_process_request(req, chosen_handler)
-                except TracError as e:
+                except TracError, e:
                     raise HTTPInternalError(e)
                 if not chosen_handler:
                     if req.path_info.endswith('/'):
@@ -230,8 +227,8 @@ class RequestDispatcher(Component):
                             _("Clearsilver templates are no longer supported, "
                               "please contact your Trac administrator."))
                     # Genshi
-                    template, data, content_type, method = \
-                        self._post_process_request(req, *resp)
+                    template, data, content_type = \
+                              self._post_process_request(req, *resp)
                     if 'hdfdump' in req.args:
                         req.perm.require('TRAC_ADMIN')
                         # debugging helper - no need to render first
@@ -240,8 +237,7 @@ class RequestDispatcher(Component):
                         req.send(out.getvalue(), 'text/plain')
 
                     output = chrome.render_template(req, template, data,
-                                                    content_type,
-                                                    method=method)
+                                                    content_type)
                     req.send(output, content_type or 'text/html')
                 else:
                     self._post_process_request(req)
@@ -254,45 +250,19 @@ class RequestDispatcher(Component):
                     self._post_process_request(req)
                 except RequestDone:
                     raise
-                except Exception as e:
+                except Exception, e:
                     self.log.error("Exception caught while post-processing"
                                    " request: %s",
                                    exception_to_unicode(e, traceback=True))
                 raise err[0], err[1], err[2]
-        except PermissionError as e:
+        except PermissionError, e:
             raise HTTPForbidden(e)
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             raise HTTPNotFound(e)
-        except TracError as e:
+        except TracError, e:
             raise HTTPInternalError(e)
 
     # Internal methods
-
-    @lazy
-    def _request_handlers(self):
-        return dict((handler.__class__.__name__, handler)
-                    for handler in self.handlers)
-
-    def _get_valid_default_handler(self, req):
-        # Use default_handler from the Session if it is a valid value.
-        name = req.session.get('default_handler')
-        handler = self._request_handlers.get(name)
-        if handler and not is_valid_default_handler(handler):
-            handler = None
-
-        if not handler:
-            # Use default_handler from project configuration.
-            handler = self.default_handler
-            if not is_valid_default_handler(handler):
-                raise ConfigurationError(
-                    tag_("%(handler)s is not a valid default handler. Please "
-                         "update %(option)s through the %(page)s page or by "
-                         "directly editing trac.ini.",
-                         handler=tag.code(handler.__class__.__name__),
-                         option=tag.code("[trac] default_handler"),
-                         page=tag.a(_("Basic Settings"),
-                                    href=req.href.admin('general/basics'))))
-        return handler
 
     def _get_perm(self, req):
         if isinstance(req.session, FakeSession):
@@ -303,7 +273,7 @@ class RequestDispatcher(Component):
     def _get_session(self, req):
         try:
             return Session(self.env, req)
-        except TracError as e:
+        except TracError, e:
             self.log.error("can't retrieve session: %s",
                            exception_to_unicode(e))
             return FakeSession()
@@ -351,7 +321,8 @@ class RequestDispatcher(Component):
             req.outcookie['trac_form_token']['path'] = req.base_path or '/'
             if self.env.secure_cookies:
                 req.outcookie['trac_form_token']['secure'] = True
-            req.outcookie['trac_form_token']['httponly'] = True
+            if sys.version_info >= (2, 6):
+                req.outcookie['trac_form_token']['httponly'] = True
             return req.outcookie['trac_form_token'].value
 
     def _get_use_xsendfile(self, req):
@@ -363,12 +334,8 @@ class RequestDispatcher(Component):
         return chosen_handler
 
     def _post_process_request(self, req, *args):
+        nbargs = len(args)
         resp = args
-        # `method` is optional in IRequestHandler's response. If not
-        # specified, the default value is appended to response.
-        if len(resp) == 3:
-            resp += (None,)
-        nbargs = len(resp)
         for f in reversed(self.filters):
             # As the arity of `post_process_request` has changed since
             # Trac 0.10, only filters with same arity gets passed real values.
@@ -377,12 +344,6 @@ class RequestDispatcher(Component):
             extra_arg_count = arity(f.post_process_request) - 1
             if extra_arg_count == nbargs:
                 resp = f.post_process_request(req, *resp)
-            elif extra_arg_count == nbargs - 1:
-                # IRequestFilters may modify the `method`, but the `method`
-                # is forwarded when not accepted by the IRequestFilter.
-                method = resp[-1]
-                resp = f.post_process_request(req, *resp[:-1])
-                resp += (method,)
             elif nbargs == 0:
                 f.post_process_request(req, *(None,)*extra_arg_count)
         return resp
@@ -508,8 +469,9 @@ def dispatch_request(environ, start_response):
                     'trac.web.version': mod_wsgi_version})
             env.webfrontend = environ.get('trac.web.frontend')
             if env.webfrontend:
-                env.webfrontend_version = environ['trac.web.version']
-    except Exception as e:
+                env.systeminfo.append((env.webfrontend,
+                                       environ['trac.web.version']))
+    except Exception, e:
         env_error = e
 
     req = RequestWithSession(environ, start_response)
@@ -548,10 +510,10 @@ def _dispatch_request(req, env, env_error):
         try:
             dispatcher = RequestDispatcher(env)
             dispatcher.dispatch(req)
-        except RequestDone as req_done:
+        except RequestDone, req_done:
             resp = req_done.iterable
         resp = resp or req._response or []
-    except HTTPException as e:
+    except HTTPException, e:
         _send_user_error(req, env, e)
     except Exception:
         send_internal_error(env, req, sys.exc_info())
@@ -708,7 +670,7 @@ def send_project_index(environ, start_response, parent_dir=None,
                     'description': env.project_description,
                     'href': href(env_name)
                 }
-            except Exception as e:
+            except Exception, e:
                 proj = {'name': env_name, 'description': to_unicode(e)}
             projects.append(proj)
         projects.sort(lambda x, y: cmp(x['name'].lower(), y['name'].lower()))
@@ -771,9 +733,9 @@ def get_environments(environ, warn=False):
         env_name = os.path.split(env_path)[1]
         if env_name in envs:
             if warn:
-                print('Warning: Ignoring project "%s" since it conflicts with'
-                      ' project "%s"' % (env_path, envs[env_name]),
-                      file=sys.stderr)
+                print >> sys.stderr, ('Warning: Ignoring project "%s" since '
+                                      'it conflicts with project "%s"'
+                                      % (env_path, envs[env_name]))
         else:
             envs[env_name] = env_path
     return envs

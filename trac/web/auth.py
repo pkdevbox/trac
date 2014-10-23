@@ -14,7 +14,8 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from abc import ABCMeta, abstractmethod
+from __future__ import with_statement
+
 try:
     from base64 import b64decode, b64encode
 except ImportError:
@@ -57,11 +58,9 @@ class LoginModule(Component):
 
     implements(IAuthenticator, INavigationContributor, IRequestHandler)
 
-    is_valid_default_handler = False
-
     check_ip = BoolOption('trac', 'check_auth_ip', 'false',
          """Whether the IP address of the user should be checked for
-         authentication. (''since 0.9'')""")
+         authentication (''since 0.9'').""")
 
     ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
         """Whether login names should be converted to lower case
@@ -72,7 +71,7 @@ class LoginModule(Component):
 
         This value determines how long the browser will cache
         authentication information, and therefore, after how much
-        inactivity a user will have to log in again. The value
+        inactivity a user will have to log in again. The default value
         of 0 makes the cookie expire at the end of the browsing
         session. (''since 0.12'')""")
 
@@ -186,7 +185,8 @@ class LoginModule(Component):
                                              or req.base_path or '/'
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
+        if sys.version_info >= (2, 6):
+            req.outcookie['trac_auth']['httponly'] = True
         if self.auth_cookie_lifetime > 0:
             req.outcookie['trac_auth']['expires'] = self.auth_cookie_lifetime
 
@@ -225,7 +225,8 @@ class LoginModule(Component):
         req.outcookie['trac_auth']['expires'] = -10000
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
+        if sys.version_info >= (2, 6):
+            req.outcookie['trac_auth']['httponly'] = True
 
     def _cookie_to_name(self, req, cookie):
         # This is separated from _get_name_for_cookie(), because the
@@ -277,11 +278,8 @@ class LoginModule(Component):
 
 class HTTPAuthentication(object):
 
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
     def do_auth(self, environ, start_response):
-        pass
+        raise NotImplementedError
 
 
 class PasswordFileAuthentication(HTTPAuthentication):

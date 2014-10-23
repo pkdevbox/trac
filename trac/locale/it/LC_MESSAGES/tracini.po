@@ -3,25 +3,24 @@
 # This file is distributed under the same license as the Trac project.
 #
 # Translators:
-# Lele Gaifax <lele@metapensiero.it>, 2013-2014.
 msgid ""
 msgstr ""
 "Project-Id-Version:  Trac\n"
 "Report-Msgid-Bugs-To: http://trac.edgewall.org/\n"
-"POT-Creation-Date: 2014-09-01 12:45+0000\n"
-"PO-Revision-Date: 2014-09-05 12:05+0200\n"
-"Last-Translator: Lele Gaifax <lele@metapensiero.it>\n"
+"POT-Creation-Date: 2013-01-27 11:21+0900\n"
+"PO-Revision-Date: 2013-01-25 08:50+0000\n"
+"Last-Translator: Christian Boos <cboos@edgewall.org>\n"
 "Language-Team: Italian "
 "(http://www.transifex.com/projects/p/trac/language/it/)\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 1.3\n"
+"Generated-By: Babel 0.9.6dev-r0\n"
 
 #: tracopt/mimeview/enscript.py:105
 msgid "Path to the Enscript executable."
-msgstr "Percorso dell'eseguibile Enscript."
+msgstr ""
 
 #: tracopt/mimeview/enscript.py:108
 msgid ""
@@ -32,24 +31,13 @@ msgid ""
 "for the conversion and `quality` is the quality ratio\n"
 "associated to this conversion.\n"
 "That can also be used to override the default\n"
-"quality ratio used by the Enscript render, which is 2.\n"
-"(''since 0.10'')"
+"quality ratio used by the Enscript render, which is 2\n"
+"(''since 0.10'')."
 msgstr ""
-"Lista di tipi MIME addizionali per Enscript.\n"
-"\n"
-"Ciascun tipo deve essere specificato da una tupla\n"
-"`mimetype:modo:qualità` dove `mimetype` è il tipo\n"
-"MIME, `modo` è il corrispondente modo che Enscript\n"
-"deve usare per la conversione e `qualità` è il grado\n"
-"di qualità associato alla conversione.\n"
-"Può essere usato anche per modificare il grado di\n"
-"qualità di default utilizzato dal render di Enscript,\n"
-"che è 2.\n"
-"(''dalla 0.10'')"
 
 #: tracopt/mimeview/php.py:67
-msgid "Path to the PHP executable. (''since 0.9'')"
-msgstr "Percorso dell'eseguibile PHP (''dalla 0.9'')"
+msgid "Path to the PHP executable (''since 0.9'')."
+msgstr ""
 
 #: tracopt/mimeview/silvercity.py:81
 msgid ""
@@ -63,23 +51,12 @@ msgid ""
 "quality ratio used by the SilverCity render, which is 3\n"
 "(''since 0.10'')."
 msgstr ""
-"Lista di tipi MIME addizionali per SilverCity.\n"
-"\n"
-"Ciascun tipo deve essere specificato da una tupla\n"
-"`mimetype:modo:qualità` dove `mimetype` è il tipo\n"
-"MIME, `modo` è il corrispondente modo che SilverCity\n"
-"deve usare per la conversione e `qualità` è il grado\n"
-"di qualità associato alla conversione.\n"
-"È possibile in questo modo modificare il grado di\n"
-"qualità usato di default dal render di SilverCity,\n"
-"che è 3.\n"
-"(''dalla 0.10'')<"
 
-#: tracopt/perm/authz_policy.py:134
+#: tracopt/perm/authz_policy.py:132
 msgid "Location of authz policy configuration file."
-msgstr "Posizione del file di configurazione della policy authz."
+msgstr ""
 
-#: tracopt/perm/config_perm_provider.py:27
+#: tracopt/perm/config_perm_provider.py:24
 msgid ""
 "This section provides a way to add arbitrary permissions to a\n"
 "Trac environment. This can be useful for adding new permissions to use\n"
@@ -90,82 +67,41 @@ msgid ""
 "and a comma-separated list of permissions. For example:\n"
 "{{{\n"
 "[extra-permissions]\n"
-"EXTRA_ADMIN = EXTRA_VIEW, EXTRA_MODIFY, EXTRA_DELETE\n"
+"extra_admin = extra_view, extra_modify, extra_delete\n"
 "}}}\n"
 "This entry will define three new permissions `EXTRA_VIEW`,\n"
 "`EXTRA_MODIFY` and `EXTRA_DELETE`, as well as a meta-permissions\n"
 "`EXTRA_ADMIN` that grants all three permissions.\n"
 "\n"
-"The permissions are created in upper-case characters regardless of\n"
-"the casing of the definitions in `trac.ini`. For example, the\n"
-"definition `extra_view` would create the permission `EXTRA_VIEW`.\n"
-"\n"
 "If you don't want a meta-permission, start the meta-name with an\n"
 "underscore (`_`):\n"
 "{{{\n"
 "[extra-permissions]\n"
-"_perms = EXTRA_VIEW, EXTRA_MODIFY\n"
+"_perms = extra_view, extra_modify\n"
 "}}}"
 msgstr ""
-"Questa sezione consente di aggiungere permessi arbitrari\n"
-"a un ambiente Trac. Può essere utile ad esempio per aggiungere\n"
-"dei permessi utilizzabili nelle azioni del flusso di lavoro.\n"
-"\n"
-"Per aggiungere un nuovo permesso, crea una nuova sezione\n"
-"`[extra-permissions]` nel file `trac.ini`. Ogni voce in questa\n"
-"sezione definisce un meta-permesso e una lista di permessi\n"
-"separati da virgole. Ad esempio:\n"
-"{{{\n"
-"[extra-permissions]\n"
-"EXTRA_ADMIN = EXTRA_VIEW, EXTRA_MODIFY, EXTRA_DELETE\n"
-"}}}\n"
-"definisce tre nuovi permessi `EXTRA_VIEW`, `EXTRA_MODIFY` e\n"
-"`EXTRA_DELETE`, oltre che al meta-permesso `EXTRA_ADMIN` che\n"
-"include tutti e tre i permessi.\n"
-"\n"
-"I permessi vengono creati usando caratteri maiuscoli a prescindere "
-"dall'effettiva definizione nel `trac.ini`. Ad esempio, la definizione "
-"`extra_view` creerebbe il permesso `EXTRA_VIEW`.\n"
-"\n"
-"Se non desideri avere il meta-permesso, aggiungi un underscore\n"
-"(`_`) all'inizio del nome:\n"
-"{{{\n"
-"[extra-permissions]\n"
-"_perms = EXTRA_VIEW, EXTRA_MODIFY\n"
-"}}}"
 
-#: tracopt/ticket/commit_updater.py:112
+#: tracopt/ticket/commit_updater.py:107
 msgid ""
 "Require commands to be enclosed in an envelope.\n"
 "\n"
-"Must be empty or contain two characters. For example, if set to `[]`,\n"
-"then commands must be in the form of `[closes #4]`."
+"Must be empty or contain two characters. For example, if set to \"[]\",\n"
+"then commands must be in the form of [closes #4]."
 msgstr ""
-"Specifica se i comandi debbano essere delimitati.\n"
-"\n"
-"Deve essere o vuota oppure contenere due caratteri. Ad esempio,\n"
-"se viene impostata a `[]`, i comandi dovranno essere nella\n"
-"forma `[closes #4]`."
 
-#: tracopt/ticket/commit_updater.py:118
+#: tracopt/ticket/commit_updater.py:113
 msgid "Commands that close tickets, as a space-separated list."
 msgstr ""
-"Comandi che chiudono le segnalazioni, indicate come\n"
-"lista di ID separati da spazi."
 
-#: tracopt/ticket/commit_updater.py:122
+#: tracopt/ticket/commit_updater.py:117
 msgid ""
 "Commands that add a reference, as a space-separated list.\n"
 "\n"
-"If set to the special value `<ALL>`, all tickets referenced by the\n"
+"If set to the special value <ALL>, all tickets referenced by the\n"
 "message will get a reference to the changeset."
 msgstr ""
-"Comandi per aggiungere un riferimento, come lista separata da spazi.\n"
-"\n"
-"Se impostato al valore speciale `<ALL>`, tutte le segnalazioni\n"
-"referenziate nel messaggio verranno relazionate al changeset."
 
-#: tracopt/ticket/commit_updater.py:129
+#: tracopt/ticket/commit_updater.py:124
 msgid ""
 "Check that the committer has permission to perform the requested\n"
 "operations on the referenced tickets.\n"
@@ -173,100 +109,81 @@ msgid ""
 "This requires that the user names be the same for Trac and repository\n"
 "operations."
 msgstr ""
-"Verifica che l'autore del commit abbia il permesso di eseguire\n"
-"l'azione richiesta sulle segnalazioni referenziate.\n"
-"\n"
-"Questo necessita che i nomi utente di Trac e del repository corrispondano."
 
-#: tracopt/ticket/commit_updater.py:137
+#: tracopt/ticket/commit_updater.py:132
 msgid "Send ticket change notification when updating a ticket."
-msgstr "Invia una notifica di modifica della segnalazione quando viene aggiornata."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:272
+#: tracopt/versioncontrol/git/git_fs.py:169
 msgid "Enable persistent caching of commit tree."
-msgstr "Abilita una cache persistente del contenuto del repository."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:275
+#: tracopt/versioncontrol/git/git_fs.py:172
 msgid "Wrap `GitRepository` in `CachedRepository`."
-msgstr "Accedi al `GitRepository` usando un `CachedRepository`."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:278
+#: tracopt/versioncontrol/git/git_fs.py:175
 msgid ""
 "The length at which a sha1 should be abbreviated to (must\n"
 "be >= 4 and <= 40)."
-msgstr "La lunghezza a cui troncare i codici sha1 (deve essere >= 4 e <= 40)."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:283
+#: tracopt/versioncontrol/git/git_fs.py:180
 msgid ""
 "The minimum length of an hex-string for which\n"
 "auto-detection as sha1 is performed (must be >= 4 and <= 40)."
 msgstr ""
-"La lunghezza minima di una stringa esadecimale perché venga\n"
-"riconosciuta come un codice sha1 (deve essere >= 4 e <= 40)."
 
-#: tracopt/versioncontrol/git/git_fs.py:288
+#: tracopt/versioncontrol/git/git_fs.py:185
 msgid ""
 "Enable reverse mapping of git email addresses to trac user ids\n"
 "(costly if you have many users)."
 msgstr ""
-"Abilita la mappatura inversa tra gli indirizzi email di git\n"
-"e gli ID degli utenti Trac (onerosa se gli utenti sono tanti)."
 
-#: tracopt/versioncontrol/git/git_fs.py:292
+#: tracopt/versioncontrol/git/git_fs.py:189
 msgid ""
 "Use git-committer id instead of git-author id for the\n"
 "changeset ''Author'' field."
 msgstr ""
-"Usa il valore di git-committer invece che di git-author\n"
-"per il campo ''Author'' dei changeset."
 
-#: tracopt/versioncontrol/git/git_fs.py:297
+#: tracopt/versioncontrol/git/git_fs.py:194
 msgid ""
 "Use git-committer timestamp instead of git-author timestamp\n"
 "for the changeset ''Timestamp'' field."
 msgstr ""
-"Usa l'istante specificato da git-committer invece che quello\n"
-"specificato da git-author per il campo ''Timestamp'' dei changeset."
 
-#: tracopt/versioncontrol/git/git_fs.py:302
+#: tracopt/versioncontrol/git/git_fs.py:199
 msgid "Define charset encoding of paths within git repositories."
-msgstr "Specifica la codifica dei percorsi dei repository git."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:305
+#: tracopt/versioncontrol/git/git_fs.py:202
 msgid "Path to the git executable."
-msgstr "Percorso dell'eseguibile git."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:887
+#: tracopt/versioncontrol/git/git_fs.py:749
 msgid "Path to a gitweb-formatted projects.list"
-msgstr "Percorso del file projects.list nel formato gitweb."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:890
+#: tracopt/versioncontrol/git/git_fs.py:752
 msgid "Path to the base of your git projects"
-msgstr "Percorso base dei tuoi repository git."
+msgstr ""
 
-#: tracopt/versioncontrol/git/git_fs.py:893
+#: tracopt/versioncontrol/git/git_fs.py:755
 #, python-format
 msgid ""
 "Template for project URLs. %s will be replaced with the repo\n"
 "name"
 msgstr ""
-"Template per gli URL dei progetti. %s verrà sostituito con\n"
-"il nome del repository."
 
-#: tracopt/versioncontrol/svn/svn_fs.py:265
+#: tracopt/versioncontrol/svn/svn_fs.py:253
 msgid ""
 "Comma separated list of paths categorized as branches.\n"
 "If a path ends with '*', then all the directory entries found below\n"
 "that path will be included.\n"
 "Example: `/trunk, /branches/*, /projectAlpha/trunk, /sandbox/*`"
 msgstr ""
-"Lista dei percorsi classificati come branch, separati da virgole.\n"
-"\n"
-"Se un percorso termina con '*', allora tutte le directory trovate\n"
-"sotto quel percorso verranno incluse.\n"
-"Esempio: `/trunk, /branches/*, /progettoAlfa/trunk, /sandbox/*`"
 
-#: tracopt/versioncontrol/svn/svn_fs.py:272
+#: tracopt/versioncontrol/svn/svn_fs.py:260
 msgid ""
 "Comma separated list of paths categorized as tags.\n"
 "\n"
@@ -274,31 +191,6 @@ msgid ""
 "that path will be included.\n"
 "Example: `/tags/*, /projectAlpha/tags/A-1.0, /projectAlpha/tags/A-v1.1`"
 msgstr ""
-"Lista dei percorsi classificati come tag, separati da virgole.\n"
-"\n"
-"Se un percorso termina con '*', allora tutte le directory trovate\n"
-"sotto quel percorso verranno incluse.\n"
-"Esempio: `/tags/*, /progettoAlfa/tags/*, /progettoAlfa/tags/A-v1.1`"
-
-#: tracopt/versioncontrol/svn/svn_fs.py:280
-msgid ""
-"End-of-Line character sequences when `svn:eol-style` property is\n"
-"`native`.\n"
-"\n"
-"If `native`, substitute with the native EOL marker on the server.\n"
-"Otherwise, if `LF`, `CRLF` or `CR`, substitute with the specified\n"
-"EOL marker.\n"
-"\n"
-"(''since 1.0.2'')"
-msgstr ""
-"Sequenza di caratteri per il fine-riga quando la proprietà `svn:eol-"
-"style` è `native`.\n"
-"\n"
-"Se `native`, sostituisci con il marcatore EOL nativo sul server.\n"
-"Altrimenti, se `LF`, `CRLF` o `CR`, sostituisci con il marker EOL "
-"specificato.\n"
-"\n"
-"(''dalla 1.0.2'')"
 
 #: tracopt/versioncontrol/svn/svn_prop.py:37
 msgid ""
@@ -344,67 +236,21 @@ msgid ""
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Il TracBrowser per Subversion può interpretare le proprietà\n"
-"`svn:externals` sulle cartelle. Di default, si limita a convertire\n"
-"gli URL in collegamenti, dal momento che Trac non può accedere ai\n"
-"repository remoti.\n"
-"\n"
-"D'altro canto, se hai un altro ambiente Trac (oppure un altro\n"
-"visualizzatore di repository tipo [http://www.viewvc.org/ ViewVC])\n"
-"configurato per accedere al repository remoto, puoi specificare\n"
-"a Trac quale visualizzatore utilizzare per un certo URL esterno.\n"
-"Questa mappatura viene determinata nella sezione `[svn:externals]`\n"
-"del TracIni.\n"
-"\n"
-"Esempio:\n"
-"{{{\n"
-"[svn:externals]\n"
-"1 = svn://server/repos1                       "
-"http://trac/proj1/browser/$path?rev=$rev\n"
-"2 = svn://server/repos2                       "
-"http://trac/proj2/browser/$path?rev=$rev\n"
-"3 = http://theirserver.org/svn/eng-soft       "
-"http://ourserver/viewvc/svn/$path/?pathrev=25914\n"
-"4 = svn://anotherserver.com/tools_repository  "
-"http://ourserver/tracs/tools/browser/$path?rev=$rev\n"
-"}}}\n"
-"Con questa configurazione, il riferimento esterno "
-"`svn://anotherserver.com/tools_repository/tags/1.1/tools`\n"
-"verrà rediretto a "
-"`http://ourserver/tracs/tools/browser/tags/1.1/tools?rev=`\n"
-"(e `rev` verrà impostato al numero di revisione del caso se il\n"
-"riferimento esterno specifica una revisione, vedi [http://svnbook.red-"
-"bean.com/en/1.4/svn.advanced.externals.html SVN Book on externals]\n"
-"per ulteriori dettagli).\n"
-"\n"
-"Nota che il numero usato come chiave nella sezione qui sopra viene\n"
-"semplicemente ignorato, ed è necessario solo perché per varie\n"
-"limitazioni nel parser del file di configurazione non è possibile\n"
-"usare l'URL stesso come chiave.\n"
-"\n"
-"Infine, gli URL relativi introdotti nella versione "
-"[http://subversion.apache.org/docs/release-notes/1.5.html#externals "
-"Subversion 1.5]\n"
-"non sono ancora supportati.\n"
-"\n"
-"(''dalla 0.11'')"
 
-#: trac/attachment.py:423
-msgid "Maximum allowed file size (in bytes) for attachments."
-msgstr "Dimensione massima consentita (in byte) per gli allegati."
+#: trac/attachment.py:430
+msgid ""
+"Maximum allowed file size (in bytes) for ticket and wiki\n"
+"attachments."
+msgstr ""
 
-#: trac/attachment.py:426
+#: trac/attachment.py:434
 msgid ""
 "Maximum allowed total size (in bytes) for an attachment list to be\n"
 "downloadable as a `.zip`. Set this to -1 to disable download as `.zip`.\n"
 "(''since 1.0'')"
 msgstr ""
-"Dimensione massima consentita (in byte) della lista di allegati\n"
-"per essere scaricabile come `.zip`. Imposta a -1 per disabilitare\n"
-"lo scaricamento come `.zip`.\n"
-"(''dalla 1.0'')"
 
-#: trac/attachment.py:431
+#: trac/attachment.py:439
 msgid ""
 "Whether attachments should be rendered in the browser, or\n"
 "only made downloadable.\n"
@@ -414,19 +260,10 @@ msgid ""
 "scripting attacks.\n"
 "\n"
 "For public sites where anonymous users can create attachments it is\n"
-"recommended to leave this option disabled."
+"recommended to leave this option disabled (which is the default)."
 msgstr ""
-"Se i file allegati debbano essere visualizzati nel browser, piuttosto\n"
-"che solo tramite scaricamento.\n"
-"\n"
-"Dal momento che praticamente qualsiasi file può essere interpretato\n"
-"come HTML dal browser, un malintenzionato potrebbe allegare un file\n"
-"contenente uno script che implementa un attacco \"cross-site\".\n"
-"\n"
-"Per siti pubblici dove utenti anonimi possono allegare un file, si\n"
-"raccomanda di lasciare questa opzione disabilitata.<"
 
-#: trac/env.py:130
+#: trac/env.py:123
 msgid ""
 "This section is used to enable or disable components\n"
 "provided by plugins, as well as by Trac itself. The component\n"
@@ -461,39 +298,8 @@ msgid ""
 "\n"
 "See also: TracPlugins"
 msgstr ""
-"Questa sezione è usata per abilitare o disabilitare sia i componenti\n"
-"forniti dai plugin che quelli di Trac stesso. Il componente da\n"
-"abilitare/disabilitare viene specificato dal nome dell'opzione. Il suo\n"
-"valore determina lo stato di attivazione: `enabled` oppure `on` per\n"
-"attivarlo, qualsiasi altro valore (tipicamente `disabled` o `off`) per\n"
-"disabilitarlo.\n"
-"\n"
-"Il nome dell'opzione può essere sia il nome completo del componente\n"
-"piuttosto che il prefisso del modulo/package del componente. La prima\n"
-"forma abilita/disabilita uno specifico componente, mentre la seconda\n"
-"abilita/disabilita qualsiasi componente fornito dal modulo/package\n"
-"specificato.\n"
-"\n"
-"Considera la seguente configurazione:\n"
-"{{{\n"
-"[components]\n"
-"trac.ticket.report.ReportModule = disabled\n"
-"webadmin.* = enabled\n"
-"}}}\n"
-"\n"
-"La prima opzioni indica a Trac di disabilitare il [wiki:TracReports "
-"modulo report].\n"
-"La seconda opzione invece abilita tutti i componenti del package\n"
-"`webadmin`. Nota come il suffisso `*` sia richiesto per individuare\n"
-"i componenti del modulo/package.\n"
-"\n"
-"Per vedere la lista dei componenti attivi, consulta la sezione\n"
-"''Moduli aggiuntivi installati'' nella pagina ''Info su Trac''\n"
-"(richiede il [wiki:TracPermissions permesso] `CONFIG_VIEW`).\n"
-"\n"
-"Vedi anche: TracPlugins"
 
-#: trac/env.py:165
+#: trac/env.py:158
 msgid ""
 "Path to the //shared plugins directory//.\n"
 "\n"
@@ -503,13 +309,8 @@ msgid ""
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Percorso della //directory condivisa dei plugin//.\n"
-"\n"
-"I plugin in questa directory sono caricati in aggiunta a quelli nella\n"
-"directory `plugins` dell'ambiente, che hanno comunque precedenza.\n"
-"(''dalla 0.11'')"
 
-#: trac/env.py:174
+#: trac/env.py:167
 msgid ""
 "Reference URL for the Trac deployment.\n"
 "\n"
@@ -518,14 +319,8 @@ msgid ""
 "context, like for example when inserting URLs pointing to Trac\n"
 "resources in notification e-mails."
 msgstr ""
-"URL di riferimento dell'ambiente Trac.\n"
-"\n"
-"Si tratta dell'URL di base che verrà usato nella produzione\n"
-"di documenti usati fuori dall'usuale contesto web, come ad\n"
-"esempio quando vengono inseriti URL che puntano a determinate\n"
-"risorse di Trac nelle notifiche via email."
 
-#: trac/env.py:182
+#: trac/env.py:175
 msgid ""
 "Optionally use `[trac] base_url` for redirects.\n"
 "\n"
@@ -535,21 +330,10 @@ msgid ""
 "force Trac to use the `base_url` setting also for\n"
 "redirects. This introduces the obvious limitation that this\n"
 "environment will only be usable when accessible from that URL,\n"
-"as redirects are frequently used. (''since 0.10.5'')"
+"as redirects are frequently used. ''(since 0.10.5)''"
 msgstr ""
-"Utilizza `[trac] base_url` per le redirezioni.\n"
-"\n"
-"In qualche configurazione, tipicamente quando Trac viene esposto\n"
-"tramite un proxy HTTP, Trac non è in grado di ricostruire\n"
-"automaticamente l'URL usato per accedervi. Potresti dover\n"
-"usare questa opzione per forzare il Trac a usare l'impostazione\n"
-"`base_url` anche per le redirezioni. Questo ovviamente implica\n"
-"che l'ambiente potrà essere usato solo quando vi si accede da\n"
-"quella URL, dal momento che le redirezioni vengono usate di\n"
-"frequente.\n"
-"(''dalla 0.10.5'')"
 
-#: trac/env.py:194
+#: trac/env.py:187
 msgid ""
 "Restrict cookies to HTTPS connections.\n"
 "\n"
@@ -558,37 +342,27 @@ msgid ""
 "your Trac instance is only accessible through HTTPS. (''since\n"
 "0.11.2'')"
 msgstr ""
-"Limita i cookie alle connessioni HTTPS.\n"
-"\n"
-"Quando impostato a `true`, abilita la flag `secure` su tutti i cookie\n"
-"in modo tale che vengano spediti al server solo tramite connessioni\n"
-"HTTPS. Usa questa opzione solo quando l'istanza Trac sia accessibile\n"
-"solo tramite HTTPS.\n"
-"(''dalla 0.11.2'')"
 
-#: trac/env.py:202
+#: trac/env.py:195
 msgid "Name of the project."
-msgstr "Nome del progetto."
+msgstr ""
 
-#: trac/env.py:205
+#: trac/env.py:198
 msgid "Short description of the project."
-msgstr "Breve descrizione del progetto."
+msgstr ""
 
-#: trac/env.py:208
+#: trac/env.py:201
 msgid ""
 "URL of the main project web site, usually the website in\n"
 "which the `base_url` resides. This is used in notification\n"
 "e-mails."
 msgstr ""
-"URL del sito web del progetto principale, solitamente il\n"
-"sito dove risiede `base_url`. Viene usato nelle notifiche\n"
-"via email."
 
-#: trac/env.py:213
+#: trac/env.py:206
 msgid "E-Mail address of the project's administrator."
-msgstr "Indirizzo email dell'amministratore del progetto."
+msgstr ""
 
-#: trac/env.py:216
+#: trac/env.py:209
 msgid ""
 "Base URL of a Trac instance where errors in this Trac\n"
 "should be reported.\n"
@@ -597,53 +371,37 @@ msgid ""
 "this Trac instance. An empty value will disable the reporting\n"
 "buttons.  (''since 0.11.3'')"
 msgstr ""
-"URL di base dell'istanza Trac dove riportare gli errori che\n"
-"avvengono in questo Trac.\n"
-"\n"
-"Può essere un URL assoluto o relativo, oppure '.' per riferirsi\n"
-"a questa istanza Trac. Specificare un valore vuoto per disabilitare\n"
-"i pulsanti relativi.\n"
-"(''dalla 0.11.3'')"
 
-#: trac/env.py:225
+#: trac/env.py:218
 msgid "Page footer text (right-aligned)."
-msgstr "Testo usato come piè di pagina (allineato a destra)."
+msgstr ""
 
-#: trac/env.py:230
+#: trac/env.py:223
 msgid "URL of the icon of the project."
-msgstr "URL dell'icona del progetto."
+msgstr ""
 
-#: trac/env.py:233
+#: trac/env.py:226
 msgid ""
 "Logging facility to use.\n"
 "\n"
 "Should be one of (`none`, `file`, `stderr`, `syslog`, `winlog`)."
 msgstr ""
-"Tipo di logging utilizzato.\n"
-"\n"
-"Valori consentiti: `none`, `file`, `stderr`, `syslog` o `winlog`."
 
-#: trac/env.py:238
+#: trac/env.py:231
 msgid ""
 "If `log_type` is `file`, this should be a path to the\n"
 "log-file.  Relative paths are resolved relative to the `log`\n"
 "directory of the environment."
 msgstr ""
-"Se `log_type` è `file`, questo deve essere il percorso del file di log.\n"
-"Se il percorso è relativo, viene risolto rispetto alla directory `log`\n"
-"dell'ambiente."
 
-#: trac/env.py:243
+#: trac/env.py:236
 msgid ""
 "Level of verbosity in log.\n"
 "\n"
 "Should be one of (`CRITICAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`)."
 msgstr ""
-"Livello di logging.\n"
-"\n"
-"Valori consentiti: `CRITICAL`, `ERROR`, `WARN`, `INFO` o `DEBUG`."
 
-#: trac/env.py:248
+#: trac/env.py:241
 msgid ""
 "Custom logging format.\n"
 "\n"
@@ -665,32 +423,10 @@ msgid ""
 "Example:\n"
 "`($(thread)d) Trac[$(basename)s:$(module)s] $(levelname)s: $(message)s`\n"
 "\n"
-"(''since 0.10.5'')"
+"''(since 0.10.5)''"
 msgstr ""
-"Personalizzazione del formato di logging.\n"
-"\n"
-"Se non viene impostato, verrà usato il seguente formato:\n"
-"\n"
-"Trac[$(module)s] $(levelname)s: $(message)s\n"
-"\n"
-"Oltre alle chiavi ordinariamente supportate dalla libreria\n"
-"logging di Python (vedi http://docs.python.org/library/logging.html),\n"
-"possono essere usati anche:\n"
-"\n"
-"- $(path)s     il path dell'ambiente corrente\n"
-"- $(basename)s l'ultima componente del path dell'ambiente corrente\n"
-"- $(project)s  il nome del progetto\n"
-"\n"
-"Da notare l'utlizzo della forma `$(...)s` al posto di `%(...)s` dal\n"
-"momento che quest'ultima forma verrebbe interpretata immediatamente\n"
-"dal ConfigParser stesso.\n"
-"\n"
-"Esempio:\n"
-"`($(thread)d) Trac[$(basename)s:$(module)s] $(levelname)s: $(message)s`\n"
-"\n"
-"(''dalla 0.10.5'')"
 
-#: trac/notification.py:53
+#: trac/notification.py:50
 msgid ""
 "Name of the component implementing `IEmailSender`.\n"
 "\n"
@@ -699,335 +435,214 @@ msgid ""
 "server, and `SendmailEmailSender` for running a `sendmail`-compatible\n"
 "executable. (''since 0.12'')"
 msgstr ""
-"Nome del componente che implementa `IEmailSender`.\n"
-"\n"
-"Questo componente viene usato dal sistema di notifiche per inviare\n"
-"i messaggi email.\n"
-"Attualmente Trac fornisce `SmtpEmailSender` per connettersi a un\n"
-"server SMTP e `SendmailEmailSender` per lanciare un eseguibile\n"
-"compatibile con `sendmail`.\n"
-"(''dalla 0.12'')"
+
+#: trac/notification.py:59
+msgid "Enable email notification."
+msgstr ""
 
 #: trac/notification.py:62
-msgid "Enable email notification."
-msgstr "Abilita la notifica via email."
+msgid "Sender address to use in notification emails."
+msgstr ""
 
 #: trac/notification.py:65
-msgid ""
-"Sender address to use in notification emails.\n"
-"\n"
-"At least one of `smtp_from` and `smtp_replyto` must be set, otherwise\n"
-"Trac refuses to send notification mails."
-msgstr ""
-"Indirizzo del mittente usato nelle notifiche via email.\n"
-"\n"
-"Almeno una delle opzioni `smtp_from` e `smtp_replyto` deve essere "
-"impostata,\n"
-"altrimenti Trac si rifiuterà di inviare le notifiche via email."
-
-#: trac/notification.py:71
 msgid "Sender name to use in notification emails."
-msgstr "Nome del mittente nelle notifiche via email."
+msgstr ""
 
-#: trac/notification.py:74
+#: trac/notification.py:68
 msgid ""
-"Use the author of the change as the sender in notification emails\n"
-"(e.g. reporter of a new ticket, author of a comment). If the\n"
-"author hasn't set an email address, `smtp_from` and\n"
-"`smtp_from_name` are used instead.\n"
+"Use the action author as the sender of notification emails.\n"
 "(''since 1.0'')"
 msgstr ""
-"Usa l'autore della modifica come mittente nelle notifiche via email\n"
-"(ad esempio il segnalatore di una nuova segnalazione oppure l'autore\n"
-"di un commento). Se l'autore non ha un indirizzo email verranno usate\n"
-"le opzioni `smtp_from` e `smtp_from_name`.\n"
-"(''dalla 1.0'')"
 
-#: trac/notification.py:81
-msgid ""
-"Reply-To address to use in notification emails.\n"
-"\n"
-"At least one of `smtp_from` and `smtp_replyto` must be set, otherwise\n"
-"Trac refuses to send notification mails."
+#: trac/notification.py:72
+msgid "Reply-To address to use in notification emails."
 msgstr ""
-"Indirizzo di Reply-To usato nelle notifiche via email.\n"
-"\n"
-"Almeno una delle opzioni `smtp_from` e `smtp_replyto` deve essere "
-"impostata,\n"
-"altrimenti Trac si rifiuterà di inviare le notifiche via email."
 
-#: trac/notification.py:88
+#: trac/notification.py:75
 msgid ""
-"Comma-separated list of email addresses to always send\n"
-"notifications to. Addresses can be seen by all recipients\n"
-"(Cc:)."
+"Email address(es) to always send notifications to,\n"
+"addresses can be seen by all recipients (Cc:)."
 msgstr ""
-"Indirizzi email, separati da virgole, a cui inviare sempre le notifiche "
-"via email,\n"
-"che sono visti da tutti i destinatari (Cc:)."
 
-#: trac/notification.py:94
+#: trac/notification.py:79
 msgid ""
-"Comma-separated list of email addresses to always send\n"
-"notifications to. Addresses are not public (Bcc:).\n"
-"(''since 0.10'')"
+"Email address(es) to always send notifications to,\n"
+"addresses do not appear publicly (Bcc:). (''since 0.10'')"
 msgstr ""
-"Indirizzi email, separati da virgole, a cui inviare sempre le notifiche "
-"via email,\n"
-"non visibili dai destinatari (Bcc:).\n"
-"(''dalla 0.10'')"
 
-#: trac/notification.py:99
+#: trac/notification.py:83
 msgid ""
-"Default host/domain to append to addresses that do not specify\n"
-"one. Fully qualified addresses are not modified. The default\n"
-"domain is appended to all username/login for which an email\n"
-"address cannot be found in the user settings."
+"Default host/domain to append to address that do not specify\n"
+"one."
 msgstr ""
-"Host/domain di default da aggiungere agli indirizzi che ne sono "
-"sprovvisti.\n"
-"Gli indirizzi ''fully qualified'' non vengono modificati. Il dominio di\n"
-"default viene aggiunto ai nomi utente degli account che non abbiano\n"
-"specificato un indirizzo email nelle proprie impostazioni utente."
 
-#: trac/notification.py:105
+#: trac/notification.py:87
 msgid ""
 "Comma-separated list of domains that should not be considered\n"
 "part of email addresses (for usernames with Kerberos domains)."
 msgstr ""
-"Lista dei domini che non devono essere considerati parte del\n"
-"indirizzo email (per i nomi utente dei domini Kerberos),\n"
-"separati da virgole."
 
-#: trac/notification.py:109
+#: trac/notification.py:91
 msgid ""
 "Comma-separated list of domains that should be considered as\n"
 "valid for email addresses (such as localdomain)."
 msgstr ""
-"Lista dei domini che devono essere considerati come indirizzi\n"
-"email validi (tipo localdomain), separati da virgole."
 
-#: trac/notification.py:113
+#: trac/notification.py:95
 msgid ""
 "Specifies the MIME encoding scheme for emails.\n"
 "\n"
-"Supported values are: `none`, the default value which uses 7-bit\n"
-"encoding if the text is plain ASCII or 8-bit otherwise. `base64`,\n"
-"which works with any kind of content but may cause some issues with\n"
-"touchy anti-spam/anti-virus engine. `qp` or `quoted-printable`,\n"
-"which works best for european languages (more compact than base64) if\n"
-"8-bit encoding cannot be used.\n"
+"Valid options are 'base64' for Base64 encoding, 'qp' for\n"
+"Quoted-Printable, and 'none' for no encoding, in which case mails will\n"
+"be sent as 7bit if the content is all ASCII, or 8bit otherwise.\n"
 "(''since 0.10'')"
 msgstr ""
-"Specifica la codifica MIME usata per le email.\n"
-"\n"
-"I valori supportati sono: `none`, il valore di default che utilizza la\n"
-"codifica 7-bit se il testo è completamente ASCII, altrimenti 8-bit.\n"
-"`base64` che funziona con qualsiasi tipo di contenuto ma può causare\n"
-"qualche problema con motori anti-spam/anti-virus puntigliosi. `qp`\n"
-"oppure `quoted-printable`, ottimale per le lingue europee (più compatto\n"
-"del base64) se la codifica 8-bit non può essere usata.\n"
-"(''dalla 0.10'')"
 
-#: trac/notification.py:124
+#: trac/notification.py:103
 msgid ""
-"Addresses in the To and Cc fields are visible to all recipients.\n"
+"Recipients can see email addresses of other CC'ed recipients.\n"
 "\n"
-"If this option is disabled, recipients are put in the Bcc list.\n"
+"If this option is disabled (the default), recipients are put on BCC.\n"
 "(''since 0.10'')"
 msgstr ""
-"I destinatari possono vedere gli indirizzi email degli altri destinatari."
-"\n"
-"\n"
-"Se questa opzione è disabilitata, i destinatari vengono messi nel campo "
-"Bcc.\n"
-"(''dalla 0.10'')"
 
-#: trac/notification.py:130
+#: trac/notification.py:109
 msgid ""
 "Permit email address without a host/domain (i.e. username only).\n"
 "\n"
 "The SMTP server should accept those addresses, and either append\n"
-"a FQDN or use local delivery. See also `smtp_default_domain`. Do not\n"
-"use this option with a public SMTP server. (''since 0.10'')"
+"a FQDN or use local delivery. (''since 0.10'')"
 msgstr ""
-"Consenti indirizzi email senza un host/domain (cioè, solo nome utente).\n"
-"\n"
-"Il server SMTP dovrà accettare questi indirizzi, aggiungendovi un FQDN\n"
-"oppure usando la spedizione locale. Vedi anche `smtp_default_domain`.\n"
-"Non utilizzare questa opzione con un server SMTP pubblico.\n"
-"(''dalla 0.10'')"
 
-#: trac/notification.py:137
+#: trac/notification.py:115
 msgid ""
 "Text to prepend to subject line of notification emails.\n"
 "\n"
-"If the setting is not defined, then `[$project_name]` is used as the\n"
-"prefix. If no prefix is desired, then specifying an empty option\n"
+"If the setting is not defined, then the [$project_name] prefix.\n"
+"If no prefix is desired, then specifying an empty option\n"
 "will disable it. (''since 0.10.1'')"
 msgstr ""
-"Testo da aggiungere in testa all'oggetto delle notifiche via email.\n"
-"\n"
-"Se non viene definito, verrà usato [$nome_progetto] come prefisso.\n"
-"Se non si desidera alcun prefisso, specificare un valore vuoto.\n"
-"(''dalla 0.10.1'')"
 
-#: trac/notification.py:171
+#: trac/notification.py:133
 msgid "SMTP server hostname to use for email notifications."
-msgstr "Hostname del server SMTP da usare per le notifiche via email."
+msgstr ""
 
-#: trac/notification.py:174
+#: trac/notification.py:136
 msgid "SMTP server port to use for email notification."
-msgstr "Numero di porta del server SMTP da usare per le notifiche via email."
+msgstr ""
 
-#: trac/notification.py:177
-msgid "Username for authenticating with SMTP server. (''since 0.9'')"
-msgstr "Username per l'autenticazione sul server SMTP. (''dalla 0.9'')"
+#: trac/notification.py:139
+msgid "Username for SMTP server. (''since 0.9'')"
+msgstr ""
 
-#: trac/notification.py:180
-msgid "Password for authenticating with SMTP server. (''since 0.9'')"
-msgstr "Password per l'autenticazione sul server SMTP. (''dalla 0.9'')"
+#: trac/notification.py:142
+msgid "Password for SMTP server. (''since 0.9'')"
+msgstr ""
 
-#: trac/notification.py:183
+#: trac/notification.py:145
 msgid "Use SSL/TLS to send notifications over SMTP. (''since 0.10'')"
-msgstr "Usa SSL/TLS per spedire le notifiche tramite SMTP. (''since 0.10'')"
+msgstr ""
 
-#: trac/notification.py:236
+#: trac/notification.py:189
 msgid ""
 "Path to the sendmail executable.\n"
 "\n"
 "The sendmail program must accept the `-i` and `-f` options.\n"
 " (''since 0.12'')"
 msgstr ""
-"Percorso dell'eseguibile sendmail.\n"
-"\n"
-"Il programma sendmail deve accettare le opzioni `-i` e `-f`.\n"
-"(''dalla 0.12'')"
 
-#: trac/perm.py:306
+#: trac/perm.py:312
 msgid ""
 "Name of the component implementing `IPermissionStore`, which is used\n"
 "for managing user and group permissions."
 msgstr ""
-"Nome del componente che implementa `IPermissionStore`, usato\n"
-"per gestire i permessi degli utenti e dei gruppi."
 
-#: trac/perm.py:311
+#: trac/perm.py:317
 msgid ""
-"List of components implementing `IPermissionPolicy`, in the order\n"
-"in which they will be applied. These components manage fine-grained\n"
-"access control to Trac resources."
+"List of components implementing `IPermissionPolicy`, in the order in\n"
+"which they will be applied. These components manage fine-grained access\n"
+"control to Trac resources.\n"
+"Defaults to the DefaultPermissionPolicy (pre-0.11 behavior) and\n"
+"LegacyAttachmentPolicy (map ATTACHMENT_* permissions to realm specific\n"
+"ones)"
 msgstr ""
-"Lista di componenti che implementano `IPermissionPolicy`, nell'ordine\n"
-"in cui verranno applicati. Questi componenti gestiscono il controllo\n"
-"di accesso fine alle risorse di Trac."
 
-#: trac/db/api.py:296
+#: trac/db/api.py:227
 msgid ""
 "Database connection\n"
 "[wiki:TracEnvironment#DatabaseConnectionStrings string] for this\n"
 "project"
 msgstr ""
-"Connessione al database.\n"
-"\n"
-"[wiki:TracEnvironment#DatabaseConnectionStrings Stringa] di connessione\n"
-"al database per questo progetto."
 
-#: trac/db/api.py:301
+#: trac/db/api.py:232
 msgid "Database backup location"
-msgstr "Posizione del backup del database."
+msgstr ""
 
-#: trac/db/api.py:304
+#: trac/db/api.py:235
 msgid ""
 "Timeout value for database connection, in seconds.\n"
-"Use '0' to specify ''no timeout''. (''since 0.11'')"
+"Use '0' to specify ''no timeout''. ''(Since 0.11)''"
 msgstr ""
-"Valore di timeout per la connessione al database, in secondi.\n"
-"Usare '0' per specificare ''nessun timeout''.\n"
-"(''dalla 0.11'')"
 
-#: trac/db/api.py:308
+#: trac/db/api.py:239
 msgid ""
 "Show the SQL queries in the Trac log, at DEBUG level.\n"
-"(''since 0.11.5'')"
+"''(Since 0.11.5)''"
 msgstr ""
-"Mostra le query SQL nel log di Trac, al livello DEBUG.\n"
-"(''dalla 0.11.5'')"
 
-#: trac/db/mysql_backend.py:86
+#: trac/db/mysql_backend.py:78
 msgid "Location of mysqldump for MySQL database backups"
-msgstr "Percorso di mysqldump per effettuare i backup dei database MySQL."
+msgstr ""
 
-#: trac/db/postgres_backend.py:75
+#: trac/db/postgres_backend.py:72
 msgid "Location of pg_dump for Postgres database backups"
-msgstr "Percorso di pg_dump per effettuare i backup dei database PostgreSQL."
+msgstr ""
 
-#: trac/db/sqlite_backend.py:148
+#: trac/db/sqlite_backend.py:143
 msgid ""
 "Paths to sqlite extensions, relative to Trac environment's\n"
 "directory or absolute. (''since 0.12'')"
 msgstr ""
-"Percorsi alle estensioni sqlite, sia relativi alla directory\n"
-"dell'ambiente Trac oppure assoluti.\n"
-"(''dalla 0.12'')"
 
-#: trac/mimeview/api.py:619
+#: trac/mimeview/api.py:613
 msgid "Charset to be used when in doubt."
-msgstr "Codifica da usare in caso di ambiguità."
+msgstr ""
 
-#: trac/mimeview/api.py:622
+#: trac/mimeview/api.py:616
 msgid "Displayed tab width in file preview. (''since 0.9'')"
 msgstr ""
-"Larghezza del tab nella visualizzazione dei file.\n"
-"(''dalla 0.9'')"
 
-#: trac/mimeview/api.py:625
+#: trac/mimeview/api.py:619
 msgid "Maximum file size for HTML preview. (''since 0.9'')"
 msgstr ""
-"Dimensione massima del file per la visualizzazione HTML.\n"
-"(''dalla 0.9'')"
 
-#: trac/mimeview/api.py:628
+#: trac/mimeview/api.py:622
 msgid ""
 "List of additional MIME types and keyword mappings.\n"
 "Mappings are comma-separated, and for each MIME type,\n"
 "there's a colon (\":\") separated list of associated keywords\n"
 "or file extensions. (''since 0.10'')"
 msgstr ""
-"Lista di tipi MIME addizionali e mappature di keyword\n"
-"\n"
-"Le mappature sono separate da virgole e per ciascun tipo MIME viene\n"
-"specificata una lista di parole chiave o di estensioni di file\n"
-"separate dal carattere due punti (`:`).\n"
-"(''dalla 0.10'')"
 
-#: trac/mimeview/api.py:635
+#: trac/mimeview/api.py:629
 msgid ""
 "List of additional MIME types associated to filename patterns.\n"
 "Mappings are comma-separated, and each mapping consists of a MIME type\n"
 "and a Python regexp used for matching filenames, separated by a colon\n"
 "(\":\"). (''since 1.0'')"
 msgstr ""
-"Lista di tipi MIME associati a pattern di filename.\n"
-"Le mappature sono separate da virgole, e ciascuna consiste in un\n"
-"tipo MIME e una espressione regolare Python usata per verificare\n"
-"i filename, separati da un carattere due punti (`:`).\n"
-"(''dalla 1.0'')"
 
-#: trac/mimeview/api.py:642
+#: trac/mimeview/api.py:636
 msgid ""
 "Comma-separated list of MIME types that should be treated as\n"
 "binary data. (''since 0.11.5'')"
 msgstr ""
-"Lista di tipi MIME separati da virgole che devono essere considerati\n"
-"come dati binari.\n"
-"(''dalla 0.11.5'')"
 
-#: trac/mimeview/pygments.py:49
+#: trac/mimeview/pygments.py:50
 msgid "The default style to use for Pygments syntax highlighting."
-msgstr "Stile di default utilizzato da Pygments."
+msgstr ""
 
-#: trac/mimeview/pygments.py:52
+#: trac/mimeview/pygments.py:53
 msgid ""
 "List of additional MIME types known by Pygments.\n"
 "\n"
@@ -1039,23 +654,10 @@ msgid ""
 "to override the default quality ratio used by the\n"
 "Pygments render."
 msgstr ""
-"Lista di tipi MIME addizionali per Pygments.\n"
-"\n"
-"Ciascun tipo deve essere specificato da una tupla\n"
-"`mimetype:modo:qualità` dove `mimetype` è il tipo\n"
-"MIME, `modo` è il corrispondente modo che Pygments\n"
-"deve usare per la conversione e `qualità` è il grado\n"
-"di qualità associato alla conversione.\n"
-"È possibile in questo modo modificare il grado di\n"
-"qualità usato di default dal render di Pygments."
 
-#: trac/search/web_ui.py:48
-msgid ""
-"Minimum length of query string allowed when performing a search.\n"
-"        "
+#: trac/search/web_ui.py:49
+msgid "Minimum length of query string allowed when performing a search."
 msgstr ""
-"Lunghezza minima consentita per la stringa di query quando si effettua "
-"una ricerca."
 
 #: trac/search/web_ui.py:52
 msgid ""
@@ -1068,38 +670,22 @@ msgid ""
 "the `get_search_filters()` method, the first member of\n"
 "returned tuple. Once disabled, search filters can still\n"
 "be manually enabled by the user on the search page.\n"
-"(''since 0.12'')"
+"(since 0.12)"
 msgstr ""
-"Specifica quali filtri di ricerca debbano essere disabilitati\n"
-"di default sulla pagina di ricerca. Questo limita anche i filtri\n"
-"per la funzione di ricerca veloce. I nomi dei filtri definiti\n"
-"dai componenti di default sono: `wiki`, `ticket`, `milestone`\n"
-"e `changeset`. Per i plugin, controlla la loro implementazione\n"
-"dell'interfaccia ISearchSource, nel metodo `get_search_filters()`,\n"
-"il primo elemento della tupla ritornata. Una volta disabilitati,\n"
-"tali filtri potranno essere comunque riabilitati manualmente\n"
-"dall'utente sulla pagina di ricerca.\n"
-"(''dalla 0.12'')"
 
-#: trac/ticket/api.py:199
+#: trac/ticket/api.py:166
 msgid ""
 "In this section, you can define additional fields for tickets. See\n"
 "TracTicketsCustomFields for more details."
 msgstr ""
-"In questa sezione possono essere specificati campi addizionali\n"
-"per le segnalazioni. Vedi TracTicketsCustomFields per ulteriori\n"
-"dettagli."
 
-#: trac/ticket/api.py:203
+#: trac/ticket/api.py:170
 msgid ""
-"Ordered list of workflow controllers to use for ticket actions.\n"
-"(''since 0.11'')"
+"Ordered list of workflow controllers to use for ticket actions\n"
+"(''since 0.11'')."
 msgstr ""
-"Lista ordinata dei controlli del flusso di lavoro da usare\n"
-"nelle azioni sulle segnalazioni.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/api.py:209
+#: trac/ticket/api.py:176
 msgid ""
 "Make the owner field of tickets use a drop-down menu.\n"
 "Be sure to understand the performance implications before activating\n"
@@ -1111,84 +697,58 @@ msgid ""
 "e-mail addresses must remain protected.\n"
 "(''since 0.9'')"
 msgstr ""
-"Usa un menu a discesa per il campo `incaricato` delle segnalazioni.\n"
-"Assicurati di comprendere le implicazioni sulle performance prima\n"
-"di attivare questa opzione. Vedi [TracTickets#Assign-toasDrop-DownList\n"
-"Assign-to as Drop-Down List].\n"
-"\n"
-"Nota che gli indirizzi email '''non''' vengono offuscati nel menu,\n"
-"quindi questa opzione non deve essere usata se gli indirizzi email\n"
-"devono rimanere protetti.\n"
-"(''dalla 0.9'')"
 
-#: trac/ticket/api.py:220
+#: trac/ticket/api.py:187
 msgid "Default version for newly created tickets."
-msgstr "Versione di default da usare alla creazione di una nuova segnalazione."
-
-#: trac/ticket/api.py:223
-msgid "Default type for newly created tickets. (''since 0.9'')"
 msgstr ""
-"Tipo di default da usare alla creazione di una nuova segnalazione.\n"
-"(''dalla 0.9'')"
 
-#: trac/ticket/api.py:226
+#: trac/ticket/api.py:190
+msgid "Default type for newly created tickets (''since 0.9'')."
+msgstr ""
+
+#: trac/ticket/api.py:193
 msgid "Default priority for newly created tickets."
-msgstr "Priorità di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:229
+#: trac/ticket/api.py:196
 msgid "Default milestone for newly created tickets."
-msgstr "Obiettivo di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:232
+#: trac/ticket/api.py:199
 msgid "Default component for newly created tickets."
-msgstr "Componente di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:235
+#: trac/ticket/api.py:202
 msgid "Default severity for newly created tickets."
-msgstr "Severità di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:238
+#: trac/ticket/api.py:205
 msgid "Default summary (title) for newly created tickets."
 msgstr ""
-"Sommario (titolo) di default da usare alla creazione di una nuova "
-"segnalazione."
 
-#: trac/ticket/api.py:241
+#: trac/ticket/api.py:208
 msgid "Default description for newly created tickets."
-msgstr "Descrizione di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:244
+#: trac/ticket/api.py:211
 msgid "Default keywords for newly created tickets."
 msgstr ""
-"Parole chiave di default da usare alla creazione di una nuova "
-"segnalazione."
 
-#: trac/ticket/api.py:247
+#: trac/ticket/api.py:214
 msgid "Default owner for newly created tickets."
-msgstr "Incaricato di default da usare alla creazione di una nuova segnalazione."
+msgstr ""
 
-#: trac/ticket/api.py:250
+#: trac/ticket/api.py:217
 msgid "Default cc: list for newly created tickets."
-msgstr "CC: di default usato alla creazione di nuove segnalazioni."
-
-#: trac/ticket/api.py:253
-msgid ""
-"Default resolution for resolving (closing) tickets.\n"
-"(''since 0.11'')"
 msgstr ""
-"Risoluzione di default usata per risolvere (chiudere) le segnalazioni.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/api.py:257
+#: trac/ticket/api.py:220
 msgid ""
-"Comma-separated list of `select` fields that can have\n"
-"an empty value. (//since 1.1.2//)"
+"Default resolution for resolving (closing) tickets\n"
+"(''since 0.11'')."
 msgstr ""
-"Lista dei nomi dei campi, separati da virgole, che consentono un valore "
-"vuoto.\n"
-"(''dalla 1.1.2'')"
 
-#: trac/ticket/default_workflow.py:111
+#: trac/ticket/default_workflow.py:105
 msgid ""
 "The workflow for tickets is controlled by plugins. By default,\n"
 "there's only a `ConfigurableTicketWorkflow` component in charge.\n"
@@ -1197,80 +757,52 @@ msgid ""
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Il flusso di lavoro delle segnalazioni è determinato dai plugin.\n"
-"Di default, c'è un solo componente `ConfigurableTicketWorkflow`\n"
-"che si occupa della gestione. Questo componente consente di\n"
-"configurare il flusso di lavoro in questa sezione del file\n"
-"`trac.ini`. Consulta TracWorkflow per ulteriori dettagli.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/notification.py:37
-msgid ""
-"Always send notifications to the ticket ''owner''.\n"
-"(''since 0.9'')"
+#: trac/ticket/notification.py:36
+msgid "Always send notifications to the ticket owner (''since 0.9'')."
 msgstr ""
-"Invia sempre le notifiche all'//incaricato// della segnalazione.\n"
-"(''dalla 0.9'')"
 
-#: trac/ticket/notification.py:42
-msgid "Always send notifications to the ticket ''reporter''."
-msgstr ""
-"Invia sempre le notifiche al ''segnalatore'' della segnalazione.\n"
-"(''dalla 0.9'')"
-
-#: trac/ticket/notification.py:47
+#: trac/ticket/notification.py:40
 msgid ""
-"Always send notifications to the user who causes the ticket\n"
-"change and to any previous updater of the ticket."
+"Always send notifications to any address in the ''reporter''\n"
+"field."
 msgstr ""
-"Invia sempre le notifiche alla persona che causa la modifica\n"
-"di una proprietà della segnalazione e a tutti quelli che hanno\n"
-"modificato la segnalazione precedentemente."
 
-#: trac/ticket/notification.py:52
+#: trac/ticket/notification.py:46
 msgid ""
-"A Genshi text template snippet used to get the notification\n"
-"subject.\n"
+"Always send notifications to the person who causes the ticket\n"
+"property change and to any previous updater of that ticket."
+msgstr ""
+
+#: trac/ticket/notification.py:51
+msgid ""
+"A Genshi text template snippet used to get the notification subject.\n"
 "\n"
-"The template variables are documented on the\n"
-"[TracNotification#Customizingthee-mailsubject TracNotification] page.\n"
-"(''since 0.11'')"
+"By default, the subject template is `$prefix #$ticket.id: $summary`.\n"
+"`$prefix` being the value of the `smtp_subject_prefix` option.\n"
+"''(since 0.11)''"
 msgstr ""
-"Frammento di template Genshi usato per generare l'oggetto della notifica."
-"\n"
-"\n"
-"Le variabili del template sono documentate sulla pagina\n"
-"[TracNotification#Customizingthee-mailsubject TracNotification].\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/notification.py:61
+#: trac/ticket/notification.py:59
 msgid ""
-"Like `ticket_subject_template` but for batch modifications.\n"
-"(''since 1.0'')"
+"Like ticket_subject_template but for batch modifications.\n"
+"\n"
+"By default, the template is `$prefix Batch modify: $tickets_descr`.\n"
+"''(since 1.0)''"
 msgstr ""
-"Come `ticket_subject_template` ma per le modifiche batch.\n"
-"(''dalla 1.0'')"
 
 #: trac/ticket/notification.py:66
 msgid ""
-"Width of ambiguous characters that should be used in the table\n"
-"of the notification mail.\n"
+"Which width of ambiguous characters (e.g. 'single' or\n"
+"'double') should be used in the table of notification mail.\n"
 "\n"
-"If `single`, the same width as characters in US-ASCII. This is\n"
-"expected by most users. If `double`, twice the width of\n"
-"US-ASCII characters.  This is expected by CJK users. (''since\n"
-"0.12.2'')"
+"If 'single', the same width as characters in US-ASCII. This is\n"
+"expected by most users. If 'double', twice the width of\n"
+"US-ASCII characters.  This is expected by CJK users. ''(since\n"
+"0.12.2)''"
 msgstr ""
-"Ampiezza dei caratteri ambigui utilizzata nelle tabelle incluse\n"
-"nelle notifiche via email.\n"
-"\n"
-"Se `single` viene usata la stessa ampiezza dei caratteri US-ASCII,\n"
-"scelta adatta per la maggior parte degli utenti. Se `double`, viene\n"
-"usata un'ampiezza doppia rispetto ai caratteri US-ASCII, adatta\n"
-"in particolare agli utenti CJK.\n"
-"(''dalla 0.12.2'')"
 
-#: trac/ticket/query.py:820
+#: trac/ticket/query.py:824
 msgid ""
 "The default query for authenticated users. The query is either\n"
 "in [TracQuery#QueryLanguage query language] syntax, or a URL query\n"
@@ -1278,14 +810,8 @@ msgid ""
 "[TracQuery#UsingTracLinks Trac links].\n"
 "(''since 0.11.2'')"
 msgstr ""
-"La query di default per gli utenti autenticati. La query può\n"
-"essere nella sintassi specificata dal\n"
-"[TracQuery#QueryLanguage query language], oppure una stringa URL di\n"
-"query che comincia con il carattere `?` come utilizzata da `query:`\n"
-"[TracQuery#UsingTracLinks Trac links].\n"
-"(''dalla 0.11.2'')"
 
-#: trac/ticket/query.py:828
+#: trac/ticket/query.py:832
 msgid ""
 "The default query for anonymous users. The query is either\n"
 "in [TracQuery#QueryLanguage query language] syntax, or a URL query\n"
@@ -1293,39 +819,26 @@ msgid ""
 "[TracQuery#UsingTracLinks Trac links].\n"
 "(''since 0.11.2'')"
 msgstr ""
-"La query di default per gli utenti anonimy. La query può\n"
-"essere nella sintassi specificata dal\n"
-"[TracQuery#QueryLanguage query language], oppure una stringa URL di\n"
-"query che comincia con il carattere `?` come utilizzata da `query:`\n"
-"[TracQuery#UsingTracLinks Trac links].\n"
-"(''dalla 0.11.2'')<"
 
-#: trac/ticket/query.py:836
+#: trac/ticket/query.py:840
 msgid ""
 "Number of tickets displayed per page in ticket queries,\n"
 "by default (''since 0.11'')"
 msgstr ""
-"Numero di segnalazioni per pagina mostrate di default nelle ricerce\n"
-"sulle segnalazioni.\n"
-"(''dalla 0.11'')"
 
 #: trac/ticket/report.py:116
 msgid ""
 "Number of tickets displayed per page in ticket reports,\n"
-"by default. (''since 0.11'')"
+"by default (''since 0.11'')"
 msgstr ""
-"Numero di segnalazioni per pagina mostrate di default nei report.\n"
-"(''dalla 0.11'')"
 
 #: trac/ticket/report.py:120
 msgid ""
-"Number of tickets displayed in the rss feeds for reports.\n"
+"Number of tickets displayed in the rss feeds for reports\n"
 "(''since 0.11'')"
 msgstr ""
-"Numero di segnalazioni mostrate nel flusso RSS.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/roadmap.py:143
+#: trac/ticket/roadmap.py:144
 msgid ""
 "As the workflow for tickets is now configurable, there can\n"
 "be many ticket states, and simply displaying closed tickets\n"
@@ -1388,166 +901,57 @@ msgid ""
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Dal momento che i flussi di lavoro per le segnalazioni sono\n"
-"configurabili, ci possono essere molti stati e quindi mostrare\n"
-"semplicemente le segnalazioni chiuse piuttosto che tutte le altre\n"
-"potrebbe non essere appropriato in molti casi.\n"
-"Questa sezione consente di creare dei ''gruppi'' di stati che\n"
-"saranno mostrati in colori diversi nelle barre di progresso della\n"
-"vista obiettivi.\n"
-"\n"
-"Nota che le segnalazioni possono essere raggruppate unicamente\n"
-"in base al loro //stato//, nient'altro. In particolare, non è\n"
-"possibile distinguere le segnalazioni chiuse in base alla "
-"//risoluzione//.\n"
-"\n"
-"Esempio di configurazione con tre gruppi, //chiuse//, //nuove//\n"
-"e //attive// (di default ci sono solo closed e active):\n"
-"{{{\n"
-"# il gruppo 'chiuse' corrisponde alle segnalazioni 'closed'\n"
-"chiuse = closed\n"
-"\n"
-"# .order: ordine di presentazione nella barra di progresso\n"
-"chiuse.order = 0\n"
-"\n"
-"# .query_args: parametri opzionali per la query corrispondente.\n"
-"#              In questo esempio, rispetto al default ci sono due\n"
-"#              ulteriori colonne ('created' e 'modified'), e\n"
-"#              l'ordinamento viene effettuato su 'created'.\n"
-"chiuse.query_args = "
-"group=resolution,order=time,col=id,col=summary,col=owner,col=type,col=priority,col=component,col=severity,col=time,col=changetime"
-"\n"
-"\n"
-"# .overall_completion: indica i gruppi che incidono sulla percentuale\n"
-"#                      di completamento\n"
-"chiuse.overall_completion = true\n"
-"\n"
-"nuove = new\n"
-"nuove.order = 1\n"
-"nuove.css_class = new\n"
-"nuove.label = nuove\n"
-"\n"
-"# Nota: è consentito avere un gruppo che includa tutti gli stati\n"
-"#       non ancora considerati\n"
-"attive = *\n"
-"attive.order = 2\n"
-"\n"
-"# .css_class: classe CSS per questo intervallo\n"
-"attive.css_class = open\n"
-"\n"
-"# .label: etichetta per questo gruppo\n"
-"attive.label = in lavorazione\n"
-"}}}\n"
-"\n"
-"La definizione consiste in una lista di stati separati da virgole.\n"
-"Inoltre, '*' indica uno stato qualsiasi e può essere usato per\n"
-"associare i rimanenti stati in un unico gruppo.\n"
-"\n"
-"La classe CSS può essere una delle seguenti: `new` (giallo),\n"
-"`open` (nessun colore) oppure `closed` (green). Ulteriori stili\n"
-"possono essere facilmente aggiunti con delle regole CSS\n"
-"personalizzate: `table.progress td.<class> { background: <color> }`\n"
-"inserite ad esempio nel file [TracInterfaceCustomization#SiteAppearance "
-"site/style.css].\n"
-"\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/roadmap.py:389
+#: trac/ticket/roadmap.py:388
 msgid ""
 "Name of the component implementing `ITicketGroupStatsProvider`,\n"
 "which is used to collect statistics on groups of tickets for display\n"
 "in the roadmap views."
 msgstr ""
-"Nome del componente che implementa `ITicketGroupStatsProvider`,\n"
-"che viene usato per raccogliere le statistiche sui gruppi di\n"
-"segnalazioni per la visualizzazione nelle viste degli obiettivi."
 
-#: trac/ticket/roadmap.py:591
+#: trac/ticket/roadmap.py:590
 msgid ""
 "Name of the component implementing `ITicketGroupStatsProvider`,\n"
 "which is used to collect statistics on groups of tickets for display\n"
 "in the milestone views."
 msgstr ""
-"Nome del componente che implementa `ITicketGroupStatsProvider`,\n"
-"che viene usato per raccogliere le statistiche sui gruppi di\n"
-"segnalazioni per la visualizzazione nelle viste degli obiettivi."
 
-#: trac/ticket/roadmap.py:598
-msgid ""
-"Default milestone to which tickets are retargeted when\n"
-"closing or deleting a milestone. (''since 1.1.2'')"
-msgstr ""
-"Obiettivo di default dove spostare le segnalazioni quando l'obiettivo "
-"viene chiuso o cancellato.\n"
-"(''dalla 1.1.2'')"
-
-#: trac/ticket/web_ui.py:72
+#: trac/ticket/web_ui.py:75
 msgid ""
 "Enable the display of all ticket changes in the timeline, not only\n"
-"open / close operations. (''since 0.9'')"
+"open / close operations (''since 0.9'')."
 msgstr ""
-"Abilita la visualizzazione di tutte le modifiche alle segnalazioni\n"
-"nella cronologia, non solo le operazioni di apertura / chiusura.\n"
-"(''dalla 0.9'')"
 
-#: trac/ticket/web_ui.py:76
+#: trac/ticket/web_ui.py:79
 msgid ""
-"Enable the display of component of tickets in the timeline.\n"
-"(''since 1.1.1'')"
+"Don't accept tickets with a too big description.\n"
+"(''since 0.11'')."
 msgstr ""
-"Abilita la visualizzazione del componente delle segnalazioni\n"
-"nella cronologia.\n"
-"(''dalla 1.1.1'')"
 
-#: trac/ticket/web_ui.py:81
+#: trac/ticket/web_ui.py:83
 msgid ""
-"Maximum allowed description size in characters.\n"
-"(//since 0.11//)"
+"Don't accept tickets with a too big comment.\n"
+"(''since 0.11.2'')"
 msgstr ""
-"Dimensione massima consentita della descrizione, in caratteri.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/web_ui.py:85
-msgid "Maximum allowed comment size in characters. (//since 0.11.2//)"
-msgstr ""
-"Dimensione massima consentita dei commenti, in caratteri.\n"
-"(''dalla 0.11.2'')"
-
-#: trac/ticket/web_ui.py:88
-msgid "Maximum allowed summary size in characters. (//since 1.0.2//)"
-msgstr ""
-"Dimensione massima consentita del sommario, in caratteri.\n"
-"(''dalla 0.11.2'')"
-
-#: trac/ticket/web_ui.py:91
+#: trac/ticket/web_ui.py:87
 msgid ""
 "Which formatter flavor (e.g. 'html' or 'oneliner') should be\n"
 "used when presenting the description for new tickets.\n"
 "If 'oneliner', the [timeline] abbreviated_messages option applies.\n"
-"(''since 0.11'')"
+"(''since 0.11'')."
 msgstr ""
-"Quale tipo di formattatore (cioè 'html' o 'oneliner') deve essere\n"
-"utilizzato per mostrare la descrizione delle nuove segnalazioni.\n"
-"Quando è impostato a 'oneliner', viene usata l'opzione [timeline]\n"
-"abbreviated_messages.\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/web_ui.py:98
+#: trac/ticket/web_ui.py:94
 msgid ""
 "Whether Wiki formatter should respect the new lines present\n"
 "in the Wiki text.\n"
 "If set to 'default', this is equivalent to 'yes' for new environments\n"
 "but keeps the old behavior for upgraded environments (i.e. 'no').\n"
-"(''since 0.11'')"
+"(''since 0.11'')."
 msgstr ""
-"Se il formattatore Wiki debba rispettare gli a-capo presenti nel\n"
-"testo Wiki.\n"
-"Se impostato a 'default', è equivalente a 'yes' per i nuovi ambienti\n"
-"mentre viene mantenuto il comportamento precedente negli ambienti che\n"
-"sono stati aggiornati (cioè 'no').\n"
-"(''dalla 0.11'')"
 
-#: trac/ticket/web_ui.py:105
+#: trac/ticket/web_ui.py:101
 msgid ""
 "The base query to be used when linkifying values of ticket\n"
 "fields. The query is a URL query\n"
@@ -1555,27 +959,18 @@ msgid ""
 "[TracQuery#UsingTracLinks Trac links].\n"
 "(''since 0.12'')"
 msgstr ""
-"La query di base usata quando i valori dei campi delle segnalazioni\n"
-"vengono trasformati in collegamenti. La stringa di query deve\n"
-"cominciare con il carattere `?` come utilizzata da `query:`\n"
-"[TracQuery#UsingTracLinks Trac links]. (''dalla 0.12'')"
 
 #: trac/timeline/web_ui.py:52
 msgid ""
 "Default number of days displayed in the Timeline, in days.\n"
-"(''since 0.9'')"
+"(''since 0.9.'')"
 msgstr ""
-"Numero di giorni mostrati di default nella cronologia.\n"
-"(''dalla 0.9'')"
 
 #: trac/timeline/web_ui.py:56
 msgid ""
 "Maximum number of days (-1 for unlimited) displayable in the\n"
 "Timeline. (''since 0.11'')"
 msgstr ""
-"Numero massimo di giorni (-1 per illimitato) visualizzabile nella\n"
-"cronologia.\n"
-"(''dalla 0.11'')"
 
 #: trac/timeline/web_ui.py:60
 msgid ""
@@ -1583,13 +978,8 @@ msgid ""
 "\n"
 "This only affects the default rendering, and can be overriden by\n"
 "specific event providers, see their own documentation.\n"
-"(''since 0.11'')"
+"(''Since 0.11'')"
 msgstr ""
-"Se i messaggi di evento di tipo wiki debbano essere troncati oppure no.\n"
-"\n"
-"Questo influisce solo sulla resa di default e può essere modificato\n"
-"da specifici fornitori di eventi, consulta la loro documentazione.\n"
-"(''dalla 0.11'')"
 
 #: trac/versioncontrol/admin.py:169
 msgid ""
@@ -1598,13 +988,8 @@ msgid ""
 "admin panel. If the list is empty, all repository directories are\n"
 "allowed. (''since 0.12.1'')"
 msgstr ""
-"Lista di prefissi consentiti per le directory dei repository,\n"
-"separati da virgole, quando si aggiunge o si modificano i repository\n"
-"nel pannello di amministrazione. Se la lista è vuota, tutte le\n"
-"directory sono consentite.\n"
-"(''dalla 0.12.1'')"
 
-#: trac/versioncontrol/api.py:294
+#: trac/versioncontrol/api.py:284
 msgid ""
 "One of the alternatives for registering new repositories is to\n"
 "populate the `[repositories]` section of the `trac.ini`.\n"
@@ -1619,19 +1004,8 @@ msgid ""
 "\n"
 "(''since 0.12'')"
 msgstr ""
-"Una delle alternative per registrare nuovi repository è quella\n"
-"di popolare la sezione `[repositories]` del `trac.ini`.\n"
-"\n"
-"Si tratta di un'opzione particolarmente adatta per impostare un\n"
-"adeguato alias, o per repository dalla vita breve, o ancora durante\n"
-"le fasi iniziali di una installazione.\n"
-"\n"
-"Consulta [TracRepositoryAdmin#Intrac.ini TracRepositoryAdmin] per i\n"
-"dettagli sul formato di questa sezione, e il resto della pagina per\n"
-"le altre alternative.\n"
-"(''dalla 0.12'')"
 
-#: trac/versioncontrol/api.py:308
+#: trac/versioncontrol/api.py:298
 msgid ""
 "Default repository connector type. (''since 0.10'')\n"
 "\n"
@@ -1639,13 +1013,8 @@ msgid ""
 "defined in [[TracIni#repositories-section repositories]] or using the\n"
 "\"Repositories\" admin panel. (''since 0.12'')"
 msgstr ""
-"Tipo di repository di default. (''dalla 0.10'')\n"
-"\n"
-"Viene anche usato come tipo di repository di default per i repository\n"
-"definiti nella sezione [TracIni#repositories-section repositories] o\n"
-"usando il pannello di amministrazione \"Repository\". (''dalla 0.12'')"
 
-#: trac/versioncontrol/api.py:316
+#: trac/versioncontrol/api.py:306
 msgid ""
 "Path to the default repository. This can also be a relative path\n"
 "(''since 0.11'').\n"
@@ -1654,14 +1023,8 @@ msgid ""
 "[TracIni#repositories-section repositories] section, or using the\n"
 "\"Repositories\" admin panel. (''since 0.12'')"
 msgstr ""
-"Percorso del repository di default. Può essere un percorso relativo.\n"
-"(''dalla 0.11'')\n"
-"\n"
-"Questa opzione è deprecata e i repository dovrebbe essere definiti\n"
-"nella sezione [TracIni#repositories-section repositories], oppure\n"
-"usando il pannello di amministrazione \"Repository\". (''dalla 0.12'')"
 
-#: trac/versioncontrol/api.py:324
+#: trac/versioncontrol/api.py:314
 msgid ""
 "List of repositories that should be synchronized on every page\n"
 "request.\n"
@@ -1671,17 +1034,9 @@ msgid ""
 "(recommended). Otherwise, set it to a comma-separated list of\n"
 "repository names. Note that this will negatively affect performance,\n"
 "and will prevent changeset listeners from receiving events from the\n"
-"repositories specified here. (''since 0.12'')"
+"repositories specified here. The default is to synchronize the default\n"
+"repository, for backward compatibility. (''since 0.12'')"
 msgstr ""
-"Lista dei repository che devono essere sincronizzati ad ogni richiesta.\n"
-"\n"
-"Lascia questa opzione vuota se hai impostato un hook di post-commit\n"
-"che invoca `trac-admin $ENV changeset added` su tutti i repository\n"
-"(raccomandato). Altrimenti, impostala a una lista di nomi di repository\n"
-"separati da virgole. Nota che questo avrà un impatto negativo sulle\n"
-"prestazioni, e impedirà ai changeset listener di ricevere gli eventi\n"
-"relativi ai repository elencati qui.\n"
-"(''dalla 0.12'')"
 
 #: trac/versioncontrol/svn_authz.py:124
 msgid ""
@@ -1691,45 +1046,30 @@ msgid ""
 "To enable authz permission checking, the `AuthzSourcePolicy` permission\n"
 "policy must be added to `[trac] permission_policies`."
 msgstr ""
-"Percorso del\n"
-"[http://svnbook.red-bean.com/en/1.5/svn.serverconfig.pathbasedauthz.html "
-"file di autorizzazione (authz)]\n"
-"di Subversion.\n"
-"Per abilitare il controllo dei permessi authz, la policy\n"
-"`AuthzSourcePolicy` deve essere aggiunta a `[trac] permission_policies`."
 
 #: trac/versioncontrol/svn_authz.py:131
 msgid ""
 "The module prefix used in the `authz_file` for the default\n"
 "repository. If left empty, the global section is used."
 msgstr ""
-"Il prefisso del modulo usato da `authz_file` per il repository di\n"
-"default. Se lasciato in bianco, viene usata la sezione globale."
 
-#: trac/versioncontrol/web_ui/browser.py:116
+#: trac/versioncontrol/web_ui/browser.py:118
 msgid ""
 "Comma-separated list of version control properties to render\n"
 "as wiki content in the repository browser.\n"
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Lista di proprietà del sistema di versionamento, separate da virgole,\n"
-"da mostrare come contenuto wiki nel visualizzatore del repository.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:123
+#: trac/versioncontrol/web_ui/browser.py:125
 msgid ""
 "Comma-separated list of version control properties to render\n"
 "as oneliner wiki content in the repository browser.\n"
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Lista di proprietà del sistema di versionamento, separate da virgole,\n"
-"da mostrare come contenuto wiki a singola riga nel visualizzatore del\n"
-"repository.\n"
-"(''dalla 0.11'')<"
 
-#: trac/versioncontrol/web_ui/browser.py:182
+#: trac/versioncontrol/web_ui/browser.py:184
 msgid ""
 "List of repository paths that can be downloaded.\n"
 "\n"
@@ -1742,19 +1082,8 @@ msgid ""
 "performed on the paths, so aliases won't get automatically resolved.\n"
 "(''since 0.10'')"
 msgstr ""
-"Lista dei percorsi del repository che possono essere scaricati.\n"
-"\n"
-"Lascia questa opzione vuota se vuoi disabilitare la funzionalità,\n"
-"altrimenti impostala a una lista di percorsi consentiti (vengono\n"
-"interpretati come pattern glob, cioè \"*\" può essere usato come\n"
-"jolly), separati da virgole. In un ambiente multi-repository il\n"
-"percorso deve essere qualificato con il nome del repository se\n"
-"non si riferisce al repository di default (ad esempio /nomerepo/trunk).\n"
-"Nota che viene applicata una semplice verifica del prefisso, quindi\n"
-"gli eventuali alias non vengono considerati automaticamente.\n"
-"(''dalla 0.10'')"
 
-#: trac/versioncontrol/web_ui/browser.py:195
+#: trac/versioncontrol/web_ui/browser.py:197
 msgid ""
 "Enable colorization of the ''age'' column.\n"
 "\n"
@@ -1762,49 +1091,32 @@ msgid ""
 "blue is older, red is newer.\n"
 "(''since 0.11'')"
 msgstr ""
-"Abilita la colorazione della colonna ''età''.\n"
-"\n"
-"Viene utilizzata la stessa scala di colori usata nelle\n"
-"visualizzazione delle annotazioni del codice sorgente:\n"
-"il blu indica cose più vecchie, il rosso cose recenti.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:204
+#: trac/versioncontrol/web_ui/browser.py:206
 msgid ""
 "(r,g,b) color triple to use for the color corresponding\n"
 "to the newest color, for the color scale used in ''blame'' or\n"
 "the browser ''age'' column if `color_scale` is enabled.\n"
 "(''since 0.11'')"
 msgstr ""
-"Tripla (r,g,b) per indicare il colore usato per le cose più\n"
-"recenti, nella scala colori usata nelle ''annotazioni'' o\n"
-"nella colonna ''età'' se l'opzione `color_scale` è abilitata.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:212
+#: trac/versioncontrol/web_ui/browser.py:214
 msgid ""
 "(r,g,b) color triple to use for the color corresponding\n"
 "to the oldest color, for the color scale used in ''blame'' or\n"
 "the browser ''age'' column if `color_scale` is enabled.\n"
 "(''since 0.11'')"
 msgstr ""
-"Tripla (r,g,b) per indicare il colore usato le cose più\n"
-"vecchie, nella scala colori usata nelle ''annotazioni'' o\n"
-"nella colonna ''età'' se l'opzione `color_scale` è abilitata.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:218
+#: trac/versioncontrol/web_ui/browser.py:220
 msgid ""
 "If set to a value between 0 and 1 (exclusive), this will be the\n"
 "point chosen to set the `intermediate_color` for interpolating\n"
 "the color value.\n"
 "(''since 0.11'')"
 msgstr ""
-"Se impostato a un valore tra 0 e 1 (esclusi), verrà usato per\n"
-"stabilire l'`intermediate_color` nell'interpolazione del colore.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:224
+#: trac/versioncontrol/web_ui/browser.py:226
 msgid ""
 "(r,g,b) color triple to use for the color corresponding\n"
 "to the intermediate color, if two linear interpolations are used\n"
@@ -1813,14 +1125,8 @@ msgid ""
 "`newest_color` will be used.\n"
 "(''since 0.11'')"
 msgstr ""
-"Tripla (r,g,b) per indicare il colore intermedio, quando vengono\n"
-"usate due interpolazioni lineari per stabilire la scala di colori\n"
-"(vedi `intermediate_color`).\n"
-"Se non viene impostata, verrà usato il colore intermedio tra\n"
-"`oldest_color` e `newest_color`.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/browser.py:232
+#: trac/versioncontrol/web_ui/browser.py:234
 msgid ""
 "Whether raw files should be rendered in the browser, or only made\n"
 "downloadable.\n"
@@ -1830,41 +1136,23 @@ msgid ""
 "scripting attacks.\n"
 "\n"
 "For open repositories where anyone can check-in a file, it is\n"
-"recommended to leave this option disabled."
+"recommended to leave this option disabled (which is the default)."
 msgstr ""
-"Se i file grezzi debbano essere visualizzati nel browser, piuttosto\n"
-"che solo tramite scaricamento.\n"
-"\n"
-"Dal momento che praticamente qualsiasi file può essere interpretato\n"
-"come HTML dal browser, un malintenzionato potrebbe creare un file\n"
-"contenente uno script che implementa un attacco \"cross-site\".\n"
-"\n"
-"Per repository aperti dove chiunque può inserire un file, si raccomanda\n"
-"di lasciare questa opzione disabilitata."
 
-#: trac/versioncontrol/web_ui/browser.py:244
+#: trac/versioncontrol/web_ui/browser.py:246
 msgid ""
 "Comma-separated list of version control properties to hide from\n"
 "the repository browser.\n"
 "(''since 0.9'')"
 msgstr ""
-"Lista di proprietà del sistema di versionamento, separate da virgole,\n"
-"che devono essere nascoste dal visualizzatore del repository.\n"
-"(''dalla 0.9'')"
 
 #: trac/versioncontrol/web_ui/changeset.py:129
 msgid ""
 "Number of files to show (`-1` for unlimited, `0` to disable).\n"
 "\n"
 "This can also be `location`, for showing the common prefix for the\n"
-"changed files. (''since 0.11'')"
+"changed files. (since 0.11)."
 msgstr ""
-"Numero di file da visualizzare (`-1` per illimitato, `0` per "
-"disabilitare).\n"
-"\n"
-"Può essere impostato anche a `location`, per mostrare il prefisso\n"
-"comune tra i file modificati.\n"
-"(''dalla 0.11'')"
 
 #: trac/versioncontrol/web_ui/changeset.py:136
 msgid ""
@@ -1875,14 +1163,6 @@ msgid ""
 "is set to true, changeset messages will be single line only, losing\n"
 "some formatting (bullet points, etc)."
 msgstr ""
-"Se la formattazione wiki dei messaggi nei changeset debba essere\n"
-"multi-riga oppure no.\n"
-"\n"
-"Se questa opzione non è specificata o è ''false'' e "
-"`wiki_format_messages`\n"
-"è impostata a ''true'', i messaggi nei changeset saranno mostrati\n"
-"come singole riga, perdendo qualche formattazione (liste puntate,\n"
-"ecc.)"
 
 #: trac/versioncontrol/web_ui/changeset.py:145
 msgid ""
@@ -1891,31 +1171,19 @@ msgid ""
 "That event will link to the range of changesets in the log view.\n"
 "(''since 0.11'')"
 msgstr ""
-"Se changeset consecutivi dello stesso autore aventi esattamente\n"
-"lo stesso messaggio debbano essere presentati come un singolo\n"
-"evento. In questo caso l'evento punterà a un intervallo di\n"
-"changeset nella vista cronologica.\n"
-"(''dalla 0.11'')"
 
 #: trac/versioncontrol/web_ui/changeset.py:152
 msgid ""
 "Maximum number of modified files for which the changeset view will\n"
-"attempt to show the diffs inlined. (''since 0.10'')"
+"attempt to show the diffs inlined (''since 0.10'')."
 msgstr ""
-"Numero massimo di file modificati per cui la vista del changeset\n"
-"cercherà di mostrare le differenze in linea.\n"
-"(''dalla 0.10'')"
 
 #: trac/versioncontrol/web_ui/changeset.py:156
 msgid ""
 "Maximum total size in bytes of the modified files (their old size\n"
 "plus their new size) for which the changeset view will attempt to show\n"
-"the diffs inlined. (''since 0.10'')"
+"the diffs inlined (''since 0.10'')."
 msgstr ""
-"Dimensione massima totale in byte dei file modificati (dimensione\n"
-"precedente più dimensione attuale) per cui la vista del changeset\n"
-"cercherà di mostrare le differenze in linea.\n"
-"(''dalla 0.10'')"
 
 #: trac/versioncontrol/web_ui/changeset.py:161
 msgid ""
@@ -1924,78 +1192,50 @@ msgid ""
 "If this option is disabled, changeset messages will be rendered as\n"
 "pre-formatted text."
 msgstr ""
-"Se i messaggi nei changeset debbano essere interpretati come\n"
-"formattazione wiki.\n"
-"\n"
-"Se questa opzione è disabilitata, i messaggi nei changeset verranno\n"
-"mostrati come testo preformattato."
 
-#: trac/versioncontrol/web_ui/log.py:46
+#: trac/versioncontrol/web_ui/log.py:47
 msgid ""
 "Default value for the limit argument in the TracRevisionLog.\n"
 "(''since 0.11'')"
 msgstr ""
-"Valore di default del parametro `limit` nel TracRevisionLog.\n"
-"(''dalla 0.11'')"
 
-#: trac/versioncontrol/web_ui/log.py:50
+#: trac/versioncontrol/web_ui/log.py:51
 msgid ""
 "Comma-separated list of colors to use for the TracRevisionLog\n"
 "graph display. (''since 1.0'')"
 msgstr ""
-"Lista di colori, separati da virgole, usata nel grafo visualizzato\n"
-"nel TracRevisionLog.\n"
-"(''dalla 1.0'')"
 
-#: trac/web/auth.py:62
+#: trac/web/auth.py:61
 msgid ""
 "Whether the IP address of the user should be checked for\n"
-"authentication. (''since 0.9'')"
+"authentication (''since 0.9'')."
 msgstr ""
-"Se l'indirizzo IP dell'utente debba essere verificato per\n"
-"l'autenticazione.\n"
-"(''dalla 0.9'')"
 
-#: trac/web/auth.py:66
+#: trac/web/auth.py:65
 msgid ""
 "Whether login names should be converted to lower case\n"
 "(''since 0.9'')."
 msgstr ""
-"Se i nomi degli utenti debbano essere convertiti in minuscolo.\n"
-"(''dalla 0.9'')"
 
-#: trac/web/auth.py:70
+#: trac/web/auth.py:69
 msgid ""
 "Lifetime of the authentication cookie, in seconds.\n"
 "\n"
 "This value determines how long the browser will cache\n"
 "authentication information, and therefore, after how much\n"
-"inactivity a user will have to log in again. The value\n"
+"inactivity a user will have to log in again. The default value\n"
 "of 0 makes the cookie expire at the end of the browsing\n"
 "session. (''since 0.12'')"
 msgstr ""
-"Intervallo di validità del cookie di autenticazione, in secondi.\n"
-"\n"
-"Questo valore determina quanto a lungo il browser manterrà memoria\n"
-"delle informazioni di autenticazione, quindi la durata dell'inattività\n"
-"dell'utente prima che gli venga richiesta nuovamente l'autenticazione.\n"
-"Il valore di default 0 fa scadere il cookie alla fine della sessione\n"
-"del browser.\n"
-"(''dalla 0.12'')"
 
-#: trac/web/auth.py:79
+#: trac/web/auth.py:78
 msgid ""
 "Path for the authentication cookie. Set this to the common\n"
 "base path of several Trac instances if you want them to share\n"
 "the cookie.  (''since 0.12'')"
 msgstr ""
-"Percorso del cookie di autenticazione.\n"
-"\n"
-"Imposta questo al percorso di base comune a diverse istanze Trac\n"
-"se vuoi che condividano il medesimo cookie.\n"
-"(''dalla 0.12'')"
 
-#: trac/web/chrome.py:356
+#: trac/web/chrome.py:342
 msgid ""
 "Path to the //shared templates directory//.\n"
 "\n"
@@ -2004,14 +1244,8 @@ msgid ""
 "\n"
 "(''since 0.11'')"
 msgstr ""
-"Percorso della //directory dei template condivisi//.\n"
-"\n"
-"I template in questa directory vengono caricati in aggiunta a\n"
-"quelli presenti nella directory `templates` dell'ambiente,\n"
-"sebbene questi ultimi abbiano la precedenza.\n"
-"(''dalla 0.11'')"
 
-#: trac/web/chrome.py:364
+#: trac/web/chrome.py:350
 msgid ""
 "Path to the //shared htdocs directory//.\n"
 "\n"
@@ -2023,33 +1257,21 @@ msgid ""
 "\n"
 "(''since 1.0'')"
 msgstr ""
-"Percorso della //directory htdocs condivisa//.\n"
-"\n"
-"Le risorse statiche in questa directory vengono mappate da\n"
-"/chrome/shared nell'URL dell'ambiente, in aggiunta alle locazioni\n"
-"common e site.\n"
-"\n"
-"Questo può essere utile nel site.html per avere una personalizzazione\n"
-"comune dell'interfaccia di ambienti Trac multipli.\n"
-"(''dalla 1.0'')"
 
-#: trac/web/chrome.py:375
+#: trac/web/chrome.py:361
 msgid "Automatically reload template files after modification."
-msgstr "Ricarica automaticamente i template modificati."
+msgstr ""
 
-#: trac/web/chrome.py:378
+#: trac/web/chrome.py:364
 msgid ""
 "The maximum number of templates that the template loader will cache\n"
-"in memory. You may want to choose a higher value if your site uses a\n"
-"larger number of templates, and you have enough memory to spare, or\n"
-"you can reduce it if you are short on memory."
+"in memory. The default value is 128. You may want to choose a higher\n"
+"value if your site uses a larger number of templates, and you have\n"
+"enough memory to spare, or you can reduce it if you are short on\n"
+"memory."
 msgstr ""
-"Numero massimo di template di cui caricatore di template manterrà una "
-"cache in memoria. Puoi usare un valore più elevato se il tuo sito "
-"utilizza un gran numero di template e se hai memoria sufficiente, oppure "
-"puoi ridurlo se hai poca memoria."
 
-#: trac/web/chrome.py:384
+#: trac/web/chrome.py:371
 msgid ""
 "Base URL for serving the core static resources below\n"
 "`/chrome/common/`.\n"
@@ -2065,124 +1287,71 @@ msgid ""
 "will not be made available this way and additional rewrite\n"
 "rules will be needed in the web server."
 msgstr ""
-"URL di base per service le risorse statiche sotto /chrome/common.\n"
-"\n"
-"Può essere lasciato vuoto, nel qual caso Trac semplicemente servirà\n"
-"tali risorse autonomamente.\n"
-"\n"
-"Utenti esperti potranno usare questa opzione insieme a\n"
-"[TracAdmin trac-admin ... deploy <deploydir>] per consentire al\n"
-"web server di servire direttamente le risorse statiche.\n"
-"Nota però che questo si applica solo alla directory\n"
-"`<deploydir>/htdocs/common`, mentre le altre risorse (cioè quelle\n"
-"fornite dai plugin) non vengono fornite in questo modo e saranno\n"
-"necessarie ulteriori regole di rewrite sul web server."
 
-#: trac/web/chrome.py:399
+#: trac/web/chrome.py:386
 msgid ""
-"Location of the jQuery !JavaScript library (version 1.8.3).\n"
+"Location of the jQuery !JavaScript library (version 1.7.2).\n"
 "\n"
 "An empty value loads jQuery from the copy bundled with Trac.\n"
 "\n"
 "Alternatively, jQuery could be loaded from a CDN, for example:\n"
-"http://code.jquery.com/jquery-1.8.3.min.js,\n"
-"http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.8.3.min.js or\n"
-"https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js.\n"
+"http://code.jquery.com/jquery-1.7.2.min.js,\n"
+"http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.7.2.min.js or\n"
+"https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js.\n"
 "\n"
 "(''since 1.0'')"
 msgstr ""
-"Posizione della libreria !JavaScript di jQuery (versione 1.8.3).\n"
-"\n"
-"Un valore vuoto carica jQuery dalla copia inclusa con Trac.\n"
-"\n"
-"In alternativa, jQuery può essere caricata da una CDN, ad esempio:\n"
-"http://code.jquery.com/jquery-1.8.3.min.js,\n"
-"http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.8.3.min.js oppure\n"
-"https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js.\n"
-"\n"
-"(''dalla 1.0'')"
 
-#: trac/web/chrome.py:411
+#: trac/web/chrome.py:398
 msgid ""
-"Location of the jQuery UI !JavaScript library (version 1.9.2).\n"
+"Location of the jQuery UI !JavaScript library (version 1.8.21).\n"
 "\n"
 "An empty value loads jQuery UI from the copy bundled with Trac.\n"
 "\n"
 "Alternatively, jQuery UI could be loaded from a CDN, for example:\n"
-"https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js\n"
+"https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js\n"
 "or\n"
-"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/jquery-ui.min.js.\n"
+"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/jquery-ui.min.js.\n"
 "\n"
 "(''since 1.0'')"
 msgstr ""
-"Posizione della libreria !JavaScript jQuery UI (version 1.9.2).\n"
-"\n"
-"Un valore vuoto carica jQuery UI dalla copia inclusa con Trac.\n"
-"\n"
-"In alternativa, jQuery UI può essere caricata da una CDN, ad esempio:\n"
-"\n"
-"https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js\n"
-"oppure\n"
-"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/jquery-ui.min.js.\n"
-"\n"
-"(''dalla 1.0'')"
 
-#: trac/web/chrome.py:423
+#: trac/web/chrome.py:410
 msgid ""
 "Location of the theme to be used with the jQuery UI !JavaScript\n"
-"library (version 1.9.2).\n"
+"library (version 1.8.21).\n"
 "\n"
 "An empty value loads the custom Trac jQuery UI theme from the copy\n"
 "bundled with Trac.\n"
 "\n"
 "Alternatively, a jQuery UI theme could be loaded from a CDN, for\n"
 "example:\n"
-"https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/themes/start/jquery-"
-"ui.css\n"
+"https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/themes/start"
+"/jquery-ui.css\n"
 "or\n"
-"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/themes/start/jquery-"
+"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/themes/start/jquery-"
 "ui.css.\n"
 "\n"
 "(''since 1.0'')"
 msgstr ""
-"Posizione dei temi usati dalla libreria !JavaScript jQuery UI (version "
-"1.9.2).\n"
-"\n"
-"Un valore vuoto carica il tema jQuery UI personalizzato da Trac dalla\n"
-"copia inclusa con Trac.\n"
-"\n"
-"In alternativa, un tema jQuery UI può essere caricato da una CDN, ad "
-"esempio:\n"
-"\n"
-"https://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/themes/start/jquery-"
-"ui.css\n"
-"oppure\n"
-"http://ajax.aspnetcdn.com/ajax/jquery.ui/1.9.2/themes/start/jquery-"
-"ui.css.\n"
-"\n"
-"(''dalla 1.0'')"
 
-#: trac/web/chrome.py:438
+#: trac/web/chrome.py:425
 msgid ""
 "Order of the items to display in the `metanav` navigation bar,\n"
 "listed by IDs. See also TracNavigation."
 msgstr ""
-"Ordine delle voci mostrate nella barra di navigazione `metanav`,\n"
-"elencate per ID. Vedi anche TracNavigation."
 
-#: trac/web/chrome.py:443
+#: trac/web/chrome.py:430
 msgid ""
 "Order of the items to display in the `mainnav` navigation bar,\n"
 "listed by IDs. See also TracNavigation."
 msgstr ""
-"Ordine dele voci mostrate nella barra di navigazione `mainnav`,\n"
-"elencate per ID. Vedi anche TracNavigation."
 
-#: trac/web/chrome.py:449
+#: trac/web/chrome.py:436
 msgid "URL to link to, from the header logo."
-msgstr "URL per il collegamento associato al logo nell'intestazione."
+msgstr ""
 
-#: trac/web/chrome.py:452
+#: trac/web/chrome.py:439
 msgid ""
 "URL of the image to use as header logo.\n"
 "It can be absolute, server relative or relative.\n"
@@ -2194,208 +1363,132 @@ msgid ""
 "folder mapped to the [#trac-section htdocs_location] URL.\n"
 "Only specifying `your-logo.png` is equivalent to the latter."
 msgstr ""
-"URL dell'immagine da usare come logo nell'intestazione.\n"
-"Può essere assoluto, relativo al server o relativo.\n"
-"\n"
-"Se è relativo, viene risolto rispetto a una delle posizioni `/chrome`:\n"
-"`site/tuo-logo.png` se `tuo-logo.png` è posizionato nella cartella\n"
-"`htdocs` del TracEnvironment;\n"
-"`common/tuo-logo.png` se `tuo-logo.png` è posizionato nella cartella\n"
-"mappata all'URL [#trac-section htdocs_location].\n"
-"Specificando solo `tuo-logo.png` è equivalente a quest'ultima opzione."
 
-#: trac/web/chrome.py:463
+#: trac/web/chrome.py:450
 msgid "Alternative text for the header logo."
-msgstr "Testo alternativo per il logo nell'intestazione.<"
+msgstr ""
 
-#: trac/web/chrome.py:467
+#: trac/web/chrome.py:454
 msgid "Width of the header logo image in pixels."
-msgstr "Larghezza in pixel dell'immagine del logo nell'intestazione."
+msgstr ""
 
-#: trac/web/chrome.py:470
+#: trac/web/chrome.py:457
 msgid "Height of the header logo image in pixels."
-msgstr "Altezza in pixel dell'immagine del logo nell'intestazione.<"
+msgstr ""
 
-#: trac/web/chrome.py:473
+#: trac/web/chrome.py:460
 msgid ""
 "Show email addresses instead of usernames. If false, we obfuscate\n"
 "email addresses. (''since 0.11'')"
 msgstr ""
-"Mostra gli indirizzi email invece che i nomi utente. Se ''false'',\n"
-"l'indirizzo email viene offuscato.\n"
-"(''dalla 0.11'')"
 
-#: trac/web/chrome.py:477
+#: trac/web/chrome.py:464
 msgid ""
 "Never obfuscate `mailto:` links explicitly written in the wiki,\n"
-"even if `show_email_addresses` is false or the user doesn't have\n"
-"EMAIL_VIEW permission. (''since 0.11.6'')"
+"even if `show_email_addresses` is false or the user has not the\n"
+"EMAIL_VIEW permission (''since 0.11.6'')."
 msgstr ""
-"Non offuscare mai i link `mailto:` scritti esplicitamente nel wiki,\n"
-"anche quando `show_email_addresses` è ''false'' oppure l'utente non\n"
-"abbia il permesso EMAIL_VIEW.\n"
-"(''dalla 0.11.6'')"
 
-#: trac/web/chrome.py:483
+#: trac/web/chrome.py:470
 msgid ""
 "Show IP addresses for resource edits (e.g. wiki).\n"
 "(''since 0.11.3'')"
 msgstr ""
-"Mostra gli indirizzi IP nelle modifiche alle risorse (ad esempio pagine "
-"wiki).\n"
-"(''dalla 0.11.3'')"
 
-#: trac/web/chrome.py:487
+#: trac/web/chrome.py:474
 msgid ""
 "Make `<textarea>` fields resizable. Requires !JavaScript.\n"
 "(''since 0.12'')"
 msgstr ""
-"Rendi i campi `<textarea>` ridimensionabili. Richiede !JavaScript.\n"
-"(''dalla 0.12'')"
 
-#: trac/web/chrome.py:491
-msgid ""
-"Add a simple toolbar on top of Wiki `<textarea>`s.\n"
-"(''since 1.0.2'')"
-msgstr ""
-"Aggiungi una semplice toolbar sopra le `<textarea>` del Wiki.\n"
-"(''dalla 1.0.2'')"
-
-#: trac/web/chrome.py:495
+#: trac/web/chrome.py:478
 msgid ""
 "Inactivity timeout in seconds after which the automatic wiki preview\n"
 "triggers an update. This option can contain floating-point values. The\n"
 "lower the setting, the more requests will be made to the server. Set\n"
-"this to 0 to disable automatic preview. (''since 0.12'')"
+"this to 0 to disable automatic preview. The default is 2.0 seconds.\n"
+"(''since 0.12'')"
 msgstr ""
-"Periodo di inattività in secondi dopo il quale mostrare automaticamente\n"
-"l'anteprima wiki. Il valore può essere un numero in virgola mobile.\n"
-"Più basso è il valore, più frequenti saranno le richieste fatte al\n"
-"server. Impostalo a 0 per disabilitare l'anteprima automatica.\n"
-"(''dalla 0.12'')"
 
-#: trac/web/chrome.py:501
+#: trac/web/chrome.py:485
 msgid ""
 "The date information format. Valid options are 'relative' for\n"
 "displaying relative format and 'absolute' for displaying absolute\n"
 "format. (''since 1.0'')"
 msgstr ""
-"Formato dei valori temporali. Le opzioni possibili sono\n"
-"'relative' per visualizzarli in un formato relativo oppure\n"
-"'absolute' per mostrarli in formato assoluto.\n"
-"(''dalla 1.0'')"
 
-#: trac/web/main.py:97
+#: trac/web/main.py:95
 msgid ""
-"Ordered list of filters to apply to all requests.\n"
-"(''since 0.10'')"
+"Ordered list of filters to apply to all requests\n"
+"(''since 0.10'')."
 msgstr ""
-"Lista ordinata dei filtri da applicare a tutte le richieste.\n"
-"(''dalla 0.10'')"
 
-#: trac/web/main.py:102
+#: trac/web/main.py:100
 msgid ""
 "Name of the component that handles requests to the base\n"
 "URL.\n"
 "\n"
 "Options include `TimelineModule`, `RoadmapModule`,\n"
 "`BrowserModule`, `QueryModule`, `ReportModule`, `TicketModule`\n"
-"and `WikiModule`. (''since 0.9'')"
+"and `WikiModule`. The default is `WikiModule`. (''since 0.9'')"
 msgstr ""
-"Nome del componente che gestisce le richieste all'URL di base.\n"
-"\n"
-"Le opzioni possibili sono `TimelineModule`, `RoadmapModule`,\n"
-"`BrowserModule`, `QueryModule`, `ReportModule`, `TicketModule`\n"
-"e `WikiModule`.\n"
-"(''dalla 0.9'')"
 
-#: trac/web/main.py:111
+#: trac/web/main.py:109
 msgid "The default timezone to use"
-msgstr "Fuso orario da usare di default."
+msgstr ""
 
-#: trac/web/main.py:114
+#: trac/web/main.py:112
 msgid ""
 "The preferred language to use if no user preference has\n"
 "been set. (''since 0.12.1'')"
 msgstr ""
-"La lingua di da utilizzare quando non sia stata impostata quella\n"
-"preferita dell'utente.\n"
-"(''dalla 0.12.1'')"
 
-#: trac/web/main.py:119
+#: trac/web/main.py:117
 msgid ""
 "The date format. Valid options are 'iso8601' for selecting\n"
 "ISO 8601 format, or leave it empty which means the default\n"
 "date format will be inferred from the browser's default\n"
 "language. (''since 1.0'')"
 msgstr ""
-"Il formato delle date. I valori possibili sono 'iso8601' per\n"
-"selezionare il formato ISO 8601, o lasciarlo in bianco di modo\n"
-"che il formato venga desunto dalla lingua di default del browser.\n"
-"(''dalla 1.0'')"
 
-#: trac/web/main.py:126
+#: trac/web/main.py:124
 msgid ""
 "When true, send a `X-Sendfile` header and no content when sending\n"
 "files from the filesystem, so that the web server handles the content.\n"
 "This requires a web server that knows how to handle such a header,\n"
 "like Apache with `mod_xsendfile` or lighttpd. (''since 1.0'')"
 msgstr ""
-"Se impostato a ''true'', restituisci una intestazione `X-Sendfile`\n"
-"senza alcun contenuto quando viene richiesto un file dal filesystem,\n"
-"in modo tale che sia il web server a gestire il contenuto stesso.\n"
-"Questo richiede un web server che sappia gestire questa intestazione,\n"
-"come Apache con `mod_xsendfile` oppure lighttpd.\n"
-"(''dalla 1.0'')"
 
-#: trac/wiki/api.py:256
+#: trac/wiki/api.py:263
 msgid ""
-"Enable/disable highlighting CamelCase links to missing pages.\n"
-"(''since 0.9'')"
+"Enable/disable highlighting CamelCase links to missing pages\n"
+"(''since 0.9'')."
 msgstr ""
-"Abilita/disabilita l'evidenziazione dei link CamelCase alle pagine "
-"mancanti.\n"
-"(''dalla 0.9'')"
 
-#: trac/wiki/api.py:260
+#: trac/wiki/api.py:267
 msgid ""
-"Enable/disable splitting the WikiPageNames with space characters.\n"
-"(''since 0.10'')"
+"Enable/disable splitting the WikiPageNames with space characters\n"
+"(''since 0.10'')."
 msgstr ""
-"Abilita/disabilita la spezzatura dei WikiPageNames con caratteri\n"
-"di spaziatura.\n"
-"(''dalla 0.10'')"
 
-#: trac/wiki/api.py:264
+#: trac/wiki/api.py:271
 msgid ""
 "Enable/disable the use of unsafe HTML tags such as `<script>` or\n"
-"`<embed>` with the HTML [wiki:WikiProcessors WikiProcessor].\n"
+"`<embed>` with the HTML [wiki:WikiProcessors WikiProcessor]\n"
+"(''since 0.10.4'').\n"
 "\n"
 "For public sites where anonymous users can edit the wiki it is\n"
-"recommended to leave this option disabled.\n"
-"\n"
-"(''since 0.10.4'')"
+"recommended to leave this option disabled (which is the default)."
 msgstr ""
-"Abilita/disabilita l'uso di tag HTML non sicure come `<script>` oppure "
-"`<embed>` nel [wiki:WikiProcessors WikiProcessor] HTML.\n"
-"\n"
-"Per siti pubblici dove l'utente anonimo può modificare il wiki si "
-"raccomanda di lasciare questa opzione disabilitata.\n"
-"\n"
-"(''dalla 0.10.4'')"
 
-#: trac/wiki/api.py:273
+#: trac/wiki/api.py:279
 msgid ""
 "List of URI schemes considered \"safe\", that will be rendered as\n"
 "external links even if `[wiki] render_unsafe_content` is `false`.\n"
 "(''since 0.11.8'')"
 msgstr ""
-"Lista di schemi URI considerati \"sicuri\", che verranno resi come\n"
-"collegamenti esterni anche quando `[wiki] render_unsafe_content` è\n"
-"`false`.\n"
-"(''dalla 0.11.8'')"
 
-#: trac/wiki/intertrac.py:37
+#: trac/wiki/intertrac.py:36
 msgid ""
 "This section configures InterTrac prefixes. Options in this section\n"
 "whose name contain a \".\" define aspects of the InterTrac prefix\n"
@@ -2416,7 +1509,7 @@ msgid ""
 "   it doesn't know how to dispatch an InterTrac link, and it's up to\n"
 "   the local Trac to prepare the correct link. Not all links will work\n"
 "   that way, but the most common do. This is called the compatibility\n"
-"   mode, and is `false` by default.\n"
+"   mode, and is `true` by default.\n"
 " * If you know that the remote Trac knows how to dispatch InterTrac\n"
 "   links, you can explicitly disable this compatibility mode and then\n"
 "   ''any'' TracLinks can become InterTrac links.\n"
@@ -2432,42 +1525,6 @@ msgid ""
 "trac.url = http://trac.edgewall.org\n"
 "}}}"
 msgstr ""
-"Questa sezione configura i prefissi InterTrac. Le opzioni in questa\n"
-"sezione i cui nomi contengano un \".\" definiscono particolarità del\n"
-"prefisso InterTrac corrispondente al nome dell'opzione fino al \".\".\n"
-"Le opzioni il cui nome non contiene un \".\" definiscono un alias.\n"
-"\n"
-"La chiave `.url` è obbligatoria e viene usata come posizione\n"
-"dell'altro Trac. Può essere un URL relativo nel caso in cui l'altro\n"
-"Trac si trovi sul medesimo server.\n"
-"\n"
-"La chiave `.title` viene usata per mostrare un tooltip quando il\n"
-"cursore viene spostato sul collegamento InterTrac.\n"
-"\n"
-"La chiave `.compat` può essere usata per abilitare o disabilitare la\n"
-"modalità ''compatibile'':\n"
-" * Se il Trac referenziato è precedente alla versione\n"
-"   [trac:milestone:0.10 0.10] ([trac:r3526 r3526] per la precisione),\n"
-"   allora non è in grado di gestire il collegamento InterTrac e è\n"
-"   compito del Trac locale preparare un collegamento corretto. Non\n"
-"   tutti i collegamenti potranno funzionare, ma i più comuni sì.\n"
-"   Questa viene chiamata ''modalità compatibile'', ed è disattivata di\n"
-"   default.\n"
-" * Se sei sicuro che il Trac remoto è in grado di gestire i link\n"
-"   InterTrac, puoi disattivare esplicitamente questa modalità per\n"
-"   far si che ''qualsiasi'' TracLink possa essere usato come un\n"
-"   collegamento InterTrac.\n"
-"\n"
-"Esempio di configurazione:\n"
-"{{{\n"
-"[intertrac]\n"
-"# -- Esempio di impostazione di un alias:\n"
-"t = trac\n"
-"\n"
-"# -- Collegamento a un Trac esterno:\n"
-"trac.title = Edgewall's Trac for Trac\n"
-"trac.url = http://trac.edgewall.org\n"
-"}}}"
 
 #: trac/wiki/interwiki.py:35
 msgid ""
@@ -2485,24 +1542,8 @@ msgid ""
 "tsvn = tsvn: Interact with TortoiseSvn\n"
 "}}}"
 msgstr ""
-"Ogni opzione nella sezione `[interwiki]` definisce un prefisso\n"
-"InterWiki. Il nome dell'opzione definisce il prefisso, mentre il\n"
-"suo valore definisce l'URL, opzionalmente seguito da una descrizione\n"
-"separata da una spaziatura dall'URL. Sono supportati anche URL\n"
-"parametrici.\n"
-"\n"
-"'''Esempio:'''\n"
-"{{{\n"
-"[interwiki]\n"
-"MeatBall = http://www.usemod.com/cgi-bin/mb.pl?\n"
-"PEP = http://www.python.org/peps/pep-$1.html Python Enhancement Proposal "
-"$1\n"
-"tsvn = tsvn: Interact with TortoiseSvn\n"
-"}}}"
 
-#: trac/wiki/web_ui.py:55
-msgid "Maximum allowed wiki page size in characters. (''since 0.11.2'')"
+#: trac/wiki/web_ui.py:64
+msgid "Maximum allowed wiki page size in bytes. (''since 0.11.2'')"
 msgstr ""
-"Dimensione massima consentita di una pagina wiki, in caratteri.\n"
-"(''dalla 0.11.2'')."
 

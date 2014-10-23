@@ -47,6 +47,8 @@ Warning:
   those properties...
 """
 
+from __future__ import with_statement
+
 import os.path
 import re
 import weakref
@@ -260,8 +262,6 @@ class SubversionConnector(Component):
 
     implements(ISystemInfoProvider, IRepositoryConnector)
 
-    required = False
-
     branches = ListOption('svn', 'branches', 'trunk, branches/*', doc=
         """Comma separated list of paths categorized as branches.
         If a path ends with '*', then all the directory entries found below
@@ -282,9 +282,9 @@ class SubversionConnector(Component):
         """End-of-Line character sequences when `svn:eol-style` property is
         `native`.
 
-        If `native`, substitute with the native EOL marker on the server.
-        Otherwise, if `LF`, `CRLF` or `CR`, substitute with the specified
-        EOL marker.
+        If `native` (the default), substitute with the native EOL marker on
+        the server. Otherwise, if `LF`, `CRLF` or `CR`, substitute with the
+        specified EOL marker.
 
         (''since 1.0.2'')""")
 
@@ -295,7 +295,7 @@ class SubversionConnector(Component):
         try:
             _import_svn()
             self.log.debug('Subversion bindings imported')
-        except ImportError as e:
+        except ImportError, e:
             self.error = e
             self.log.info('Failed to load Subversion bindings', exc_info=True)
         else:
@@ -310,7 +310,7 @@ class SubversionConnector(Component):
     # ISystemInfoProvider methods
 
     def get_system_info(self):
-        if self.required:
+        if self._version is not None:
             yield 'Subversion', self._version
 
     # IRepositoryConnector methods
@@ -334,7 +334,6 @@ class SubversionConnector(Component):
         repos = SubversionRepository(dir, params, self.log)
         if type != 'direct-svnfs':
             repos = SvnCachedRepository(self.env, repos, self.log)
-        self.required = True
         return repos
 
 
@@ -364,7 +363,7 @@ class SubversionRepository(Repository):
 
         try:
             self.repos = repos.svn_repos_open(root_path_utf8, self.pool())
-        except core.SubversionException as e:
+        except core.SubversionException, e:
             raise TracError(_("Couldn't open Subversion repository %(path)s: "
                               "%(svn_error)s", path=to_unicode(path_utf8),
                               svn_error=exception_to_unicode(e)))
@@ -857,7 +856,7 @@ class SubversionNode(Node):
                 from svn import client
                 client.blame2(file_url_utf8, rev, start, rev, blame_receiver,
                               client.create_context(), self.pool())
-            except (core.SubversionException, AttributeError) as e:
+            except (core.SubversionException, AttributeError), e:
                 # svn thinks file is a binary or blame not supported
                 raise TracError(_('svn blame failed on %(path)s: %(error)s',
                                   path=self.path, error=to_unicode(e)))

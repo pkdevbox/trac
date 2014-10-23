@@ -225,8 +225,7 @@ label[for=comment] { float: right }
  width: 33%
 }
 #properties table td.fullrow { width: 83% }
-#properties table td input[type="text"],
-#properties table td textarea {
+#properties table td input[type="text"] {
  -moz-box-sizing: border-box;
  box-sizing: border-box;
  width: 100%;

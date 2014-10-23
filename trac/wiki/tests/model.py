@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime
 import shutil
 from StringIO import StringIO
@@ -281,30 +283,20 @@ class WikiPageTestCase(unittest.TestCase):
             self.assertRaises(TracError, page.rename, name)
 
     def test_invalid_version(self):
-        data = [(1, 42, 'joe', '::1', 'First revision', 'Rev1', 0),
-                (2, 42, 'joe', '::1', 'Second revision', 'Rev2', 0)]
-        with self.env.db_transaction as db:
-            for d in data:
-                db("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-                   ('TestPage',) + d)
+        data = (1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0)
+        self.env.db_transaction(
+            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+            ('TestPage',) + data)
 
-        page = WikiPage(self.env, 'TestPage', '1abc')
-        self.assertEqual(2, page.version)
+        self.assertRaises(ValueError, WikiPage, self.env,
+                          'TestPage', '1abc')
 
         resource = Resource('wiki', 'TestPage')
-        page = WikiPage(self.env, resource, '1abc')
-        self.assertEqual(2, page.version)
+        self.assertRaises(ValueError, WikiPage, self.env,
+                          resource, '1abc')
 
         resource = Resource('wiki', 'TestPage', '1abc')
         page = WikiPage(self.env, resource)
-        self.assertEqual(2, page.version)
-
-        resource = Resource('wiki', 'TestPage', 1)
-        page = WikiPage(self.env, resource)
-        self.assertEqual(1, page.version)
-
-        resource = Resource('wiki', 'TestPage', 2)
-        page = WikiPage(self.env, resource, 1)
         self.assertEqual(1, page.version)
 
 

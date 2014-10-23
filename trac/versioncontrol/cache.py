@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import os
 
 from trac.cache import cached
@@ -87,17 +89,19 @@ class CachedRepository(Repository):
         old_cset = None
 
         with self.env.db_transaction as db:
-            try:
-                old_cset = CachedChangeset(self, cset.rev, self.env)
-            except NoSuchChangeset:
-                old_cset = None
+            for time, author, message in db("""
+                    SELECT time, author, message FROM revision
+                    WHERE repos=%s AND rev=%s
+                    """, (self.id, srev)):
+                old_cset = Changeset(self.repos, cset.rev, message, author,
+                                     from_utimestamp(time))
             if old_cset:
                 db("""UPDATE revision SET time=%s, author=%s, message=%s
                       WHERE repos=%s AND rev=%s
                       """, (to_utimestamp(cset.date), cset.author,
                             cset.message, self.id, srev))
             else:
-                self.insert_changeset(cset.rev, cset)
+                self._insert_changeset(db, cset.rev, cset)
         return old_cset
 
     @cached('_metadata_id')
@@ -179,8 +183,8 @@ class CachedRepository(Repository):
                     cset = self.repos.get_changeset(next_youngest)
                     try:
                         # steps 1. and 2.
-                        self.insert_changeset(next_youngest, cset)
-                    except Exception as e: # *another* 1.1. resync attempt won
+                        self._insert_changeset(db, next_youngest, cset)
+                    except Exception, e: # *another* 1.1. resync attempt won
                         self.log.warning('Revision %s already cached: %r',
                                          next_youngest, e)
                         # the other resync attempts is also
@@ -266,16 +270,7 @@ class CachedRepository(Repository):
             if invalidate:
                 del self.metadata
 
-    def insert_changeset(self, rev, cset):
-        """Create revision and node_change records for the given changeset
-        instance."""
-        with self.env.db_transaction as db:
-            self._insert_changeset(db, rev, cset)
-
     def _insert_changeset(self, db, rev, cset):
-        """:deprecated: since 1.1.2, use `insert_changeset` instead. Will
-                        be removed in 1.3.1.
-        """
         srev = self.db_rev(rev)
         # 1. Attempt to resync the 'revision' table.  In case of
         # concurrent syncs, only such insert into the `revision` table

@@ -20,7 +20,7 @@ try:
     cgi_frontend.run()
 except SystemExit:
     raise
-except Exception as e:
+except Exception, e:
     import sys
     import traceback
 

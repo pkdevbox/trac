@@ -12,17 +12,17 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from ConfigParser import ConfigParser
 from copy import deepcopy
-from inspect import cleandoc
 import os.path
-import re
 
 from genshi.builder import tag
 from trac.admin import AdminCommandError, IAdminCommandProvider
 from trac.core import *
 from trac.util import AtomicFile, as_bool
-from trac.util.compat import wait_for_file_mtime_change
+from trac.util.compat import cleandoc, wait_for_file_mtime_change
 from trac.util.text import printout, to_unicode, CRLF
 from trac.util.translation import _, N_, tag_
 
@@ -35,7 +35,6 @@ __all__ = ['Configuration', 'ConfigSection', 'Option', 'BoolOption',
 _TRUE_VALUES = ('yes', 'true', 'enabled', 'on', 'aye', '1', 1, True)
 
 _use_default = object()
-
 
 def _to_utf8(basestr):
     return to_unicode(basestr).encode('utf-8')
@@ -98,7 +97,7 @@ class Configuration(object):
 
         Valid default input is a string or a bool. Returns a bool.
 
-        (''since 0.9.3'', "enabled" added in 0.11)
+        (since Trac 0.9.3, "enabled" added in 0.11)
         """
         return self[section].getbool(key, default)
 
@@ -110,7 +109,7 @@ class Configuration(object):
 
         Valid default input is a string or an int. Returns an int.
 
-        (''since 0.10'')
+        (since Trac 0.10)
         """
         return self[section].getint(key, default)
 
@@ -122,7 +121,7 @@ class Configuration(object):
 
         Valid default input is a string, float or int. Returns a float.
 
-        (''since 0.12'')
+        (since Trac 0.12)
         """
         return self[section].getfloat(key, default)
 
@@ -130,14 +129,13 @@ class Configuration(object):
         """Return a list of values that have been specified as a single
         comma-separated option.
 
-        A different separator can be specified using the `sep` parameter. The
-        `sep` parameter can specify multiple values using a list or a tuple.
-        If the `keep_empty` parameter is set to `True`, empty elements are
+        A different separator can be specified using the `sep` parameter. If
+        the `keep_empty` parameter is set to `True`, empty elements are
         included in the list.
 
         Valid default input is a string or a list. Returns a string.
 
-        (''since 0.10'')
+        (since Trac 0.10)
         """
         return self[section].getlist(key, default, sep, keep_empty)
 
@@ -149,7 +147,7 @@ class Configuration(object):
 
         Valid default input is a string. Returns a normalized path.
 
-        (''since 0.11.5'')
+        (enabled since Trac 0.11.5)
         """
         return self[section].getpath(key, default)
 
@@ -178,8 +176,7 @@ class Configuration(object):
 
         This includes options that have default values that haven't been
         overridden. If `compmgr` is specified, only return default option
-        values for components that are enabled in the given
-        `ComponentManager`.
+        values for components that are enabled in the given `ComponentManager`.
         """
         return self[section].options(compmgr)
 
@@ -206,7 +203,7 @@ class Configuration(object):
         trac.ini or one of the parents, or is available through the Option
         registry.
 
-        (''since 0.11'')
+        (since Trac 0.11)
         """
         section_str = _to_utf8(section)
         if self.parser.has_section(section_str):
@@ -407,9 +404,9 @@ class Section(object):
     def getbool(self, key, default=''):
         """Return the value of the specified option as boolean.
 
-        This method returns `True` if the option value is one of "yes",
-        "true", "enabled", "on", or non-zero numbers, ignoring case.
-        Otherwise `False` is returned.
+        This method returns `True` if the option value is one of "yes", "true",
+        "enabled", "on", or non-zero numbers, ignoring case. Otherwise `False`
+        is returned.
 
         Valid default input is a string or a bool. Returns a bool.
         """
@@ -430,9 +427,8 @@ class Section(object):
             return int(value)
         except ValueError:
             raise ConfigurationError(
-                    _('[%(section)s] %(entry)s: expected integer,'
-                      ' got %(value)s', section=self.name, entry=key,
-                      value=repr(value)))
+                    _('[%(section)s] %(entry)s: expected integer, got %(value)s',
+                      section=self.name, entry=key, value=repr(value)))
 
     def getfloat(self, key, default=''):
         """Return the value of the specified option as float.
@@ -449,18 +445,16 @@ class Section(object):
             return float(value)
         except ValueError:
             raise ConfigurationError(
-                    _('[%(section)s] %(entry)s: expected float,'
-                      ' got %(value)s', section=self.name, entry=key,
-                      value=repr(value)))
+                    _('[%(section)s] %(entry)s: expected float, got %(value)s',
+                      section=self.name, entry=key, value=repr(value)))
 
     def getlist(self, key, default='', sep=',', keep_empty=True):
         """Return a list of values that have been specified as a single
         comma-separated option.
 
-        A different separator can be specified using the `sep` parameter. The
-        `sep` parameter can specify multiple values using a list or a tuple.
-        If the `keep_empty` parameter is set to `True`, empty elements are
-        included in the list.
+        A different separator can be specified using the `sep` parameter. If
+        the `keep_empty` parameter is set to `False`, empty elements are omitted
+        from the list.
 
         Valid default input is a string or a list. Returns a list.
         """
@@ -468,11 +462,7 @@ class Section(object):
         if not value:
             return []
         if isinstance(value, basestring):
-            if isinstance(sep, (list, tuple)):
-                splitted = re.split('|'.join(map(re.escape, sep)), value)
-            else:
-                splitted = value.split(sep)
-            items = [item.strip() for item in splitted]
+            items = [item.strip() for item in value.split(sep)]
         else:
             items = list(value)
         if not keep_empty:
@@ -522,14 +512,12 @@ class Section(object):
     def remove(self, key):
         """Delete a key from this section.
 
-        Like for `set()`, the changes won't persist until `save()` gets
-        called.
+        Like for `set()`, the changes won't persist until `save()` gets called.
         """
         name_str = _to_utf8(self.name)
         if self.config.parser.has_section(name_str):
             self._cache.pop(key, None)
-            self.config.parser.remove_option(_to_utf8(self.name),
-                                             _to_utf8(key))
+            self.config.parser.remove_option(_to_utf8(self.name), _to_utf8(key))
 
 
 def _get_registry(cls, compmgr=None):
@@ -563,8 +551,8 @@ class ConfigSection(object):
         """Return the section registry, as a `dict` mapping section names to
         `ConfigSection` objects.
 
-        If `compmgr` is specified, only return sections for components that
-        are enabled in the given `ComponentManager`.
+        If `compmgr` is specified, only return sections for components that are
+        enabled in the given `ComponentManager`.
         """
         return _get_registry(ConfigSection, compmgr)
 
@@ -687,10 +675,7 @@ class ListOption(Option):
 
     def dumps(self, value):
         if isinstance(value, (list, tuple)):
-            sep = self.sep
-            if isinstance(sep, (list, tuple)):
-                sep = sep[0]
-            return sep.join(Option.dumps(self, v) or '' for v in value)
+            return self.sep.join(Option.dumps(self, v) or '' for v in value)
         return Option.dumps(self, value)
 
 
@@ -751,18 +736,17 @@ class ExtensionOption(Option):
                  "interface named %(implementation)s. Please check "
                  "that the Component is enabled or update the option "
                  "%(option)s in trac.ini.",
-                 interface=tag.code(self.xtnpt.interface.__name__),
-                 implementation=tag.code(value),
-                 option=tag.code("[%s] %s" % (self.section, self.name))))
+                 interface=tag.tt(self.xtnpt.interface.__name__),
+                 implementation=tag.tt(value),
+                 option=tag.tt("[%s] %s" % (self.section, self.name))))
 
 
 class OrderedExtensionsOption(ListOption):
-    """A comma separated, ordered, list of components implementing
-    `interface`. Can be empty.
+    """A comma separated, ordered, list of components implementing `interface`.
+    Can be empty.
 
     If `include_missing` is true (the default) all components implementing the
-    interface are returned, with those specified by the option ordered first.
-    """
+    interface are returned, with those specified by the option ordered first."""
 
     def __init__(self, section, name, interface, default=None,
                  include_missing=True, doc='', doc_domain='tracini'):
@@ -788,11 +772,11 @@ class OrderedExtensionsOption(ListOption):
                      "interface named %(implementation)s. Please check "
                      "that the Component is enabled or update the option "
                      "%(option)s in trac.ini.",
-                     interface=tag.code(self.xtnpt.interface.__name__),
+                     interface=tag.tt(self.xtnpt.interface.__name__),
                      implementation=tag(
-                         (', ' if idx != 0 else None, tag.code(impl))
+                         (', ' if idx != 0 else None, tag.tt(impl))
                          for idx, impl in enumerate(not_found)),
-                     option=tag.code("[%s] %s" % (self.section, self.name))))
+                     option=tag.tt("[%s] %s" % (self.section, self.name))))
 
         def compare(x, y):
             x, y = x.__class__.__name__, y.__class__.__name__
@@ -832,22 +816,22 @@ class ConfigurationAdmin(Component):
     def _do_get(self, section, option):
         if not self.config.has_option(section, option):
             raise AdminCommandError(
-                _("Option '%(option)s' doesn't exist in section"
-                  " '%(section)s'", option=option, section=section))
+                _("Option '%(option)s' doesn't exist in section '%(section)s'",
+                  option=option, section=section))
         printout(self.config.get(section, option))
 
     def _do_set(self, section, option, value):
         self.config.set(section, option, value)
         self.config.save()
         if section == 'inherit' and option == 'file':
-            self.config.parse_if_needed(force=True)  # Full reload
+            self.config.parse_if_needed(force=True) # Full reload
 
     def _do_remove(self, section, option):
         if not self.config.has_option(section, option):
             raise AdminCommandError(
-                _("Option '%(option)s' doesn't exist in section"
-                  " '%(section)s'", option=option, section=section))
+                _("Option '%(option)s' doesn't exist in section '%(section)s'",
+                  option=option, section=section))
         self.config.remove(section, option)
         self.config.save()
         if section == 'inherit' and option == 'file':
-            self.config.parse_if_needed(force=True)  # Full reload
+            self.config.parse_if_needed(force=True) # Full reload

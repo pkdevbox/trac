@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import os
 import time
 
@@ -100,10 +102,10 @@ class ConnectionPoolBackend(object):
                     cnx.close()
                 if op in ('close', 'create'):
                     cnx = connector.get_connection(**kwargs)
-            except TracError as e:
+            except TracError, e:
                 err = e
                 cnx = None
-            except Exception as e:
+            except Exception, e:
                 if log:
                     log.error('Exception caught on %s', op, exc_info=True)
                 err = e

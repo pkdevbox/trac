@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import os
 import unittest
 
@@ -315,12 +317,12 @@ class StringsTestCase(unittest.TestCase):
             "SELECT value FROM system WHERE name='test-markup'"))
 
     def test_quote(self):
-        with self.env.db_query as db:
-            cursor = db.cursor()
-            cursor.execute('SELECT 1 AS %s' % \
-                           db.quote(r'alpha\`\"\'\\beta``gamma""delta'))
-            self.assertEqual(r'alpha\`\"\'\\beta``gamma""delta',
-                             get_column_names(cursor)[0])
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute('SELECT 1 AS %s' % \
+                       db.quote(r'alpha\`\"\'\\beta``gamma""delta'))
+        self.assertEqual(r'alpha\`\"\'\\beta``gamma""delta',
+                         get_column_names(cursor)[0])
 
     def test_quoted_id_with_percent(self):
         db = self.env.get_read_db()

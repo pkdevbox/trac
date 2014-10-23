@@ -16,6 +16,8 @@
 # Author: Daniel Lundin <daniel@edgewall.com>
 #
 
+from __future__ import with_statement
+
 from hashlib import md5
 
 from genshi.template.text import NewTextTemplate
@@ -25,8 +27,7 @@ from trac.config import *
 from trac.notification import NotifyEmail
 from trac.ticket.api import TicketSystem
 from trac.ticket.model import Ticket
-from trac.util.datefmt import format_date_or_datetime, get_timezone, \
-                              to_utimestamp
+from trac.util.datefmt import to_utimestamp
 from trac.util.text import obfuscate_email_address, shorten_line, \
                            text_width, wrap
 from trac.util.translation import deactivate, reactivate
@@ -36,42 +37,43 @@ class TicketNotificationSystem(Component):
 
     always_notify_owner = BoolOption('notification', 'always_notify_owner',
                                      'false',
-        """Always send notifications to the ticket ''owner''.
-        (''since 0.9'')""")
+        """Always send notifications to the ticket owner (''since 0.9'').""")
 
     always_notify_reporter = BoolOption('notification',
                                         'always_notify_reporter',
                                         'false',
-        """Always send notifications to the ticket ''reporter''.""")
+        """Always send notifications to any address in the ''reporter''
+        field.""")
 
     always_notify_updater = BoolOption('notification', 'always_notify_updater',
                                        'true',
-        """Always send notifications to the user who causes the ticket
-        change and to any previous updater of the ticket.""")
+        """Always send notifications to the person who causes the ticket
+        property change and to any previous updater of that ticket.""")
 
     ticket_subject_template = Option('notification', 'ticket_subject_template',
                                      '$prefix #$ticket.id: $summary',
-        """A Genshi text template snippet used to get the notification
-        subject.
+        """A Genshi text template snippet used to get the notification subject.
 
-        The template variables are documented on the
-        [TracNotification#Customizingthee-mailsubject TracNotification] page.
-        (''since 0.11'')""")
+        By default, the subject template is `$prefix #$ticket.id: $summary`.
+        `$prefix` being the value of the `smtp_subject_prefix` option.
+        ''(since 0.11)''""")
 
     batch_subject_template = Option('notification', 'batch_subject_template',
                                     '$prefix Batch modify: $tickets_descr',
-        """Like `ticket_subject_template` but for batch modifications.
-        (''since 1.0'')""")
+        """Like ticket_subject_template but for batch modifications.
+
+        By default, the template is `$prefix Batch modify: $tickets_descr`.
+        ''(since 1.0)''""")
 
     ambiguous_char_width = Option('notification', 'ambiguous_char_width',
                                   'single',
-        """Width of ambiguous characters that should be used in the table
-        of the notification mail.
+        """Which width of ambiguous characters (e.g. 'single' or
+        'double') should be used in the table of notification mail.
 
-        If `single`, the same width as characters in US-ASCII. This is
-        expected by most users. If `double`, twice the width of
-        US-ASCII characters.  This is expected by CJK users. (''since
-        0.12.2'')""")
+        If 'single', the same width as characters in US-ASCII. This is
+        expected by most users. If 'double', twice the width of
+        US-ASCII characters.  This is expected by CJK users. ''(since
+        0.12.2)''""")
 
 
 def get_ticket_notification_recipients(env, config, tktid, prev_cc=None,
@@ -232,10 +234,6 @@ class TicketNotifyEmail(NotifyEmail):
                         if field in ['owner', 'reporter']:
                             old = self.obfuscate_email(old)
                             new = self.obfuscate_email(new)
-                        elif field in ticket.time_fields:
-                            format = ticket.fields.by_name(field).get('format')
-                            old = self.format_time_field(old, format)
-                            new = self.format_time_field(new, format)
                         newv = new
                         length = 7 + len(field)
                         spacer_old, spacer_new = ' ', ' '
@@ -294,9 +292,6 @@ class TicketNotifyEmail(NotifyEmail):
             if not fname in tkt.values:
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fval.find('\n') != -1:
                 continue
             if fname in ['owner', 'reporter']:
@@ -330,9 +325,6 @@ class TicketNotifyEmail(NotifyEmail):
             if fname not in tkt.values:
                 continue
             fval = tkt[fname] or ''
-            if fname in tkt.time_fields:
-                format = tkt.fields.by_name(fname).get('format')
-                fval = self.format_time_field(fval, format)
             if fname in ['owner', 'reporter']:
                 fval = self.obfuscate_email(fval)
             if f['type'] == 'textarea' or '\n' in unicode(fval):
@@ -420,11 +412,6 @@ class TicketNotifyEmail(NotifyEmail):
         }
 
         return template.generate(**data).render('text', encoding=None).strip()
-
-    def format_time_field(self, value, format):
-        tzinfo = get_timezone(self.config.get('trac', 'default_timezone'))
-        return format_date_or_datetime(format, value, tzinfo=tzinfo) \
-               if value else ''
 
     def get_recipients(self, tktid):
         torecipients, ccrecipients, reporter, owner = \

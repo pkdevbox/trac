@@ -12,6 +12,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime
 import itertools
 import os
@@ -23,7 +25,6 @@ from genshi.core import Markup
 from trac.cache import cached
 from trac.config import BoolOption, IntOption, PathOption, Option
 from trac.core import *
-from trac.env import ISystemInfoProvider
 from trac.util import TracError, shorten_line
 from trac.util.datefmt import FixedOffset, to_timestamp, format_datetime
 from trac.util.text import to_unicode, exception_to_unicode
@@ -135,12 +136,15 @@ class GitCachedRepository(CachedRepository):
                     rev = revs.pop()
                     self.log.info("Trying to sync revision [%s]", rev)
                     cset = repos.get_changeset(rev)
-                    try:
-                        self.insert_changeset(rev, cset)
-                        updated = True
-                    except self.env.db_exc.IntegrityError, e:
-                        self.log.info('Revision %s already cached: %r', rev, e)
-                        continue
+                    with self.env.db_transaction as db:
+                        try:
+                            self._insert_changeset(db, rev, cset)
+                            updated = True
+                        except self.env.db_exc.IntegrityError, e:
+                            self.log.info('Revision %s already cached: %r',
+                                          rev, e)
+                            db.rollback()
+                            continue
                     if feedback:
                         feedback(rev)
 
@@ -202,31 +206,24 @@ def _parse_user_time(s):
 
 class GitConnector(Component):
 
-    implements(IRepositoryConnector, ISystemInfoProvider, IWikiSyntaxProvider)
-
-    required = False
+    implements(IRepositoryConnector, IWikiSyntaxProvider)
 
     def __init__(self):
         self._version = None
 
         try:
             self._version = PyGIT.Storage.git_version(git_bin=self.git_bin)
-        except PyGIT.GitError as e:
+        except PyGIT.GitError, e:
             self.log.error("GitError: " + str(e))
 
         if self._version:
             self.log.info("detected GIT version %s" % self._version['v_str'])
+            self.env.systeminfo.append(('GIT', self._version['v_str']))
             if not self._version['v_compatible']:
                 self.log.error("GIT version %s installed not compatible"
                                "(need >= %s)" %
                                (self._version['v_str'],
                                 self._version['v_min_str']))
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'GIT', self._version['v_str']
 
     # IWikiSyntaxProvider methods
 
@@ -253,7 +250,7 @@ class GitConnector(Component):
             return tag.a(label, class_='changeset',
                          title=shorten_line(changeset.message),
                          href=formatter.href.changeset(sha, repos.reponame))
-        except Exception as e:
+        except Exception, e:
             return tag.a(label, class_='missing changeset',
                          title=to_unicode(e), rel='nofollow')
 
@@ -369,7 +366,6 @@ class GitConnector(Component):
         else:
             self.log.debug("disabled CachedRepository for '%s'" % dir)
 
-        self.required = True
         return repos
 
 
@@ -402,7 +398,7 @@ class CsetPropertyRenderer(Component):
                              title=shorten_line(cset.message),
                              href=context.href.changeset(sha, repos.reponame))
 
-            except Exception as e:
+            except Exception, e:
                 return tag.a(sha, class_='missing changeset',
                              title=to_unicode(e), rel='nofollow')
 
@@ -441,10 +437,9 @@ class CsetPropertyRenderer(Component):
                                              "itself.")),
                                     class_='hint'),
                            tag.br(),
-                           tag.span(Markup(_("Use the <code>(diff)</code> "
-                                             "links above to see all the "
-                                             "changes relative to each "
-                                             "parent.")),
+                           tag.span(Markup(_("Use the <tt>(diff)</tt> links "
+                                             "above to see all the changes "
+                                             "relative to each parent.")),
                                     class_='hint'))
 
             # simple non-merge commit
@@ -488,7 +483,7 @@ class GitRepository(Repository):
                                            git_bin=git_bin,
                                            git_fs_encoding=git_fs_encoding)
             self._git = factory.getInstance()
-        except PyGIT.GitError as e:
+        except PyGIT.GitError, e:
             log.error(exception_to_unicode(e))
             raise TracError("%s does not appear to be a Git "
                             "repository." % path)
@@ -513,9 +508,6 @@ class GitRepository(Repository):
 
     def get_youngest_rev(self):
         return self.git.youngest_rev()
-
-    def get_path_history(self, path, rev=None, limit=None):
-        raise TracError(_("Unsupported \"Show only adds and deletes\""))
 
     def get_oldest_rev(self):
         return self.git.oldest_rev()

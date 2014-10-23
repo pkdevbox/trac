@@ -31,9 +31,7 @@
     </script><![endif]-->
     <py:if test="chrome.links">
       <py:for each="rel, links in chrome.links.items()">
-        <py:for each="link in links">
-          <link rel="${rel}" py:attrs="link" />
-        </py:for>
+        <link rel="${rel}" py:for="link in links" py:attrs="link" />
       </py:for>
     </py:if>
     <py:if test="not defined('trac_error_rendering') and 'SEARCH_VIEW' in perm" id="search">
@@ -59,11 +57,6 @@
         </py:if>
         $(".trac-autofocus").focus();
         $(".trac-target-new").attr("target", "_blank");
-        if ($.ui) { /* is jquery-ui added? */
-          $(".trac-datepicker:not([readonly])").datepicker();
-          $(".trac-datetimepicker:not([readonly])").datetimepicker();
-        }
-        $(".trac-disable").disableSubmit(".trac-disable-determinant");
         setTimeout(function() { $(".trac-scroll").scrollToTop() }, 1);
         $(".trac-disable-on-submit").disableOnSubmit();
       });

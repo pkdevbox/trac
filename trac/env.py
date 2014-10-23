@@ -16,6 +16,8 @@
 
 """Trac Environment model and related APIs."""
 
+from __future__ import with_statement
+
 import os.path
 import setuptools
 import sys
@@ -27,11 +29,11 @@ from trac.cache import CacheManager
 from trac.config import BoolOption, ConfigSection, Configuration, Option, \
                         PathOption
 from trac.core import Component, ComponentManager, implements, Interface, \
-                      ExtensionPoint, TracBaseError, TracError
+                      ExtensionPoint, TracError
 from trac.db.api import (DatabaseManager, QueryContextManager,
                          TransactionContextManager, with_transaction)
-from trac.util import arity, copytree, create_file, get_pkginfo, lazy, \
-                      makedirs, read_file
+from trac.util import copytree, create_file, get_pkginfo, lazy, makedirs, \
+                      read_file
 from trac.util.compat import sha1
 from trac.util.concurrency import threading
 from trac.util.text import exception_to_unicode, path_to_unicode, printerr, \
@@ -72,19 +74,15 @@ class IEnvironmentSetupParticipant(Interface):
     def environment_created():
         """Called when a new Trac environment is created."""
 
-    def environment_needs_upgrade(db=None):
+    def environment_needs_upgrade(db):
         """Called when Trac checks whether the environment needs to be
         upgraded.
 
         Should return `True` if this participant needs an upgrade to
         be performed, `False` otherwise.
-
-        :since 1.1.2: the `db` parameter is deprecated and will be removed
-                      in Trac 1.3.1. A database connection should instead be
-                      obtained using a context manager.
         """
 
-    def upgrade_environment(db=None):
+    def upgrade_environment(db):
         """Actually perform an environment upgrade.
 
         Implementations of this method don't need to commit any
@@ -95,14 +93,10 @@ class IEnvironmentSetupParticipant(Interface):
         However, if the `upgrade_environment` consists of small,
         restartable, steps of upgrade, it can decide to commit on its
         own after each successful step.
-
-        :since 1.1.2: the `db` parameter is deprecated and will be removed
-                      in Trac 1.3.1. A database connection should instead be
-                      obtained using a context manager.
         """
 
 
-class BackupError(TracBaseError, RuntimeError):
+class BackupError(RuntimeError):
     """Exception raised during an upgrade when the DB backup fails."""
 
 
@@ -180,7 +174,7 @@ class Environment(Component, ComponentManager):
         resources in notification e-mails.""")
 
     base_url_for_redirect = BoolOption('trac', 'use_base_url_for_redirect',
-                                        False,
+            False,
         """Optionally use `[trac] base_url` for redirects.
 
         In some configurations, usually involving running Trac behind
@@ -189,7 +183,7 @@ class Environment(Component, ComponentManager):
         force Trac to use the `base_url` setting also for
         redirects. This introduces the obvious limitation that this
         environment will only be usable when accessible from that URL,
-        as redirects are frequently used. (''since 0.10.5'')""")
+        as redirects are frequently used. ''(since 0.10.5)''""")
 
     secure_cookies = BoolOption('trac', 'secure_cookies', False,
         """Restrict cookies to HTTPS connections.
@@ -266,7 +260,7 @@ class Environment(Component, ComponentManager):
         Example:
         `($(thread)d) Trac[$(basename)s:$(module)s] $(levelname)s: $(message)s`
 
-        (''since 0.10.5'')""")
+        ''(since 0.10.5)''""")
 
     def __init__(self, path, create=False, options=[]):
         """Initialize the Trac environment.
@@ -281,11 +275,6 @@ class Environment(Component, ComponentManager):
         ComponentManager.__init__(self)
 
         self.path = path
-        self.log = None
-        self.config = None
-        # System info should be provided through ISystemInfoProvider rather
-        # than appending to systeminfo, which may be a private in a future
-        # release.
         self.systeminfo = []
 
         if create:
@@ -299,39 +288,15 @@ class Environment(Component, ComponentManager):
                 setup_participant.environment_created()
 
     def get_systeminfo(self):
-        """Return a list of `(name, version)` tuples describing the name
-        and version information of external packages used by Trac and plugins.
+        """Return a list of `(name, version)` tuples describing the
+        name and version information of external packages used by Trac
+        and plugins.
         """
         info = self.systeminfo[:]
         for provider in self.system_info_providers:
             info.extend(provider.get_system_info() or [])
         info.sort(key=lambda (name, version): (name != 'Trac', name.lower()))
         return info
-
-    def get_configinfo(self):
-        """Returns a list of dictionaries containing the `name` and `options`
-        of each configuration section. The value of `options` is a list of
-        dictionaries containing the `name`, `value` and `modified` state of
-        each configuration option. The `modified` value is True if the value
-        differs from its default.
-
-        :since: version 1.1.2
-        """
-        defaults = self.config.defaults(self.compmgr)
-        sections = []
-        for section in self.config.sections(self.compmgr):
-            options = []
-            default_options = defaults.get(section, {})
-            for name, value in self.config.options(section, self.compmgr):
-                default = default_options.get(name) or ''
-                options.append({
-                    'name': name, 'value': value,
-                    'modified': unicode(value) != unicode(default)
-                })
-            options.sort(key=lambda o: o['name'])
-            sections.append({'name': section, 'options': options})
-        sections.sort(key=lambda s: s['name'])
-        return sections
 
     # ISystemInfoProvider methods
 
@@ -343,8 +308,6 @@ class Environment(Component, ComponentManager):
         from trac.util.datefmt import pytz
         if pytz is not None:
             yield 'pytz', pytz.__version__
-        if hasattr(self, 'webfrontend_version'):
-            yield self.webfrontend, self.webfrontend_version
 
     def component_activated(self, component):
         """Initialize additional member variables for components.
@@ -423,9 +386,36 @@ class Environment(Component, ComponentManager):
             tag = read_file(os.path.join(self.path, 'VERSION')).splitlines()[0]
             if tag != _VERSION:
                 raise Exception("Unknown Trac environment type '%s'" % tag)
-        except Exception as e:
+        except Exception, e:
             raise TracError("No Trac environment found at %s\n%s"
                             % (self.path, e))
+
+    def get_db_cnx(self):
+        """Return a database connection from the connection pool
+
+        :deprecated: Use :meth:`db_transaction` or :meth:`db_query` instead.
+                     Removed in Trac 1.1.2.
+
+        `db_transaction` for obtaining the `db` database connection
+        which can be used for performing any query
+        (SELECT/INSERT/UPDATE/DELETE)::
+
+           with env.db_transaction as db:
+               ...
+
+        Note that within the block, you don't need to (and shouldn't)
+        call ``commit()`` yourself, the context manager will take care
+        of it (if it's the outermost such context manager on the
+        stack).
+
+
+        `db_query` for obtaining a `db` database connection which can
+        be used for performing SELECT queries only::
+
+           with env.db_query as db:
+               ...
+        """
+        return DatabaseManager(self).get_connection()
 
     @lazy
     def db_exc(self):
@@ -439,7 +429,7 @@ class Environment(Component, ComponentManager):
             try:
                 with env.db_transaction as db:
                     ...
-            except env.db_exc.IntegrityError as e:
+            except env.db_exc.IntegrityError, e:
                 ...
         """
         return DatabaseManager(self).get_exceptions()
@@ -620,7 +610,7 @@ class Environment(Component, ComponentManager):
         """
         return self.get_version(initial=True)
 
-    def get_version(self, initial=False):
+    def get_version(self, db=None, initial=False):
         """Return the current version of the database.  If the
         optional argument `initial` is set to `True`, the version of
         the database used at the time of creation will be returned.
@@ -629,6 +619,9 @@ class Environment(Component, ComponentManager):
         return `False` which is "older" than any db version number.
 
         :since: 0.11
+
+        :since 1.0: deprecation warning: the `db` parameter is no
+                    longer used and will be removed in version 1.1.1
 
         :since 1.0.2: The lazily-evaluated attributes `database_version` and
                       `database_initial_version` should be used instead. This
@@ -642,8 +635,7 @@ class Environment(Component, ComponentManager):
 
     def setup_config(self):
         """Load the configuration file."""
-        self.config = Configuration(os.path.join(self.path, 'conf',
-                                                 'trac.ini'),
+        self.config = Configuration(os.path.join(self.path, 'conf', 'trac.ini'),
                                     {'envname': os.path.basename(self.path)})
         self.setup_log()
         from trac.loader import load_components
@@ -682,13 +674,19 @@ class Environment(Component, ComponentManager):
         self.log.info('-' * 32 + ' environment startup [Trac %s] ' + '-' * 32,
                       get_pkginfo(core).get('version', VERSION))
 
-    def get_known_users(self):
+    def get_known_users(self, cnx=None):
         """Generator that yields information about all known users,
         i.e. users that have logged in to this Trac environment and
         possibly set their name and email.
 
         This function generates one tuple for every user, of the form
         (username, name, email) ordered alpha-numerically by username.
+
+        :param cnx: the database connection; if ommitted, a new
+                    connection is retrieved
+
+        :since 1.0: deprecation warning: the `cnx` parameter is no
+                    longer used and will be removed in version 1.1.1
         """
         for username, name, email in self.db_query("""
                 SELECT DISTINCT s.sid, n.value, e.value
@@ -712,11 +710,8 @@ class Environment(Component, ComponentManager):
     def needs_upgrade(self):
         """Return whether the environment needs to be upgraded."""
         for participant in self.setup_participants:
-            args = ()
             with self.db_query as db:
-                if arity(participant.environment_needs_upgrade) == 1:
-                    args = (db,)
-                if participant.environment_needs_upgrade(*args):
+                if participant.environment_needs_upgrade(db):
                     self.log.warn("Component %s requires environment upgrade",
                                   participant)
                     return True
@@ -731,11 +726,8 @@ class Environment(Component, ComponentManager):
         """
         upgraders = []
         for participant in self.setup_participants:
-            args = ()
             with self.db_query as db:
-                if arity(participant.environment_needs_upgrade) == 1:
-                    args = (db,)
-                if participant.environment_needs_upgrade(*args):
+                if participant.environment_needs_upgrade(db):
                     upgraders.append(participant)
         if not upgraders:
             return
@@ -743,17 +735,14 @@ class Environment(Component, ComponentManager):
         if backup:
             try:
                 self.backup(backup_dest)
-            except Exception as e:
+            except Exception, e:
                 raise BackupError(e)
 
         for participant in upgraders:
             self.log.info("%s.%s upgrading...", participant.__module__,
                           participant.__class__.__name__)
-            args = ()
             with self.db_transaction as db:
-                if arity(participant.upgrade_environment) == 1:
-                    args = (db,)
-                participant.upgrade_environment(*args)
+                participant.upgrade_environment(db)
             # Database schema may have changed, so close all connections
             DatabaseManager(self).shutdown()
         del self.database_version
@@ -790,11 +779,11 @@ class EnvironmentSetup(Component):
         with self.env.db_transaction as db:
             for table, cols, vals in db_default.get_data(db):
                 db.executemany("INSERT INTO %s (%s) VALUES (%s)"
-                               % (table, ','.join(cols),
-                                  ','.join(['%s'] * len(cols))), vals)
+                   % (table, ','.join(cols), ','.join(['%s' for c in cols])),
+                   vals)
         self._update_sample_config()
 
-    def environment_needs_upgrade(self):
+    def environment_needs_upgrade(self, db):
         dbver = self.env.database_version
         if dbver == db_default.db_version:
             return False
@@ -804,30 +793,26 @@ class EnvironmentSetup(Component):
                       dbver, db_default.db_version)
         return True
 
-    def upgrade_environment(self):
+    def upgrade_environment(self, db):
         """Each db version should have its own upgrade module, named
         upgrades/dbN.py, where 'N' is the version number (int).
         """
+        cursor = db.cursor()
         dbver = self.env.database_version
-        with self.env.db_transaction as db:
-            cursor = db.cursor()
-            for i in range(dbver + 1, db_default.db_version + 1):
-                name = 'db%i' % i
-                try:
-                    upgrades = __import__('upgrades', globals(), locals(),
-                                          [name])
-                    script = getattr(upgrades, name)
-                except AttributeError:
-                    raise TracError(_("No upgrade module for version %(num)i "
-                                      "(%(version)s.py)", num=i,
-                                      version=name))
-                script.do_upgrade(self.env, i, cursor)
-                cursor.execute("""
-                    UPDATE system SET value=%s WHERE name='database_version'
-                    """, (i,))
-                self.log.info("Upgraded database version from %d to %d",
-                              i - 1, i)
-                db.commit()
+        for i in range(dbver + 1, db_default.db_version + 1):
+            name  = 'db%i' % i
+            try:
+                upgrades = __import__('upgrades', globals(), locals(), [name])
+                script = getattr(upgrades, name)
+            except AttributeError:
+                raise TracError(_("No upgrade module for version %(num)i "
+                                  "(%(version)s.py)", num=i, version=name))
+            script.do_upgrade(self.env, i, cursor)
+            cursor.execute("""
+                UPDATE system SET value=%s WHERE name='database_version'
+                """, (i,))
+            self.log.info("Upgraded database version from %d to %d", i - 1, i)
+            db.commit()
         self._update_sample_config()
 
     # Internal methods
@@ -844,7 +829,7 @@ class EnvironmentSetup(Component):
             self.log.info("Wrote sample configuration file with the new "
                           "settings and their default values: %s",
                           filename)
-        except IOError as e:
+        except IOError, e:
             self.log.warn("Couldn't write sample configuration file (%s)", e,
                           exc_info=True)
 
@@ -852,13 +837,12 @@ class EnvironmentSetup(Component):
 env_cache = {}
 env_cache_lock = threading.Lock()
 
-
 def open_environment(env_path=None, use_cache=False):
     """Open an existing environment object, and verify that the database is up
     to date.
 
     :param env_path: absolute path to the environment directory; if
-                     omitted, the value of the `TRAC_ENV` environment
+                     ommitted, the value of the `TRAC_ENV` environment
                      variable is used
     :param use_cache: whether the environment should be cached for
                       subsequent invocations of this function
@@ -884,8 +868,7 @@ def open_environment(env_path=None, use_cache=False):
                 del env_cache[env_path]
                 env = None
             if env is None:
-                env = env_cache.setdefault(env_path,
-                                           open_environment(env_path))
+                env = env_cache.setdefault(env_path, open_environment(env_path))
             else:
                 CacheManager(env).reset_metadata()
     else:
@@ -893,7 +876,7 @@ def open_environment(env_path=None, use_cache=False):
         needs_upgrade = False
         try:
             needs_upgrade = env.needs_upgrade()
-        except Exception as e:  # e.g. no database connection
+        except Exception, e: # e.g. no database connection
             env.log.error("Exception caught while checking for upgrade: %s",
                           exception_to_unicode(e, traceback=True))
         if needs_upgrade:
@@ -986,8 +969,7 @@ class EnvironmentAdmin(Component):
             skip = []
 
             if prefix == 'sqlite':
-                db_path = os.path.join(self.env.path,
-                                       os.path.normpath(db_path))
+                db_path = os.path.join(self.env.path, os.path.normpath(db_path))
                 # don't copy the journal (also, this would fail on Windows)
                 skip = [db_path + '-journal', db_path + '-stmtjrnl']
                 if no_db:
@@ -996,7 +978,7 @@ class EnvironmentAdmin(Component):
             try:
                 copytree(self.env.path, dest, symlinks=1, skip=skip)
                 retval = 0
-            except shutil.Error as e:
+            except shutil.Error, e:
                 retval = 1
                 printerr(_("The following errors happened while copying "
                            "the environment:"))
@@ -1005,6 +987,7 @@ class EnvironmentAdmin(Component):
                         printerr('  %s' % err)
                     else:
                         printerr("  %s: '%s'" % (err, path_to_unicode(src)))
+
 
             # db backup for non-sqlite
             if prefix != 'sqlite' and not no_db:
@@ -1026,11 +1009,11 @@ class EnvironmentAdmin(Component):
 
         try:
             self.env.upgrade(backup=no_backup is None)
-        except BackupError as e:
+        except BackupError, e:
             printerr(_("The pre-upgrade backup failed.\nUse '--no-backup' to "
                        "upgrade without doing a backup.\n"))
             raise e.args[0]
-        except Exception:
+        except Exception, e:
             printerr(_("The upgrade failed. Please fix the issue and try "
                        "again.\n"))
             raise
@@ -1050,7 +1033,7 @@ class EnvironmentAdmin(Component):
             else:
                 try:
                     os.rmdir(wiki_macros)
-                except OSError as e:
+                except OSError, e:
                     printerr(_("Error while removing wiki-macros: %(err)s\n"
                                "Trac doesn't load plugins from wiki-macros "
                                "anymore. Please remove it by hand.",

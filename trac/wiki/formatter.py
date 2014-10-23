@@ -31,7 +31,7 @@ from genshi.util import plaintext
 from trac.core import *
 from trac.mimeview import *
 from trac.resource import get_relative_resource, get_resource_url
-from trac.util import arity, as_int
+from trac.util import arity
 from trac.util.text import exception_to_unicode, shorten_line, to_unicode, \
                            unicode_quote, unicode_quote_plus, unquote_label
 from trac.util.html import TracHTMLSanitizer
@@ -127,7 +127,7 @@ class WikiProcessor(object):
         :param name: the name of the processor
         :param args: extra parameters for the processor
 
-        (''since 0.11'')
+        (since 0.11)
         """
         self.formatter = formatter
         self.env = formatter.env
@@ -167,10 +167,7 @@ class WikiProcessor(object):
                         if hasattr(macro_provider, 'expand_macro'):
                             self.processor = self._macro_processor
                         else:
-                            raise TracError(
-                                tag_("Pre-0.11 macros with the %(method)s "
-                                     "method are no longer supported.",
-                                     method=tag.code("render_macro")))
+                            self.processor = self._legacy_macro_processor
                         self.macro_provider = macro_provider
                         self.inline_check = getattr(macro_provider, 'is_inline',
                                                     False)
@@ -212,12 +209,7 @@ class WikiProcessor(object):
         return ''
 
     def _default_processor(self, text):
-        if self.args and 'lineno' in self.args:
-            self.name = \
-                Mimeview(self.formatter.env).get_mimetype('text/plain')
-            return self._mimeview_processor(text)
-        else:
-            return tag.pre(text, class_="wiki")
+        return tag.pre(text, class_="wiki")
 
     def _html_processor(self, text):
         if WikiSystem(self.env).render_unsafe_content:
@@ -225,7 +217,7 @@ class WikiProcessor(object):
         try:
             stream = Stream(HTMLParser(StringIO(text)))
             return (stream | self._sanitizer).render('xhtml', encoding=None)
-        except ParseError as e:
+        except ParseError, e:
             self.env.log.warn(e)
             line = unicode(text).splitlines()[e.lineno - 1].strip()
             return system_message(_('HTML parsing error: %(message)s',
@@ -279,7 +271,7 @@ class WikiProcessor(object):
             elt = self._elt_processor('tr', self._format_row, text)
             self.formatter.open_table()
             return elt
-        except ProcessorError as e:
+        except ProcessorError, e:
             return system_message(e)
 
     def _table_processor(self, text):
@@ -288,7 +280,7 @@ class WikiProcessor(object):
         self.args.setdefault('class', 'wiki')
         try:
             return self._elt_processor('table', self._format_table, text)
-        except ProcessorError as e:
+        except ProcessorError, e:
             return system_message(e)
 
     def _tablecell_processor(self, eltname, text):
@@ -336,6 +328,12 @@ class WikiProcessor(object):
 
     # generic processors
 
+    def _legacy_macro_processor(self, text): # TODO: remove in 0.12
+        self.env.log.warning('Executing pre-0.11 Wiki macro %s by provider %s'
+                             % (self.name, self.macro_provider))
+        return self.macro_provider.render_macro(self.formatter.req, self.name,
+                                                text)
+
     def _macro_processor(self, text):
         self.env.log.debug('Executing Wiki macro %s by provider %s'
                            % (self.name, self.macro_provider))
@@ -347,20 +345,8 @@ class WikiProcessor(object):
                                                     text)
 
     def _mimeview_processor(self, text):
-        annotations = []
-        context = self.formatter.context.child()
-        if self.args and 'lineno' in self.args:
-            lineno = as_int(self.args['lineno'], 1, min=1)
-            context.set_hints(lineno=lineno)
-            id = str(self.args.get('id', '')) or \
-                 self.formatter._unique_anchor('a')
-            context.set_hints(id=id + '-')
-            if 'marks' in self.args:
-                context.set_hints(marks=self.args.get('marks'))
-            annotations.append('lineno')
-        return tag.div(class_='wiki-code')(
-            Mimeview(self.env).render(context, self.name, text,
-                                      annotations=annotations))
+        return Mimeview(self.env).render(self.formatter.context,
+                                         self.name, text)
     # TODO: use convert('text/html') instead of render
 
     def process(self, text, in_paragraph=False):
@@ -417,11 +403,17 @@ class Formatter(object):
 
     flavor = 'default'
 
+    # 0.10 compatibility
+    INTERTRAC_SCHEME = WikiParser.INTERTRAC_SCHEME
+    QUOTED_STRING = WikiParser.QUOTED_STRING
+    LINK_SCHEME = WikiParser.LINK_SCHEME
+
     def __init__(self, env, context):
+        """Note: `req` is still temporarily used."""
         self.env = env
         self.context = context.child()
         self.context.set_hints(disable_warnings=True)
-        self.req = context.req  # Deprecated and will be removed in 1.3.1
+        self.req = context.req
         self.href = context.href
         self.resource = context.resource
         self.perm = context.perm
@@ -563,10 +555,10 @@ class Formatter(object):
         return self._indirect_tag_handler(match, 'MM_SUPERSCRIPT')
 
     def _inlinecode_formatter(self, match, fullmatch):
-        return tag.code(fullmatch.group('inline'))
+        return tag.tt(fullmatch.group('inline'))
 
     def _inlinecode2_formatter(self, match, fullmatch):
-        return tag.code(fullmatch.group('inline2'))
+        return tag.tt(fullmatch.group('inline2'))
 
     # pre-0.12 public API (no longer used by Trac itself but kept for plugins)
 
@@ -735,7 +727,8 @@ class Formatter(object):
             return self._make_ext_link(url, label, title)
 
     def _make_ext_link(self, url, text, title=''):
-        local_url = self.env.project_url or self.env.abs_href.base
+        local_url = self.env.project_url or \
+                    (self.req or self.env).abs_href.base
         if not url.startswith(local_url):
             return tag.a(tag.span(u'\u200b', class_="icon"), text,
                          class_="ext-link", href=url, title=title or None)
@@ -754,15 +747,6 @@ class Formatter(object):
         if label:
             label = format_to_oneliner(self.env, self.context, label)
         return '<span class="wikianchor" id="%s">%s</span>' % (anchor, label)
-
-    def _unique_anchor(self, anchor):
-        i = 1
-        anchor_base = anchor
-        while anchor in self._anchors:
-            anchor = anchor_base + str(i)
-            i += 1
-        self._anchors[anchor] = True
-        return anchor
 
     # WikiMacros or WikiCreole links
 
@@ -802,7 +786,7 @@ class Formatter(object):
             args = fullmatch.group('macroargs')
         try:
             return macro.ensure_inline(macro.process(args))
-        except Exception as e:
+        except Exception, e:
             self.env.log.error('Macro %s(%s) failed:%s', name, args,
                                exception_to_unicode(e, traceback=True))
             return system_message(_("Error: Macro %(name)s(%(args)s) failed",
@@ -828,7 +812,12 @@ class Formatter(object):
             if not anchor or anchor[0].isdigit() or anchor[0] in '.-':
                 # an ID must start with a Name-start character in XHTML
                 anchor = 'a' + anchor # keeping 'a' for backward compat
-        anchor = self._unique_anchor(anchor)
+        i = 1
+        anchor_base = anchor
+        while anchor in self._anchors:
+            anchor = anchor_base + str(i)
+            i += 1
+        self._anchors[anchor] = True
         if shorten:
             heading = format_to_oneliner(self.env, self.context, htext, True)
         return (depth, heading, anchor)

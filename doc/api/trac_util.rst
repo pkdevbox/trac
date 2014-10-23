@@ -95,6 +95,7 @@ Algorithmic utilities
 ---------------------
 
 .. autofunction :: embedded_numbers
+.. autofunction :: pairwise
 .. autofunction :: partition
 .. autofunction :: as_int
 .. autofunction :: as_bool

@@ -16,7 +16,6 @@
 tasks such as grouping or pagination.
 """
 
-from json import dumps
 from math import ceil
 import re
 
@@ -70,7 +69,7 @@ def group(iterable, num, predicate=None):
 
     >>> items = [1, 2, 3, 4]
     >>> for item in group(items, 2):
-    ...     print(item)
+    ...     print item
     (1, 2)
     (3, 4)
 
@@ -79,7 +78,7 @@ def group(iterable, num, predicate=None):
 
     >>> items = [1, 2, 3, 4, 5]
     >>> for item in group(items, 2):
-    ...     print(item)
+    ...     print item
     (1, 2)
     (3, 4)
     (5, None)
@@ -91,7 +90,7 @@ def group(iterable, num, predicate=None):
 
     >>> items = [1, 2, 3, 4]
     >>> for item in group(items, 2, lambda x: x != 3):
-    ...     print(item)
+    ...     print item
     (1, 2)
     (3,)
     (4, None)
@@ -291,13 +290,40 @@ def separated(items, sep=','):
     yield last, None
 
 
-_js_quote = dict((c, '\\u%04x' % ord(c)) for c in '&<>')
-_js_quote_re = re.compile('[' + ''.join(_js_quote) + ']')
+try:
+    from json import dumps
 
+    _js_quote = dict((c, '\\u%04x' % ord(c)) for c in '&<>')
+    _js_quote_re = re.compile('[' + ''.join(_js_quote) + ']')
 
-def to_json(value):
-    """Encode `value` to JSON."""
-    def replace(match):
-        return _js_quote[match.group(0)]
-    text = dumps(value, sort_keys=True, separators=(',', ':'))
-    return _js_quote_re.sub(replace, text)
+    def to_json(value):
+        """Encode `value` to JSON."""
+        def replace(match):
+            return _js_quote[match.group(0)]
+        text = dumps(value, sort_keys=True, separators=(',', ':'))
+        return _js_quote_re.sub(replace, text)
+
+except ImportError:
+    from trac.util.text import to_js_string
+
+    def to_json(value):
+        """Encode `value` to JSON."""
+        if isinstance(value, basestring):
+            return to_js_string(value)
+        elif value is None:
+            return 'null'
+        elif value is False:
+            return 'false'
+        elif value is True:
+            return 'true'
+        elif isinstance(value, (int, long)):
+            return str(value)
+        elif isinstance(value, float):
+            return repr(value)
+        elif isinstance(value, (list, tuple)):
+            return '[%s]' % ','.join(to_json(each) for each in value)
+        elif isinstance(value, dict):
+            return '{%s}' % ','.join('%s:%s' % (to_json(k), to_json(v))
+                                     for k, v in sorted(value.iteritems()))
+        else:
+            raise TypeError('Cannot encode type %s' % value.__class__.__name__)

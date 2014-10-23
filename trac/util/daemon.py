@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import atexit
 import errno
 import os
@@ -38,7 +40,7 @@ def daemonize(pidfile=None, progname=None, stdin='/dev/null',
                 if not progname:
                     progname = os.path.basename(sys.argv[0])
                 sys.exit('%s is already running with pid %s' % (progname, pid))
-            except OSError as e:
+            except OSError, e:
                 if e.errno != errno.ESRCH:
                     raise
 
@@ -46,7 +48,7 @@ def daemonize(pidfile=None, progname=None, stdin='/dev/null',
         try:
             fileobj = open(pidfile, 'a+')
             fileobj.close()
-        except IOError as e:
+        except IOError, e:
             from trac.util.text import exception_to_unicode
             sys.exit('Error writing to pid file: %s' % exception_to_unicode(e))
 

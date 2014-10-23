@@ -1,13 +1,14 @@
 # Turkish translations for Trac.
-# Copyright (C) 2010 Edgewall Software
+# Copyright (C) 2012 Edgewall Software
 # This file is distributed under the same license as the Trac project.
-# FIRST AUTHOR <EMAIL@ADDRESS>, 2010.
 #
+# Translators:
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2010.
 msgid ""
 msgstr ""
 "Project-Id-Version: Trac 0.12\n"
 "Report-Msgid-Bugs-To: trac-dev@googlegroups.com\n"
-"POT-Creation-Date: 2013-02-02 15:20+0100\n"
+"POT-Creation-Date: 2013-01-27 11:21+0900\n"
 "PO-Revision-Date: 2010-06-24 08:11+0200\n"
 "Last-Translator: Aranel Surion <aranel@aranelsurion.org>\n"
 "Language-Team: tr <LL@li.org>\n"
@@ -15,7 +16,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Generated-By: Babel 0.9.6dev-r0\n"
+"Generated-By: Babel 0.9.6\n"
 
 #: trac/htdocs/js/blame.js:84
 msgid "(no changeset information)"
@@ -142,36 +143,36 @@ msgstr "Bu özellik için zaten bir filtre mevcut"
 msgid "or"
 msgstr "veya"
 
-#: trac/htdocs/js/query.js:182 trac/htdocs/js/query.js:318
+#: trac/htdocs/js/query.js:182 trac/htdocs/js/query.js:310
 msgid "yes"
 msgstr "evet"
 
-#: trac/htdocs/js/query.js:185 trac/htdocs/js/query.js:321
+#: trac/htdocs/js/query.js:185 trac/htdocs/js/query.js:313
 msgid "no"
 msgstr "hayır"
 
-#: trac/htdocs/js/query.js:196
+#: trac/htdocs/js/query.js:188
 msgid "between"
 msgstr "arasında"
 
-#: trac/htdocs/js/query.js:198
+#: trac/htdocs/js/query.js:190
 msgid "and"
 msgstr "ve"
 
-#: trac/htdocs/js/query.js:350
+#: trac/htdocs/js/query.js:337
 msgid " remove:"
 msgstr ""
 
-#: trac/htdocs/js/query.js:360
+#: trac/htdocs/js/query.js:347
 msgid " add:"
 msgstr ""
 
-#: trac/htdocs/js/query.js:389
+#: trac/htdocs/js/query.js:376
 #, python-format
 msgid "Select ticket %(id)s for modification"
 msgstr ""
 
-#: trac/htdocs/js/query.js:400
+#: trac/htdocs/js/query.js:387
 msgid "Toggle selection of all tickets shown in this group"
 msgstr ""
 

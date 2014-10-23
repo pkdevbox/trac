@@ -28,6 +28,9 @@
         <fieldset>
           <legend>Grant Permission:</legend>
           <div class="field">
+            <label>Subject: <input id="gp_subject" type="text" name="subject" /></label>
+          </div>
+          <div class="field">
             <label>Action:
               <select id="action" name="action"
                       py:with="allowed_actions = [a for a in actions if a in perm]">
@@ -35,34 +38,12 @@
               </select>
             </label>
           </div>
-          <div class="field">
-            <label>Subject: <input id="gp_subject" type="text" name="subject" /></label>
-          </div>
           <div class="buttons">
             <input type="submit" name="add" class="trac-disable-on-submit" value="${_('Add')}" />
           </div>
           <p class="help">
             Grant permission for an action to a subject, which can be either a user
             or a group.
-          </p>
-        </fieldset>
-      </form>
-
-      <form id="copyperm" class="addnew" method="post" action="">
-        <fieldset>
-          <legend>Copy Permissions:</legend>
-          <div class="field">
-            <label>Subject: <input id="cp_subject" type="text" name="subject" /></label>
-          </div>
-          <div class="field">
-            <label>Target: <input id="cp_target" type="text" name="target" /></label>
-          </div>
-          <div class="buttons">
-            <input type="submit" name="copy" value="${_('Add')}"/>
-          </div>
-          <p class="help">
-            Copy all of subject's permissions to target.
-            Subject and target can be either users or groups.
           </p>
         </fieldset>
       </form>
@@ -102,7 +83,6 @@
                 <!--! base64 makes it safe to use ':' as separator when passing
                       both subject and action as one query parameter -->
                 <input py:if="can_revoke" type="checkbox" name="sel"
-                       class="trac-disable-determinant"
                        title="${_('You don\'t have permission to revoke this action')
                                 if not has_perm else None}"
                        value="${'%s:%s' % (unicode_to_base64(subject),
@@ -132,7 +112,6 @@
                 <!--! base64 makes it safe to use ':' as separator when passing
                       both subject and action as one query parameter -->
                 <input py:if="can_revoke" type="checkbox" name="sel"
-                       class="trac-disable-determinant"
                        value="${'%s:%s' % (unicode_to_base64(subject),
                                            unicode_to_base64(action))}"/> $subject
               </label>
@@ -142,7 +121,7 @@
         </tbody>
       </table>
       <div class="buttons" py:if="can_revoke">
-        <input type="submit" name="remove" class="trac-disable" value="${_('Remove selected items')}" />
+        <input type="submit" name="remove" value="${_('Remove selected items')}" />
       </div>
     </form>
 

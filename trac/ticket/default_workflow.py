@@ -35,7 +35,6 @@ from trac.util.translation import _, tag_, cleandoc_
 from trac.web.chrome import Chrome, add_script, add_script_data
 from trac.wiki.macros import WikiMacroBase
 
-
 # -- Utilities for the ConfigurableTicketWorkflow
 
 def parse_workflow_config(rawactions):
@@ -77,7 +76,6 @@ def parse_workflow_config(rawactions):
         attributes['oldstates'] = as_list('oldstates')
     return actions
 
-
 def get_workflow_config(config):
     """Usually passed self.config, this will return the parsed ticket-workflow
     section.
@@ -85,7 +83,6 @@ def get_workflow_config(config):
     raw_actions = list(config.options('ticket-workflow'))
     actions = parse_workflow_config(raw_actions)
     return actions
-
 
 def load_workflow_config_snippet(config, filename):
     """Loads the ticket-workflow section from the given file (expected to be in
@@ -147,13 +144,13 @@ class ConfigurableTicketWorkflow(Component):
             self.config.save()
             self.actions = get_workflow_config(self.config)
 
-    def environment_needs_upgrade(self):
+    def environment_needs_upgrade(self, db):
         """The environment needs an upgrade if there is no [ticket-workflow]
         section in the config.
         """
         return not list(self.config.options('ticket-workflow'))
 
-    def upgrade_environment(self):
+    def upgrade_environment(self, db):
         """Insert a [ticket-workflow] section using the original-workflow"""
         load_workflow_config_snippet(self.config, 'original-workflow.ini')
         self.config.save()
@@ -172,7 +169,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
 
 """
         self.log.info(info_message.replace('\n', ' ').replace('==', ''))
-        print(info_message)
+        print info_message
 
     # ITicketActionController methods
 
@@ -197,7 +194,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                 if self._is_action_allowed(ticket_perm, required_perms):
                     allowed_actions.append((action_info['default'],
                                             action_name))
-        if not (status in ['new', 'closed'] or
+        if not (status in ['new', 'closed'] or \
                     status in TicketSystem(self.env).get_all_status()) \
                 and 'TICKET_ADMIN' in ticket_perm:
             # State no longer exists - add a 'reset' action if admin.
@@ -242,37 +239,25 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
             hints.append(_("Current state no longer exists"))
         if 'del_owner' in operations:
             hints.append(_("The ticket will be disowned"))
-        if 'set_owner' in operations or 'may_set_owner' in operations:
+        if 'set_owner' in operations:
+            id = 'action_%s_reassign_owner' % action
+            selected_owner = req.args.get(id, req.authname)
+
             if 'set_owner' in this_action:
                 owners = [x.strip() for x in
-                          this_action['set_owner'].strip().split(',') if x]
+                          this_action['set_owner'].split(',')]
             elif self.config.getbool('ticket', 'restrict_owner'):
                 perm = PermissionSystem(self.env)
                 owners = perm.get_users_with_permission('TICKET_MODIFY')
-                owners = sorted(owners)
+                owners.sort()
             else:
                 owners = None
 
-            if 'set_owner' in operations:
-                default_owner = req.authname
-            elif 'may_set_owner' in operations:
-                default_owner = \
-                    ticket._old.get('owner', ticket['owner'] or None)
-                if owners is not None and default_owner not in owners:
-                    owners.insert(0, default_owner)
-            else:
-                # Protect against future modification for case that another
-                # operation is added to the outer conditional
-                raise AssertionError(operations)
-
-            id = 'action_%s_reassign_owner' % action
-            selected_owner = req.args.get(id, default_owner)
-
-            if not owners:
-                control.append(
-                    tag_("to %(owner)s",
-                         owner=tag.input(type='text', id=id, name=id,
-                                         value=selected_owner)))
+            if owners is None:
+                owner = req.args.get(id, req.authname)
+                control.append(tag_("to %(owner)s",
+                                    owner=tag.input(type='text', id=id,
+                                                    name=id, value=owner)))
                 hints.append(_("The owner will be changed from "
                                "%(current_owner)s to the specified user",
                                current_owner=formatted_current_owner))
@@ -289,8 +274,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                                    selected_owner=formatted_new_owner))
             else:
                 control.append(tag_("to %(owner)s", owner=tag.select(
-                    [tag.option(x if x is not None else _("(none)"),
-                                value=x if x is not None else '',
+                    [tag.option(x, value=x,
                                 selected=(x == selected_owner or None))
                      for x in owners],
                     id=id, name=id)))
@@ -336,8 +320,8 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
             hints.append(_("The resolution will be deleted"))
         if 'leave_status' in operations:
             control.append(_("as %(status)s",
-                             status=ticket._old.get('status',
-                                                    ticket['status'])))
+                             status= ticket._old.get('status',
+                                                     ticket['status'])))
             if len(operations) == 1:
                 hints.append(_("The owner will remain %(current_owner)s",
                                current_owner=formatted_current_owner)
@@ -370,10 +354,9 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
                 updated['status'] = 'new'
             elif operation == 'del_owner':
                 updated['owner'] = ''
-            elif operation in ('set_owner', 'may_set_owner'):
-                newowner = \
-                    req.args.get('action_%s_reassign_owner' % action,
-                                 this_action.get('set_owner', '').strip())
+            elif operation == 'set_owner':
+                newowner = req.args.get('action_%s_reassign_owner' % action,
+                                    this_action.get('set_owner', '').strip())
                 # If there was already an owner, we get a list, [new, old],
                 # but if there wasn't we just get new.
                 if type(newowner) == list:
@@ -384,7 +367,7 @@ Read TracWorkflow for more information (don't forget to 'wiki upgrade' as well)
             elif operation == 'del_resolution':
                 updated['resolution'] = ''
             elif operation == 'set_resolution':
-                newresolution = req.args.get('action_%s_resolve_resolution' %
+                newresolution = req.args.get('action_%s_resolve_resolution' % \
                                              action,
                                 this_action.get('set_resolution', '').strip())
                 updated['resolution'] = newresolution
@@ -446,7 +429,7 @@ class WorkflowMacro(WikiMacroBase):
     current ticket workflow is rendered. In WikiProcessors mode the `width`
     and `height` arguments can be specified.
 
-    (Defaults: `width = 800` and `height = 600`)
+    (Defaults: `width = 800` and `heigth = 600`)
 
     Examples:
     {{{

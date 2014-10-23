@@ -16,6 +16,8 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from datetime import datetime
 
 from trac.core import *
@@ -30,35 +32,18 @@ class WikiPage(object):
 
     realm = 'wiki'
 
-    def __init__(self, env, name=None, version=None):
-        """Create a new page object or retrieves an existing page.
-
-        :param env: an `Environment` object.
-        :param name: the page name or a `Resource` object.
-        :param version: the page version. The value takes precedence over the
-                        `Resource` version when both are specified.
-        """
+    def __init__(self, env, name=None, version=None, db=None):
         self.env = env
-        if version:
-            try:
-                version = int(version)
-            except ValueError:
-                version = None
-
         if isinstance(name, Resource):
             self.resource = name
             name = self.resource.id
-            if version is None and self.resource.version is not None:
-                try:
-                    version = int(self.resource.version)
-                except ValueError:
-                    version = None
         else:
-            self.resource = Resource(self.realm, name, version)
-
+            if version:
+                version = int(version)  # must be a number or None
+            self.resource = Resource('wiki', name, version)
         self.name = name
         if name:
-            self._fetch(name, version)
+            self._fetch(name, version, db)
         else:
             self.version = 0
             self.text = self.comment = self.author = ''
@@ -67,7 +52,7 @@ class WikiPage(object):
         self.old_text = self.text
         self.old_readonly = self.readonly
 
-    def _fetch(self, name, version=None):
+    def _fetch(self, name, version=None, db=None):
         if version is not None:
             sql = """SELECT version, time, author, text, comment, readonly
                      FROM wiki WHERE name=%s AND version=%s"""
@@ -93,8 +78,11 @@ class WikiPage(object):
 
     exists = property(lambda self: self.version > 0)
 
-    def delete(self, version=None):
+    def delete(self, version=None, db=None):
         """Delete one or all versions of a page.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if not self.exists:
             raise TracError(_("Cannot delete non-existent page"))
@@ -119,7 +107,7 @@ class WikiPage(object):
                 del WikiSystem(self.env).pages
                 # Delete orphaned attachments
                 from trac.attachment import Attachment
-                Attachment.delete_all(self.env, self.realm, self.name)
+                Attachment.delete_all(self.env, 'wiki', self.name)
 
         # Let change listeners know about the deletion
         if not self.exists:
@@ -130,8 +118,11 @@ class WikiPage(object):
                 if hasattr(listener, 'wiki_page_version_deleted'):
                     listener.wiki_page_version_deleted(self)
 
-    def save(self, author, comment, remote_addr, t=None):
+    def save(self, author, comment, remote_addr, t=None, db=None):
         """Save a new version of a page.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if not validate_page_name(self.name):
             raise TracError(_("Invalid Wiki page name '%(name)s'",
@@ -197,8 +188,8 @@ class WikiPage(object):
             del WikiSystem(self.env).pages
             # Reparent attachments
             from trac.attachment import Attachment
-            Attachment.reparent_all(self.env, self.realm, old_name,
-                                    self.realm, new_name)
+            Attachment.reparent_all(self.env, 'wiki', old_name, 'wiki',
+                                    new_name)
 
         self.name = self.resource.id = new_name
         self.env.log.info("Renamed page %s to %s", old_name, new_name)
@@ -207,8 +198,11 @@ class WikiPage(object):
             if hasattr(listener, 'wiki_page_renamed'):
                 listener.wiki_page_renamed(self, old_name)
 
-    def get_history(self):
+    def get_history(self, db=None):
         """Retrieve the edit history of a wiki page.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         for version, ts, author, comment, ipnr in self.env.db_query("""
                 SELECT version, time, author, comment, ipnr FROM wiki

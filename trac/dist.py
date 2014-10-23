@@ -19,6 +19,8 @@ we also modify the standard `distutils.command.build` and
 for compiling catalogs are issued upon install.
 """
 
+from __future__ import with_statement
+
 from StringIO import StringIO
 from itertools import izip
 import os
@@ -71,7 +73,7 @@ try:
         `cleandoc_keywords` option: a list of keywords to clean up the
         extracted messages with `cleandoc`.
         """
-        from inspect import cleandoc
+        from trac.util.compat import cleandoc
 
         funcname = lineno = message_lineno = None
         kwargs_maps = func_kwargs_map = None
@@ -371,7 +373,7 @@ try:
             errors = [e for e in message.check(catalog)]
             try:
                 check_genshi_markup(catalog, message)
-            except TranslationError as e:
+            except TranslationError, e:
                 errors.append(e)
             return errors
 
@@ -409,7 +411,7 @@ try:
         try:
             return set([idx for idx, text in parse_msg(message)
                             if idx > 0])
-        except Exception as e:
+        except Exception, e:
             raise TranslationError('cannot parse message (%s: %s)' % \
                                    (e.__class__.__name__, unicode(e)))
 

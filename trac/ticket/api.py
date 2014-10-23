@@ -20,9 +20,7 @@ import re
 from genshi.builder import tag
 
 from trac.cache import cached
-from trac.config import (
-    BoolOption, ConfigSection, ListOption, Option, OrderedExtensionsOption
-)
+from trac.config import *
 from trac.core import *
 from trac.perm import IPermissionRequestor, PermissionCache, PermissionSystem
 from trac.resource import IResourceManager
@@ -30,28 +28,6 @@ from trac.util import Ranges, as_int
 from trac.util.text import shorten_line
 from trac.util.translation import _, N_, gettext
 from trac.wiki import IWikiSyntaxProvider, WikiParser
-
-
-class TicketFieldList(list):
-    """Improved ticket field list, allowing access by name."""
-    __slots__ = ['_map']
-
-    def __init__(self, *args):
-        super(TicketFieldList, self).__init__(*args)
-        self._map = dict((value['name'], value) for value in self)
-
-    def append(self, value):
-        super(TicketFieldList, self).append(value)
-        self._map[value['name']] = value
-
-    def by_name(self, name, default=None):
-        return self._map.get(name, default)
-
-    def __copy__(self):
-        return TicketFieldList(self)
-
-    def __deepcopy__(self, memo):
-        return TicketFieldList(copy.deepcopy(value, memo) for value in self)
 
 
 class ITicketActionController(Interface):
@@ -203,8 +179,8 @@ class TicketSystem(Component):
     action_controllers = OrderedExtensionsOption('ticket', 'workflow',
         ITicketActionController, default='ConfigurableTicketWorkflow',
         include_missing=False,
-        doc="""Ordered list of workflow controllers to use for ticket actions.
-            (''since 0.11'')""")
+        doc="""Ordered list of workflow controllers to use for ticket actions
+            (''since 0.11'').""")
 
     restrict_owner = BoolOption('ticket', 'restrict_owner', 'false',
         """Make the owner field of tickets use a drop-down menu.
@@ -221,7 +197,7 @@ class TicketSystem(Component):
         """Default version for newly created tickets.""")
 
     default_type = Option('ticket', 'default_type', 'defect',
-        """Default type for newly created tickets. (''since 0.9'')""")
+        """Default type for newly created tickets (''since 0.9'').""")
 
     default_priority = Option('ticket', 'default_priority', 'major',
         """Default priority for newly created tickets.""")
@@ -251,13 +227,8 @@ class TicketSystem(Component):
         """Default cc: list for newly created tickets.""")
 
     default_resolution = Option('ticket', 'default_resolution', 'fixed',
-        """Default resolution for resolving (closing) tickets.
-        (''since 0.11'')""")
-
-    optional_fields = ListOption('ticket', 'optional_fields',
-                                 'milestone, version', doc=
-         """Comma-separated list of `select` fields that can have
-         an empty value. (//since 1.1.2//)""")
+        """Default resolution for resolving (closing) tickets
+        (''since 0.11'').""")
 
     def __init__(self):
         self.log.debug('action controllers for ticket workflow: %r' %
@@ -314,11 +285,11 @@ class TicketSystem(Component):
         del self.fields
 
     @cached
-    def fields(self):
+    def fields(self, db):
         """Return the list of fields available for tickets."""
         from trac.ticket import model
 
-        fields = TicketFieldList()
+        fields = []
 
         # Basic text fields
         fields.append({'name': 'summary', 'type': 'text',
@@ -334,7 +305,7 @@ class TicketSystem(Component):
 
         # Description
         fields.append({'name': 'description', 'type': 'textarea',
-                       'format': 'wiki', 'label': N_('Description')})
+                       'label': N_('Description')})
 
         # Default select and radio fields
         selects = [('type', N_('Type'), model.Type),
@@ -346,7 +317,7 @@ class TicketSystem(Component):
                    ('severity', N_('Severity'), model.Severity),
                    ('resolution', N_('Resolution'), model.Resolution)]
         for name, label, cls in selects:
-            options = [val.name for val in cls.select(self.env)]
+            options = [val.name for val in cls.select(self.env, db=db)]
             if not options:
                 # Fields without possible values are treated as if they didn't
                 # exist
@@ -357,7 +328,7 @@ class TicketSystem(Component):
             if name in ('status', 'resolution'):
                 field['type'] = 'radio'
                 field['optional'] = True
-            elif name in self.optional_fields:
+            elif name in ('milestone', 'version'):
                 field['optional'] = True
             fields.append(field)
 
@@ -369,11 +340,11 @@ class TicketSystem(Component):
 
         # Date/time fields
         fields.append({'name': 'time', 'type': 'time',
-                       'format': 'relative', 'label': N_('Created')})
+                       'label': N_('Created')})
         fields.append({'name': 'changetime', 'type': 'time',
-                       'format': 'relative', 'label': N_('Modified')})
+                       'label': N_('Modified')})
 
-        for field in self.custom_fields:
+        for field in self.get_custom_fields():
             if field['name'] in [f['name'] for f in fields]:
                 self.log.warning('Duplicate field name "%s" (ignoring)',
                                  field['name'])
@@ -386,6 +357,7 @@ class TicketSystem(Component):
                 self.log.warning('Invalid name for custom field: "%s" '
                                  '(ignoring)', field['name'])
                 continue
+            field['custom'] = True
             fields.append(field)
 
         return fields
@@ -398,15 +370,14 @@ class TicketSystem(Component):
         return copy.deepcopy(self.custom_fields)
 
     @cached
-    def custom_fields(self):
+    def custom_fields(self, db):
         """Return the list of custom ticket fields available for tickets."""
-        fields = TicketFieldList()
+        fields = []
         config = self.ticket_custom_section
         for name in [option for option, value in config.options()
                      if '.' not in option]:
             field = {
                 'name': name,
-                'custom': True,
                 'type': config.get(name),
                 'order': config.getint(name + '.order', 0),
                 'label': config.get(name + '.label') or name.capitalize(),
@@ -414,18 +385,15 @@ class TicketSystem(Component):
             }
             if field['type'] == 'select' or field['type'] == 'radio':
                 field['options'] = config.getlist(name + '.options', sep='|')
-                if '' in field['options'] or \
-                        field['name'] in self.optional_fields:
+                if '' in field['options']:
                     field['optional'] = True
-                    if '' in field['options']:
-                        field['options'].remove('')
+                    field['options'].remove('')
             elif field['type'] == 'text':
                 field['format'] = config.get(name + '.format', 'plain')
             elif field['type'] == 'textarea':
                 field['format'] = config.get(name + '.format', 'plain')
+                field['width'] = config.getint(name + '.cols')
                 field['height'] = config.getint(name + '.rows')
-            elif field['type'] == 'time':
-                field['format'] = config.get(name + '.format', 'datetime')
             fields.append(field)
 
         fields.sort(lambda x, y: cmp((x['order'], x['name']),
@@ -454,7 +422,7 @@ class TicketSystem(Component):
             possible_owners.sort()
             possible_owners.insert(0, '< default >')
             field['options'] = possible_owners
-            field['optional'] = 'owner' in self.optional_fields
+            field['optional'] = True
 
     # IPermissionRequestor methods
 

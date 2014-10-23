@@ -14,19 +14,21 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import os
 import time
 import urllib
-from abc import ABCMeta, abstractmethod
 
 from trac.config import BoolOption, IntOption, Option
 from trac.core import *
-from trac.db.pool import ConnectionPool
 from trac.db.schema import Table
-from trac.db.util import ConnectionWrapper
 from trac.util.concurrency import ThreadLocal
 from trac.util.text import unicode_passwd
 from trac.util.translation import _
+
+from .pool import ConnectionPool
+from .util import ConnectionWrapper
 
 
 def with_transaction(env, db=None):
@@ -181,76 +183,6 @@ class QueryContextManager(DbContextManager):
                 self.db.close()
 
 
-class ConnectionBase(object):
-    """Abstract base class for database connection classes."""
-
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
-    def cast(self, column, type):
-        """Returns a clause casting `column` as `type`."""
-        pass
-
-    @abstractmethod
-    def concat(self, *args):
-        """Returns a clause concatenating the sequence `args`."""
-        pass
-
-    @abstractmethod
-    def drop_table(self, table):
-        """Drops the `table`."""
-        pass
-
-    @abstractmethod
-    def get_column_names(self, table):
-        """Returns the list of the column names in `table`."""
-        pass
-
-    @abstractmethod
-    def get_last_id(self, cursor, table, column='id'):
-        """Returns the current value of the primary key sequence for `table`.
-        The `column` of the primary key may be specified, which defaults
-        to `id`."""
-        pass
-
-    @abstractmethod
-    def get_table_names(self):
-        """Returns a list of the table names."""
-        pass
-
-    @abstractmethod
-    def like(self):
-        """Returns a case-insensitive `LIKE` clause."""
-        pass
-
-    @abstractmethod
-    def like_escape(self, text):
-        """Returns `text` escaped for use in a `LIKE` clause."""
-        pass
-
-    @abstractmethod
-    def prefix_match(self):
-        """Return a case sensitive prefix-matching operator."""
-        pass
-
-    @abstractmethod
-    def prefix_match_value(self, prefix):
-        """Return a value for case sensitive prefix-matching operator."""
-        pass
-
-    @abstractmethod
-    def quote(self, identifier):
-        """Returns the quoted `identifier`."""
-        pass
-
-    @abstractmethod
-    def update_sequence(self, cursor, table, column='id'):
-        """Updates the current value of the primary key sequence for `table`.
-        The `column` of the primary key may be specified, which defaults
-        to `id`."""
-        pass
-
-
 class IDatabaseConnector(Interface):
     """Extension point interface for components that support the
     connection to relational databases.
@@ -303,11 +235,11 @@ class DatabaseManager(Component):
 
     timeout = IntOption('trac', 'timeout', '20',
         """Timeout value for database connection, in seconds.
-        Use '0' to specify ''no timeout''. (''since 0.11'')""")
+        Use '0' to specify ''no timeout''. ''(Since 0.11)''""")
 
     debug_sql = BoolOption('trac', 'debug_sql', False,
         """Show the SQL queries in the Trac log, at DEBUG level.
-        (''since 0.11.5'')""")
+        ''(Since 0.11.5)''""")
 
     def __init__(self):
         self._cnx_pool = None

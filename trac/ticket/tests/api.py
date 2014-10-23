@@ -44,8 +44,7 @@ class TicketSystemTestCase(unittest.TestCase):
         self.env.config.set('ticket-custom', 'test.format', 'wiki')
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'text', 'label': 'Test',
-                          'value': 'Foo bar', 'order': 0, 'format': 'wiki',
-                          'custom': True},
+                          'value': 'Foo bar', 'order': 0, 'format': 'wiki'},
                          fields[0])
 
     def test_custom_field_select(self):
@@ -56,7 +55,7 @@ class TicketSystemTestCase(unittest.TestCase):
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'select', 'label': 'Test',
                           'value': '1', 'options': ['option1', 'option2'],
-                          'order': 0, 'custom': True},
+                          'order': 0},
                          fields[0])
 
     def test_custom_field_optional_select(self):
@@ -67,29 +66,20 @@ class TicketSystemTestCase(unittest.TestCase):
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'select', 'label': 'Test',
                           'value': '1', 'options': ['option1', 'option2'],
-                          'order': 0, 'optional': True, 'custom': True},
+                          'order': 0, 'optional': True},
                          fields[0])
 
     def test_custom_field_textarea(self):
         self.env.config.set('ticket-custom', 'test', 'textarea')
         self.env.config.set('ticket-custom', 'test.label', 'Test')
         self.env.config.set('ticket-custom', 'test.value', 'Foo bar')
+        self.env.config.set('ticket-custom', 'test.cols', '60')
         self.env.config.set('ticket-custom', 'test.rows', '4')
         self.env.config.set('ticket-custom', 'test.format', 'wiki')
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'textarea', 'label': 'Test',
-                          'value': 'Foo bar', 'height': 4, 'order': 0,
-                          'format': 'wiki', 'custom': True},
-                         fields[0])
-
-    def test_custom_field_time(self):
-        self.env.config.set('ticket-custom', 'test', 'time')
-        self.env.config.set('ticket-custom', 'test.label', 'Test')
-        self.env.config.set('ticket-custom', 'test.value', '')
-        fields = TicketSystem(self.env).get_custom_fields()
-        self.assertEqual({'name': 'test', 'type': 'time', 'label': 'Test',
-                          'value': '', 'order': 0, 'format': 'datetime',
-                          'custom': True},
+                          'value': 'Foo bar', 'width': 60, 'height': 4,
+                          'order': 0, 'format': 'wiki'},
                          fields[0])
 
     def test_custom_field_order(self):

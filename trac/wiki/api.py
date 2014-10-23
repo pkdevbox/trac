@@ -26,7 +26,8 @@ from trac.core import *
 from trac.resource import IResourceManager
 from trac.util.text import unquote_label
 from trac.util.translation import _
-from trac.wiki.parser import WikiParser
+
+from .parser import WikiParser
 
 
 class IWikiChangeListener(Interface):
@@ -103,6 +104,9 @@ class IWikiMacroProvider(Interface):
            description.
         """
 
+    def render_macro(req, name, content):
+        """Return the HTML output of the macro :deprecated:"""
+
     def is_inline(content):
         """Return `True` if the content generated is an inline XHTML element.
 
@@ -113,7 +117,10 @@ class IWikiMacroProvider(Interface):
         """Called by the formatter when rendering the parsed wiki text.
 
         .. versionadded:: 0.11
-
+          This form is preferred over `render_macro`, as
+          you get the `formatter`, which knows the current `.context`
+          (and the `.req`, but ideally you shouldn't use it in your
+          macros).
         .. versionchanged:: 0.12
            added the `args` parameter
 
@@ -254,21 +261,20 @@ class WikiSystem(Component):
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
 
     ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
-        """Enable/disable highlighting CamelCase links to missing pages.
-        (''since 0.9'')""")
+        """Enable/disable highlighting CamelCase links to missing pages
+        (''since 0.9'').""")
 
     split_page_names = BoolOption('wiki', 'split_page_names', 'false',
-        """Enable/disable splitting the WikiPageNames with space characters.
-        (''since 0.10'')""")
+        """Enable/disable splitting the WikiPageNames with space characters
+        (''since 0.10'').""")
 
     render_unsafe_content = BoolOption('wiki', 'render_unsafe_content', 'false',
         """Enable/disable the use of unsafe HTML tags such as `<script>` or
-        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor].
+        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor]
+        (''since 0.10.4'').
 
         For public sites where anonymous users can edit the wiki it is
-        recommended to leave this option disabled.
-
-        (''since 0.10.4'')""")
+        recommended to leave this option disabled (which is the default).""")
 
     safe_schemes = ListOption('wiki', 'safe_schemes',
         'cvs, file, ftp, git, irc, http, https, news, sftp, smb, ssh, svn, '
@@ -298,12 +304,6 @@ class WikiSystem(Component):
     def has_page(self, pagename):
         """Whether a page with the specified name exists."""
         return pagename.rstrip('/') in self.pages
-
-    def resolve_relative_name(self, pagename, referrer):
-        """Resolves a pagename relative to a referrer pagename."""
-        if pagename.startswith(('./', '../')) or pagename in ('.', '..'):
-            return self._resolve_relative_name(pagename, referrer)
-        return pagename
 
     # IWikiSyntaxProvider methods
 
@@ -437,7 +437,7 @@ class WikiSystem(Component):
             if comp == '..':
                 if base:
                     base.pop()
-            elif comp != '.':
+            elif comp and comp != '.':
                 base.extend(components[i:])
                 break
         return '/'.join(base)

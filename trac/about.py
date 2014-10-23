@@ -25,7 +25,7 @@ from trac.core import *
 from trac.loader import get_plugin_info
 from trac.perm import IPermissionRequestor
 from trac.util.translation import _
-from trac.web.api import IRequestHandler
+from trac.web import IRequestHandler
 from trac.web.chrome import Chrome, INavigationContributor
 
 
@@ -44,7 +44,7 @@ class AboutModule(Component):
 
     def get_navigation_items(self, req):
         yield ('metanav', 'about',
-               tag.a(_("About Trac"), href=req.href.about()))
+               tag.a(_('About Trac'), href=req.href.about()))
 
     # IPermissionRequestor methods
 
@@ -54,7 +54,7 @@ class AboutModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        return re.match(r'/about(?:_trac)?$', req.path_info)
+        return re.match(r'/about(?:_trac)?(?:/.+)?$', req.path_info)
 
     def process_request(self, req):
         data = {'systeminfo': None, 'plugins': None, 'config': None}
@@ -70,6 +70,20 @@ class AboutModule(Component):
 
         if 'CONFIG_VIEW' in req.perm('config', 'ini'):
             # Collect config information
-            data['config'] = self.env.get_configinfo()
+            defaults = self.config.defaults(self.compmgr)
+            sections = []
+            for section in self.config.sections(self.compmgr):
+                options = []
+                default_options = defaults.get(section, {})
+                for name, value in self.config.options(section, self.compmgr):
+                    default = default_options.get(name) or ''
+                    options.append({
+                        'name': name, 'value': value,
+                        'modified': unicode(value) != unicode(default)
+                    })
+                options.sort(key=lambda o: o['name'])
+                sections.append({'name': section, 'options': options})
+            sections.sort(key=lambda s: s['name'])
+            data['config'] = sections
 
         return 'about.html', data, None

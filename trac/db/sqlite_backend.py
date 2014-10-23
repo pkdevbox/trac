@@ -20,9 +20,8 @@ import weakref
 
 from trac.config import ListOption
 from trac.core import *
-from trac.db.api import ConnectionBase, IDatabaseConnector
+from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import ISystemInfoProvider
 from trac.util import get_pkginfo, getuser
 from trac.util.translation import _
 
@@ -141,9 +140,7 @@ class SQLiteConnector(Component):
     sqlite:path/to/trac.db
     }}}
     """
-    implements(IDatabaseConnector, ISystemInfoProvider)
-
-    required = False
+    implements(IDatabaseConnector)
 
     extensions = ListOption('sqlite', 'extensions',
         doc="""Paths to sqlite extensions, relative to Trac environment's
@@ -152,21 +149,9 @@ class SQLiteConnector(Component):
     memory_cnx = None
 
     def __init__(self):
-        self._version = have_pysqlite  and \
-                        get_pkginfo(sqlite).get('version',
-                                                '%d.%d.%s'
-                                                % sqlite.version_info)
+        self._version = None
         self.error = None
         self._extensions = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'SQLite', sqlite_version_string
-            yield 'pysqlite', self._version
-
-    # IDatabaseConnector methods
 
     def get_supported_schemes(self):
         if not have_pysqlite:
@@ -181,7 +166,12 @@ class SQLiteConnector(Component):
         yield ('sqlite', -1 if self.error else 1)
 
     def get_connection(self, path, log=None, params={}):
-        self.required = True
+        if not self._version:
+            self._version = get_pkginfo(sqlite).get(
+                'version', '%d.%d.%s' % sqlite.version_info)
+            self.env.systeminfo.extend([('SQLite', sqlite_version_string),
+                                        ('pysqlite', self._version)])
+            self.required = True
         # construct list of sqlite extension libraries
         if self._extensions is None:
             self._extensions = []
@@ -258,7 +248,7 @@ class SQLiteConnector(Component):
         return dest_file
 
 
-class SQLiteConnection(ConnectionBase, ConnectionWrapper):
+class SQLiteConnection(ConnectionWrapper):
     """Connection wrapper for SQLite."""
 
     __slots__ = ['_active_cursors', '_eager']
@@ -344,6 +334,7 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
         return [row[0] for row in rows]
 
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         if sqlite_version >= (3, 1, 0):
             return "LIKE %s ESCAPE '/'"
         else:
@@ -356,12 +347,15 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
             return text
 
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return 'GLOB %s'
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return _glob_escape_re.sub(lambda m: '[%s]' % m.group(0), prefix) + '*'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return "`%s`" % identifier.replace('`', '``')
 
     def update_sequence(self, cursor, table, column='id'):

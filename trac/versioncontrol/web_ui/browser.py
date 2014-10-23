@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2014 Edgewall Software
+# Copyright (C) 2003-2010 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2007 Christian Boos <cboos@edgewall.org>
 # All rights reserved.
@@ -15,30 +15,31 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import re
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
+import re
 
 from genshi.builder import tag
 
-from trac.config import BoolOption, ListOption, Option
+from trac.config import ListOption, BoolOption, Option
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewAnnotator, Mimeview, is_binary
 from trac.perm import IPermissionRequestor, PermissionError
 from trac.resource import Resource, ResourceNotFound
 from trac.util import as_bool, embedded_numbers
 from trac.util.datefmt import http_date, to_datetime, utc
-from trac.util.html import Markup, escape
+from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
 from trac.util.translation import _, cleandoc_
-from trac.versioncontrol.api import NoSuchChangeset, RepositoryManager
-from trac.versioncontrol.web_ui.util import *
 from trac.web.api import IRequestHandler, RequestDone
 from trac.web.chrome import (INavigationContributor, add_ctxtnav, add_link,
                              add_script, add_stylesheet, prevnext_nav,
                              web_context)
-from trac.wiki.api import IWikiMacroProvider, IWikiSyntaxProvider, parse_args
+from trac.wiki.api import IWikiSyntaxProvider, IWikiMacroProvider, parse_args
 from trac.wiki.formatter import format_to_html, format_to_oneliner
+
+from ..api import NoSuchChangeset, RepositoryManager
+from trac.versioncontrol.web_ui.util import * # `from .util import *` FIXME 2.6
 
 
 CHUNK_SIZE = 4096
@@ -239,7 +240,7 @@ class BrowserModule(Component):
         scripting attacks.
 
         For open repositories where anyone can check-in a file, it is
-        recommended to leave this option disabled.""")
+        recommended to leave this option disabled (which is the default).""")
 
     hidden_properties = ListOption('browser', 'hide_properties', 'svk:merge',
         doc="""Comma-separated list of version control properties to hide from
@@ -373,7 +374,7 @@ class BrowserModule(Component):
                 # as a special shortcut to the latest revision.
                 rev_or_latest = rev or repos.youngest_rev
                 node = get_existing_node(req, repos, path, rev_or_latest)
-            except NoSuchChangeset as e:
+            except NoSuchChangeset, e:
                 raise ResourceNotFound(e.message,
                                        _('Invalid changeset number'))
             if node:
@@ -517,7 +518,7 @@ class BrowserModule(Component):
                 continue
             try:
                 repos = rm.get_repository(reponame)
-            except TracError as err:
+            except TracError, err:
                 entry = (reponame, repoinfo, None, None,
                          exception_to_unicode(err), None)
             else:
@@ -785,7 +786,7 @@ class BrowserModule(Component):
                     rendered = None
                 prop = {'name': name, 'value': value, 'rendered': rendered}
                 return prop
-            except Exception as e:
+            except Exception, e:
                 self.log.warning('Rendering failed for property %s with '
                                  'renderer %s: %s', name,
                                  renderer.__class__.__name__,

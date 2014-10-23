@@ -20,9 +20,8 @@ from genshi import Markup
 
 from trac.core import *
 from trac.config import Option
-from trac.db.api import ConnectionBase, IDatabaseConnector, _parse_db_str
+from trac.db.api import IDatabaseConnector, _parse_db_str
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import ISystemInfoProvider
 from trac.util import get_pkginfo, lazy
 from trac.util.compat import close_fds
 from trac.util.text import empty, exception_to_unicode, to_unicode
@@ -68,26 +67,14 @@ class PostgreSQLConnector(Component):
     postgres://user[:password]@host[:port]/database[?schema=my_schema]
     }}}
     """
-    implements(IDatabaseConnector, ISystemInfoProvider)
-
-    required = False
+    implements(IDatabaseConnector)
 
     pg_dump_path = Option('trac', 'pg_dump_path', 'pg_dump',
         """Location of pg_dump for Postgres database backups""")
 
     def __init__(self):
-        self._version = has_psycopg and \
-                        get_pkginfo(psycopg).get('version',
-                                                 psycopg.__version__)
+        self._version = None
         self.error = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'psycopg2', self._version
-
-    # IDatabaseConnector methods
 
     def get_supported_schemes(self):
         if not has_psycopg:
@@ -96,9 +83,14 @@ class PostgreSQLConnector(Component):
 
     def get_connection(self, path, log=None, user=None, password=None,
                        host=None, port=None, params={}):
-        self.required = True
-        return PostgreSQLConnection(path, log, user, password, host, port,
-                                    params)
+        cnx = PostgreSQLConnection(path, log, user, password, host, port,
+                                   params)
+        if not self._version:
+            self._version = get_pkginfo(psycopg).get('version',
+                                                     psycopg.__version__)
+            self.env.systeminfo.append(('psycopg2', self._version))
+            self.required = True
+        return cnx
 
     def get_exceptions(self):
         return psycopg
@@ -181,7 +173,7 @@ class PostgreSQLConnector(Component):
             try:
                 p = Popen([self.pg_dump_path, '--version'], stdout=PIPE,
                           close_fds=close_fds)
-            except OSError as e:
+            except OSError, e:
                 raise TracError(_("Unable to run %(path)s: %(msg)s",
                                   path=self.pg_dump_path,
                                   msg=exception_to_unicode(e)))
@@ -200,7 +192,7 @@ class PostgreSQLConnector(Component):
             environ['PGPASSWORD'] = str(db_prop['password'])
         try:
             p = Popen(args, env=environ, stderr=PIPE, close_fds=close_fds)
-        except OSError as e:
+        except OSError, e:
             raise TracError(_("Unable to run %(path)s: %(msg)s",
                               path=self.pg_dump_path,
                               msg=exception_to_unicode(e)))
@@ -213,7 +205,7 @@ class PostgreSQLConnector(Component):
         return dest_file
 
 
-class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
+class PostgreSQLConnection(ConnectionWrapper):
     """Connection wrapper for PostgreSQL."""
 
     poolable = True
@@ -281,18 +273,22 @@ class PostgreSQLConnection(ConnectionBase, ConnectionWrapper):
         return [row[0] for row in rows]
 
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         return "ILIKE %s ESCAPE '/'"
 
     def like_escape(self, text):
         return _like_escape_re.sub(r'/\1', text)
 
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return "LIKE %s ESCAPE '/'"
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return self.like_escape(prefix) + '%'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return '"%s"' % identifier.replace('"', '""')
 
     def update_sequence(self, cursor, table, column='id'):

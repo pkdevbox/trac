@@ -139,7 +139,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual('source', e.resource.realm)
             self.assertEqual('/', e.resource.id)
@@ -155,7 +155,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('ResourceNotFound not raised')
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             self.assertEqual('No node blah-blah-file', unicode(e))
 
     def test_repository_without_browser_view(self):
@@ -172,7 +172,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual('source', e.resource.realm)
             self.assertEqual('/', e.resource.id)
@@ -188,7 +188,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual(None, e.resource)
 
@@ -209,7 +209,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('FILE_VIEW', e.action)
             self.assertEqual('source', e.resource.realm)
             self.assertEqual('deny-file', e.resource.id)
@@ -233,7 +233,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('FILE_VIEW', e.action)
             self.assertEqual('source', e.resource.realm)
             self.assertEqual('deny-file', e.resource.id)
@@ -253,7 +253,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
             try:
                 self.process_request(req)
                 self.fail('PermissionError not raised (path: %r)' % path)
-            except PermissionError as e:
+            except PermissionError, e:
                 self.assertEqual('FILE_VIEW', e.action)
                 self.assertEqual('source', e.resource.realm)
                 self.assertEqual(path, e.resource.id)
@@ -310,19 +310,19 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('ResourceNotFound not raised')
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             self.assertEqual('No viewable repositories', unicode(e))
         req = self.create_request(path_info='/browser/allow/')
         try:
             self.process_request(req)
             self.fail('ResourceNotFound not raised')
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             self.assertEqual('No node allow', unicode(e))
         req = self.create_request(path_info='/browser/deny/')
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual('source', e.resource.realm)
             self.assertEqual('/', e.resource.id)
@@ -334,13 +334,13 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('ResourceNotFound not raised')
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             self.assertEqual('No viewable repositories', unicode(e))
         req = self.create_request(path_info='/browser/deny/')
         try:
             self.process_request(req)
             self.fail('ResourceNotFound not raised')
-        except ResourceNotFound as e:
+        except ResourceNotFound, e:
             self.assertEqual('No node deny', unicode(e))
 
     def test_no_viewable_repositories_without_browser_view(self):
@@ -350,7 +350,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual(None, e.resource)
         provider.remove_repository('deny')
@@ -359,7 +359,7 @@ anonymous = !BROWSER_VIEW, !FILE_VIEW
         try:
             self.process_request(req)
             self.fail('PermissionError not raised')
-        except PermissionError as e:
+        except PermissionError, e:
             self.assertEqual('BROWSER_VIEW', e.action)
             self.assertEqual(None, e.resource)
 

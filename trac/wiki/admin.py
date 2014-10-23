@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/.
 
+from __future__ import with_statement
+
 from datetime import datetime
 import os.path
 import pkg_resources
@@ -89,8 +91,11 @@ class WikiAdmin(Component):
     def get_wiki_list(self):
         return list(WikiSystem(self.env).get_pages())
 
-    def export_page(self, page, filename):
-
+    def export_page(self, page, filename, cursor=None):
+        """
+        :since 1.0: the `cursor` parameter is no longer needed and will be
+        removed in version 1.1.1
+        """
         for text, in self.env.db_query("""
                 SELECT text FROM wiki WHERE name=%s
                 ORDER BY version DESC LIMIT 1

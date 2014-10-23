@@ -11,16 +11,18 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/.
 
+from __future__ import with_statement
+
 import functools
 
-from trac.core import Component
-from trac.util import arity
-from trac.util.concurrency import ThreadLocal, threading
+from .core import Component
+from .util import arity
+from .util.concurrency import ThreadLocal, threading
 
 __all__ = ['CacheManager', 'cached']
 
-_id_to_key = {}
 
+_id_to_key = {}
 
 def key_to_id(s):
     """Return a hash of the given property key."""
@@ -86,7 +88,7 @@ class CachedProperty(CachedPropertyBase):
     multiple instances associated to a single `~trac.env.Environment`
     instance.
 
-    As we'll have potential many different caches to monitor for this
+    As we'll have potentiall many different caches to monitor for this
     kind of cache, the key needs to be augmented by a string unique to
     each instance of the owner class.  As the resulting id will be
     different for each instance of the owner class, we can't store it
@@ -172,7 +174,8 @@ def cached(fn_or_attr=None):
         connection.  This is the same connection that can be retrieved
         via the normal `~trac.env.Environment.db_query` or
         `~trac.env.Environment.db_transaction`, so this is no longer
-        needed and is not supported.
+        needed, though methods supporting that argument are still
+        supported (but will be removed in version 1.1.1).
     """
     if hasattr(fn_or_attr, '__call__'):
         return CachedSingletonProperty(fn_or_attr)
@@ -240,7 +243,10 @@ class CacheManager(Component):
                     return data
 
                 # Retrieve data from the database
-                data = retriever(instance)
+                if arity(retriever) == 2:
+                    data = retriever(instance, db)
+                else:
+                    data = retriever(instance)
                 local_cache[id] = self._cache[id] = (data, db_generation)
                 local_meta[id] = db_generation
                 return data

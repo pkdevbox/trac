@@ -182,25 +182,6 @@ class FunctionalTester(object):
         tc.follow(r"\bMilestone: %s\b" % name)
         tc.url(self.url + '/milestone/%s' % name)
 
-    def go_to_report(self, id, args=None):
-        """Surf to the specified report.
-
-        Assumes the report exists. Report variables will be appended if
-        specified.
-
-        :param id: id of the report
-        :param args: may optionally specify a dictionary of arguments to
-                     be encoded as a query string
-        """
-        report_url = self.url + "/report/%s" % id
-        if args:
-            arglist = []
-            for param, value in args.items():
-                arglist.append('%s=%s' % (param.upper(), unicode_quote(value)))
-            report_url += '?' + '&'.join(arglist)
-        tc.go(report_url)
-        tc.url(report_url.encode('string-escape').replace('?', '\?'))
-
     def go_to_preferences(self, panel_label=None):
         """Surf to the preferences page. Continue surfing to a specific
         preferences panel if `panel_label` is specified."""
@@ -361,7 +342,7 @@ class FunctionalTester(object):
         tc.notfind(internal_error)
         if description is not None:
             tc.follow(r"\b%s\b" % name)
-            tc.formvalue('edit', 'description', description)
+            tc.formvalue('modcomp', 'description', description)
             tc.submit('save')
             tc.url(component_url)
             tc.find("Your changes have been saved.")

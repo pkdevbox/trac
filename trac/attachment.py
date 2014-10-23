@@ -16,6 +16,8 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from cStringIO import StringIO
 from datetime import datetime
 import errno
@@ -118,15 +120,13 @@ class ILegacyAttachmentPolicyDelegate(Interface):
 
 class Attachment(object):
 
-    realm = 'attachment'
-
     def __init__(self, env, parent_realm_or_attachment_resource,
-                 parent_id=None, filename=None):
+                 parent_id=None, filename=None, db=None):
         if isinstance(parent_realm_or_attachment_resource, Resource):
             self.resource = parent_realm_or_attachment_resource
         else:
             self.resource = Resource(parent_realm_or_attachment_resource,
-                                     parent_id).child(self.realm, filename)
+                                     parent_id).child('attachment', filename)
         self.env = env
         self.parent_realm = self.resource.parent.realm
         self.parent_id = unicode(self.resource.parent.id)
@@ -209,9 +209,13 @@ class Attachment(object):
     def title(self):
         return '%s:%s: %s' % (self.parent_realm, self.parent_id, self.filename)
 
-    def delete(self):
+    def delete(self, db=None):
         """Delete the attachment, both the record in the database and
         the file itself.
+
+        .. versionchanged :: 1.0
+           the `db` parameter is no longer needed
+           (will be removed in version 1.1.1)
         """
         assert self.filename, "Cannot delete non-existent attachment"
 
@@ -223,7 +227,7 @@ class Attachment(object):
             if os.path.isfile(path):
                 try:
                     os.unlink(path)
-                except OSError as e:
+                except OSError, e:
                     self.env.log.error("Failed to delete attachment "
                                        "file %s: %s",
                                        path,
@@ -267,7 +271,7 @@ class Attachment(object):
             if os.path.isfile(path):
                 try:
                     os.rename(path, new_path)
-                except OSError as e:
+                except OSError, e:
                     self.env.log.error("Failed to move attachment file %s: %s",
                                        path,
                                        exception_to_unicode(e, traceback=True))
@@ -276,7 +280,7 @@ class Attachment(object):
 
         old_realm, old_id = self.parent_realm, self.parent_id
         self.parent_realm, self.parent_id = new_realm, new_id
-        self.resource = Resource(new_realm, new_id).child(self.realm,
+        self.resource = Resource(new_realm, new_id).child('attachment',
                                                           self.filename)
 
         self.env.log.info("Attachment reparented: %s" % self.title)
@@ -285,8 +289,12 @@ class Attachment(object):
             if hasattr(listener, 'attachment_reparented'):
                 listener.attachment_reparented(self, old_realm, old_id)
 
-    def insert(self, filename, fileobj, size, t=None):
+    def insert(self, filename, fileobj, size, t=None, db=None):
         """Create a new Attachment record and save the file content.
+
+        .. versionchanged :: 1.0
+           the `db` parameter is no longer needed
+           (will be removed in version 1.1.1)
         """
         self.size = int(size) if size else 0
         self.filename = None
@@ -333,9 +341,13 @@ class Attachment(object):
             listener.attachment_added(self)
 
     @classmethod
-    def select(cls, env, parent_realm, parent_id):
+    def select(cls, env, parent_realm, parent_id, db=None):
         """Iterator yielding all `Attachment` instances attached to
         resource identified by `parent_realm` and `parent_id`.
+
+        .. versionchanged :: 1.0
+           the `db` parameter is no longer needed
+           (will be removed in version 1.1.1)
         """
         for row in env.db_query("""
                 SELECT filename, description, size, time, author, ipnr
@@ -346,18 +358,22 @@ class Attachment(object):
             yield attachment
 
     @classmethod
-    def delete_all(cls, env, parent_realm, parent_id):
+    def delete_all(cls, env, parent_realm, parent_id, db=None):
         """Delete all attachments of a given resource.
+
+        .. versionchanged :: 1.0
+           the `db` parameter is no longer needed
+           (will be removed in version 1.1.1)
         """
         attachment_dir = None
         with env.db_transaction as db:
-            for attachment in cls.select(env, parent_realm, parent_id):
+            for attachment in cls.select(env, parent_realm, parent_id, db):
                 attachment_dir = os.path.dirname(attachment.path)
                 attachment.delete()
         if attachment_dir:
             try:
                 os.rmdir(attachment_dir)
-            except OSError as e:
+            except OSError, e:
                 env.log.error("Can't delete attachment directory %s: %s",
                               attachment_dir,
                               exception_to_unicode(e, traceback=True))
@@ -367,13 +383,14 @@ class Attachment(object):
         """Reparent all attachments of a given resource to another resource."""
         attachment_dir = None
         with env.db_transaction as db:
-            for attachment in list(cls.select(env, parent_realm, parent_id)):
+            for attachment in list(cls.select(env, parent_realm, parent_id,
+                                              db)):
                 attachment_dir = os.path.dirname(attachment.path)
                 attachment.reparent(new_realm, new_id)
         if attachment_dir:
             try:
                 os.rmdir(attachment_dir)
-            except OSError as e:
+            except OSError, e:
                 env.log.error("Can't delete attachment directory %s: %s",
                               attachment_dir,
                               exception_to_unicode(e, traceback=True))
@@ -398,7 +415,7 @@ class Attachment(object):
             path = os.path.join(dir, self._get_hashed_filename(filename))
             try:
                 return filename, os.fdopen(os.open(path, flags, 0666), 'w')
-            except OSError as e:
+            except OSError, e:
                 if e.errno != errno.EEXIST:
                     raise
                 idx += 1
@@ -412,8 +429,6 @@ class AttachmentModule(Component):
 
     implements(IRequestHandler, INavigationContributor, IWikiSyntaxProvider,
                IResourceManager)
-
-    is_valid_default_handler = False
 
     change_listeners = ExtensionPoint(IAttachmentChangeListener)
     manipulators = ExtensionPoint(IAttachmentManipulator)
@@ -438,7 +453,7 @@ class AttachmentModule(Component):
         scripting attacks.
 
         For public sites where anonymous users can create attachments it is
-        recommended to leave this option disabled.""")
+        recommended to leave this option disabled (which is the default).""")
 
     # INavigationContributor methods
 
@@ -697,8 +712,8 @@ class AttachmentModule(Component):
         # Maximum attachment size (in bytes)
         max_size = self.max_size
         if max_size >= 0 and size > max_size:
-            raise TracError(_('Maximum attachment size: %(num)s',
-                              num=pretty_size(max_size)), _('Upload failed'))
+            raise TracError(_('Maximum attachment size: %(num)s bytes',
+                              num=max_size), _('Upload failed'))
 
         # We try to normalize the filename to unicode NFC if we can.
         # Files uploaded from OS X might be in NFD.
@@ -792,8 +807,8 @@ class AttachmentModule(Component):
             attachments = self.viewable_attachments(web_context(req, parent))
         total_size = sum(attachment.size for attachment in attachments)
         if total_size > self.max_zip_size:
-            raise TracError(_("Maximum total attachment size: %(num)s",
-                              num=pretty_size(self.max_zip_size)), _("Download failed"))
+            raise TracError(_("Maximum total attachment size: %(num)s bytes",
+                              num=self.max_zip_size), _("Download failed"))
 
         req.send_response(200)
         req.send_header('Content-Type', 'application/zip')

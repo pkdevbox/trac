@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime, timedelta
 from StringIO import StringIO
 import tempfile
@@ -359,28 +361,6 @@ class TicketTestCase(unittest.TestCase):
         # Custom field of type 'checkbox'
         self.assertEqual('on', ticket['cbon'])
         self.assertEqual('0', ticket['cboff'])
-
-    def test_custom_time(self):
-        # Add a custom field of type 'time'
-        self.env.config.set('ticket-custom', 'due', 'time')
-        ticket = Ticket(self.env)
-        self.assertFalse('due' in ticket.std_fields)
-        self.assertTrue('due' in ticket.time_fields)
-        ticket['reporter'] = 'john'
-        ticket['summary'] = 'Task1'
-        tktid = ticket.insert()
-        ticket = Ticket(self.env, tktid)
-        # Empty string is default value, but not a time stamp
-        self.assertEqual(None, ticket['due'])
-        ts = datetime(2011, 11, 11, 0, 0, 0, 0, utc)
-        ticket['due'] = ts
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        ticket.save_changes('joe', when=t1)
-        self.assertEqual(ts, ticket['due'])
-        ticket['due'] = ''
-        t2 = datetime(2001, 1, 1, 1, 1, 2, 0, utc)
-        ticket.save_changes('joe', when=t2)
-        self.assertEqual('', ticket['due'])
 
     def test_changelog(self):
         tkt_id = self._insert_ticket('Test', reporter='joe', component='foo',

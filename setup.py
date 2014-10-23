@@ -16,7 +16,7 @@ import sys
 
 from setuptools import setup, find_packages
 
-min_python = (2, 6)
+min_python = (2, 5)
 if sys.version_info < min_python:
     print("Trac requires Python %d.%d or later" % min_python)
     sys.exit(1)
@@ -55,7 +55,7 @@ except ImportError:
 
 setup(
     name = 'Trac',
-    version = '1.1.2',
+    version = '1.0.2',
     description = 'Integrated SCM, wiki, issue tracker and project environment',
     long_description = """
 Trac is a minimalistic web-based software project management and bug/issue
@@ -99,7 +99,7 @@ facilities.
         'Genshi>=0.6',
     ],
     install_requires = [
-        'setuptools>=0.6',
+        'setuptools>=0.6b1',
         'Genshi>=0.6',
     ],
     extras_require = {

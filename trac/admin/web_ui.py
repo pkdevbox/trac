@@ -14,6 +14,8 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
+from __future__ import with_statement
+
 from functools import partial
 import os
 import pkg_resources
@@ -35,7 +37,6 @@ from trac.web import HTTPNotFound, IRequestHandler
 from trac.web.chrome import add_notice, add_stylesheet, \
                             add_warning, Chrome, INavigationContributor, \
                             ITemplateProvider
-from trac.web.api import is_valid_default_handler
 from trac.wiki.formatter import format_to_html
 
 try:
@@ -186,7 +187,7 @@ def _save_config(config, req, log, notices=None):
             notices = [_("Your changes have been saved.")]
         for notice in notices:
             add_notice(req, notice)
-    except Exception as e:
+    except Exception, e:
         log.error("Error writing to trac.ini: %s", exception_to_unicode(e))
         add_warning(req, _("Error writing to trac.ini, make sure it is "
                            "writable by the web server. Your changes have "
@@ -197,8 +198,6 @@ class BasicsAdminPanel(Component):
 
     implements(IAdminPanelProvider)
 
-    request_handlers = ExtensionPoint(IRequestHandler)
-
     # IAdminPanelProvider methods
 
     def get_admin_panels(self, req):
@@ -206,9 +205,6 @@ class BasicsAdminPanel(Component):
             yield ('general', _("General"), 'basics', _("Basic Settings"))
 
     def render_admin_panel(self, req, cat, page, path_info):
-        valid_default_handlers = [handler.__class__.__name__
-                                  for handler in self.request_handlers
-                                  if is_valid_default_handler(handler)]
         if Locale:
             locale_ids = get_available_locales()
             locales = [Locale.parse(locale) for locale in locale_ids]
@@ -222,9 +218,6 @@ class BasicsAdminPanel(Component):
         if req.method == 'POST':
             for option in ('name', 'url', 'descr'):
                 self.config.set('project', option, req.args.get(option))
-
-            default_handler = req.args.get('default_handler')
-            self.config.set('trac', 'default_handler', default_handler)
 
             default_timezone = req.args.get('default_timezone')
             if default_timezone not in all_timezones:
@@ -244,14 +237,11 @@ class BasicsAdminPanel(Component):
             _save_config(self.config, req, self.log)
             req.redirect(req.href.admin(cat, page))
 
-        default_handler = self.config.get('trac', 'default_handler')
         default_timezone = self.config.get('trac', 'default_timezone')
         default_language = self.config.get('trac', 'default_language')
         default_date_format = self.config.get('trac', 'default_date_format')
 
         data = {
-            'default_handler': default_handler,
-            'valid_default_handlers': sorted(valid_default_handlers),
             'default_timezone': default_timezone,
             'timezones': all_timezones,
             'has_pytz': pytz is not None,
@@ -372,15 +362,13 @@ class PermissionAdminPanel(Component):
 
         if req.method == 'POST':
             subject = req.args.get('subject', '').strip()
-            target = req.args.get('target', '').strip()
             action = req.args.get('action')
             group = req.args.get('group', '').strip()
 
             if subject and subject.isupper() or \
-                    group and group.isupper() or \
-                    target and target.isupper():
+                    group and group.isupper():
                 raise TracError(_("All upper-cased tokens are reserved for "
-                                  "permission names."))
+                                  "permission names"))
 
             # Grant permission to subject
             if req.args.get('add') and subject and action:
@@ -425,41 +413,6 @@ class PermissionAdminPanel(Component):
                     add_warning(req, _("The subject %(subject)s was already "
                                        "added to the group %(group)s.",
                                        subject=subject, group=group))
-
-            # Copy permissions to subject
-            elif req.args.get('copy') and subject and target:
-                req.perm.require('PERMISSION_GRANT')
-
-                subject_permissions = [i[1] for i in all_permissions
-                                            if i[0] == subject and
-                                               i[1].isupper()]
-                if not subject_permissions:
-                    add_warning(req,_("The subject %(subject)s does not "
-                                      "have any permissions.",
-                                      subject=subject))
-
-                for action in subject_permissions:
-                    if (target, action) in all_permissions:
-                        continue
-                    if not action in all_actions: # plugin disabled?
-                        self.env.log.warn("Skipped granting %s to %s: "
-                                          "permission unavailable.",
-                                          action, target)
-                    else:
-                        if action not in req.perm:
-                            add_warning(req,
-                                        _("The permission %(action)s was "
-                                          "not granted to %(subject)s "
-                                          "because users cannot grant "
-                                          "permissions they don't possess.",
-                                          action=action, subject=subject))
-                            continue
-                        perm.grant_permission(target, action)
-                        add_notice(req, _("The subject %(subject)s has "
-                                          "been granted the permission "
-                                          "%(action)s.",
-                                          subject=target, action=action))
-                req.redirect(req.href.admin(cat, page))
 
             # Remove permissions action
             elif req.args.get('remove') and req.args.get('sel'):
@@ -615,7 +568,7 @@ class PluginAdminPanel(Component):
         def safe_wiki_to_html(context, text):
             try:
                 return format_to_html(self.env, context, text)
-            except Exception as e:
+            except Exception, e:
                 self.log.error("Unable to render component documentation: %s",
                                exception_to_unicode(e, traceback=True))
                 return tag.pre(text)

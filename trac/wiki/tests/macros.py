@@ -283,55 +283,6 @@ TITLEINDEX3_MACRO_TEST_CASES = u"""
 </p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">First</a></li><li><a href="/wiki/WikiStart/Second">Second</a></li><li><a href="/wiki/WikiStart/Third">Third</a></li></ul></div><p>
 </p>
 ------------------------------
-============================== TitleIndex, relative prefix
-[[TitleIndex(../../WikiStart)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart">WikiStart</a></li><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix with trailing slash
-[[TitleIndex(../../WikiStart/)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ..
-[[TitleIndex(..)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart">WikiStart</a></li><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ../
-[[TitleIndex(../)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix .
-[[TitleIndex(.)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ./
-[[TitleIndex(./)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative hidden prefix ../
-[[TitleIndex(../,hideprefix)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">First</a></li><li><a href="/wiki/WikiStart/Second">Second</a></li><li><a href="/wiki/WikiStart/Third">Third</a></li></ul></div><p>
-</p>
-------------------------------
 """
 
 def titleindex3_setup(tc):
@@ -497,8 +448,8 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-42-section"><code>[section-42]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="default"><code>value</code></td></tr>\
-<tr class="odd"><td><code>option2</code></td><td>blah</td><td class="default"><code>value</code></td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="default"><code>value</code></td></tr>\
+<tr class="odd"><td><tt>option2</tt></td><td>blah</td><td class="default"><code>value</code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -510,7 +461,7 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-list-section"><code>[section-list]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="default"><code>4.2|42|42||0|enabled</code></td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="default"><code>4.2|42|42||0|enabled</code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -522,11 +473,11 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-def-section"><code>[section-def]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="nodefault">(no default)</td></tr>\
-<tr class="odd"><td><code>option2</code></td><td></td><td class="nodefault">(no default)</td></tr>\
-<tr class="even"><td><code>option3</code></td><td></td><td class="default"><code>0</code></td></tr>\
-<tr class="odd"><td><code>option4</code></td><td></td><td class="default"><code>disabled</code></td></tr>\
-<tr class="even"><td><code>option5</code></td><td></td><td class="default"><code></code></td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="nodefault">(no default)</td></tr>\
+<tr class="odd"><td><tt>option2</tt></td><td></td><td class="nodefault">(no default)</td></tr>\
+<tr class="even"><td><tt>option3</tt></td><td></td><td class="default"><code>0</code></td></tr>\
+<tr class="odd"><td><tt>option4</tt></td><td></td><td class="default"><code>disabled</code></td></tr>\
+<tr class="even"><td><tt>option5</tt></td><td></td><td class="default"><code></code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -561,8 +512,7 @@ def suite():
                                   teardown=titleindex_teardown))
     suite.addTest(formatter.suite(TITLEINDEX3_MACRO_TEST_CASES, file=__file__,
                                   setup=titleindex3_setup,
-                                  teardown=titleindex_teardown,
-                                  context=('wiki', 'WikiStart/Second')))
+                                  teardown=titleindex_teardown))
     suite.addTest(formatter.suite(TITLEINDEX4_MACRO_TEST_CASES, file=__file__,
                                   setup=titleindex4_setup,
                                   teardown=titleindex_teardown))

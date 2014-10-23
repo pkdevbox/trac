@@ -794,17 +794,15 @@ class Mimeview(Component):
 
                 # Render content as source code
                 if annotations:
-                    marks = context.req.args.get('marks') if context.req \
-                            else None
-                    if marks:
-                        context.set_hints(marks=marks)
-                    return self._render_source(context, result, annotations)
+                    m = context.req.args.get('marks') if context.req else None
+                    return self._render_source(context, result, annotations,
+                                               m and Ranges(m))
                 else:
                     if isinstance(result, list):
                         result = Markup('\n').join(result)
                     return tag.div(class_='code')(tag.pre(result)).generate()
 
-            except Exception as e:
+            except Exception, e:
                 self.log.warning('HTML preview using %s failed: %s',
                                  renderer.__class__.__name__,
                                  exception_to_unicode(e, traceback=True))
@@ -815,7 +813,7 @@ class Mimeview(Component):
                           renderer=renderer.__class__.__name__,
                           err=exception_to_unicode(e)))
 
-    def _render_source(self, context, stream, annotations):
+    def _render_source(self, context, stream, annotations, marks=None):
         from trac.web.chrome import add_warning
         annotators, labels, titles = {}, {}, {}
         for annotator in self.annotators:
@@ -840,7 +838,7 @@ class Mimeview(Component):
             annotator = annotators[a]
             try:
                 data = (annotator, annotator.get_annotation_data(context))
-            except TracError as e:
+            except TracError, e:
                 self.log.warning("Can't use annotator '%s': %s", a, e.message)
                 add_warning(context.req, tag.strong(
                     tag_("Can't use %(annotator)s annotator: %(error)s",
@@ -858,6 +856,8 @@ class Mimeview(Component):
         def _body_rows():
             for idx, line in enumerate(_group_lines(stream)):
                 row = tag.tr()
+                if marks and idx + 1 in marks:
+                    row(class_='hilite')
                 for annotator, data in annotator_datas:
                     if annotator:
                         annotator.annotate_row(context, row, idx+1, line, data)
@@ -870,6 +870,11 @@ class Mimeview(Component):
             tag.thead(_head_row()),
             tag.tbody(_body_rows())
         )
+
+    def get_max_preview_size(self):
+        """:deprecated: since 0.10, use `max_preview_size` attribute directly.
+        """
+        return self.max_preview_size
 
     def get_charset(self, content='', mimetype=None):
         """Infer the character encoding from the `content` or the `mimetype`.
@@ -940,7 +945,7 @@ class Mimeview(Component):
                     mimetype, regexp = mapping.split(':', 1)
                 try:
                     self._mime_map_patterns[mimetype] = re.compile(regexp)
-                except re.error as e:
+                except re.error, e:
                     self.log.warning("mime_map_patterns contains invalid "
                                      "regexp '%s' for mimetype '%s' (%s)",
                                      regexp, mimetype, exception_to_unicode(e))
@@ -957,6 +962,13 @@ class Mimeview(Component):
         if content is not None and is_binary(content):
             return True
         return False
+
+    def to_utf8(self, content, mimetype=None):
+        """Convert an encoded `content` to utf-8.
+
+        :deprecated: since 0.10, you should use `unicode` strings only.
+        """
+        return to_utf8(content, self.get_charset(content, mimetype))
 
     def to_unicode(self, content, mimetype=None, charset=None):
         """Convert `content` (an encoded `str` object) to an `unicode` object.
@@ -1109,22 +1121,12 @@ class LineNumberAnnotator(Component):
         return 'lineno', _('Line'), _('Line numbers')
 
     def get_annotation_data(self, context):
-        try:
-            marks = Ranges(context.get_hint('marks'))
-        except ValueError:
-            marks = None
-        return {
-            'id': context.get_hint('id', '') + 'L%s',
-            'marks': marks,
-            'offset': context.get_hint('lineno', 1) - 1
-        }
+        return None
 
     def annotate_row(self, context, row, lineno, line, data):
-        lineno += data['offset']
-        id = data['id'] % lineno
-        if data['marks'] and lineno in data['marks']:
-            row(class_='hilite')
-        row.append(tag.th(id=id)(tag.a(lineno, href='#' + id)))
+        row.append(tag.th(id='L%s' % lineno)(
+            tag.a(lineno, href='#L%s' % lineno)
+        ))
 
 
 # -- Default renderers

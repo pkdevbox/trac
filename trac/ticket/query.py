@@ -15,6 +15,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import csv
 from itertools import groupby
 from math import ceil
@@ -33,12 +35,11 @@ from trac.ticket.api import TicketSystem
 from trac.ticket.model import Milestone, group_milestones
 from trac.util import Ranges, as_bool
 from trac.util.compat import any
-from trac.util.datefmt import from_utimestamp, format_date_or_datetime, \
-                              parse_date, to_timestamp, to_utimestamp, utc, \
-                              user_time
+from trac.util.datefmt import format_datetime, from_utimestamp, parse_date, \
+                              to_timestamp, to_utimestamp, utc, user_time
 from trac.util.presentation import Paginator
 from trac.util.text import empty, shorten_line, quote_query_string
-from trac.util.translation import _, cleandoc_, ngettext, tag_
+from trac.util.translation import _, tag_, cleandoc_, ngettext
 from trac.web import arg_list_to_args, parse_arg_list, IRequestHandler
 from trac.web.href import Href
 from trac.web.chrome import (INavigationContributor, Chrome,
@@ -267,9 +268,12 @@ class Query(object):
             cols[-1] = self.order
         return cols
 
-    def count(self, req=None, cached_ids=None, authname=None, tzinfo=None,
-              locale=None):
+    def count(self, req=None, db=None, cached_ids=None, authname=None,
+              tzinfo=None, locale=None):
         """Get the number of matching tickets for the present query.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         sql, args = self.get_sql(req, cached_ids, authname, tzinfo, locale)
         return self._count(sql, args)
@@ -281,9 +285,12 @@ class Query(object):
         self.env.log.debug("Count results in Query: %d", cnt)
         return cnt
 
-    def execute(self, req=None, cached_ids=None, authname=None, tzinfo=None,
-                href=None, locale=None):
+    def execute(self, req=None, db=None, cached_ids=None, authname=None,
+                tzinfo=None, href=None, locale=None):
         """Retrieve the list of matching tickets.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if req is not None:
             href = req.href
@@ -310,7 +317,10 @@ class Query(object):
             # self.env.log.debug("SQL: " + sql % tuple([repr(a) for a in args]))
             cursor.execute(sql, args)
             columns = get_column_names(cursor)
-            fields = [self.fields.by_name(column, None) for column in columns]
+            fields = []
+            for column in columns:
+                fields += [f for f in self.fields if f['name'] == column] or \
+                          [None]
             results = []
 
             column_indices = range(len(columns))
@@ -325,7 +335,7 @@ class Query(object):
                         if href is not None:
                             result['href'] = href.ticket(val)
                     elif name in self.time_fields:
-                        val = from_utimestamp(long(val)) if val else ''
+                        val = from_utimestamp(val)
                     elif field and field['type'] == 'checkbox':
                         try:
                             val = bool(int(val))
@@ -479,7 +489,7 @@ class Query(object):
             if date:
                 try:
                     return to_utimestamp(user_time(req, parse_date, date))
-                except TracError as e:
+                except TracError, e:
                     errors.append(unicode(e))
             return None
 
@@ -712,10 +722,18 @@ class Query(object):
 
         cols = self.get_columns()
         labels = TicketSystem(self.env).get_ticket_field_labels()
+        wikify = set(f['name'] for f in self.fields
+                     if f['type'] == 'text' and
+                        f.get('format') == 'wiki')
+        wikifyblock = set(f['name'] for f in self.fields
+                          if f['type'] == 'textarea' and
+                             f.get('format') == 'wiki')
+        wikifyblock.add('description')
 
         headers = [{
             'name': col, 'label': labels.get(col, _('Ticket')),
-            'field': self.fields.by_name(col, {}),
+            'wikify': col in wikify,
+            'wikifyblock': col in wikifyblock,
             'href': self.get_href(context.href, order=col,
                                   desc=(col == self.order and not self.desc))
         } for col in cols]
@@ -863,10 +881,9 @@ class QueryModule(Component):
 
     def get_navigation_items(self, req):
         from trac.ticket.report import ReportModule
-        if 'TICKET_VIEW' in req.perm('ticket') and \
+        if 'TICKET_VIEW' in req.perm and \
                 not (self.env.is_component_enabled(ReportModule) and
-                     'REPORT_VIEW' in req.perm('report',
-                                               ReportModule.REPORT_LIST_ID)):
+                     'REPORT_VIEW' in req.perm):
             yield ('mainnav', 'tickets',
                    tag.a(_('View Tickets'), href=req.href.query()))
 
@@ -876,7 +893,7 @@ class QueryModule(Component):
         return req.path_info == '/query'
 
     def process_request(self, req):
-        req.perm('ticket').assert_permission('TICKET_VIEW')
+        req.perm.assert_permission('TICKET_VIEW')
         report_id = req.args.get('report')
         if report_id:
             req.perm('report', report_id).assert_permission('REPORT_VIEW')
@@ -896,7 +913,7 @@ class QueryModule(Component):
 
             self.log.debug('QueryModule: Using default query: %s', str(qstring))
             if qstring.startswith('?'):
-                arg_list = parse_arg_list(qstring)
+                arg_list = parse_arg_list(qstring[1:])
                 args = arg_list_to_args(arg_list)
                 constraints = self._get_constraints(arg_list=arg_list)
             else:
@@ -1069,15 +1086,15 @@ class QueryModule(Component):
                              in req.session.get('query_tickets', '').split()]
                 tickets = query.execute(req, cached_ids=orig_list)
                 orig_time = query_time
-        except QueryValueError as e:
+        except QueryValueError, e:
             tickets = []
             for error in e.errors:
                 add_warning(req, error)
 
         context = web_context(req, 'query')
-        owner_field = query.fields.by_name('owner', None)
+        owner_field = [f for f in query.fields if f['name'] == 'owner']
         if owner_field:
-            TicketSystem(self.env).eventually_restrict_owner(owner_field)
+            TicketSystem(self.env).eventually_restrict_owner(owner_field[0])
         data = query.template_data(context, tickets, orig_list, orig_time, req)
 
         req.session['query_href'] = query.get_href(context.href)
@@ -1091,8 +1108,7 @@ class QueryModule(Component):
         # Note that with saved custom queries, there will be some convergence
         # between the report module and the query module.
         from trac.ticket.report import ReportModule
-        report_resource = Resource('report', query.id)
-        if 'REPORT_VIEW' in req.perm(report_resource) and \
+        if 'REPORT_VIEW' in req.perm and \
                self.env.is_component_enabled(ReportModule):
             data['report_href'] = req.href.report()
             add_ctxtnav(req, _('Available Reports'), req.href.report())
@@ -1101,14 +1117,14 @@ class QueryModule(Component):
                 for title, description in self.env.db_query("""
                         SELECT title, description FROM report WHERE id=%s
                         """, (query.id,)):
-                    data['report_resource'] = report_resource
+                    data['report_resource'] = Resource('report', query.id)
                     data['description'] = description
         else:
             data['report_href'] = None
 
         # Only interact with the batch modify module it it is enabled
         from trac.ticket.batch import BatchModifyModule
-        if 'TICKET_BATCH_MODIFY' in req.perm('ticket') and \
+        if 'TICKET_BATCH_MODIFY' in req.perm and \
                 self.env.is_component_enabled(BatchModifyModule):
             self.env[BatchModifyModule].add_template_data(req, data, tickets)
 
@@ -1123,8 +1139,7 @@ class QueryModule(Component):
 
         properties = dict((name, dict((key, field[key])
                                       for key in ('type', 'label', 'options',
-                                                  'optgroups', 'optional',
-                                                  'format')
+                                                  'optgroups')
                                       if key in field))
                           for name, field in data['fields'].iteritems())
         add_script_data(req, properties=properties, modes=data['modes'])
@@ -1154,9 +1169,8 @@ class QueryModule(Component):
                         value = Chrome(self.env).format_emails(
                                     context.child(ticket), value)
                     elif col in query.time_fields:
-                        format = query.fields.by_name(col).get('format')
-                        value = user_time(req, format_date_or_datetime,
-                                          format, value) if value else ''
+                        value = format_datetime(value, '%Y-%m-%d %H:%M:%S',
+                                                tzinfo=req.tz)
                     values.append(unicode(value).encode('utf-8'))
                 writer.writerow(values)
         return (content.getvalue(), '%s;charset=utf-8' % mimetype)
@@ -1195,7 +1209,7 @@ class QueryModule(Component):
                 return tag.a(label,
                              href=query.get_href(formatter.context.href),
                              class_='query')
-            except QuerySyntaxError as e:
+            except QuerySyntaxError, e:
                 return tag.em(_('[Error: %(error)s]', error=unicode(e)),
                               class_='error')
 
@@ -1227,8 +1241,6 @@ class TicketQueryMacro(WikiMacroBase):
      - '''compact''' -- the tickets are presented as a comma-separated
        list of ticket IDs.
      - '''count''' -- only the count of matching tickets is displayed
-     - '''rawcount''' -- only the count of matching tickets is displayed,
-       not even with a link to the corresponding query (//since 1.1.1//)
      - '''table'''  -- a view similar to the custom query view (but without
        the controls)
      - '''progress''' -- a view similar to the milestone progress bars
@@ -1312,20 +1324,16 @@ class TicketQueryMacro(WikiMacroBase):
         query_string, kwargs, format = self.parse_args(content)
         if query_string:
             query_string += '&'
-
-        query_string += '&'.join('%s=%s' % item for item in kwargs.iteritems())
+        query_string += '&'.join('%s=%s' % item
+                                 for item in kwargs.iteritems())
         query = Query.from_string(self.env, query_string)
 
-        if format in ('count', 'rawcount'):
+        if format == 'count':
             cnt = query.count(req)
-            title = ngettext("%(num)s ticket matching %(criteria)s",
-                             "%(num)s tickets matching %(criteria)s", cnt,
-                             criteria=query_string.replace('&', ', '))
-            if format == 'rawcount':
-                return tag.span(cnt, title=title, class_='query_count')
-            else:
-                return tag.a(cnt, href=query.get_href(formatter.context),
-                             title=title)
+            title = ngettext("%(num)d ticket for which %(query)s",
+                             "%(num)d tickets for which %(query)s",
+                             cnt, query=query_string)
+            return tag.span(cnt, title=title, class_='query_count')
 
         tickets = query.execute(req)
 
@@ -1469,4 +1477,4 @@ class TicketQueryMacro(WikiMacroBase):
 
     def is_inline(self, content):
         query_string, kwargs, format = self.parse_args(content)
-        return format in ('compact', 'count', 'rawcount')
+        return format in ('count', 'compact')

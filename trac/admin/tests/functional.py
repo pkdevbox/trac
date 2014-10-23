@@ -12,7 +12,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from trac.perm import PermissionSystem
 from trac.tests.functional import *
 from trac.util.text import unicode_to_base64
 
@@ -78,68 +77,6 @@ class TestBasicSettingsAuthorization(AuthorizationTestCaseSetup):
         """Check permissions required to access Basic Settings panel."""
         self.test_authorization('/admin/general/basics', 'TRAC_ADMIN',
                                 "Basic Settings")
-
-
-class TestDefaultHandler(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Set default handler from the Basic Settings page."""
-
-        # Confirm default value.
-        self._tester.go_to_admin("Basic Settings")
-        tc.find(r'<option selected="selected" value="WikiModule">'
-                r'WikiModule</option>')
-        tc.go(self._tester.url)
-        tc.find("Welcome to Trac")
-
-        # Set to another valid default handler.
-        self._tester.go_to_admin("Basic Settings")
-        tc.formvalue('modbasic', 'default_handler', 'TimelineModule')
-        tc.submit()
-        tc.find("Your changes have been saved.")
-        tc.find(r'<option selected="selected" value="TimelineModule">'
-                r'TimelineModule</option>')
-        tc.go(self._tester.url)
-        tc.find(r'<h1>Timeline</h1>')
-
-        # Set to valid disabled default handler.
-        try:
-            self._testenv.set_config('components',
-                                     'trac.timeline.web_ui.TimelineModule',
-                                     'disabled')
-            self._tester.go_to_admin("Basic Settings")
-            tc.find(r'<option value="TimelineModule">TimelineModule</option>')
-            tc.find(r'<span class="hint">TimelineModule is not a valid '
-                    r'IRequestHandler or is not enabled.</span>')
-            tc.go(self._tester.url)
-            tc.find(r'<h1>Configuration Error</h1>')
-            tc.find(r'Cannot find an implementation of the '
-                    r'<code>IRequestHandler</code> interface named '
-                    r'<code>TimelineModule</code>')
-        finally:
-            self._testenv.remove_config('components',
-                                        'trac.timeline.web_ui.timelinemodule')
-
-        # Set to invalid default handler.
-        try:
-            self._testenv.set_config('trac', 'default_handler',
-                                     'BatchModifyModule')
-            self._tester.go_to_admin("Basic Settings")
-            tc.find(r'<option value="BatchModifyModule">BatchModifyModule'
-                    r'</option>')
-            tc.find(r'<span class="hint">BatchModifyModule is not a valid '
-                    r'IRequestHandler or is not enabled.</span>')
-            tc.formvalue('modbasic', 'default_handler', 'BatchModifyModule')
-            tc.submit()  # Invalid value should not be replaced on submit
-            tc.find(r'<option value="BatchModifyModule">BatchModifyModule'
-                    r'</option>')
-            tc.find(r'<span class="hint">BatchModifyModule is not a valid '
-                    r'IRequestHandler or is not enabled.</span>')
-            tc.go(self._tester.url)
-            tc.find(r'<h1>Configuration Error</h1>')
-            tc.find(r'<code>BatchModifyModule</code> is not a valid default '
-                    r'handler.')
-        finally:
-            self._testenv.set_config('trac', 'default_handler', 'WikiModule')
 
 
 class TestLoggingNone(FunctionalTwillTestCaseSetup):
@@ -274,139 +211,6 @@ class TestRemovePermissionGroup(FunctionalTwillTestCaseSetup):
         tc.notfind(somegroup)
 
 
-class TestCopyPermissions(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Tests for the Copy Permissions functionality
-        added in http://trac.edgewall.org/ticket/11099."""
-        checkbox_value = lambda s, p: '%s:%s' % (unicode_to_base64(s),
-                                                 unicode_to_base64(p))
-        grant_msg = "The subject %s has been granted the permission %s\."
-        def grant_permission(subject, action):
-            tc.formvalue('addperm', 'gp_subject', subject)
-            tc.formvalue('addperm', 'action', action)
-            tc.submit()
-            tc.find(grant_msg % (subject, action))
-            tc.find(checkbox_value(subject, action))
-
-        env = self._testenv.get_trac_environment()
-
-        # Copy permissions from subject to target
-        self._tester.go_to_admin('Permissions')
-        perm_sys = PermissionSystem(env)
-        anon_perms = perm_sys.store.get_user_permissions('anonymous')
-        for perm in anon_perms:
-            tc.find(checkbox_value('anonymous', perm))
-            tc.notfind(checkbox_value('user1', perm))
-        tc.formvalue('copyperm', 'cp_subject', 'anonymous')
-        tc.formvalue('copyperm', 'cp_target', 'user1')
-        tc.submit()
-        for perm in anon_perms:
-            tc.find("The subject user1 has been granted the permission %s\."
-                    % perm)
-            tc.find(checkbox_value('user1', perm))
-
-        # Subject doesn't have any permissions
-        tc.notfind(checkbox_value('noperms', ''))
-        tc.formvalue('copyperm', 'cp_subject', 'noperms')
-        tc.formvalue('copyperm', 'cp_target', 'user1')
-        tc.submit()
-        tc.find("The subject noperms does not have any permissions\.")
-
-        # Subject belongs to group but doesn't directly have any permissions
-        grant_permission('group1', 'TICKET_VIEW')
-        tc.formvalue('addsubj', 'sg_subject', 'noperms')
-        tc.formvalue('addsubj', 'sg_group', 'group1')
-        tc.submit()
-        tc.find("The subject noperms has been added to the group group1\.")
-
-        tc.formvalue('copyperm', 'cp_subject', 'noperms')
-        tc.formvalue('copyperm', 'cp_target', 'user1')
-        tc.submit()
-        tc.find("The subject noperms does not have any permissions\.")
-
-        # Target uses reserved all upper-case form
-        tc.formvalue('copyperm', 'cp_subject', 'noperms')
-        tc.formvalue('copyperm', 'cp_target', 'USER1')
-        tc.submit()
-        tc.find("All upper-cased tokens are reserved for permission names\.")
-        self._tester.go_to_admin("Permissions")
-
-        # Subject users reserved all upper-case form
-        tc.formvalue('copyperm', 'cp_subject', 'USER1')
-        tc.formvalue('copyperm', 'cp_target', 'noperms')
-        tc.submit()
-        tc.find("All upper-cased tokens are reserved for permission names\.")
-        self._tester.go_to_admin("Permissions")
-
-        # Target already possess one of the permissions
-        anon_perms = perm_sys.store.get_user_permissions('anonymous')
-        for perm in anon_perms:
-            tc.notfind(checkbox_value('user2', perm))
-        grant_permission('user2', anon_perms[0])
-
-        tc.formvalue('copyperm', 'cp_subject', 'anonymous')
-        tc.formvalue('copyperm', 'cp_target', 'user2')
-        tc.submit()
-
-        tc.notfind("The subject <em>user2</em> has been granted the "
-                   "permission %s\." % anon_perms[0])
-        for perm in anon_perms[1:]:
-            tc.find("The subject user2 has been granted the permission %s\."
-                    % perm)
-            tc.find(checkbox_value('user2', perm))
-
-        # Subject has a permission that is no longer defined
-        try:
-            env.db_transaction("INSERT INTO permission VALUES (%s,%s)",
-                               ('anonymous', 'NOTDEFINED_PERMISSION'))
-        except env.db_exc.IntegrityError:
-            pass
-        env.config.touch()  # invalidate permission cache
-        tc.reload()
-        tc.find(checkbox_value('anonymous', 'NOTDEFINED_PERMISSION'))
-        perm_sys = PermissionSystem(env)
-        anon_perms = perm_sys.store.get_user_permissions('anonymous')
-        for perm in anon_perms:
-            tc.notfind(checkbox_value('user3', perm))
-
-        tc.formvalue('copyperm', 'cp_subject', 'anonymous')
-        tc.formvalue('copyperm', 'cp_target', 'user3')
-        tc.submit()
-
-        for perm in anon_perms:
-            msg = grant_msg % ('user3', perm)
-            if perm == 'NOTDEFINED_PERMISSION':
-                tc.notfind(msg)
-                tc.notfind(checkbox_value('user3', perm))
-            else:
-                tc.find(msg)
-                tc.find(checkbox_value('user3', perm))
-        perm_sys.revoke_permission('anonymous', 'NOTDEFINED_PERMISSION')
-
-        # Actor doesn't posses permission
-        grant_permission('anonymous', 'PERMISSION_GRANT')
-        grant_permission('user3', 'TRAC_ADMIN')
-        self._tester.logout()
-        self._tester.go_to_admin("Permissions")
-
-        try:
-            tc.formvalue('copyperm', 'cp_subject', 'user3')
-            tc.formvalue('copyperm', 'cp_target', 'user4')
-            tc.submit()
-
-            perm_sys = PermissionSystem(env)
-            for perm in [perm[1] for perm in perm_sys.get_all_permissions()
-                                 if perm[0] == 'user3'
-                                 and perm[1] != 'TRAC_ADMIN']:
-                tc.find(grant_msg % ('user4', perm))
-            tc.notfind("The permission TRAC_ADMIN was not granted to user4 "
-                       "because users cannot grant permissions they don't "
-                       "possess.")
-        finally:
-            self._testenv.revoke_perm('anonymous', 'PERMISSION_GRANT')
-            self._tester.login('admin')
-        
-
 class TestPluginSettings(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Check plugin settings."""
@@ -452,6 +256,7 @@ class RegressionTestTicket11069(FunctionalTwillTestCaseSetup):
         self._tester.login('user')
         self._testenv.grant_perm('user', 'PERMISSION_GRANT')
         env = self._testenv.get_trac_environment()
+        from trac.perm import PermissionSystem
         user_perms = PermissionSystem(env).get_user_permissions('user')
         all_actions = PermissionSystem(env).get_actions()
         try:
@@ -534,7 +339,6 @@ def functionalSuite(suite=None):
         suite = trac.tests.functional.functionalSuite()
     suite.addTest(TestBasicSettings())
     suite.addTest(TestBasicSettingsAuthorization())
-    suite.addTest(TestDefaultHandler())
     suite.addTest(TestLoggingNone())
     suite.addTest(TestLoggingAuthorization())
     suite.addTest(TestLoggingToFile())
@@ -544,7 +348,6 @@ def functionalSuite(suite=None):
     suite.addTest(TestAddUserToGroup())
     suite.addTest(TestRemoveUserFromGroup())
     suite.addTest(TestRemovePermissionGroup())
-    suite.addTest(TestCopyPermissions())
     suite.addTest(TestPluginSettings())
     suite.addTest(TestPluginsAuthorization())
     suite.addTest(RegressionTestTicket10752())

@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from fnmatch import fnmatchcase
 from itertools import groupby
 import inspect
@@ -85,14 +87,9 @@ class TitleIndexMacro(WikiMacroBase):
 
     Accepts a prefix string as parameter: if provided, only pages with names
     that start with the prefix are included in the resulting list. If this
-    parameter is omitted, all pages are listed. If the prefix is specified,
-    a second argument of value `hideprefix` can be given as well, in order
-    to remove that prefix from the output.
-
-    The prefix string supports the standard relative-path notation ''when
-    using the macro in a wiki page''. A prefix string starting with `./`
-    will be relative to the current page, and parent pages can be
-    specified using `../`.
+    parameter is omitted, all pages are listed.
+    If the prefix is specified, a second argument of value `hideprefix`
+    can be given as well, in order to remove that prefix from the output.
 
     Alternate `format` and `depth` named parameters can be specified:
      - `format=compact`: The pages are displayed as comma-separated links.
@@ -125,6 +122,7 @@ class TitleIndexMacro(WikiMacroBase):
         minsize = max(int(kw.get('min', 1)), 1)
         minsize_group = max(minsize, 2)
         depth = int(kw.get('depth', -1))
+        start = prefix.count('/') if prefix else 0
         format = kw.get('format', '')
 
         def parse_list(name):
@@ -134,17 +132,12 @@ class TitleIndexMacro(WikiMacroBase):
         includes = parse_list('include') or ['*']
         excludes = parse_list('exclude')
 
-        wiki = formatter.wiki
-        resource = formatter.resource
-        if prefix and resource and resource.realm == 'wiki':
-            prefix = wiki.resolve_relative_name(prefix, resource.id)
-
-        start = prefix.count('/') if prefix else 0
-
         if hideprefix:
             omitprefix = lambda page: page[len(prefix):]
         else:
             omitprefix = lambda page: page
+
+        wiki = formatter.wiki
 
         pages = sorted(page for page in wiki.get_pages(prefix)
                        if (depth < 0 or depth >= page.count('/') - start)
@@ -503,7 +496,7 @@ class ImageMacro(WikiMacroBase):
     [[Image(ticket:36:boo.jpg)]]    # from another ticket (long form)
     [[Image(source:/img/bee.jpg)]]  # from the repository
     [[Image(htdocs:foo/bar.png)]]   # from project htdocs dir
-    [[Image(shared:foo/bar.png)]]   # from shared htdocs dir (''since 1.0.2'')
+    [[Image(shared:foo/bar.png)]]   # from shared htdocs dir (since 1.0.2)
     }}}
 
     ''Adapted from the Image.py macro created by Shun-ichi Goto
@@ -659,7 +652,7 @@ class ImageMacro(WikiMacroBase):
                                        format='raw')
             try:
                 desc = get_resource_summary(self.env, attachment)
-            except ResourceNotFound as e:
+            except ResourceNotFound, e:
                 raw_url = formatter.href.chrome('common/attachment.png')
                 desc = _('No image "%(id)s" attached to %(parent)s',
                          id=attachment.id,
@@ -706,7 +699,7 @@ class MacroListMacro(WikiMacroBase):
                     name_descriptions = [
                         (name, macro_provider.get_macro_description(name))
                         for name in names]
-                except Exception as e:
+                except Exception, e:
                     yield system_message(
                         _("Error: Can't get description for macro %(name)s",
                           name=names[0]), e), names
@@ -789,7 +782,7 @@ class TracIniMacro(WikiMacroBase):
             (tag.h3(tag.code('[%s]' % section), id='%s-section' % section),
              format_to_html(self.env, formatter.context, section_doc),
              tag.table(class_='wiki')(tag.tbody(
-                 tag.tr(tag.td(tag.code(option.name)),
+                 tag.tr(tag.td(tag.tt(option.name)),
                         tag.td(format_to_oneliner(
                             self.env, formatter.context, getdoc(option))),
                         default_cell(option),
@@ -832,7 +825,7 @@ class KnownMimeTypesMacro(WikiMacroBase):
                                  href=formatter.context.href.wiki(
                                      'WikiProcessors'))))),
                 tag.tbody(
-                    tag.tr(tag.th(tag.code(mime_type),
+                    tag.tr(tag.th(tag.tt(mime_type),
                                   style="text-align: left"),
                            tag.td(tag.code(
                                ' '.join(sorted(mime_types[mime_type])))))

@@ -17,13 +17,12 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import abc
+from __future__ import with_statement
+
 import doctest
-import inspect
 import os
-import sys
-import types
 import unittest
+import sys
 
 try:
     from babel import Locale
@@ -93,25 +92,7 @@ def Mock(bases=(), *initargs, **kw):
     """
     if not isinstance(bases, tuple):
         bases = (bases,)
-
-    # if base classes have abstractmethod and abstractproperty,
-    # create dummy methods for abstracts
-    attrs = {}
-    def dummyfn(self, *args, **kwargs):
-        raise NotImplementedError
-    for base in bases:
-        if getattr(base, '__metaclass__', None) is not abc.ABCMeta:
-            continue
-        fn = types.UnboundMethodType(dummyfn, None, base)
-        for name, attr in inspect.getmembers(base):
-            if name in attrs:
-                continue
-            if isinstance(attr, abc.abstractproperty) or \
-                    isinstance(attr, types.UnboundMethodType) and \
-                    getattr(attr, '__isabstractmethod__', False) is True:
-                attrs[name] = fn
-
-    cls = type('Mock', bases, attrs)
+    cls = type('Mock', bases, {})
     mock = cls(*initargs)
     for k, v in kw.items():
         setattr(mock, k, v)

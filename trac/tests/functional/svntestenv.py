@@ -16,6 +16,7 @@ import re
 from subprocess import call
 
 from testenv import FunctionalTestEnvironment
+from trac.tests.functional import logfile
 from trac.util.compat import close_fds
 
 
@@ -35,8 +36,7 @@ class SvnFunctionalTestEnvironment(FunctionalTestEnvironment):
         """
         self.svnadmin_create()
         if call(['svn', 'co', self.repo_url(), self.work_dir()],
-                stdout=self.logfile, stderr=self.logfile,
-                close_fds=close_fds):
+                stdout=logfile, stderr=logfile, close_fds=close_fds):
             raise Exception('Checkout from %s failed.' % self.repo_url())
 
     def destroy_repo(self):
@@ -61,7 +61,7 @@ class SvnFunctionalTestEnvironment(FunctionalTestEnvironment):
         else:
             path = self.repo_path(filename)
         if call(["svnadmin", "create", path],
-                stdout=self.logfile, stderr=self.logfile, close_fds=close_fds):
+                stdout=logfile, stderr=logfile, close_fds=close_fds):
             raise Exception('unable to create subversion repository: %r' %
                             path)
         return path
@@ -103,7 +103,7 @@ class SvnFunctionalTestEnvironment(FunctionalTestEnvironment):
         try:
             revision = re.search(r'Committed revision ([0-9]+)\.',
                                  output).group(1)
-        except Exception as e:
+        except Exception, e:
             args = e.args + (output, )
             raise Exception(*args)
         return int(revision)

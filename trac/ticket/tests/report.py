@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import doctest
 from datetime import datetime, timedelta
 
@@ -96,11 +98,12 @@ class ReportTestCase(unittest.TestCase):
 
     def test_saved_custom_query_redirect(self):
         query = u'query:?type=résumé'
-        with self.env.db_transaction as db:
-            cursor = db.cursor()
-            cursor.execute("INSERT INTO report (title,query,description) "
-                           "VALUES (%s,%s,%s)", ('redirect', query, ''))
-            id = db.get_last_id(cursor, 'report')
+        db = self.env.get_db_cnx()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO report (title,query,description) "
+                       "VALUES (%s,%s,%s)", ('redirect', query, ''))
+        id = db.get_last_id(cursor, 'report')
+        db.commit()
 
         headers_sent = {}
         def start_response(status, headers):
@@ -122,7 +125,7 @@ class ReportTestCase(unittest.TestCase):
         db = self.env.get_read_db()
         name = """%s"`'%%%?"""
         sql = 'SELECT 1 AS %s, $USER AS user' % db.quote(name)
-        rv = self.report_module.execute_paginated_report(req, 1, sql,
+        rv = self.report_module.execute_paginated_report(req, db, 1, sql,
                                                          {'USER': 'joe'})
         self.assertEqual(5, len(rv), repr(rv))
         cols, results, num_items, missing_args, limit_offset = rv
@@ -162,8 +165,10 @@ class ExecuteReportTestCase(unittest.TestCase):
 
     def _execute_report(self, id, args=None):
         mod = self.report_module
-        title, description, sql = mod.get_report(id)
-        return mod.execute_paginated_report(self.req, id, sql, args or {})
+        req = self.req
+        with self.env.db_query as db:
+            title, description, sql = mod.get_report(id)
+            return mod.execute_paginated_report(req, db, id, sql, args or {})
 
     def _generate_tickets(self, columns, data, attrs):
         with self.env.db_transaction as db:
@@ -509,23 +514,6 @@ class ExecuteReportTestCase(unittest.TestCase):
         idx_group = cols.index('__group__')
         self.assertEqual(['Active Tickets'],
                          sorted(set(r[idx_group] for r in results)))
-
-    def test_execute_paginated_report_legacy_signature(self):
-        """`execute_paginated_report` returns the same results with and
-        without the deprecated `db` argument."""
-        id = 1
-        attrs = dict(reporter='joe', component='component1', version='1.0',
-                     milestone='milestone1', type='defect', owner='joe')
-        self._generate_tickets(('status', 'priority'), self.REPORT_1_DATA,
-                               attrs)
-        mod = self.report_module
-        sql = mod.get_report(id)[2]
-
-        rv1 = mod.execute_paginated_report(self.req, id, sql, {})
-        with self.env.db_query as db:
-            rv2 = mod.execute_paginated_report(self.req, db, id, sql, {})
-        self.assertEqual(rv2, rv1)
-
 
 
 def suite():

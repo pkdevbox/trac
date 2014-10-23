@@ -75,14 +75,14 @@ if twill:
     try:
         from lxml import etree
     except ImportError:
-        print("SKIP: validation of XHTML output in functional tests"
-              " (no lxml installed)")
+        print "SKIP: validation of XHTML output in functional tests " \
+              "(no lxml installed)"
         etree = None
 
     if etree and pv(etree.__version__) < pv('2.0.0'):
         # 2.0.7 and 2.1.x are known to work.
-        print("SKIP: validation of XHTML output in functional tests"
-              " (lxml < 2.0, api incompatibility)")
+        print "SKIP: validation of XHTML output in functional tests " \
+              "(lxml < 2.0, api incompatibility)"
         etree = None
 
     if etree:
@@ -121,7 +121,7 @@ if twill:
                 if isinstance(url, str):
                     url = unicode(url, 'latin1')
                 etree.parse(StringIO(page), base_url=url)
-            except etree.XMLSyntaxError as e:
+            except etree.XMLSyntaxError, e:
                 raise twill.errors.TwillAssertionError(
                     _format_error_log(page, e.error_log))
 
@@ -170,7 +170,7 @@ if twill:
         try:
             fv(form, field, value)
         except (twill.errors.TwillAssertionError,
-                twill.utils.ClientForm.ItemNotFoundError) as e:
+                twill.utils.ClientForm.ItemNotFoundError), e:
             filename = twill_write_html()
             raise twill.errors.TwillAssertionError('%s at %s' %
                                                    (unicode(e), filename))
@@ -221,7 +221,7 @@ if twill:
     def better_find(what, flags='', tcfind=tc.find):
         try:
             tcfind(what, flags)
-        except twill.errors.TwillAssertionError as e:
+        except twill.errors.TwillAssertionError, e:
             filename = twill_write_html()
             raise twill.errors.TwillAssertionError('%s at %s' %
                                                    (unicode(e), filename))
@@ -230,7 +230,7 @@ if twill:
     def better_notfind(what, flags='', tcnotfind=tc.notfind):
         try:
             tcnotfind(what, flags)
-        except twill.errors.TwillAssertionError as e:
+        except twill.errors.TwillAssertionError, e:
             filename = twill_write_html()
             raise twill.errors.TwillAssertionError('%s at %s' %
                                                    (unicode(e), filename))
@@ -240,7 +240,7 @@ if twill:
     def better_url(should_be, tcurl=tc.url):
         try:
             tcurl(should_be)
-        except twill.errors.TwillAssertionError as e:
+        except twill.errors.TwillAssertionError, e:
             filename = twill_write_html()
             raise twill.errors.TwillAssertionError('%s at %s' %
                                                    (unicode(e), filename))
