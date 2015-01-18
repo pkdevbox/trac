@@ -30,7 +30,8 @@ import sys
 import urlparse
 
 from genshi.builder import Fragment
-from trac.core import Interface, TracBaseError
+from trac.core import Interface, TracError
+from trac.perm import PermissionError
 from trac.util import get_last_traceback, unquote
 from trac.util.datefmt import http_date, localtz
 from trac.util.text import empty, exception_to_unicode, to_unicode
@@ -49,19 +50,7 @@ class IAuthenticator(Interface):
 
 
 class IRequestHandler(Interface):
-    """Decide which `trac.core.Component` handles which `Request`, and how.
-
-    The boolean property `is_valid_default_handler` determines whether the
-    `IRequestFilter` can be used as a `default_handler` and defaults to
-    `True`. To be suitable as a `default_handler`, an `IRequestFilter` must
-    return an HTML document and `data` dictionary for rendering the document,
-    and must not require that `match_request` be called prior to
-    `process_request`.
-
-    The boolean property `jquery_noconflict` determines whether jQuery's
-    `noConflict` mode will be activated by the handler, and defaults to
-    `False`.
-    """
+    """Decide which `trac.core.Component` handles which `Request`, and how."""
 
     def match_request(req):
         """Return whether the handler wants to process the given request."""
@@ -78,19 +67,7 @@ class IRequestHandler(Interface):
         simply send the response itself and not return anything.
 
         :Since 1.0: Clearsilver templates are no longer supported.
-
-        :Since 1.1.2: the rendering `method` (xml, xhtml or text) may be
-           returned as a fourth parameter in the tuple, but if not specified
-           it will be inferred from the `content_type` when rendering the
-           template.
         """
-
-
-def is_valid_default_handler(handler):
-    """Returns `True` if the `handler` is a valid default handler, as
-    described in the `IRequestHandler` interface documentation.
-    """
-    return handler and getattr(handler, 'is_valid_default_handler', True)
 
 
 class IRequestFilter(Interface):
@@ -105,7 +82,7 @@ class IRequestFilter(Interface):
         Always returns the request handler, even if unchanged.
         """
 
-    def post_process_request(req, template, data, content_type, method=None):
+    def post_process_request(req, template, data, content_type):
         """Do any post-processing the request might need; typically adding
         values to the template `data` dictionary, or changing the Genshi
         template or mime type.
@@ -126,11 +103,6 @@ class IRequestFilter(Interface):
            templates.
 
         :Since 1.0: Clearsilver templates are no longer supported.
-
-        :Since 1.1.2: the rendering `method` will be passed if it is returned
-           by the request handler, otherwise `method` will be `None`. For
-           backward compatibility, the parameter is optional in the
-           implementation's signature.
         """
 
 
@@ -158,10 +130,10 @@ HTTP_STATUS = dict([(code, reason.title()) for code, (reason, description)
                     in BaseHTTPRequestHandler.responses.items()])
 
 
-class HTTPException(TracBaseError):
+class HTTPException(Exception):
 
     def __init__(self, detail, *args):
-        if isinstance(detail, TracBaseError):
+        if isinstance(detail, (TracError, PermissionError)):
             self.detail = detail.message
             self.reason = detail.title
         else:
@@ -176,9 +148,9 @@ class HTTPException(TracBaseError):
         # The message is based on the e.detail, which can be an Exception
         # object, but not a TracError one: when creating HTTPException,
         # a TracError.message is directly assigned to e.detail
-        if isinstance(self.detail, Exception): # not a TracBaseError
+        if isinstance(self.detail, Exception): # not a TracError or PermissionError
             message = exception_to_unicode(self.detail)
-        elif isinstance(self.detail, Fragment): # TracBaseError markup
+        elif isinstance(self.detail, Fragment): # TracError or PermissionError markup
             message = self.detail
         else:
             message = to_unicode(self.detail)
@@ -266,13 +238,10 @@ class _RequestArgs(dict):
 
 
 def parse_arg_list(query_string):
-    """Parse a query string into a list of `(name, value)` tuples.
-
-    :Since 1.1.2: a leading `?` is stripped from `query_string`."""
+    """Parse a query string into a list of `(name, value)` tuples."""
     args = []
     if not query_string:
         return args
-    query_string = query_string.lstrip('?')
     for arg in query_string.split('&'):
         nv = arg.split('=', 1)
         if len(nv) == 2:
@@ -303,7 +272,7 @@ def arg_list_to_args(arg_list):
     return args
 
 
-class RequestDone(TracBaseError):
+class RequestDone(Exception):
     """Marker exception that indicates whether request processing has completed
     and a response was sent.
     """
@@ -576,8 +545,7 @@ class Request(object):
         try:
             if template.endswith('.html'):
                 if env:
-                    from trac.web.chrome import Chrome, add_stylesheet
-                    add_stylesheet(self, 'common/css/code.css')
+                    from trac.web.chrome import Chrome
                     try:
                         data = Chrome(env).render_template(self, template,
                                                            data, 'text/html')
@@ -690,7 +658,7 @@ class Request(object):
             raise ValueError("Can't send unicode content")
         try:
             self._write(data)
-        except (IOError, socket.error) as e:
+        except (IOError, socket.error), e:
             if e.args[0] in (errno.EPIPE, errno.ECONNRESET, 10053, 10054):
                 raise RequestDone
             # Note that mod_wsgi raises an IOError with only a message

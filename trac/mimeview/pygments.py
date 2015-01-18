@@ -44,8 +44,6 @@ class PygmentsRenderer(Component):
     implements(ISystemInfoProvider, IHTMLPreviewRenderer,
                IPreferencePanelProvider, IRequestHandler)
 
-    is_valid_default_handler = False
-
     default_style = Option('mimeviewer', 'pygments_default_style', 'trac',
         """The default style to use for Pygments syntax highlighting.""")
 
@@ -139,8 +137,6 @@ class PygmentsRenderer(Component):
                 add_notice(req, _('Your preferences have been saved.'))
             req.redirect(req.href.prefs(panel or None))
 
-        for style in sorted(styles):
-            add_stylesheet(req, '/pygments/%s.css' % style, title=style.title())
         output = self._generate('html', self.EXAMPLE)
         return 'prefs_pygments.html', {
             'output': output,
@@ -160,7 +156,7 @@ class PygmentsRenderer(Component):
         style = req.args['style']
         try:
             style_cls = get_style_by_name(style)
-        except ValueError as e:
+        except ValueError, e:
             raise HTTPNotFound(e)
 
         parts = style_cls.__module__.split('.')

@@ -61,7 +61,6 @@ that can be `read()`.
 
 import re
 from StringIO import StringIO
-from collections import namedtuple
 
 from genshi import Markup, Stream
 from genshi.core import TEXT, START, END, START_NS, END_NS
@@ -72,7 +71,7 @@ from trac.config import IntOption, ListOption, Option
 from trac.core import *
 from trac.resource import Resource
 from trac.util import Ranges, content_disposition
-from trac.util.text import exception_to_unicode, to_unicode
+from trac.util.text import exception_to_unicode, to_utf8, to_unicode
 from trac.util.translation import _, tag_
 
 
@@ -627,17 +626,17 @@ class Mimeview(Component):
         """Charset to be used when in doubt.""")
 
     tab_width = IntOption('mimeviewer', 'tab_width', 8,
-        """Displayed tab width in file preview.""")
+        """Displayed tab width in file preview. (''since 0.9'')""")
 
     max_preview_size = IntOption('mimeviewer', 'max_preview_size', 262144,
-        """Maximum file size for HTML preview.""")
+        """Maximum file size for HTML preview. (''since 0.9'')""")
 
     mime_map = ListOption('mimeviewer', 'mime_map',
         'text/x-dylan:dylan, text/x-idl:ice, text/x-ada:ads:adb',
         doc="""List of additional MIME types and keyword mappings.
         Mappings are comma-separated, and for each MIME type,
         there's a colon (":") separated list of associated keywords
-        or file extensions.
+        or file extensions. (''since 0.10'')
         """)
 
     mime_map_patterns = ListOption('mimeviewer', 'mime_map_patterns',
@@ -652,8 +651,7 @@ class Mimeview(Component):
         'application/octet-stream, application/pdf, application/postscript, '
         'application/msword,application/rtf,',
         doc="""Comma-separated list of MIME types that should be treated as
-        binary data.
-        """)
+        binary data. (''since 0.11.5'')""")
 
     def __init__(self):
         self._mime_map = None
@@ -662,21 +660,16 @@ class Mimeview(Component):
     # Public API
 
     def get_supported_conversions(self, mimetype):
-        """Return a list of target MIME types as instances of the `namedtuple`
-        `MimeConversion`. Output is ordered from best to worst quality.
-
-        The `MimeConversion` `namedtuple` has fields: key, name, extension,
-        in_mimetype, out_mimetype, quality, converter.
-        """
-        fields = ('key', 'name', 'extension', 'in_mimetype',
-                  'out_mimetype', 'quality', 'converter')
-        _MimeConversion = namedtuple('MimeConversion', fields)
+        """Return a list of target MIME types in same form as
+        `IContentConverter.get_supported_conversions()`, but with the converter
+        component appended. Output is ordered from best to worst quality."""
         converters = []
-        for c in self.converters:
-            for k, n, e, im, om, q in c.get_supported_conversions() or []:
+        for converter in self.converters:
+            conversions = converter.get_supported_conversions() or []
+            for k, n, e, im, om, q in conversions:
                 if im == mimetype and q > 0:
-                    converters.append(_MimeConversion(k, n, e, im, om, q, c))
-        converters = sorted(converters, key=lambda i: i.quality, reverse=True)
+                    converters.append((k, n, e, im, om, q, converter))
+        converters = sorted(converters, key=lambda i: i[-2], reverse=True)
         return converters
 
     def convert_content(self, req, mimetype, content, key, filename=None,
@@ -699,20 +692,19 @@ class Mimeview(Component):
             mimetype = full_mimetype = 'text/plain'  # fallback if not binary
 
         # Choose best converter
-        candidates = [c for c in self.get_supported_conversions(mimetype)
-                        if key in (c.key, c.out_mimetype)]
+        candidates = list(self.get_supported_conversions(mimetype) or [])
+        candidates = [c for c in candidates if key in (c[0], c[4])]
         if not candidates:
             raise TracError(
                 _("No available MIME conversions from %(old)s to %(new)s",
                   old=mimetype, new=key))
 
         # First successful conversion wins
-        for conversion in candidates:
-            output = conversion.converter.convert_content(req, mimetype,
-                                                          content,
-                                                          conversion.key)
+        for ck, name, ext, input_mimettype, output_mimetype, quality, \
+                converter in candidates:
+            output = converter.convert_content(req, mimetype, content, ck)
             if output:
-                return output[0], output[1], conversion.extension
+                return output[0], output[1], ext
         raise TracError(
             _("No available MIME conversions from %(old)s to %(new)s",
               old=mimetype, new=key))
@@ -810,17 +802,15 @@ class Mimeview(Component):
 
                 # Render content as source code
                 if annotations:
-                    marks = context.req.args.get('marks') if context.req \
-                            else None
-                    if marks:
-                        context.set_hints(marks=marks)
-                    return self._render_source(context, result, annotations)
+                    m = context.req.args.get('marks') if context.req else None
+                    return self._render_source(context, result, annotations,
+                                               m and Ranges(m))
                 else:
                     if isinstance(result, list):
                         result = Markup('\n').join(result)
                     return tag.div(class_='code')(tag.pre(result)).generate()
 
-            except Exception as e:
+            except Exception, e:
                 self.log.warning('HTML preview using %s failed: %s',
                                  renderer.__class__.__name__,
                                  exception_to_unicode(e, traceback=True))
@@ -831,7 +821,7 @@ class Mimeview(Component):
                           renderer=renderer.__class__.__name__,
                           err=exception_to_unicode(e)))
 
-    def _render_source(self, context, stream, annotations):
+    def _render_source(self, context, stream, annotations, marks=None):
         from trac.web.chrome import add_warning
         annotators, labels, titles = {}, {}, {}
         for annotator in self.annotators:
@@ -856,7 +846,7 @@ class Mimeview(Component):
             annotator = annotators[a]
             try:
                 data = (annotator, annotator.get_annotation_data(context))
-            except TracError as e:
+            except TracError, e:
                 self.log.warning("Can't use annotator '%s': %s", a, e.message)
                 add_warning(context.req, tag.strong(
                     tag_("Can't use %(annotator)s annotator: %(error)s",
@@ -874,6 +864,8 @@ class Mimeview(Component):
         def _body_rows():
             for idx, line in enumerate(_group_lines(stream)):
                 row = tag.tr()
+                if marks and idx + 1 in marks:
+                    row(class_='hilite')
                 for annotator, data in annotator_datas:
                     if annotator:
                         annotator.annotate_row(context, row, idx+1, line, data)
@@ -886,6 +878,11 @@ class Mimeview(Component):
             tag.thead(_head_row()),
             tag.tbody(_body_rows())
         )
+
+    def get_max_preview_size(self):
+        """:deprecated: since 0.10, use `max_preview_size` attribute directly.
+        """
+        return self.max_preview_size
 
     def get_charset(self, content='', mimetype=None):
         """Infer the character encoding from the `content` or the `mimetype`.
@@ -956,7 +953,7 @@ class Mimeview(Component):
                     mimetype, regexp = mapping.split(':', 1)
                 try:
                     self._mime_map_patterns[mimetype] = re.compile(regexp)
-                except re.error as e:
+                except re.error, e:
                     self.log.warning("mime_map_patterns contains invalid "
                                      "regexp '%s' for mimetype '%s' (%s)",
                                      regexp, mimetype, exception_to_unicode(e))
@@ -973,6 +970,13 @@ class Mimeview(Component):
         if content is not None and is_binary(content):
             return True
         return False
+
+    def to_utf8(self, content, mimetype=None):
+        """Convert an encoded `content` to utf-8.
+
+        :deprecated: since 0.10, you should use `unicode` strings only.
+        """
+        return to_utf8(content, self.get_charset(content, mimetype))
 
     def to_unicode(self, content, mimetype=None, charset=None):
         """Convert `content` (an encoded `str` object) to an `unicode` object.
@@ -1126,22 +1130,12 @@ class LineNumberAnnotator(Component):
         return 'lineno', _('Line'), _('Line numbers')
 
     def get_annotation_data(self, context):
-        try:
-            marks = Ranges(context.get_hint('marks'))
-        except ValueError:
-            marks = None
-        return {
-            'id': context.get_hint('id', '') + 'L%s',
-            'marks': marks,
-            'offset': context.get_hint('lineno', 1) - 1
-        }
+        return None
 
     def annotate_row(self, context, row, lineno, line, data):
-        lineno += data['offset']
-        id = data['id'] % lineno
-        if data['marks'] and lineno in data['marks']:
-            row(class_='hilite')
-        row.append(tag.th(id=id)(tag.a(lineno, href='#' + id)))
+        row.append(tag.th(id='L%s' % lineno)(
+            tag.a(lineno, href='#L%s' % lineno)
+        ))
 
 
 # -- Default renderers

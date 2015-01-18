@@ -12,6 +12,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import os
 import tempfile
 import time
@@ -48,11 +50,6 @@ class ConfigurationTestCase(unittest.TestCase):
         wait_for_file_mtime_change(filename)
         with open(filename, 'w') as fileobj:
             fileobj.write(('\n'.join(lines + [''])).encode('utf-8'))
-
-    def test_repr(self):
-        self.assertEquals('<Configuration None>', repr(Configuration(None)))
-        config = self._read()
-        self.assertEquals("<Configuration %r>" % self.filename, repr(config))
 
     def test_default(self):
         config = self._read()
@@ -206,26 +203,6 @@ class ConfigurationTestCase(unittest.TestCase):
         self.assertEqual(values, config.getlist('a', 'false', values,
                                                 keep_empty=True))
 
-    def test_read_and_getlist_multi_seps(self):
-        self._write(['[a]', 'option = 42 foo,bar||baz,||blah'])
-        config = self._read()
-
-        expected = ['42', 'foo', 'bar', 'baz', 'blah']
-        self.assertEqual(expected, config.getlist('a', 'option', '',
-                                                  sep=(' ', ',', '||')))
-        self.assertEqual(expected, config.getlist('a', 'option', '',
-                                                  sep=[' ', ',', '||']))
-
-        self.assertEqual(['42', 'foo', 'bar', 'baz', '', 'blah'],
-                         config.getlist('a', 'option', '',
-                                        sep=(' ', ',', '||'),
-                                        keep_empty=True))
-
-        expected = ['42 foo,bar', 'baz,', 'blah']
-        self.assertEqual(expected, config.getlist('a', 'option', '',
-                                                  sep=['||']))
-        self.assertEqual(expected, config.getlist('a', 'option', '', sep='||'))
-
     def test_read_and_choice(self):
         self._write(['[a]', 'option = 2', 'invalid = d'])
         config = self._read()
@@ -264,9 +241,6 @@ class ConfigurationTestCase(unittest.TestCase):
 
             def __init__(self):
                 self.config = config
-
-        self.env.enable_component(ImplA)
-        self.env.enable_component(Foo)
 
         foo = Foo(self.env)
         self.assertRaises(ConfigurationError, getattr, foo, 'default1')
@@ -307,11 +281,6 @@ class ConfigurationTestCase(unittest.TestCase):
 
             def __init__(self):
                 self.config = config
-
-        self.env.enable_component(ImplA)
-        self.env.enable_component(ImplB)
-        self.env.enable_component(ImplC)
-        self.env.enable_component(Foo)
 
         foo = Foo(self.env)
         self.assertEqual([], foo.default1)
@@ -585,10 +554,6 @@ class ConfigurationTestCase(unittest.TestCase):
             option_list = (ListOption)('a', 'list', ['#cc0', 4.2, 42L, 0, None,
                                                      True, False, None],
                                        sep='|')
-            option_list = (ListOption)('a', 'list-seps',
-                                       ['#cc0', 4.2, 42L, 0, None, True, False,
-                                        None],
-                                       sep=(',', '|'))
             option_choice = (ChoiceOption)('a', 'choice', [-42, 42])
 
         config = self._read()
@@ -602,8 +567,6 @@ class ConfigurationTestCase(unittest.TestCase):
             self.assertEqual('choice = -42\n',                       f.next())
             self.assertEqual('false = disabled\n',                   f.next())
             self.assertEqual('list = #cc0|4.2|42|0||enabled|disabled|\n',
-                             f.next())
-            self.assertEqual('list-seps = #cc0,4.2,42,0,,enabled,disabled,\n',
                              f.next())
             self.assertEqual('# none = <inherited>\n',               f.next())
             self.assertEqual('true = enabled\n',                     f.next())

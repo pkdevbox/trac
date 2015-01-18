@@ -27,6 +27,9 @@ import textwrap
 from urllib import quote, quote_plus, unquote
 from unicodedata import east_asian_width
 
+from trac.util.translation import _
+
+
 CRLF = '\r\n'
 
 class Empty(unicode):
@@ -607,20 +610,12 @@ def normalize_whitespace(text, to_space=u'\u00a0', remove=u'\u200b'):
         text = text.replace(each, '')
     return text
 
-
 def unquote_label(txt):
     """Remove (one level of) enclosing single or double quotes.
 
     .. versionadded :: 1.0
     """
     return txt[1:-1] if txt and txt[0] in "'\"" and txt[0] == txt[-1] else txt
-
-
-def cleandoc(message):
-    """Removes uniform indentation and leading/trailing whitespace."""
-    from inspect import cleandoc
-    return cleandoc(message).strip()
-
 
 # -- Conversion
 
@@ -635,7 +630,6 @@ def pretty_size(size, format='%.1f'):
 
     jump = 1024
     if size < jump:
-        from trac.util.translation import _
         return _('%(size)s bytes', size=size)
 
     units = ['KB', 'MB', 'GB', 'TB']
@@ -723,17 +717,3 @@ def levenshtein_distance(lhs, rhs):
                             prev[ridx] + cost)) # substitution
         prev = curr
     return prev[-1]
-
-
-sub_vars_re = re.compile("[$]([A-Z_][A-Z0-9_]*)")
-
-def sub_vars(text, args):
-    """Substitute $XYZ-style variables in a string with provided values.
-
-    :param text: string containing variables to substitute.
-    :param args: dictionary with keys matching the variables to be substituted.
-                 The keys should not be prefixed with the $ character."""
-    def repl(match):
-        key = match.group(1)
-        return args[key] if key in args else '$' + key
-    return sub_vars_re.sub(repl, text)

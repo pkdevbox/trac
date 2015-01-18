@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2014 Edgewall Software
+# Copyright (C) 2003-2009 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2006 Christian Boos <cboos@edgewall.org>
 # All rights reserved.
@@ -18,8 +18,8 @@
 
 import re
 
-from genshi.builder import tag
 from genshi.core import Markup
+from genshi.builder import tag
 
 from trac.config import IntOption, ListOption
 from trac.core import *
@@ -31,7 +31,7 @@ from trac.util.translation import _
 from trac.versioncontrol.api import Changeset, RepositoryManager
 from trac.versioncontrol.web_ui.changeset import ChangesetModule
 from trac.versioncontrol.web_ui.util import *
-from trac.web.api import IRequestHandler
+from trac.web import IRequestHandler
 from trac.web.chrome import (Chrome, INavigationContributor, add_ctxtnav,
                              add_link, add_script, add_script_data,
                              add_stylesheet, auth_link, web_context)
@@ -43,11 +43,9 @@ class LogModule(Component):
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler,
                IWikiSyntaxProvider)
 
-    realm = RepositoryManager.changeset_realm
-
     default_log_limit = IntOption('revisionlog', 'default_log_limit', 100,
         """Default value for the limit argument in the TracRevisionLog.
-        """)
+        (''since 0.11'')""")
 
     graph_colors = ListOption('revisionlog', 'graph_colors',
         ['#cc0', '#0c0', '#0cc', '#00c', '#c0c', '#c00'],
@@ -123,7 +121,7 @@ class LogModule(Component):
         #    unless explicit ranges have been specified
         #  * for ''show only add, delete'' we're using
         #   `Repository.get_path_history()`
-        cset_resource = repos.resource.child(self.realm)
+        cset_resource = repos.resource.child('changeset')
         show_graph = False
         if mode == 'path_history':
             def history():
@@ -295,6 +293,7 @@ class LogModule(Component):
         if format == 'changelog':
             return 'revisionlog.txt', data, 'text/plain'
         elif format == 'rss':
+            data['email_map'] = Chrome(self.env).get_email_map()
             data['context'] = web_context(req, 'source',
                                           path, parent=repos.resource,
                                           absurls=True)
@@ -427,7 +426,7 @@ class LogModule(Component):
                 errmsg = _("Repository '%(repo)s' not found", repo=reponame)
             else:
                 errmsg = _("No default repository defined")
-        except TracError as e:
+        except TracError, e:
             errmsg = to_unicode(e)
         return tag.a(label, class_='missing source', title=errmsg)
 
