@@ -51,8 +51,7 @@ class TicketSystemTestCase(unittest.TestCase):
         self.env.config.set('ticket-custom', 'test.format', 'wiki')
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'text', 'label': 'Test',
-                          'value': 'Foo bar', 'order': 0, 'format': 'wiki',
-                          'custom': True},
+                          'value': 'Foo bar', 'order': 0, 'format': 'wiki'},
                          fields[0])
 
     def test_custom_field_select(self):
@@ -63,7 +62,7 @@ class TicketSystemTestCase(unittest.TestCase):
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'select', 'label': 'Test',
                           'value': '1', 'options': ['option1', 'option2'],
-                          'order': 0, 'custom': True},
+                          'order': 0},
                          fields[0])
 
     def test_custom_field_optional_select(self):
@@ -74,29 +73,20 @@ class TicketSystemTestCase(unittest.TestCase):
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'select', 'label': 'Test',
                           'value': '1', 'options': ['option1', 'option2'],
-                          'order': 0, 'optional': True, 'custom': True},
+                          'order': 0, 'optional': True},
                          fields[0])
 
     def test_custom_field_textarea(self):
         self.env.config.set('ticket-custom', 'test', 'textarea')
         self.env.config.set('ticket-custom', 'test.label', 'Test')
         self.env.config.set('ticket-custom', 'test.value', 'Foo bar')
+        self.env.config.set('ticket-custom', 'test.cols', '60')
         self.env.config.set('ticket-custom', 'test.rows', '4')
         self.env.config.set('ticket-custom', 'test.format', 'wiki')
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual({'name': 'test', 'type': 'textarea', 'label': 'Test',
-                          'value': 'Foo bar', 'height': 4, 'order': 0,
-                          'format': 'wiki', 'custom': True},
-                         fields[0])
-
-    def test_custom_field_time(self):
-        self.env.config.set('ticket-custom', 'test', 'time')
-        self.env.config.set('ticket-custom', 'test.label', 'Test')
-        self.env.config.set('ticket-custom', 'test.value', '')
-        fields = TicketSystem(self.env).get_custom_fields()
-        self.assertEqual({'name': 'test', 'type': 'time', 'label': 'Test',
-                          'value': '', 'order': 0, 'format': 'datetime',
-                          'custom': True},
+                          'value': 'Foo bar', 'width': 60, 'height': 4,
+                          'order': 0, 'format': 'wiki'},
                          fields[0])
 
     def test_custom_field_order(self):
@@ -107,14 +97,6 @@ class TicketSystemTestCase(unittest.TestCase):
         fields = TicketSystem(self.env).get_custom_fields()
         self.assertEqual('test2', fields[0]['name'])
         self.assertEqual('test1', fields[1]['name'])
-
-    def test_custom_field_label(self):
-        self.env.config.set('ticket-custom', '_test_one', 'text')
-        self.env.config.set('ticket-custom', 'test_two', 'text')
-        self.env.config.set('ticket-custom', 'test_two.label', 'test_2')
-        fields = TicketSystem(self.env).get_custom_fields()
-        self.assertEqual('Test one', fields[0]['label'])
-        self.assertEqual('test_2', fields[1]['label'])
 
     def test_available_actions_full_perms(self):
         self.perm.grant_permission('anonymous', 'TICKET_CREATE')
@@ -159,27 +141,13 @@ class TicketSystemTestCase(unittest.TestCase):
         self.assertEqual(['leave'], self._get_actions({'status': 'reopened'}))
         self.assertEqual(['leave'], self._get_actions({'status': 'closed'}))
 
-    def test_get_allowed_owners_restrict_owner_false(self):
-        self.env.config.set('ticket', 'restrict_owner', False)
-        self.assertIsNone(self.ticket_system.get_allowed_owners())
-
-    def test_get_allowed_owners_restrict_owner_true(self):
-        self.env.config.set('ticket', 'restrict_owner', True)
-        self.env.insert_known_users([('user3', None, None),
-                                     ('user1', None, None)])
-        self.perm.grant_permission('user4', 'TICKET_MODIFY')
-        self.perm.grant_permission('user3', 'TICKET_MODIFY')
-        self.perm.grant_permission('user2', 'TICKET_VIEW')
-        self.perm.grant_permission('user1', 'TICKET_MODIFY')
-        self.assertEqual(['user1', 'user3'],
-                         self.ticket_system.get_allowed_owners())
-
     def test_get_ticket_fields_version_rename(self):
         """Cached ticket fields are updated when version is renamed."""
         fields = self.ticket_system.get_ticket_fields()
         version_field = self._get_ticket_field('version')
         v2 = Version(self.env, '2.0')
         v2.name = '0.0'
+
         v2.update()
         updated_fields = self.ticket_system.get_ticket_fields()
         updated_version_field = self._get_ticket_field('version')

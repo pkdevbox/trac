@@ -23,10 +23,10 @@ from genshi.core import Markup
 
 from trac.core import *
 from trac.config import Option
-from trac.db.api import ConnectionBase, DatabaseManager, IDatabaseConnector, \
-                        get_column_names, parse_connection_uri
+from trac.db.api import DatabaseManager, IDatabaseConnector, _parse_db_str, \
+                        get_column_names
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import IEnvironmentSetupParticipant, ISystemInfoProvider
+from trac.env import IEnvironmentSetupParticipant
 from trac.util import as_int, get_pkginfo
 from trac.util.compat import close_fds
 from trac.util.text import exception_to_unicode, to_unicode
@@ -78,29 +78,14 @@ class MySQLConnector(Component):
      * `read_default_group`: Configuration group to use from the default file
      * `unix_socket`: Use a Unix socket at the given path to connect
     """
-    implements(IDatabaseConnector, IEnvironmentSetupParticipant,
-               ISystemInfoProvider)
-
-    required = False
+    implements(IDatabaseConnector, IEnvironmentSetupParticipant)
 
     mysqldump_path = Option('trac', 'mysqldump_path', 'mysqldump',
         """Location of mysqldump for MySQL database backups""")
 
     def __init__(self):
-        self._mysql_version = None
-        self._mysqldb_version = has_mysqldb and \
-                                get_pkginfo(MySQLdb).get('version',
-                                                         MySQLdb.__version__)
+        self._version = None
         self.error = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'MySQL', self._mysql_version
-            yield 'MySQLdb', self._mysqldb_version
-
-    # IDatabaseConnector methods
 
     def get_supported_schemes(self):
         if not has_mysqldb:
@@ -110,11 +95,15 @@ class MySQLConnector(Component):
     def get_connection(self, path, log=None, user=None, password=None,
                        host=None, port=None, params={}):
         cnx = MySQLConnection(path, log, user, password, host, port, params)
-        if not self.required:
-            self._mysql_version = \
-                'server: "%s", client: "%s", thread-safe: %s' \
-                % (cnx.cnx.get_server_info(), MySQLdb.get_client_info(),
-                   MySQLdb.thread_safe())
+        if not self._version:
+            self._version = get_pkginfo(MySQLdb).get('version',
+                                                     MySQLdb.__version__)
+            mysql_info = 'server: "%s", client: "%s", thread-safe: %s' % \
+                         (cnx.cnx.get_server_info(),
+                          MySQLdb.get_client_info(),
+                          MySQLdb.thread_safe())
+            self.env.systeminfo.extend([('MySQL', mysql_info),
+                                        ('MySQLdb', self._version)])
             self.required = True
         return cnx
 
@@ -223,7 +212,7 @@ class MySQLConnector(Component):
     def backup(self, dest_file):
         from subprocess import Popen, PIPE
         db_url = self.env.config.get('trac', 'database')
-        scheme, db_prop = parse_connection_uri(db_url)
+        scheme, db_prop = _parse_db_str(db_url)
         db_params = db_prop.setdefault('params', {})
         db_name = os.path.basename(db_prop['path'])
 
@@ -253,7 +242,7 @@ class MySQLConnector(Component):
             environ['MYSQL_PWD'] = str(db_prop['password'])
         try:
             p = Popen(args, env=environ, stderr=PIPE, close_fds=close_fds)
-        except OSError as e:
+        except OSError, e:
             raise TracError(_("Unable to run %(path)s: %(msg)s",
                               path=self.mysqldump_path,
                               msg=exception_to_unicode(e)))
@@ -270,14 +259,13 @@ class MySQLConnector(Component):
     def environment_created(self):
         pass
 
-    def environment_needs_upgrade(self):
+    def environment_needs_upgrade(self, db):
         if getattr(self, 'required', False):
-            with self.env.db_query as db:
-                self._verify_table_status(db)
-                self._verify_variables(db)
+            self._verify_table_status(db)
+            self._verify_variables(db)
         return False
 
-    def upgrade_environment(self):
+    def upgrade_environment(self, db):
         pass
 
     UNSUPPORTED_ENGINES = ('MyISAM', 'EXAMPLE', 'ARCHIVE', 'CSV', 'ISAM')
@@ -344,7 +332,7 @@ class MySQLConnector(Component):
                 supported=repr(self.SUPPORTED_COLLATIONS)))
 
 
-class MySQLConnection(ConnectionBase, ConnectionWrapper):
+class MySQLConnection(ConnectionWrapper):
     """Connection wrapper for MySQL."""
 
     poolable = True
@@ -437,39 +425,22 @@ class MySQLConnection(ConnectionBase, ConnectionWrapper):
         return [row[0] for row in rows]
 
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         return "LIKE %%s COLLATE %s_general_ci ESCAPE '/'" % self.charset
 
     def like_escape(self, text):
         return _like_escape_re.sub(r'/\1', text)
 
-    def reset_tables(self):
-        table_names = []
-        if not self.schema:
-            return table_names
-        cursor = self.cursor()
-        cursor.execute("""
-            SELECT table_name, auto_increment
-            FROM information_schema.tables
-            WHERE table_schema=%s""", (self.schema,))
-        for table, auto_increment in cursor.fetchall():
-            table_names.append(table)
-            if auto_increment is None or auto_increment == 1:
-                # DELETE FROM is preferred to TRUNCATE TABLE, as the
-                # auto_increment is not used or it is 1.
-                cursor.execute("DELETE FROM %s" % table)
-            else:
-                # TRUNCATE TABLE is preferred to DELETE FROM, as we
-                # need to reset the auto_increment in MySQL.
-                cursor.execute("TRUNCATE TABLE %s" % table)
-        return table_names
-
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return "LIKE %s ESCAPE '/'"
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return self.like_escape(prefix) + '%'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return "`%s`" % identifier.replace('`', '``')
 
     def update_sequence(self, cursor, table, column='id'):

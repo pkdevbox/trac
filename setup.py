@@ -16,7 +16,7 @@ import sys
 
 from setuptools import setup, find_packages
 
-min_python = (2, 6)
+min_python = (2, 5)
 if sys.version_info < min_python:
     print("Trac requires Python %d.%d or later" % min_python)
     sys.exit(1)
@@ -55,7 +55,7 @@ except ImportError:
 
 setup(
     name = 'Trac',
-    version = '1.1.4',
+    version = '1.0.4',
     description = 'Integrated SCM, wiki, issue tracker and project environment',
     long_description = """
 Trac is a minimalistic web-based software project management and bug/issue
@@ -99,7 +99,7 @@ facilities.
         'Genshi>=0.6',
     ],
     install_requires = [
-        'setuptools>=0.6',
+        'setuptools>=0.6b1',
         'Genshi>=0.6',
     ],
     extras_require = {
@@ -107,6 +107,7 @@ facilities.
         'ConfigObj': ['ConfigObj'],
         'Pygments': ['Pygments>=0.6'],
         'reST': ['docutils>=0.3.9'],
+        'SilverCity': ['SilverCity>=0.9.4'],
         'Textile': ['textile>=2.0'],
     },
 
@@ -127,10 +128,6 @@ facilities.
         trac.mimeview.pygments = trac.mimeview.pygments[Pygments]
         trac.mimeview.rst = trac.mimeview.rst[reST]
         trac.mimeview.txtl = trac.mimeview.txtl[Textile]
-        trac.notification.api = trac.notification.api
-        trac.notification.compat = trac.notification.compat
-        trac.notification.mail = trac.notification.mail
-        trac.notification.prefs = trac.notification.prefs
         trac.prefs = trac.prefs.web_ui
         trac.search = trac.search.web_ui
         trac.ticket.admin = trac.ticket.admin
@@ -151,6 +148,9 @@ facilities.
         trac.wiki.macros = trac.wiki.macros
         trac.wiki.web_ui = trac.wiki.web_ui
         trac.wiki.web_api = trac.wiki.web_api
+        tracopt.mimeview.enscript = tracopt.mimeview.enscript
+        tracopt.mimeview.php = tracopt.mimeview.php
+        tracopt.mimeview.silvercity = tracopt.mimeview.silvercity[SilverCity]
         tracopt.perm.authz_policy = tracopt.perm.authz_policy[ConfigObj]
         tracopt.perm.config_perm_provider = tracopt.perm.config_perm_provider
         tracopt.ticket.clone = tracopt.ticket.clone

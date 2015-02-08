@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2014 Edgewall Software
+# Copyright (C) 2003-2010 Edgewall Software
 # Copyright (C) 2003-2005 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005-2007 Christian Boos <cboos@edgewall.org>
 # All rights reserved.
@@ -15,30 +15,31 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-import re
 from datetime import datetime, timedelta
 from fnmatch import fnmatchcase
+import re
 
 from genshi.builder import tag
 
-from trac.config import BoolOption, ListOption, Option
+from trac.config import ListOption, BoolOption, Option
 from trac.core import *
 from trac.mimeview.api import IHTMLPreviewAnnotator, Mimeview, is_binary
 from trac.perm import IPermissionRequestor, PermissionError
 from trac.resource import Resource, ResourceNotFound
 from trac.util import as_bool, embedded_numbers
 from trac.util.datefmt import http_date, to_datetime, utc
-from trac.util.html import Markup, escape
+from trac.util.html import escape, Markup
 from trac.util.text import exception_to_unicode, shorten_line
 from trac.util.translation import _, cleandoc_
-from trac.versioncontrol.api import NoSuchChangeset, RepositoryManager
-from trac.versioncontrol.web_ui.util import *
 from trac.web.api import IRequestHandler, RequestDone
 from trac.web.chrome import (INavigationContributor, add_ctxtnav, add_link,
                              add_script, add_stylesheet, prevnext_nav,
                              web_context)
-from trac.wiki.api import IWikiMacroProvider, IWikiSyntaxProvider, parse_args
+from trac.wiki.api import IWikiSyntaxProvider, IWikiMacroProvider, parse_args
 from trac.wiki.formatter import format_to_html, format_to_oneliner
+
+from ..api import NoSuchChangeset, RepositoryManager
+from trac.versioncontrol.web_ui.util import * # `from .util import *` FIXME 2.6
 
 
 CHUNK_SIZE = 4096
@@ -117,13 +118,15 @@ class WikiPropertyRenderer(Component):
                                  'trac:description',
         doc="""Comma-separated list of version control properties to render
         as wiki content in the repository browser.
-        """)
+
+        (''since 0.11'')""")
 
     oneliner_properties = ListOption('browser', 'oneliner_properties',
                                  'trac:summary',
         doc="""Comma-separated list of version control properties to render
         as oneliner wiki content in the repository browser.
-        """)
+
+        (''since 0.11'')""")
 
     def match_property(self, name, mode):
         return 4 if name in self.wiki_properties \
@@ -177,8 +180,6 @@ class BrowserModule(Component):
 
     property_renderers = ExtensionPoint(IPropertyRenderer)
 
-    realm = RepositoryManager.source_realm
-
     downloadable_paths = ListOption('browser', 'downloadable_paths',
                                     '/trunk, /branches/*, /tags/*',
         doc="""List of repository paths that can be downloaded.
@@ -190,14 +191,14 @@ class BrowserModule(Component):
         repository name if the path does not point to the default repository
         (e.g. /reponame/trunk). Note that a simple prefix matching is
         performed on the paths, so aliases won't get automatically resolved.
-        """)
+        (''since 0.10'')""")
 
     color_scale = BoolOption('browser', 'color_scale', True,
         doc="""Enable colorization of the ''age'' column.
 
         This uses the same color scale as the source code annotation:
         blue is older, red is newer.
-        """)
+        (''since 0.11'')""")
 
     NEWEST_COLOR = (255, 136, 136)
 
@@ -205,7 +206,7 @@ class BrowserModule(Component):
         doc="""(r,g,b) color triple to use for the color corresponding
         to the newest color, for the color scale used in ''blame'' or
         the browser ''age'' column if `color_scale` is enabled.
-        """)
+        (''since 0.11'')""")
 
     OLDEST_COLOR = (136, 136, 255)
 
@@ -213,13 +214,13 @@ class BrowserModule(Component):
         doc="""(r,g,b) color triple to use for the color corresponding
         to the oldest color, for the color scale used in ''blame'' or
         the browser ''age'' column if `color_scale` is enabled.
-        """)
+        (''since 0.11'')""")
 
     intermediate_point = Option('browser', 'intermediate_point', '',
         doc="""If set to a value between 0 and 1 (exclusive), this will be the
         point chosen to set the `intermediate_color` for interpolating
         the color value.
-        """)
+        (''since 0.11'')""")
 
     intermediate_color = Option('browser', 'intermediate_color', '',
         doc="""(r,g,b) color triple to use for the color corresponding
@@ -227,7 +228,7 @@ class BrowserModule(Component):
         for the color scale (see `intermediate_point`).
         If not set, the intermediate color between `oldest_color` and
         `newest_color` will be used.
-        """)
+        (''since 0.11'')""")
 
     render_unsafe_content = BoolOption('browser', 'render_unsafe_content',
                                         'false',
@@ -239,12 +240,12 @@ class BrowserModule(Component):
         scripting attacks.
 
         For open repositories where anyone can check-in a file, it is
-        recommended to leave this option disabled.""")
+        recommended to leave this option disabled (which is the default).""")
 
     hidden_properties = ListOption('browser', 'hide_properties', 'svk:merge',
         doc="""Comma-separated list of version control properties to hide from
         the repository browser.
-        """)
+        (''since 0.9'')""")
 
     # public methods
 
@@ -373,7 +374,7 @@ class BrowserModule(Component):
                 # as a special shortcut to the latest revision.
                 rev_or_latest = rev or repos.youngest_rev
                 node = get_existing_node(req, repos, path, rev_or_latest)
-            except NoSuchChangeset as e:
+            except NoSuchChangeset, e:
                 raise ResourceNotFound(e.message,
                                        _('Invalid changeset number'))
             if node:
@@ -383,7 +384,7 @@ class BrowserModule(Component):
                 except NoSuchChangeset:
                     pass
 
-            context = context.child(repos.resource.child(self.realm, path,
+            context = context.child(repos.resource.child('source', path,
                                                    version=rev_or_latest))
             display_rev = repos.display_rev
 
@@ -517,7 +518,7 @@ class BrowserModule(Component):
                 continue
             try:
                 repos = rm.get_repository(reponame)
-            except TracError as err:
+            except TracError, err:
                 entry = (reponame, repoinfo, None, None,
                          exception_to_unicode(err), None)
             else:
@@ -540,7 +541,7 @@ class BrowserModule(Component):
                 else:
                     entry = (reponame, repoinfo, None, None, u"\u2013", None)
             if entry[4] is not None:  # Check permission in case of error
-                root = Resource('repository', reponame).child(self.realm, '/')
+                root = Resource('repository', reponame).child('source', '/')
                 if 'BROWSER_VIEW' not in context.perm(root):
                     continue
             repositories.append(entry)
@@ -784,7 +785,7 @@ class BrowserModule(Component):
                     rendered = None
                 prop = {'name': name, 'value': value, 'rendered': rendered}
                 return prop
-            except Exception as e:
+            except Exception, e:
                 self.log.warning('Rendering failed for property %s with '
                                  'renderer %s: %s', name,
                                  renderer.__class__.__name__,

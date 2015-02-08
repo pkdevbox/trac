@@ -13,7 +13,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="prefs.html" />
   <head>
@@ -21,17 +20,6 @@
   </head>
   <body>
 
-    <p py:choose="" class="hint">
-      <py:when test="req.authname == 'anonymous'">
-        This information is used to automatically populate some forms
-        on this site with your contact details.
-      </py:when>
-      <py:otherwise>
-        This information is used to associate your login name with your
-        email address and full name, which is used for email
-        notification and RSS feeds, for example.
-      </py:otherwise>
-    </p>
     <table>
       <tr class="field">
         <th><label for="name">Full name:</label></th>
@@ -44,6 +32,17 @@
             value="${settings.session.get('email')}" /></td>
       </tr>
     </table>
+    <p py:choose="" class="hint">
+      <py:when test="req.authname == 'anonymous'">
+        This information is used to automatically populate some forms
+        on this site with your contact details.
+      </py:when>
+      <py:otherwise>
+        This information is used to associate your login name with your
+        email address and full name, which is used for email
+        notification and RSS feeds, for example.
+      </py:otherwise>
+    </p>
 
   </body>
 </html>

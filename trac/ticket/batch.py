@@ -13,16 +13,17 @@
 #
 # Author: Brian Meeker <meeker.brian@gmail.com>
 
+from __future__ import with_statement
+
 import re
 from datetime import datetime
 
 from genshi.builder import tag
 
 from trac.core import *
-from trac.notification.api import NotificationSystem
 from trac.ticket import TicketSystem, Ticket
-from trac.ticket.notification import BatchTicketChangeEvent
-from trac.util.datefmt import parse_date, user_time, utc
+from trac.ticket.notification import BatchTicketNotifyEmail
+from trac.util.datefmt import utc
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _, tag_
 from trac.web import IRequestHandler
@@ -41,8 +42,6 @@ class BatchModifyModule(Component):
 
     implements(IRequestHandler)
 
-    is_valid_default_handler = False
-
     list_separator_re =  re.compile(r'[;\s,]+')
     list_connector_string = ', '
 
@@ -57,17 +56,11 @@ class BatchModifyModule(Component):
         comment = req.args.get('batchmod_value_comment', '')
         action = req.args.get('action')
 
-        try:
-            new_values = self._get_new_ticket_values(req)
-        except TracError as e:
-            new_values = None
-            add_warning(req, tag_("The changes could not be saved: "
-                                  "%(message)s", message=to_unicode(e)))
+        new_values = self._get_new_ticket_values(req)
+        selected_tickets = self._get_selected_tickets(req)
 
-        if new_values is not None:
-            selected_tickets = self._get_selected_tickets(req)
-            self._save_ticket_changes(req, selected_tickets,
-                                      new_values, comment, action)
+        self._save_ticket_changes(req, selected_tickets,
+                                  new_values, comment, action)
 
         #Always redirect back to the query page we came from.
         req.redirect(req.session['query_href'])
@@ -83,13 +76,8 @@ class BatchModifyModule(Component):
                             'description') and field['type'] != 'textarea':
                 value = req.args.get('batchmod_value_' + name)
                 if value is not None:
-                    values[name] = self._parse_field_value(req, field, value)
+                    values[name] = value
         return values
-
-    def _parse_field_value(self, req, field, value):
-        if field['type'] == 'time':
-            return user_time(req, parse_date, value)
-        return value
 
     def _get_selected_tickets(self, req):
         """The selected tickets will be a comma separated list
@@ -180,12 +168,11 @@ class BatchModifyModule(Component):
                 t.save_changes(req.authname, comment, when=when)
                 for controller in controllers:
                     controller.apply_action_side_effects(req, t, action)
-        event = BatchTicketChangeEvent(selected_tickets, when,
-                                       req.authname, comment, new_values,
-                                       action)
+        tn = BatchTicketNotifyEmail(self.env)
         try:
-            NotificationSystem(self.env).notify(event)
-        except Exception as e:
+            tn.notify(selected_tickets, new_values, comment, action,
+                      req.authname)
+        except Exception, e:
             self.log.error("Failure sending notification on ticket batch"
                     "change: %s", exception_to_unicode(e))
             add_warning(req, tag_("The changes have been saved, but an "
