@@ -15,8 +15,6 @@
 import os
 import unittest
 
-from genshi.builder import tag
-
 from trac.mimeview.rst import has_docutils
 from trac.tests.contentgen import random_sentence, random_unique_camel
 from trac.tests.functional import FunctionalTwillTestCaseSetup, tc
@@ -33,29 +31,6 @@ class TestWiki(FunctionalTwillTestCaseSetup):
         """Create a wiki page."""
         self._tester.create_wiki_page()
 
-
-class TestWikiDelete(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Delete a wiki page."""
-        name = self._tester.create_wiki_page()
-        self._tester.go_to_wiki(name)
-        tc.formvalue('delete', 'action', 'delete')
-        tc.submit()
-        tc.notfind("The following attachments will also be deleted:")
-        tc.submit('delete', 'delete-confirm')
-        tc.find("The page %s has been deleted." % name)
-        tc.url(self._tester.url)
-
-        name = self._tester.create_wiki_page()
-        filename = self._tester.attach_file_to_wiki(name)
-        self._tester.go_to_wiki(name)
-        tc.formvalue('delete', 'action', 'delete')
-        tc.submit()
-        tc.find("The following attachments will also be deleted:")
-        tc.find(filename)
-        tc.submit('delete', 'delete-confirm')
-        tc.find("The page %s has been deleted." % name)
-        tc.url(self._tester.url)
 
 class TestWikiAddAttachment(FunctionalTwillTestCaseSetup):
     def runTest(self):
@@ -114,7 +89,7 @@ class WikiPageManipulator(Component):
             tc.url(self._tester.url + '/wiki/WikiStart$')
             tc.find("Invalid Wiki page: The page contains invalid markup at"
                     " line <strong>10</strong>.")
-            tc.find("The Wiki page field <strong>comment</strong> is invalid:"
+            tc.find("The Wiki page field 'comment' is invalid:"
                     " The field <strong>comment</strong> cannot be empty.")
         finally:
             env.config.set('components', plugin_name + '.*', 'disabled')
@@ -142,64 +117,6 @@ class TestWikiHistory(FunctionalTwillTestCaseSetup):
         tc.find(r'<a href="/wiki/%s\?version=1">Version 1</a>' % pagename)
         tc.find(r'<a href="/wiki/%s\?version=2">Version 2</a>' % pagename)
         tc.find(r'<a href="/wiki/%(name)s">%(name)s</a>' % {'name': pagename})
-
-
-class TestWikiReadonlyAttribute(FunctionalTwillTestCaseSetup):
-    """Test the wiki readonly attribute, which is enforce when
-    ReadonlyWikiPolicy is in the list of active permission policies."""
-    def runTest(self):
-        self._tester.logout()
-        self._tester.login('user')
-        page_name = self._tester.create_wiki_page()
-        permission_policies = \
-            self._testenv.get_config('trac', 'permission_policies')
-        readonly_checkbox = '<input type="checkbox" name="readonly" ' + \
-                            'id="readonly" />'
-        attach_button = '<input type="submit" id="attachfilebutton" ' + \
-                        'value="Attach.+file" />'
-        try:
-            # User without WIKI_ADMIN can't set a page read-only
-            tc.formvalue('modifypage', 'action', 'edit')
-            tc.submit()
-            tc.notfind(readonly_checkbox)
-
-            # User with WIKI_ADMIN can set a page read-only
-            # and still edit that page
-            self._testenv.grant_perm('user', 'WIKI_ADMIN')
-            self._tester.go_to_wiki(page_name)
-            tc.formvalue('modifypage', 'action', 'edit')
-            tc.submit()
-            tc.find(readonly_checkbox)
-            tc.formvalue('edit', 'readonly', True)
-            tc.submit('save')
-            tc.go(self._tester.url + '/attachment/wiki/' + page_name)
-            tc.find(attach_button)
-            self._tester.edit_wiki_page(page_name)
-
-            # User without WIKI_ADMIN can't edit a read-only page
-            self._testenv.revoke_perm('user', 'WIKI_ADMIN')
-            self._tester.go_to_wiki(page_name)
-            tc.notfind('<input type="submit" value="Edit this page">')
-            tc.go(self._tester.url + '/attachment/wiki/' + page_name)
-            tc.notfind(attach_button)
-
-            # Read-only checkbox is not present when ReadonlyWikiPolicy
-            # is not in the list of active permission policies
-            pp_list = [p.strip() for p in permission_policies.split(',')]
-            pp_list.remove('ReadonlyWikiPolicy')
-            self._testenv._tracadmin('trac', 'permission_policies',
-                                     ', '.join(pp_list))
-            self._testenv.grant_perm('user', 'WIKI_ADMIN')
-            self._tester.go_to_wiki(page_name)
-            tc.formvalue('modifypage', 'action', 'edit')
-            tc.submit()
-            tc.notfind(readonly_checkbox)
-        finally:
-            self._testenv.set_config('trac', 'permission_policies',
-                                     permission_policies)
-            self._testenv.revoke_perm('user', 'WIKI_ADMIN')
-            self._tester.logout()
-            self._tester.login('admin')
 
 
 class TestWikiRename(FunctionalTwillTestCaseSetup):
@@ -271,7 +188,7 @@ class TestWikiRename(FunctionalTwillTestCaseSetup):
         # this time, the original page is gone
         tc.go(page_url)
         tc.url(page_url)
-        tc.find("The page %s does not exist" % tag.strong(pagename))
+        tc.find("The page %s does not exist" % pagename)
 
 
 class RegressionTestTicket4812(FunctionalTwillTestCaseSetup):
@@ -311,7 +228,7 @@ class ReStructuredTextCodeBlockTest(FunctionalTwillTestCaseSetup):
 #!rst
 .. code-block:: python
 
-    print("123")
+    print "123"
 }}}
 """)
         self._tester.go_to_wiki(pagename)
@@ -506,11 +423,9 @@ def functionalSuite(suite=None):
         import trac.tests.functional
         suite = trac.tests.functional.functionalSuite()
     suite.addTest(TestWiki())
-    suite.addTest(TestWikiDelete())
     suite.addTest(TestWikiAddAttachment())
     suite.addTest(TestWikiPageManipulator())
     suite.addTest(TestWikiHistory())
-    suite.addTest(TestWikiReadonlyAttribute())
     suite.addTest(TestWikiRename())
     suite.addTest(RegressionTestTicket4812())
     suite.addTest(RegressionTestTicket10274())
@@ -524,14 +439,13 @@ def functionalSuite(suite=None):
             suite.addTest(ReStructuredTextWikiTest())
             suite.addTest(ReStructuredTextCodeBlockTest())
         else:
-            print("SKIP: reST wiki tests (docutils has no setuptools"
-                  " metadata)")
+            print "SKIP: reST wiki tests (docutils has no setuptools metadata)"
     else:
-        print("SKIP: reST wiki tests (no docutils)")
+        print "SKIP: reST wiki tests (no docutils)"
     if ConfigObj:
         suite.addTest(RegressionTestTicket8976())
     else:
-        print("SKIP: RegressionTestTicket8976 (ConfigObj not installed)")
+        print "SKIP: RegressionTestTicket8976 (ConfigObj not installed)"
     return suite
 
 

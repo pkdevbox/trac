@@ -16,9 +16,10 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import csv
 import os
-from itertools import groupby
 from time import time
 
 from trac.admin import AdminCommandError, IAdminCommandProvider, get_dir_list
@@ -35,7 +36,7 @@ __all__ = ['IPermissionRequestor', 'IPermissionStore', 'IPermissionPolicy',
            'IPermissionGroupProvider', 'PermissionError', 'PermissionSystem']
 
 
-class PermissionError(StandardError, TracBaseError):
+class PermissionError(StandardError):
     """Insufficient permissions to perform the operation.
 
     :since 1.0.5: the `msg` attribute is deprecated and will be removed in
@@ -228,6 +229,7 @@ class DefaultPermissionStore(Component):
         formatted tuples."""
         return self._all_permissions
 
+
     @cached
     def _all_permissions(self):
         return [(username, action) for username, action in
@@ -303,6 +305,7 @@ class DefaultPermissionPolicy(Component):
         return action in permissions or None
 
 
+
 class PermissionSystem(Component):
     """Permission management sub-system."""
 
@@ -319,11 +322,14 @@ class PermissionSystem(Component):
 
     policies = OrderedExtensionsOption('trac', 'permission_policies',
         IPermissionPolicy,
-        'ReadonlyWikiPolicy, DefaultPermissionPolicy, LegacyAttachmentPolicy',
+        'DefaultPermissionPolicy, LegacyAttachmentPolicy',
         False,
-        """List of components implementing `IPermissionPolicy`, in the order
-        in which they will be applied. These components manage fine-grained
-        access control to Trac resources.""")
+        """List of components implementing `IPermissionPolicy`, in the order in
+        which they will be applied. These components manage fine-grained access
+        control to Trac resources.
+        Defaults to the DefaultPermissionPolicy (pre-0.11 behavior) and
+        LegacyAttachmentPolicy (map ATTACHMENT_* permissions to realm specific
+        ones)""")
 
     # Number of seconds a cached user permission set is valid for.
     CACHE_EXPIRY = 5
@@ -337,16 +343,15 @@ class PermissionSystem(Component):
     # Public API
 
     def grant_permission(self, username, action):
-        """Grant the user with the given name permission to perform to
-        specified action."""
+        """Grant the user with the given name permission to perform to specified
+        action."""
         if action.isupper() and action not in self.get_actions():
             raise TracError(_('%(name)s is not a valid action.', name=action))
 
         self.store.grant_permission(username, action)
 
     def revoke_permission(self, username, action):
-        """Revokes the permission of the specified user to perform an
-        action."""
+        """Revokes the permission of the specified user to perform an action."""
         self.store.revoke_permission(username, action)
 
     def get_actions_dict(self):
@@ -377,33 +382,6 @@ class PermissionSystem(Component):
                 else:
                     actions.add(action)
         return list(actions)
-
-    def get_groups_dict(self):
-        """Get all groups as a `dict`.
-
-        The keys are the group names. The values are the group members.
-
-        :since: 1.1.3
-        """
-        groups = sorted((p for p in self.get_all_permissions()
-                           if not p[1].isupper()), key=lambda p: p[1])
-
-        return dict((k, sorted(i[0] for i in list(g)))
-                    for k, g in groupby(groups, key=lambda p: p[1]))
-
-    def get_users_dict(self):
-        """Get all users as a `dict`.
-
-        The keys are the user names. The values are the actions possessed
-        by the user.
-
-        :since: 1.1.3
-        """
-        perms = sorted((p for p in self.get_all_permissions()
-                          if p[1].isupper()), key=lambda p: p[0])
-
-        return dict((k, sorted(i[1] for i in list(g)))
-                    for k, g in groupby(perms, key=lambda p: p[0]))
 
     def get_user_permissions(self, username=None):
         """Return the permissions of the specified user.
@@ -478,8 +456,7 @@ class PermissionSystem(Component):
             expand_action(a)
         return expanded_actions
 
-    def check_permission(self, action, username=None, resource=None,
-                         perm=None):
+    def check_permission(self, action, username=None, resource=None, perm=None):
         """Return True if permission to perform action for the given resource
         is allowed."""
         if username is None:
@@ -503,9 +480,14 @@ class PermissionSystem(Component):
 
     def get_permission_actions(self):
         """Implement the global `TRAC_ADMIN` meta permission.
+
+        Implements also the `EMAIL_VIEW` permission which allows for
+        showing email addresses even if `[trac] show_email_addresses`
+        is `false`.
         """
         actions = self.get_actions(skip=self)
-        return [('TRAC_ADMIN', actions)]
+        actions.append('EMAIL_VIEW')
+        return [('TRAC_ADMIN', actions), 'EMAIL_VIEW']
 
 
 class PermissionCache(object):
@@ -606,6 +588,14 @@ class PermissionCache(object):
             else:
                 raise PermissionError(msg=message)
     assert_permission = require
+
+    def permissions(self):
+        """Deprecated (but still used by the HDF compatibility layer)"""
+        self.env.log.warning("perm.permissions() is deprecated and "
+                             "is only present for HDF compatibility")
+        perm = PermissionSystem(self.env)
+        actions = perm.get_user_permissions(self.username)
+        return [action for action in actions if action in self]
 
 
 class PermissionAdmin(Component):
@@ -728,7 +718,7 @@ class PermissionAdmin(Component):
                     actions = sorted(self.get_user_perms(user))
                     writer.writerow([s.encode(encoding, 'replace')
                                      for s in [user] + actions])
-        except IOError as e:
+        except IOError, e:
             raise AdminCommandError(
                 _("Cannot export to %(filename)s: %(error)s",
                   filename=path_to_unicode(filename or 'stdout'),
@@ -758,12 +748,12 @@ class PermissionAdmin(Component):
                     old_actions = self.get_user_perms(user)
                     for action in set(actions) - set(old_actions):
                         permsys.grant_permission(user, action)
-        except csv.Error as e:
+        except csv.Error, e:
             raise AdminCommandError(
                 _("Cannot import from %(filename)s line %(line)d: %(error)s ",
                   filename=path_to_unicode(filename or 'stdin'),
                   line=reader.line_num, error=e))
-        except IOError as e:
+        except IOError, e:
             raise AdminCommandError(
                 _("Cannot import from %(filename)s: %(error)s",
                   filename=path_to_unicode(filename or 'stdin'),

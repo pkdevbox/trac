@@ -17,40 +17,27 @@
 #
 
 import base64
+import os
 import quopri
 import shutil
 import tempfile
 import re
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from StringIO import StringIO
 
 import trac.tests.compat
 from trac.attachment import Attachment
-from trac.notification.api import NotificationSystem
 from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.tests.notification import SMTP_TEST_PORT, SMTPThreadedServer,\
                                     parse_smtp_message
 from trac.ticket.model import Ticket
-from trac.ticket.notification import TicketChangeEvent, TicketNotifyEmail
+from trac.ticket.notification import TicketNotifyEmail
 from trac.ticket.web_ui import TicketModule
 from trac.util.datefmt import utc
 
 MAXBODYWIDTH = 76
 notifysuite = None
-
-
-def notify_ticket_created(env, ticket):
-    notifysuite.smtpd.cleanup()
-    event = TicketChangeEvent('created', ticket, ticket['time'],
-                              ticket['reporter'])
-    NotificationSystem(env).notify(event)
-
-
-def notify_ticket_changed(env, ticket, author='anonymous'):
-    notifysuite.smtpd.cleanup()
-    event = TicketChangeEvent('changed', ticket, ticket['changetime'], author)
-    NotificationSystem(env).notify(event)
 
 
 class RecipientTestCase(unittest.TestCase):
@@ -66,58 +53,20 @@ class RecipientTestCase(unittest.TestCase):
         notifysuite.tear_down()
         self.env.reset_db()
 
-    def _create_ticket(self, props):
-        ticket = Ticket(self.env)
-        for k, v in props.iteritems():
-            ticket[k] = v
-        ticket.insert()
-        return ticket
-
-    def _notify(self, ticket):
-        notify_ticket_created(self.env, ticket)
-        return notifysuite.smtpd.get_recipients()
-
     def test_no_recipients(self):
         """No recipient case"""
         ticket = Ticket(self.env)
         ticket['reporter'] = 'anonymous'
         ticket['summary'] = 'Foo'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         recipients = notifysuite.smtpd.get_recipients()
         sender = notifysuite.smtpd.get_sender()
         message = notifysuite.smtpd.get_message()
         self.assertEqual(0, len(recipients))
         self.assertIsNone(sender)
         self.assertIsNone(message)
-
-    def _test_smtp_always_cc(self, key, sep):
-        cc_list = ('joe.user@example.net', 'joe.bar@example.net')
-        self.env.config.set('notification', key, sep.join(cc_list))
-        self.env.config.set('notification', 'always_notify_reporter', False)
-        self.env.config.set('notification', 'always_notify_owner', False)
-        self.env.config.set('notification', 'always_notify_updater', False)
-        ticket = self._create_ticket({'reporter': 'joe.bar@example.org',
-                                      'owner': 'joe.user@example.net',
-                                      'summary': 'New ticket recipients'})
-
-        recipients = self._notify(ticket)
-
-        self.assertEqual(2, len(recipients))
-        for r in cc_list:
-            self.assertIn(r, recipients)
-
-    def test_smtp_always_cc_comma_separator(self):
-        self._test_smtp_always_cc('smtp_always_cc', ', ')
-
-    def test_smtp_always_cc_space_separator(self):
-        self._test_smtp_always_cc('smtp_always_cc', ' ')
-
-    def test_smtp_always_bcc_comma_separator(self):
-        self._test_smtp_always_cc('smtp_always_bcc', ', ')
-
-    def test_smtp_always_bcc_space_separator(self):
-        self._test_smtp_always_cc('smtp_always_bcc', ' ')
 
     def test_new_ticket_recipients(self):
         """Report and CC list should be in recipient list for new tickets."""
@@ -131,7 +80,8 @@ class RecipientTestCase(unittest.TestCase):
         ticket['cc'] = ' '.join(ticket_cc)
         ticket['summary'] = 'New ticket recipients'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         recipients = notifysuite.smtpd.get_recipients()
         for r in always_cc + ticket_cc + \
                 (ticket['owner'], ticket['reporter']):
@@ -145,7 +95,8 @@ class RecipientTestCase(unittest.TestCase):
         ticket = Ticket(self.env)
         ticket['summary'] = 'Foo'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         recipients = notifysuite.smtpd.get_recipients()
         for r in always_cc:
             self.assertIn(r, recipients)
@@ -162,7 +113,8 @@ class RecipientTestCase(unittest.TestCase):
             now = datetime.now(utc)
             ticket.save_changes('joe.bar2@example.com', 'This is a change',
                                 when=now)
-            notify_ticket_changed(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=False, modtime=now)
             recipients = notifysuite.smtpd.get_recipients()
             if enabled:
                 self.assertEqual(1, len(recipients))
@@ -190,7 +142,8 @@ class RecipientTestCase(unittest.TestCase):
             now = datetime.now(utc)
             ticket.save_changes('joe@example.org', 'this is my comment',
                                 when=now)
-            notify_ticket_created(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True, modtime=now)
             recipients = notifysuite.smtpd.get_recipients()
             if enabled:
                 self.assertEqual(1, len(recipients))
@@ -215,7 +168,8 @@ class RecipientTestCase(unittest.TestCase):
             now = datetime.now(utc)
             ticket.save_changes('joe@example.org', 'this is my comment',
                                 when=now)
-            notify_ticket_created(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True, modtime=now)
             recipients = notifysuite.smtpd.get_recipients()
             if enabled:
                 self.assertEqual(1, len(recipients))
@@ -236,7 +190,8 @@ class RecipientTestCase(unittest.TestCase):
         ticket['cc'] = 'joe.user@example.com'
         ticket['summary'] = 'No duplicates'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         recipients = notifysuite.smtpd.get_recipients()
         self.assertEqual(1, len(recipients))
         self.assertIn('joe.user@example.com', recipients)
@@ -250,7 +205,8 @@ class RecipientTestCase(unittest.TestCase):
         ticket['cc'] = 'Joe < joe.user@example.org >'
         ticket['summary'] = 'Long form'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         recipients = notifysuite.smtpd.get_recipients()
         self.assertEqual(3, len(recipients))
         self.assertIn('joe.user@example.com', recipients)
@@ -263,9 +219,7 @@ class NotificationTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub(default_data=True)
-        self.env.config.set('trac', 'base_url', 'http://localhost/trac')
         self.env.config.set('project', 'name', 'TracTest')
-        self.env.config.set('project', 'url', 'http://localhost/project.url')
         self.env.config.set('notification', 'smtp_enabled', 'true')
         self.env.config.set('notification', 'always_notify_owner', 'true')
         self.env.config.set('notification', 'always_notify_reporter', 'true')
@@ -291,7 +245,8 @@ class NotificationTestCase(unittest.TestCase):
                        'joe.bar@example.net'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         # checks for header existence
@@ -323,7 +278,8 @@ class NotificationTestCase(unittest.TestCase):
         ticket['reporter'] = '"Joe User" <joe.user@example.org>'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertIn('Date', headers)
@@ -348,27 +304,40 @@ class NotificationTestCase(unittest.TestCase):
             ticket['reporter'] = '"Joe User" <joe.user@example.org>'
             ticket['summary'] = 'This is a summary'
             ticket.insert()
-            notify_ticket_created(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True)
             message = notifysuite.smtpd.get_message()
             headers, body = parse_smtp_message(message)
-            # Msg should have a To header
-            self.assertEqual('undisclosed-recipients: ;', headers['To'])
+            if public_cc:
+                # Msg should have a To list
+                self.assertIn('To', headers)
+                # Extract the list of 'To' recipients from the message
+                to = [rcpt.strip() for rcpt in headers['To'].split(',')]
+            else:
+                # Msg should not have a To list
+                self.assertNotIn('To', headers)
+                # Extract the list of 'To' recipients from the message
+                to = []
             # Extract the list of 'Cc' recipients from the message
             cc = [rcpt.strip() for rcpt in headers['Cc'].split(',')]
             # Extract the list of the actual SMTP recipients
             rcptlist = notifysuite.smtpd.get_recipients()
             # Build the list of the expected 'Cc' recipients
-            ccrcpt = self.env.config.getlist('notification', 'smtp_always_cc')
-            for rcpt in ccrcpt:
+            ccrcpt = self.env.config.get('notification', 'smtp_always_cc')
+            cclist = [ccr.strip() for ccr in ccrcpt.split(',')]
+            for rcpt in cclist:
                 # Each recipient of the 'Cc' list should appear
                 # in the 'Cc' header
                 self.assertIn(rcpt, cc)
                 # Check the message has actually been sent to the recipients
                 self.assertIn(rcpt, rcptlist)
             # Build the list of the expected 'Bcc' recipients
-            bccrcpt = self.env.config.getlist('notification',
-                                              'smtp_always_bcc')
-            for rcpt in bccrcpt:
+            bccrcpt = self.env.config.get('notification', 'smtp_always_bcc')
+            bcclist = [bccr.strip() for bccr in bccrcpt.split(',')]
+            for rcpt in bcclist:
+                # Check none of the 'Bcc' recipients appears
+                # in the 'To' header
+                self.assertNotIn(rcpt, to)
                 # Check the message has actually been sent to the recipients
                 self.assertIn(rcpt, rcptlist)
         for public in False, True:
@@ -386,17 +355,21 @@ class NotificationTestCase(unittest.TestCase):
             self.env.config.set('notification', 'smtp_always_cc',
                                 'joe.bar@example.net')
             self.env.config.set('notification', 'use_short_addr', enabled)
-            notify_ticket_created(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True)
             message = notifysuite.smtpd.get_message()
             headers, body = parse_smtp_message(message)
-            # Msg should always have a 'To' field
-            self.assertEqual('undisclosed-recipients: ;', headers['To'])
+            # Msg should not have a 'To' header
+            if not enabled:
+                self.assertNotIn('To', headers)
+            else:
+                tolist = [addr.strip() for addr in headers['To'].split(',')]
             # Msg should have a 'Cc' field
             self.assertIn('Cc', headers)
             cclist = [addr.strip() for addr in headers['Cc'].split(',')]
             if enabled:
                 # Msg should be delivered to the reporter
-                self.assertIn(ticket['reporter'], cclist)
+                self.assertIn(ticket['reporter'], tolist)
             else:
                 # Msg should not be delivered to joeuser
                 self.assertNotIn(ticket['reporter'], cclist)
@@ -426,7 +399,8 @@ class NotificationTestCase(unittest.TestCase):
             if enabled:
                 self.env.config.set('notification', 'smtp_default_domain',
                                     'example.org')
-            notify_ticket_created(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=True)
             message = notifysuite.smtpd.get_message()
             headers, body = parse_smtp_message(message)
             # Msg should always have a 'Cc' field
@@ -451,84 +425,94 @@ class NotificationTestCase(unittest.TestCase):
         self.env.config.set('notification', 'always_notify_reporter', 'true')
         self.env.config.set('notification', 'smtp_always_cc',
                             'joe@example.com')
-        self.env.insert_known_users(
-            [('joeuser', 'Joe User', 'user-joe@example.com'),
-             ('jim@domain', 'Jim User', 'user-jim@example.com')])
+        self.env.known_users = [('joeuser', 'Joe User',
+                                 'user-joe@example.com'),
+                                ('jim@domain', 'Jim User',
+                                 'user-jim@example.com')]
         ticket = Ticket(self.env)
         ticket['reporter'] = 'joeuser'
         ticket['owner'] = 'jim@domain'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         # Msg should always have a 'To' field
-        self.assertEqual('undisclosed-recipients: ;', headers['To'])
-        # 'Cc' list should have been resolved to the real email address
-        cclist = [addr.strip() for addr in headers['Cc'].split(',')]
-        self.assertIn('user-joe@example.com', cclist)
-        self.assertIn('user-jim@example.com', cclist)
-        self.assertNotIn('joeuser', cclist)
-        self.assertNotIn('jim@domain', cclist)
+        self.assertIn('To', headers)
+        tolist = [addr.strip() for addr in headers['To'].split(',')]
+        # 'To' list should have been resolved to the real email address
+        self.assertIn('user-joe@example.com', tolist)
+        self.assertIn('user-jim@example.com', tolist)
+        self.assertNotIn('joeuser', tolist)
+        self.assertNotIn('jim@domain', tolist)
 
     def test_from_author(self):
         """Using the reporter or change author as the notification sender"""
         self.env.config.set('notification', 'smtp_from', 'trac@example.com')
         self.env.config.set('notification', 'smtp_from_name', 'My Trac')
         self.env.config.set('notification', 'smtp_from_author', 'true')
-        self.env.insert_known_users(
-            [('joeuser', 'Joe User', 'user-joe@example.com'),
-             ('jim@domain', 'Jim User', 'user-jim@example.com'),
-             ('noemail', 'No e-mail', ''),
-             ('noname', '', 'user-noname@example.com')])
+        self.env.known_users = [('joeuser', 'Joe User',
+                                 'user-joe@example.com'),
+                                ('jim@domain', 'Jim User',
+                                 'user-jim@example.com'),
+                                ('noemail', 'No e-mail', ''),
+                                ('noname', '', 'user-noname@example.com')]
         # Ticket creation uses the reporter
         ticket = Ticket(self.env)
         ticket['reporter'] = 'joeuser'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('"Joe User" <user-joe@example.com>', headers['From'])
         # Ticket change uses the change author
         ticket['summary'] = 'Modified summary'
         ticket.save_changes('jim@domain', 'Made some changes')
-        notify_ticket_changed(self.env, ticket, 'jim@domain')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('"Jim User" <user-jim@example.com>', headers['From'])
         # Known author without name uses e-mail address only
         ticket['summary'] = 'Final summary'
         ticket.save_changes('noname', 'Final changes')
-        notify_ticket_changed(self.env, ticket, 'noname')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('user-noname@example.com', headers['From'])
         # Known author without e-mail uses smtp_from and smtp_from_name
         ticket['summary'] = 'Other summary'
         ticket.save_changes('noemail', 'More changes')
-        notify_ticket_changed(self.env, ticket, 'noemail')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('"My Trac" <trac@example.com>', headers['From'])
         # Unknown author with name and e-mail address
         ticket['summary'] = 'Some summary'
         ticket.save_changes('Test User <test@example.com>', 'Some changes')
-        notify_ticket_changed(self.env, ticket, 'Test User <test@example.com>')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
-        #self.assertEqual('"Test User" <test@example.com>', headers['From'])
+        self.assertEqual('"Test User" <test@example.com>', headers['From'])
         # Unknown author with e-mail address only
         ticket['summary'] = 'Some summary'
         ticket.save_changes('test@example.com', 'Some changes')
-        notify_ticket_changed(self.env, ticket, 'test@example.com')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('test@example.com', headers['From'])
         # Unknown author uses smtp_from and smtp_from_name
         ticket['summary'] = 'Better summary'
         ticket.save_changes('unknown', 'Made more changes')
-        notify_ticket_changed(self.env, ticket, 'unknown')
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=ticket['changetime'])
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertEqual('"My Trac" <trac@example.com>', headers['From'])
@@ -537,26 +521,27 @@ class NotificationTestCase(unittest.TestCase):
         """Non-SMTP domain exclusion"""
         self.env.config.set('notification', 'ignore_domains',
                             'example.com, example.org')
-        self.env.insert_known_users(
+        self.env.known_users = \
             [('kerberos@example.com', 'No Email', ''),
-             ('kerberos@example.org', 'With Email', 'kerb@example.net')])
+             ('kerberos@example.org', 'With Email', 'kerb@example.net')]
         ticket = Ticket(self.env)
         ticket['reporter'] = 'kerberos@example.com'
         ticket['owner'] = 'kerberos@example.org'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         # Msg should always have a 'To' field
-        self.assertEqual('undisclosed-recipients: ;', headers['To'])
-        cclist = set(addr.strip() for addr in headers['Cc'].split(','))
-        # 'Cc' list should not contain addresses with non-SMTP domains
-        self.assertNotIn('kerberos@example.com', cclist)
-        self.assertNotIn('kerberos@example.org', cclist)
-        # 'Cc' list should have been resolved to the actual email address
-        self.assertEqual(set(['kerb@example.net', 'joe.user@example.net',
-                              'joe.bar@example.net']), cclist)
+        self.assertIn('To', headers)
+        tolist = [addr.strip() for addr in headers['To'].split(',')]
+        # 'To' list should not contain addresses with non-SMTP domains
+        self.assertNotIn('kerberos@example.com', tolist)
+        self.assertNotIn('kerberos@example.org', tolist)
+        # 'To' list should have been resolved to the actual email address
+        self.assertIn('kerb@example.net', tolist)
+        self.assertEqual(1, len(tolist))
 
     def test_admit_domains(self):
         """SMTP domain inclusion"""
@@ -568,11 +553,11 @@ class NotificationTestCase(unittest.TestCase):
         ticket['cc'] = 'joe.user@localdomain, joe.user@unknown, ' \
                        'joe.user@server'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         # Msg should always have a 'To' field
-        self.assertEqual('undisclosed-recipients: ;', headers['To'])
         self.assertIn('Cc', headers)
         cclist = [addr.strip() for addr in headers['Cc'].split(',')]
         # 'Cc' list should contain addresses with SMTP included domains
@@ -580,9 +565,7 @@ class NotificationTestCase(unittest.TestCase):
         self.assertIn('joe.user@server', cclist)
         # 'Cc' list should not contain non-FQDN domains
         self.assertNotIn('joe.user@unknown', cclist)
-        self.assertEqual(set(['joeuser@example.com', 'joe.user@localdomain',
-                              'joe.user@server', 'joe.user@example.net',
-                              'joe.bar@example.net']), set(cclist))
+        self.assertEqual(4, len(cclist))
 
     def test_multiline_header(self):
         """Encoded headers split into multiple lines"""
@@ -592,7 +575,8 @@ class NotificationTestCase(unittest.TestCase):
         # Forces non-ascii characters
         ticket['summary'] = u'A_very %s súmmäry' % u' '.join(['long'] * 20)
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         # Discards the project name & ticket number
@@ -648,10 +632,11 @@ class NotificationTestCase(unittest.TestCase):
         ticket['reporter'] = u'"Jöe Usèr" <joe.user@example.org>'
         ticket['summary'] = u'This is a summary'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
-        self.assertEqual('joe.user@example.org', headers['Cc'])
+        self.assertEqual('joe.user@example.org', headers['To'])
 
     def test_previous_cc_list(self):
         """Members removed from CC list receive notifications"""
@@ -662,7 +647,8 @@ class NotificationTestCase(unittest.TestCase):
         ticket['cc'] = 'joe.user2@example.net'
         now = datetime.now(utc)
         ticket.save_changes('joe.bar@example.com', 'Removed from cc', now)
-        notify_ticket_changed(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=False, modtime=now)
         recipients = notifysuite.smtpd.get_recipients()
         self.assertIn('joe.user1@example.net', recipients)
         self.assertIn('joe.user2@example.net', recipients)
@@ -679,7 +665,8 @@ class NotificationTestCase(unittest.TestCase):
             ticket['owner'] = new_owner = 'joe.user2@example.net'
             now = datetime.now(utc)
             ticket.save_changes('joe.bar@example.com', 'Changed owner', now)
-            notify_ticket_changed(self.env, ticket)
+            tn = TicketNotifyEmail(self.env)
+            tn.notify(ticket, newticket=False, modtime=now)
             recipients = notifysuite.smtpd.get_recipients()
             if enabled:
                 self.assertIn(prev_owner, recipients)
@@ -694,24 +681,14 @@ class NotificationTestCase(unittest.TestCase):
     def _validate_mimebody(self, mime, ticket, newtk):
         """Body of a ticket notification message"""
         mime_decoder, mime_name, mime_charset = mime
-        if newtk:
-            notify_ticket_created(self.env, ticket)
-        else:
-            notify_ticket_changed(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=newtk)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertIn('MIME-Version', headers)
         self.assertIn('Content-Type', headers)
-        self.assertTrue(re.compile(r"1.\d").match(headers['MIME-Version']))
-        ctype_mo = re.match(r'\s*([^;\s]*)\s*(?:;\s*boundary="([^"]*)")?',
-                            headers['Content-Type'])
-        self.assertEqual('multipart/related', ctype_mo.group(1))
-        boundary_re = re.compile(r'(?:\r\n)*^--%s(?:--)?(?:\r\n|\Z)' %
-                                 re.escape(ctype_mo.group(2)), re.MULTILINE)
-        body = boundary_re.split(message)[1]
-        headers, body = parse_smtp_message(body)
-        self.assertIn('Content-Type', headers)
         self.assertIn('Content-Transfer-Encoding', headers)
+        self.assertTrue(re.compile(r"1.\d").match(headers['MIME-Version']))
         type_re = re.compile(r'^text/plain;\scharset="([\w\-\d]+)"$')
         charset = type_re.match(headers['Content-Type'])
         self.assertTrue(charset)
@@ -727,7 +704,7 @@ class NotificationTestCase(unittest.TestCase):
             if mime_decoder:
                 body = mime_decoder.decodestring(body)
             body = unicode(body, charset)
-        except Exception as e:
+        except Exception, e:
             raise AssertionError(e)
         # now processes each line of the body
         bodylines = body.splitlines()
@@ -1189,7 +1166,8 @@ Security sensitive:  0                           |          Blocking:
         self._validate_props_format(formatted, ticket)
 
     def _validate_props_format(self, expected, ticket):
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         bodylines = body.splitlines()
@@ -1209,7 +1187,8 @@ Security sensitive:  0                           |          Blocking:
         ticket['summary'] = 'My Summary'
         ticket['description'] = 'Some description'
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         self.assertIsNotNone(notifysuite.smtpd.get_message())
         self.assertEqual('My Summary', ticket['summary'])
         self.assertEqual('Some description', ticket['description'])
@@ -1236,10 +1215,11 @@ Security sensitive:  0                           |          Blocking:
         ticket['reporter'] = 'joeuser'
         ticket['summary'] = 'This is a summary'
         ticket.insert()
+        tn = TicketNotifyEmail(self.env)
 
         def notify(from_name):
             self.env.config.set('notification', 'smtp_from_name', from_name)
-            notify_ticket_created(self.env, ticket)
+            tn.notify(ticket, newticket=True)
             message = notifysuite.smtpd.get_message()
             headers, body = parse_smtp_message(message)
             return message, headers, body
@@ -1265,46 +1245,13 @@ Security sensitive:  0                           |          Blocking:
         ticket['reporter'] = 'joeuser'
         ticket['summary'] = summary
         ticket.insert()
-        notify_ticket_created(self.env, ticket)
+        tn = TicketNotifyEmail(self.env)
+        tn.notify(ticket, newticket=True)
         message = notifysuite.smtpd.get_message()
         headers, body = parse_smtp_message(message)
         self.assertIn('\nSubject: =?utf-8?b?', message)  # is mime-encoded
         self.assertEqual(summary,
                          re.split(r' #[0-9]+: ', headers['Subject'], 1)[1])
-
-    def test_mail_headers(self):
-        def validates(headers):
-            self.assertEqual('http://localhost/project.url',
-                             headers.get('X-URL'))
-            self.assertEqual('ticket', headers.get('X-Trac-Realm'))
-            self.assertEqual(str(ticket.id), headers.get('X-Trac-Ticket-ID'))
-
-        when = datetime(2015, 1, 1, tzinfo=utc)
-        ticket = Ticket(self.env)
-        ticket['reporter'] = 'joeuser'
-        ticket['summary'] = 'Summary'
-        ticket.insert(when=when)
-        notify_ticket_created(self.env, ticket)
-        headers, body = parse_smtp_message(notifysuite.smtpd.get_message())
-        validates(headers)
-        self.assertEqual('http://localhost/trac/ticket/%d' % ticket.id,
-                         headers.get('X-Trac-Ticket-URL'))
-
-        ticket.save_changes(comment='New comment 1',
-                            when=when + timedelta(days=1))
-        notify_ticket_changed(self.env, ticket)
-        headers, body = parse_smtp_message(notifysuite.smtpd.get_message())
-        validates(headers)
-        self.assertEqual('http://localhost/trac/ticket/%d#comment:1' %
-                         ticket.id, headers.get('X-Trac-Ticket-URL'))
-
-        ticket.save_changes(comment='Reply to comment:1', replyto='1',
-                            when=when + timedelta(days=2))
-        notify_ticket_changed(self.env, ticket)
-        headers, body = parse_smtp_message(notifysuite.smtpd.get_message())
-        validates(headers)
-        self.assertEqual('http://localhost/trac/ticket/%d#comment:2' %
-                         ticket.id, headers.get('X-Trac-Ticket-URL'))
 
 
 class AttachmentNotificationTestCase(unittest.TestCase):

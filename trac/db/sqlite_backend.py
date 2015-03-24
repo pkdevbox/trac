@@ -20,10 +20,9 @@ import weakref
 
 from trac.config import ListOption
 from trac.core import *
-from trac.db.api import ConnectionBase, IDatabaseConnector
+from trac.db.api import IDatabaseConnector
 from trac.db.util import ConnectionWrapper, IterableCursor
-from trac.env import ISystemInfoProvider
-from trac.util import get_pkginfo, getuser, lazy
+from trac.util import get_pkginfo, getuser
 from trac.util.translation import _
 
 _like_escape_re = re.compile(r'([/_%])')
@@ -32,80 +31,77 @@ _glob_escape_re = re.compile(r'[*?\[]')
 
 try:
     import pysqlite2.dbapi2 as sqlite
+    have_pysqlite = 2
 except ImportError:
-    import sqlite3 as sqlite
+    try:
+        import sqlite3 as sqlite
+        have_pysqlite = 2
+    except ImportError:
+        have_pysqlite = 0
 
-sqlite_version = sqlite.sqlite_version_info
-sqlite_version_string = sqlite.sqlite_version
-pysqlite_version = sqlite.version_info
-pysqlite_version_string = get_pkginfo(sqlite).get('version',
-                                                  '%d.%d.%s'
-                                                  % pysqlite_version)
-min_sqlite_version = (3, 0, 0)
-min_pysqlite_version = (2, 4, 1)  # version provided by Python 2.6
+if have_pysqlite == 2:
+    # Force values to integers because PySQLite 2.2.0 had (2, 2, '0')
+    sqlite_version = tuple([int(x) for x in sqlite.sqlite_version_info])
+    sqlite_version_string = sqlite.sqlite_version
 
+    class PyFormatCursor(sqlite.Cursor):
+        def _rollback_on_error(self, function, *args, **kwargs):
+            try:
+                return function(self, *args, **kwargs)
+            except sqlite.DatabaseError:
+                self.cnx.rollback()
+                raise
+        def execute(self, sql, args=None):
+            if args:
+                sql = sql % (('?',) * len(args))
+            return self._rollback_on_error(sqlite.Cursor.execute, sql,
+                                           args or [])
+        def executemany(self, sql, args):
+            if not args:
+                return
+            sql = sql % (('?',) * len(args[0]))
+            return self._rollback_on_error(sqlite.Cursor.executemany, sql,
+                                           args)
 
-class PyFormatCursor(sqlite.Cursor):
-    def _rollback_on_error(self, function, *args, **kwargs):
-        try:
-            return function(self, *args, **kwargs)
-        except sqlite.DatabaseError:
-            self.cnx.rollback()
-            raise
+    # EagerCursor taken from the example in pysqlite's repository:
+    #
+    #   http://code.google.com/p/pysqlite/source/browse/misc/eager.py
+    #
+    # Only change is to subclass it from PyFormatCursor instead of
+    # sqlite.Cursor.
 
-    def execute(self, sql, args=None):
-        if args:
-            sql = sql % (('?',) * len(args))
-        return self._rollback_on_error(sqlite.Cursor.execute, sql,
-                                       args or [])
+    class EagerCursor(PyFormatCursor):
+        def __init__(self, con):
+            PyFormatCursor.__init__(self, con)
+            self.rows = []
+            self.pos = 0
 
-    def executemany(self, sql, args):
-        if not args:
-            return
-        sql = sql % (('?',) * len(args[0]))
-        return self._rollback_on_error(sqlite.Cursor.executemany, sql,
-                                       args)
+        def execute(self, *args):
+            result = PyFormatCursor.execute(self, *args)
+            self.rows = PyFormatCursor.fetchall(self)
+            self.pos = 0
+            return result
 
+        def fetchone(self):
+            try:
+                row = self.rows[self.pos]
+                self.pos += 1
+                return row
+            except IndexError:
+                return None
 
-# EagerCursor taken from the example in pysqlite's repository:
-#
-#   http://code.google.com/p/pysqlite/source/browse/misc/eager.py
-#
-# Only change is to subclass it from PyFormatCursor instead of
-# sqlite.Cursor.
+        def fetchmany(self, num=None):
+            if num is None:
+                num = self.arraysize
 
-class EagerCursor(PyFormatCursor):
-    def __init__(self, con):
-        PyFormatCursor.__init__(self, con)
-        self.rows = []
-        self.pos = 0
+            result = self.rows[self.pos:self.pos+num]
+            self.pos += num
+            return result
 
-    def execute(self, *args):
-        result = PyFormatCursor.execute(self, *args)
-        self.rows = PyFormatCursor.fetchall(self)
-        self.pos = 0
-        return result
-
-    def fetchone(self):
-        try:
-            row = self.rows[self.pos]
-            self.pos += 1
-            return row
-        except IndexError:
-            return None
-
-    def fetchmany(self, num=None):
-        if num is None:
-            num = self.arraysize
-
-        result = self.rows[self.pos:self.pos + num]
-        self.pos += num
-        return result
-
-    def fetchall(self):
-        result = self.rows[self.pos:]
-        self.pos = len(self.rows)
-        return result
+        def fetchall(self):
+            result = self.rows[self.pos:]
+            self.pos = len(self.rows)
+            return result
 
 
 # Mapping from "abstract" SQL types to DB-specific types
@@ -144,9 +140,7 @@ class SQLiteConnector(Component):
     sqlite:path/to/trac.db
     }}}
     """
-    implements(IDatabaseConnector, ISystemInfoProvider)
-
-    required = False
+    implements(IDatabaseConnector)
 
     extensions = ListOption('sqlite', 'extensions',
         doc="""Paths to sqlite extensions, relative to Trac environment's
@@ -155,33 +149,36 @@ class SQLiteConnector(Component):
     memory_cnx = None
 
     def __init__(self):
+        self._version = None
         self.error = None
-
-    # ISystemInfoProvider methods
-
-    def get_system_info(self):
-        if self.required:
-            yield 'SQLite', sqlite_version_string
-            yield 'pysqlite', pysqlite_version_string
-
-    # IDatabaseConnector methods
+        self._extensions = None
 
     def get_supported_schemes(self):
-        if sqlite_version < min_sqlite_version:
-            self.error = _("SQLite version is %(version)s. Minimum required "
-                           "version is %(min_version)s.",
-                           version=sqlite_version_string,
-                           min_version='%d.%d.%d' % min_sqlite_version)
-        elif pysqlite_version < min_pysqlite_version:
+        if not have_pysqlite:
+            self.error = _("Cannot load Python bindings for SQLite")
+        elif sqlite_version >= (3, 3, 3) and sqlite.version_info[0] == 2 and \
+                sqlite.version_info < (2, 0, 7):
             self.error = _("Need at least PySqlite %(version)s or higher",
-                           version='%d.%d.%d' % min_pysqlite_version)
-        elif (2, 5, 2) <= pysqlite_version < (2, 5, 5):
+                           version='2.0.7')
+        elif (2, 5, 2) <= sqlite.version_info < (2, 5, 5):
             self.error = _("PySqlite 2.5.2 - 2.5.4 break Trac, please use "
                            "2.5.5 or higher")
-        yield 'sqlite', -1 if self.error else 1
+        yield ('sqlite', -1 if self.error else 1)
 
     def get_connection(self, path, log=None, params={}):
-        self.required = True
+        if not self._version:
+            self._version = get_pkginfo(sqlite).get(
+                'version', '%d.%d.%s' % sqlite.version_info)
+            self.env.systeminfo.extend([('SQLite', sqlite_version_string),
+                                        ('pysqlite', self._version)])
+            self.required = True
+        # construct list of sqlite extension libraries
+        if self._extensions is None:
+            self._extensions = []
+            for extpath in self.extensions:
+                if not os.path.isabs(extpath):
+                    extpath = os.path.join(self.env.path, extpath)
+                self._extensions.append(extpath)
         params['extensions'] = self._extensions
         if path == ':memory:':
             if not self.memory_cnx:
@@ -202,7 +199,7 @@ class SQLiteConnector(Component):
             dir = os.path.dirname(path)
             if not os.path.exists(dir):
                 os.makedirs(dir)
-            if isinstance(path, unicode):  # needed with 2.4.0
+            if isinstance(path, unicode): # needed with 2.4.0
                 path = path.encode('utf-8')
             # this direct connect will create the database if needed
             cnx = sqlite.connect(path,
@@ -230,8 +227,8 @@ class SQLiteConnector(Component):
         """
         for name, (from_, to) in sorted(columns.iteritems()):
             if _type_map.get(to, to) != _type_map.get(from_, from_):
-                raise NotImplementedError("Conversion from %s to %s is not "
-                                          "implemented" % (from_, to))
+                raise NotImplementedError('Conversion from %s to %s is not '
+                                          'implemented' % (from_, to))
         return ()
 
     def backup(self, dest_file):
@@ -251,24 +248,18 @@ class SQLiteConnector(Component):
             raise TracError(_("No destination file created"))
         return dest_file
 
-    @lazy
-    def _extensions(self):
-        _extensions = []
-        for extpath in self.extensions:
-            if not os.path.isabs(extpath):
-                extpath = os.path.join(self.env.path, extpath)
-            _extensions.append(extpath)
-        return _extensions
 
-
-class SQLiteConnection(ConnectionBase, ConnectionWrapper):
+class SQLiteConnection(ConnectionWrapper):
     """Connection wrapper for SQLite."""
 
     __slots__ = ['_active_cursors', '_eager']
 
-    poolable = sqlite_version >= (3, 3, 8) and pysqlite_version >= (2, 5, 0)
+    poolable = have_pysqlite and sqlite_version >= (3, 3, 8) \
+                             and sqlite.version_info >= (2, 5, 0)
 
     def __init__(self, path, log=None, params={}):
+        if have_pysqlite == 0:
+            raise TracError(_("Cannot load Python bindings for SQLite"))
         self.cnx = None
         if path != ':memory:':
             if not os.access(path, os.F_OK):
@@ -276,18 +267,18 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
 
             dbdir = os.path.dirname(path)
             if not os.access(path, os.R_OK + os.W_OK) or \
-                    not os.access(dbdir, os.R_OK + os.W_OK):
+                   not os.access(dbdir, os.R_OK + os.W_OK):
                 raise TracError(
-                    _("The user %(user)s requires read _and_ write "
-                      "permissions to the database file %(path)s "
-                      "and the directory it is located in.",
+                    _('The user %(user)s requires read _and_ write '
+                      'permissions to the database file %(path)s '
+                      'and the directory it is located in.',
                       user=getuser(), path=path))
 
         self._active_cursors = weakref.WeakKeyDictionary()
         timeout = int(params.get('timeout', 10.0))
         self._eager = params.get('cursor', 'eager') == 'eager'
         # eager is default, can be turned off by specifying ?cursor=
-        if isinstance(path, unicode):  # needed with 2.4.0
+        if isinstance(path, unicode): # needed with 2.4.0
             path = path.encode('utf-8')
         cnx = sqlite.connect(path, detect_types=sqlite.PARSE_DECLTYPES,
                              check_same_thread=sqlite_version < (3, 3, 1),
@@ -343,11 +334,11 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
 
     def get_table_names(self):
         rows = self.execute("""
-            SELECT name FROM sqlite_master WHERE type='table'
-            """)
+            SELECT name FROM sqlite_master WHERE type='table'""")
         return [row[0] for row in rows]
 
     def like(self):
+        """Return a case-insensitive LIKE clause."""
         if sqlite_version >= (3, 1, 0):
             return "LIKE %s ESCAPE '/'"
         else:
@@ -360,20 +351,16 @@ class SQLiteConnection(ConnectionBase, ConnectionWrapper):
             return text
 
     def prefix_match(self):
+        """Return a case sensitive prefix-matching operator."""
         return 'GLOB %s'
 
     def prefix_match_value(self, prefix):
+        """Return a value for case sensitive prefix-matching operator."""
         return _glob_escape_re.sub(lambda m: '[%s]' % m.group(0), prefix) + '*'
 
     def quote(self, identifier):
+        """Return the quoted identifier."""
         return _quote(identifier)
-
-    def reset_tables(self):
-        cursor = self.cursor()
-        table_names = self.get_table_names()
-        for name in table_names:
-            cursor.execute("DELETE FROM %s" % name)
-        return table_names
 
     def update_sequence(self, cursor, table, column='id'):
         # SQLite handles sequence updates automagically
@@ -390,16 +377,16 @@ def _set_journal_mode(cursor, value):
         return
     value = value.upper()
     if value == 'OFF':
-        raise TracError(_("PRAGMA journal_mode `%(value)s` cannot be used "
-                          "in SQLite", value=value))
+        raise TracError(_("PRAGMA journal_mode `%(value)s` cannot be used in "
+                          "SQLite", value=value))
     cursor.execute('PRAGMA journal_mode = %s' % _quote(value))
     row = cursor.fetchone()
     if not row:
         raise TracError(_("PRAGMA journal_mode isn't supported by SQLite "
                           "%(version)s", version=sqlite_version_string))
     if (row[0] or '').upper() != value:
-        raise TracError(_("PRAGMA journal_mode `%(value)s` isn't supported "
-                          "by SQLite %(version)s",
+        raise TracError(_("PRAGMA journal_mode `%(value)s` isn't supported by "
+                          "SQLite %(version)s",
                           value=value, version=sqlite_version_string))
 
 

@@ -17,7 +17,7 @@
 from trac.db import Table, Column, Index
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 39
+db_version = 29
 
 def __mkreports(reports):
     """Utility function used to create report data in same syntax as the
@@ -92,22 +92,20 @@ schema = [
         Column('value')],
     Table('revision', key=('repos', 'rev'))[
         Column('repos', type='int'),
-        Column('rev', key_size=40),
+        Column('rev', key_size=20),
         Column('time', type='int64'),
         Column('author'),
         Column('message'),
         Index(['repos', 'time'])],
-    Table('node_change', key='id')[
-        Column('id', auto_increment=True),
+    Table('node_change', key=('repos', 'rev', 'path', 'change_type'))[
         Column('repos', type='int'),
-        Column('rev', key_size=40),
+        Column('rev', key_size=20),
         Column('path', key_size=255),
         Column('node_type', size=1),
-        Column('change_type', size=1),
+        Column('change_type', size=1, key_size=2),
         Column('base_path'),
         Column('base_rev'),
-        Index(['repos', 'rev', 'path']),
-        Index(['repos', 'path', 'rev'])],
+        Index(['repos', 'rev'])],
 
     # Ticket system
     Table('ticket', key='id')[
@@ -168,30 +166,6 @@ schema = [
         Column('title'),
         Column('query'),
         Column('description')],
-
-    # Notification system
-    Table('notify_subscription', key='id')[
-        Column('id', auto_increment=True),
-        Column('time', type='int64'),
-        Column('changetime', type='int64'),
-        Column('class'),
-        Column('sid'),
-        Column('authenticated', type='int'),
-        Column('distributor'),
-        Column('format'),
-        Column('priority', type='int'),
-        Column('adverb'),
-        Index(['sid', 'authenticated']),
-        Index(['class'])],
-    Table('notify_watch', key='id')[
-        Column('id', auto_increment=True),
-        Column('sid'),
-        Column('authenticated', type='int'),
-        Column('class'),
-        Column('realm'),
-        Column('target'),
-        Index(['sid', 'authenticated', 'class']),
-        Index(['class', 'realm', 'target'])],
 ]
 
 

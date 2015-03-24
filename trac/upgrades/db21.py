@@ -14,8 +14,7 @@
 
 def do_upgrade(env, ver, cursor):
     """Upgrade the reports to better handle the new workflow capabilities"""
-    with env.db_query as db:
-        owner = db.concat('owner', "' *'")
+    owner = env.get_read_db().concat('owner', "' *'")
     cursor.execute('SELECT id, query, description FROM report')
     reports = cursor.fetchall()
     for report, query, description in reports:

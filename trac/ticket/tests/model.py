@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime, timedelta
 from StringIO import StringIO
 import tempfile
@@ -21,7 +23,7 @@ import trac.tests.compat
 from trac import core
 from trac.attachment import Attachment
 from trac.core import TracError, implements
-from trac.resource import Resource, ResourceNotFound
+from trac.resource import ResourceNotFound
 from trac.test import EnvironmentStub
 from trac.ticket.model import (
     Ticket, Component, Milestone, Priority, Type, Version
@@ -109,15 +111,6 @@ class TicketTestCase(unittest.TestCase):
         ticket['foo'] = 'This is a custom field'
         return ticket
 
-    def test_resource_id_is_none(self):
-        ticket = Ticket(self.env)
-        self.assertEqual(Resource('ticket'), ticket.resource)
-
-    def test_resource_exists(self):
-        ticket_id = self._insert_ticket('Foo')
-        ticket = Ticket(self.env, ticket_id)
-        self.assertEqual(Resource('ticket', 1), ticket.resource)
-
     def test_invalid_ticket_id(self):
         self.assertEqual(Ticket.id_is_valid(-1), False)
         self.assertEqual(Ticket.id_is_valid(0), False)
@@ -126,12 +119,6 @@ class TicketTestCase(unittest.TestCase):
         self.assertEqual(Ticket.id_is_valid(1L << 32), False)
         self.assertRaises(ResourceNotFound, Ticket, self.env, -1)
         self.assertRaises(ResourceNotFound, Ticket, self.env, 1L << 32)
-
-    def test_repr(self):
-        ticket = self._create_a_ticket()
-        self.assertEqual("<Ticket None>", repr(ticket))
-        ticket.insert()
-        self.assertEqual("<Ticket 1>", repr(ticket))
 
     def test_create_ticket_1(self):
         ticket = self._create_a_ticket()
@@ -440,28 +427,6 @@ class TicketTestCase(unittest.TestCase):
         self.assertEqual('on', ticket['cbon'])
         self.assertEqual('0', ticket['cboff'])
 
-    def test_custom_time(self):
-        # Add a custom field of type 'time'
-        self.env.config.set('ticket-custom', 'due', 'time')
-        ticket = Ticket(self.env)
-        self.assertFalse('due' in ticket.std_fields)
-        self.assertTrue('due' in ticket.time_fields)
-        ticket['reporter'] = 'john'
-        ticket['summary'] = 'Task1'
-        tktid = ticket.insert()
-        ticket = Ticket(self.env, tktid)
-        # Empty string is default value, but not a time stamp
-        self.assertEqual(None, ticket['due'])
-        ts = datetime(2011, 11, 11, 0, 0, 0, 0, utc)
-        ticket['due'] = ts
-        t1 = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
-        ticket.save_changes('joe', when=t1)
-        self.assertEqual(ts, ticket['due'])
-        ticket['due'] = ''
-        t2 = datetime(2001, 1, 1, 1, 1, 2, 0, utc)
-        ticket.save_changes('joe', when=t2)
-        self.assertEqual('', ticket['due'])
-
     def test_changelog(self):
         tkt_id = self._insert_ticket('Test', reporter='joe', component='foo',
                                      milestone='bar')
@@ -755,15 +720,6 @@ class TicketCommentEditTestCase(TicketCommentTestCase):
         self.assertEqual('New Comment 2', listener.comment)
         self.assertEqual('Comment 2', listener.old_comment)
 
-    def test_get_comment_number(self):
-        ticket = Ticket(self.env, self.id)
-        self.assertEqual(1, ticket.get_comment_number(self.created +
-                                                      timedelta(seconds=1)))
-        self.assertEqual(2, ticket.get_comment_number(self.created +
-                                                      timedelta(seconds=2)))
-        self.assertEqual(3, ticket.get_comment_number(self.created +
-                                                      timedelta(seconds=3)))
-
 
 class TicketCommentDeleteTestCase(TicketCommentTestCase):
 
@@ -927,11 +883,6 @@ class EnumTestCase(unittest.TestCase):
     def tearDown(self):
         self.env.reset_db()
 
-    def test_repr(self):
-        self.assertEqual("<Priority None None>", repr(Priority(self.env)))
-        self.assertEqual("<Priority 'major' u'3'>",
-                         repr(Priority(self.env, 'major')))
-
     def test_priority_fetch(self):
         prio = Priority(self.env, 'major')
         self.assertEqual(prio.name, 'major')
@@ -1030,7 +981,6 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertIsNone(milestone.due)
         self.assertIsNone(milestone.completed)
         self.assertEqual('', milestone.description)
-        self.assertEqual("<Milestone None>", repr(milestone))
 
     def test_new_milestone_empty_name(self):
         """
@@ -1043,7 +993,6 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertIsNone(milestone.due)
         self.assertIsNone(milestone.completed)
         self.assertEqual('', milestone.description)
-        self.assertEqual("<Milestone None>", repr(milestone))
 
     def test_existing_milestone(self):
         self.env.db_transaction("INSERT INTO milestone (name) VALUES ('Test')")
@@ -1054,7 +1003,6 @@ class MilestoneTestCase(unittest.TestCase):
         self.assertIsNone(milestone.due)
         self.assertIsNone(milestone.completed)
         self.assertEqual('', milestone.description)
-        self.assertEqual("<Milestone u'Test'>", repr(milestone))
 
     def test_create_and_update_milestone(self):
         milestone = Milestone(self.env)
@@ -1318,11 +1266,6 @@ class ComponentTestCase(unittest.TestCase):
         for c in Component.select(self.env):
             self.assertEqual(c.exists, True)
 
-    def test_repr(self):
-        self.assertEqual('<Component None>', repr(Component(self.env)))
-        self.assertEqual("<Component 'component1'>",
-                         repr(Component(self.env, 'component1')))
-
     def test_create_and_update(self):
         component = Component(self.env)
         component.name = 'Test'
@@ -1357,10 +1300,6 @@ class VersionTestCase(unittest.TestCase):
         """
         for v in Version.select(self.env):
             self.assertEqual(v.exists, True)
-
-    def test_repr(self):
-        self.assertEqual('<Version None>', repr(Version(self.env)))
-        self.assertEqual("<Version '1.0'>", repr(Version(self.env, '1.0')))
 
     def test_create_and_update(self):
         version = Version(self.env)

@@ -77,14 +77,14 @@ administrators = éat
         self.env.config.set('trac', 'permission_policies',
                             'AuthzPolicy, DefaultPermissionPolicy')
         self.env.config.set('authz_policy', 'authz_file', self.authz_file)
+        self.authz_policy = AuthzPolicy(self.env)
 
     def tearDown(self):
         self.env.reset_db()
         os.remove(self.authz_file)
 
     def check_permission(self, action, user, resource, perm):
-        authz_policy = AuthzPolicy(self.env)
-        return authz_policy.check_permission(action, user, resource, perm)
+        return self.authz_policy.check_permission(action, user, resource, perm)
 
     def get_repository(self, reponame):
         params = {'id': 1, 'name': reponame}
@@ -171,36 +171,39 @@ administrators = éat
             self.check_permission('WIKI_VIEW', u'änon', resource, None))
 
     def test_get_authz_file(self):
-        """get_authz_file should resolve a relative path."""
-        authz_policy = AuthzPolicy(self.env)
-        authz_file = authz_policy.authz_file
+        """get_authz_file should resolve a relative path and lazily compute.
+        """
+        authz_file = self.authz_policy.get_authz_file
         self.assertEqual(os.path.join(self.env.path, 'trac-authz-policy'),
                          authz_file)
+        self.assertIs(authz_file, self.authz_policy.get_authz_file)
 
     def test_get_authz_file_notfound_raises(self):
         """ConfigurationError exception should be raised if file not found."""
         authz_file = os.path.join(self.env.path, 'some-nonexistent-file')
         self.env.config.set('authz_policy', 'authz_file', authz_file)
-        self.assertRaises(ConfigurationError, AuthzPolicy, self.env)
+        self.assertRaises(ConfigurationError, getattr, self.authz_policy,
+                          'get_authz_file')
 
     def test_get_authz_file_notdefined_raises(self):
         """ConfigurationError exception should be raised if the option
         `[authz_policy] authz_file` is not specified in trac.ini."""
         self.env.config.remove('authz_policy', 'authz_file')
-        self.assertRaises(ConfigurationError, AuthzPolicy, self.env)
+        self.assertRaises(ConfigurationError, getattr, self.authz_policy,
+                          'get_authz_file')
 
     def test_get_authz_file_empty_raises(self):
         """ConfigurationError exception should be raised if the option
         `[authz_policy] authz_file` is empty."""
         self.env.config.set('authz_policy', 'authz_file', '')
-        self.assertRaises(ConfigurationError, AuthzPolicy, self.env)
+        self.assertRaises(ConfigurationError, getattr, self.authz_policy,
+                          'get_authz_file')
 
     def test_parse_authz_empty(self):
         """Allow the file to be empty."""
         create_file(self.authz_file, '')
-        authz_policy = AuthzPolicy(self.env)
-        authz_policy.parse_authz()
-        self.assertFalse(authz_policy.authz)
+        self.authz_policy.parse_authz()
+        self.assertFalse(self.authz_policy.authz)
 
     def test_parse_authz_no_settings(self):
         """Allow the file to have no settings."""
@@ -209,9 +212,8 @@ administrators = éat
 # änon = WIKI_VIEW
 # * =
 """)
-        authz_policy = AuthzPolicy(self.env)
-        authz_policy.parse_authz()
-        self.assertFalse(authz_policy.authz)
+        self.authz_policy.parse_authz()
+        self.assertFalse(self.authz_policy.authz)
 
     def test_parse_authz_malformed_raises(self):
         """ConfigurationError should be raised if the file is malformed."""
@@ -220,8 +222,7 @@ wiki:WikiStart]
 änon = WIKI_VIEW
 * =
 """)
-        authz_policy = AuthzPolicy(self.env)
-        self.assertRaises(ConfigurationError, authz_policy.parse_authz)
+        self.assertRaises(ConfigurationError, self.authz_policy.parse_authz)
 
     def test_parse_authz_duplicated_sections_raises(self):
         """ConfigurationError should be raised if the file has duplicate
@@ -233,8 +234,7 @@ wiki:WikiStart]
 [wiki:WikiStart]
 änon = WIKI_VIEW
 """)
-        authz_policy = AuthzPolicy(self.env)
-        self.assertRaises(ConfigurationError, authz_policy.parse_authz)
+        self.assertRaises(ConfigurationError, self.authz_policy.parse_authz)
 
 
 def suite():
@@ -242,8 +242,8 @@ def suite():
     if ConfigObj:
         suite.addTest(unittest.makeSuite(AuthzPolicyTestCase))
     else:
-        print("SKIP: tracopt/perm/tests/authz_policy.py (no configobj"
-              " installed)")
+        print "SKIP: tracopt/perm/tests/authz_policy.py (no configobj " + \
+              "installed)"
     return suite
 
 

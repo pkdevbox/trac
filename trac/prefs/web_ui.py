@@ -21,27 +21,24 @@ from genshi.builder import tag
 
 from trac.core import *
 from trac.prefs.api import IPreferencePanelProvider
-from trac.util import lazy
 from trac.util.datefmt import all_timezones, get_timezone, localtz
 from trac.util.translation import _, Locale, deactivate,\
                                   get_available_locales, make_activable
-from trac.web.api import HTTPNotFound, IRequestHandler, \
-                         is_valid_default_handler
-from trac.web.chrome import Chrome, INavigationContributor, \
-                            ITemplateProvider, add_notice, add_stylesheet
+from trac.web.api import HTTPNotFound, IRequestHandler
+from trac.web.chrome import INavigationContributor, ITemplateProvider, \
+                            add_notice, add_stylesheet
 
 
 class PreferencesModule(Component):
 
+    panel_providers = ExtensionPoint(IPreferencePanelProvider)
+
     implements(INavigationContributor, IPreferencePanelProvider,
                IRequestHandler, ITemplateProvider)
 
-    panel_providers = ExtensionPoint(IPreferencePanelProvider)
-    request_handlers = ExtensionPoint(IRequestHandler)
-
     _form_fields = [
-        'newsid', 'name', 'email', 'default_handler',
-        'tz', 'lc_time', 'dateinfo', 'language', 'accesskeys',
+        'newsid', 'name', 'email', 'tz', 'lc_time', 'dateinfo',
+        'language', 'accesskeys',
         'ui.use_symbols', 'ui.hide_help',
     ]
 
@@ -70,35 +67,19 @@ class PreferencesModule(Component):
         panel_id = req.args.get('panel_id')
 
         panels = []
-        child_panels = []
         chosen_provider = None
 
-        chrome = Chrome(self.env)
-
         for provider in self.panel_providers:
-            for panel in provider.get_preference_panels(req) or []:
-                if len(panel) == 3:
-                    name, label, parent = panel
-                    if parent == panel_id:
-                        template, data = \
-                            provider.render_preference_panel(req, name)
-                        child_panels.append((name, label,
-                            chrome.render_template(req, template, data,
-                                                   fragment=True)))
-                else:
-                    name, label = panel
-                    if name == panel_id or None:
-                        chosen_provider = provider
-                    panels.append(panel)
+            for name, label in provider.get_preference_panels(req) or []:
+                if name == panel_id or None:
+                    chosen_provider = provider
+                panels.append((name, label))
         if not chosen_provider:
             self.log.warn("Unknown preference panel %r", panel_id)
             raise HTTPNotFound(_("Unknown preference panel"))
 
-        template, data = chosen_provider.render_preference_panel(req,
-                                                                 panel_id)
-        data.update({'active_panel': panel_id,
-                     'panels': panels,
-                     'child_panels': child_panels})
+        template, data = chosen_provider.render_preference_panel(req, panel_id)
+        data.update({'active_panel': panel_id, 'panels': panels})
 
         add_stylesheet(req, 'common/css/prefs.css')
         return template, data, None
@@ -106,12 +87,14 @@ class PreferencesModule(Component):
     # IPreferencePanelProvider methods
 
     def get_preference_panels(self, req):
-        yield None, _("General")
-        yield 'localization', _("Localization")
-        yield 'keybindings', _("Keyboard Shortcuts")
-        yield 'userinterface', _("User Interface")
+        yield (None, _("General"))
+        yield ('datetime', _("Date & Time"))
+        yield ('keybindings', _("Keyboard Shortcuts"))
+        yield ('userinterface', _("User Interface"))
+        if Locale or 'TRAC_ADMIN' in req.perm:
+            yield ('language', _("Language"))
         if not req.authname or req.authname == 'anonymous':
-            yield 'advanced', _("Advanced")
+            yield ('advanced', _("Advanced"))
 
     def render_preference_panel(self, req, panel):
         if req.method == 'POST':
@@ -127,10 +110,7 @@ class PreferencesModule(Component):
             'timezones': all_timezones,
             'timezone': get_timezone,
             'localtz': localtz,
-            'has_babel': False,
-            'project_default_handler': self.config.get('trac',
-                                                       'default_handler'),
-            'valid_default_handlers': self._valid_default_handlers,
+            'has_babel': False
         }
 
         if Locale:
@@ -157,12 +137,6 @@ class PreferencesModule(Component):
         return [pkg_resources.resource_filename('trac.prefs', 'templates')]
 
     # Internal methods
-
-    @lazy
-    def _valid_default_handlers(self):
-        return sorted(handler.__class__.__name__
-                      for handler in self.request_handlers
-                      if is_valid_default_handler(handler))
 
     def _do_save_xhr(self, req):
         for key in req.args:

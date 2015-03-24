@@ -93,9 +93,9 @@ def write_index_for(path):
         with open(index, 'wb') as idx:
             for n, line in changes:
                 print>>idx, (u"%s:%s: %s" % (path, n, line)).encode('utf-8')
-        print("%s: %d changes indexed in %s" % (path, len(changes), index))
+        print "%s: %d changes indexed in %s" % (path, len(changes), index)
     else:
-        print("%s: no interesting changes" % path)
+        print "%s: no interesting changes" % (path,)
 
 if __name__ == '__main__':
     import sys

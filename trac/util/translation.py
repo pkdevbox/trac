@@ -13,18 +13,19 @@
 
 """Utilities for text translation with gettext."""
 
+from __future__ import with_statement
+
 import pkg_resources
 import re
 
 from genshi.builder import tag
 
 from trac.util.concurrency import ThreadLocal, threading
-from trac.util.text import cleandoc
+from trac.util.compat import cleandoc
 
 
 __all__ = ['gettext', 'ngettext', 'gettext_noop', 'ngettext_noop',
            'tgettext', 'tgettext_noop', 'tngettext', 'tngettext_noop']
-
 
 def safefmt(string, kwargs):
     if kwargs:

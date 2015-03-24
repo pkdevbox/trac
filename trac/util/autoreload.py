@@ -79,7 +79,7 @@ def main(func, modification_callback, *args, **kwargs):
             try:
                 func(*args, **kwargs)
                 exit_code.append(None)
-            except SystemExit as e:
+            except SystemExit, e:
                 exit_code.append(e.code)
             except:
                 traceback.print_exception(*sys.exc_info())

@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from ConfigParser import RawConfigParser
 import shutil
 import tempfile
@@ -18,10 +20,8 @@ import unittest
 
 import trac.tests.compat
 from trac import db_default
-from trac.config import ConfigurationError
-from trac.core import Component, ComponentManager, implements
-from trac.env import Environment, IEnvironmentSetupParticipant, \
-                     open_environment
+from trac.core import ComponentManager
+from trac.env import Environment
 from trac.test import EnvironmentStub
 
 
@@ -132,67 +132,6 @@ class EnvironmentTestCase(unittest.TestCase):
         self.assertEqual('disabled', parser.get('trac', 'secure_cookies'))
         self.assertTrue(parser.has_option('logging', 'log_format'))
         self.assertEqual('', parser.get('logging', 'log_format'))
-
-    def test_needs_upgrade_legacy_participant(self):
-        """For backward compatibility with plugin, environment_needs_upgrade
-        with a `db` argument is deprecated but still allowed."""
-        participants = self.env.setup_participants
-        needs_upgrade = self.env.needs_upgrade()
-
-        class LegacyParticipant(Component):
-            implements(IEnvironmentSetupParticipant)
-            def environment_created(self):
-                pass
-            def environment_needs_upgrade(self, db):
-                return True
-            def upgrade_environment(self, db):
-                pass
-
-        self.env.enable_component(LegacyParticipant)
-
-        self.assertFalse(needs_upgrade)
-        self.assertEqual(len(participants) + 1,
-                         len(self.env.setup_participants))
-        self.assertTrue(self.env.needs_upgrade())
-
-    def test_upgrade_legacy_participant(self):
-        """For backward compatibility with plugin, upgrade with a `db`
-        argument is deprecated but still allowed."""
-        participants = self.env.setup_participants
-
-        class LegacyParticipant(Component):
-            implements(IEnvironmentSetupParticipant)
-            def environment_created(self):
-                pass
-            def environment_needs_upgrade(self, db):
-                return True
-            def upgrade_environment(self, db):
-                pass
-
-        self.env.enable_component(LegacyParticipant)
-
-        self.assertEqual(len(participants) + 1,
-                         len(self.env.setup_participants))
-        self.assertTrue(self.env.needs_upgrade())
-        self.assertTrue(self.env.upgrade())
-
-    def test_invalid_log_level_raises_exception(self):
-        self.env.config.set('logging', 'log_level', 'invalid')
-        self.env.config.save()
-
-        self.assertEqual('invalid',
-                         self.env.config.get('logging', 'log_level'))
-        self.assertRaises(ConfigurationError, open_environment,
-                          self.env.path, True)
-
-    def test_invalid_log_type_raises_exception(self):
-        self.env.config.set('logging', 'log_type', 'invalid')
-        self.env.config.save()
-
-        self.assertEqual('invalid',
-                         self.env.config.get('logging', 'log_type'))
-        self.assertRaises(ConfigurationError, open_environment,
-                          self.env.path, True)
 
 
 def suite():

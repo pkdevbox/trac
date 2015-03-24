@@ -14,13 +14,14 @@
 #
 # Author: Alec Thomas <alec@swapoff.org>
 
-import os
 from fnmatch import fnmatchcase
 from itertools import groupby
+import os
 
-from trac.config import ConfigurationError, PathOption
 from trac.core import *
-from trac.perm import IPermissionPolicy, PermissionSystem
+from trac.config import ConfigurationError, Option
+from trac.perm import PermissionSystem, IPermissionPolicy
+from trac.util import lazy
 from trac.util.text import to_unicode
 
 ConfigObj = None
@@ -130,33 +131,17 @@ class AuthzPolicy(Component):
     """
     implements(IPermissionPolicy)
 
-    authz_file = PathOption('authz_policy', 'authz_file', '',
-                            "Location of authz policy configuration file. "
-                            "Non-absolute paths are relative to the "
-                            "Environment `conf` directory.")
+    authz_file = Option('authz_policy', 'authz_file', '',
+                        'Location of authz policy configuration file.')
 
     authz = None
     authz_mtime = None
-
-    def __init__(self):
-        if not self.authz_file:
-            self.log.error("The `[authz_policy] authz_file` configuration "
-                           "option in trac.ini is empty or not defined.")
-            raise ConfigurationError()
-
-        try:
-            os.stat(self.authz_file)
-        except OSError as e:
-            self.log.error("Error parsing authz permission policy file: %s",
-                           to_unicode(e))
-            raise ConfigurationError()
-        self.groups_by_user = {}
 
     # IPermissionPolicy methods
 
     def check_permission(self, action, username, resource, perm):
         if not self.authz_mtime or \
-                os.path.getmtime(self.authz_file) != self.authz_mtime:
+                os.path.getmtime(self.get_authz_file) != self.authz_mtime:
             self.parse_authz()
         resource_key = self.normalise_resource(resource)
         self.log.debug('Checking %s on %s', action, resource_key)
@@ -179,16 +164,34 @@ class AuthzPolicy(Component):
 
     # Internal methods
 
+    @lazy
+    def get_authz_file(self):
+        if not self.authz_file:
+            self.log.error('The `[authz_policy] authz_file` configuration '
+                           'option in trac.ini is empty or not defined.')
+            raise ConfigurationError()
+
+        authz_file = self.authz_file if os.path.isabs(self.authz_file) \
+                                     else os.path.join(self.env.path,
+                                                       self.authz_file)
+        try:
+            os.stat(authz_file)
+        except OSError, e:
+            self.log.error("Error parsing authz permission policy file: %s",
+                           to_unicode(e))
+            raise ConfigurationError()
+        return authz_file
+
     def parse_authz(self):
         if ConfigObj is None:
             self.log.error("ConfigObj package not found.")
             raise ConfigurationError()
         self.log.debug("Parsing authz security policy %s",
-                       self.authz_file)
+                       self.get_authz_file)
         try:
-            self.authz = ConfigObj(self.authz_file, encoding='utf8',
+            self.authz = ConfigObj(self.get_authz_file, encoding='utf8',
                                    raise_errors=True)
-        except ConfigObjError as e:
+        except ConfigObjError, e:
             self.log.error("Error parsing authz permission policy file: %s",
                            to_unicode(e))
             raise ConfigurationError()
@@ -210,7 +213,7 @@ class AuthzPolicy(Component):
         for group, users in groups.iteritems():
             add_items('@' + group, users)
 
-        self.authz_mtime = os.path.getmtime(self.authz_file)
+        self.authz_mtime = os.path.getmtime(self.get_authz_file)
 
     def normalise_resource(self, resource):
         def to_descriptor(resource):
@@ -257,7 +260,7 @@ class AuthzPolicy(Component):
                     who = to_unicode(who)
                     if who in valid_users or \
                             who in self.groups_by_user.get(username, []):
-                        self.log.debug("%s matched section %s for user %s",
+                        self.log.debug('%s matched section %s for user %s',
                                        resource_key, resource_glob, username)
                         if isinstance(permissions, basestring):
                             return [permissions]

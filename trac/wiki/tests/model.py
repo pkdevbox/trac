@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime
 import shutil
 from StringIO import StringIO
@@ -36,7 +38,6 @@ class TestWikiChangeListener(Component):
         self.deleted = []
         self.deleted_version = []
         self.renamed = []
-        self.comment_modified = []
 
     def wiki_page_added(self, page):
         self.added.append(page)
@@ -52,9 +53,6 @@ class TestWikiChangeListener(Component):
 
     def wiki_page_renamed(self, page, old_name):
         self.renamed.append((page, old_name))
-
-    def wiki_page_comment_modified(self, page, old_comment):
-        self.comment_modified.append((page, old_comment))
 
 
 class TestLegacyWikiChangeListener(TestWikiChangeListener):
@@ -83,7 +81,6 @@ class WikiPageTestCase(unittest.TestCase):
         self.assertEqual('', page.author)
         self.assertEqual('', page.comment)
         self.assertIsNone(page.time)
-        self.assertEqual('<WikiPage None>', repr(page))
 
     def test_existing_page(self):
         t = datetime(2001, 1, 1, 1, 1, 1, 0, utc)
@@ -96,13 +93,12 @@ class WikiPageTestCase(unittest.TestCase):
         self.assertTrue(page.exists)
         self.assertEqual('TestPage', page.name)
         self.assertEqual(1, page.version)
-        self.assertIsNone(page.resource.version)
+        self.assertIsNone(page.resource.version)   # FIXME: Intentional?
         self.assertEqual('Bla bla', page.text)
         self.assertEqual(0, page.readonly)
         self.assertEqual('joe', page.author)
         self.assertEqual('Testing', page.comment)
         self.assertEqual(t, page.time)
-        self.assertEqual("<WikiPage u'TestPage@1'>", repr(page))
 
         history = list(page.get_history())
         self.assertEqual(1, len(history))
@@ -125,7 +121,7 @@ class WikiPageTestCase(unittest.TestCase):
 
         self.assertTrue(page.exists)
         self.assertEqual(1, page.version)
-        self.assertIsNone(page.resource.version)
+        self.assertEqual(1, page.resource.version)
         self.assertEqual(0, page.readonly)
         self.assertEqual('joe', page.author)
         self.assertEqual('Testing', page.comment)
@@ -154,7 +150,7 @@ class WikiPageTestCase(unittest.TestCase):
         page.save('kate', 'Changing', '192.168.0.101', t2)
 
         self.assertEqual(2, page.version)
-        self.assertIsNone(page.resource.version)
+        self.assertEqual(2, page.resource.version)
         self.assertEqual(0, page.readonly)
         self.assertEqual('kate', page.author)
         self.assertEqual('Changing', page.comment)
@@ -275,33 +271,6 @@ class WikiPageTestCase(unittest.TestCase):
         listener = TestWikiChangeListener(self.env)
         self.assertEqual((page, 'TestPage'), listener.renamed[0])
 
-    def test_edit_comment_of_page_version(self):
-        self.env.db_transaction.executemany(
-            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-            [('TestPage', 1, 42, 'joe', '::1', 'Bla bla', 'old 1', 0),
-             ('TestPage', 2, 43, 'kate', '::11', 'Bla', 'old 2', 0)])
-
-        page = WikiPage(self.env, 'TestPage')
-        page.edit_comment('edited comment two')
-
-        old_page = WikiPage(self.env, 'TestPage', 1)
-        old_page.edit_comment('new comment one')
-
-        self.assertEqual('edited comment two', page.comment)
-        self.assertEqual('new comment one', old_page.comment)
-        self.assertEqual(
-            [(1, 42, 'joe', '::1', 'Bla bla', 'new comment one', 0),
-             (2, 43, 'kate', '::11', 'Bla', 'edited comment two', 0)],
-            self.env.db_query("""
-                SELECT version, time, author, ipnr, text, comment, readonly
-                FROM wiki WHERE name=%s
-                ORDER BY version
-                """, ('TestPage',)))
-
-        listener = TestWikiChangeListener(self.env)
-        self.assertEqual((page, 'old 2'), listener.comment_modified[0])
-        self.assertEqual((old_page, 'old 1'), listener.comment_modified[1])
-
     def test_invalid_page_name(self):
         invalid_names = ('../Page', 'Page/..', 'Page/////SubPage',
                          'Page/./SubPage', '/PagePrefix', 'PageSuffix/')
@@ -323,30 +292,20 @@ class WikiPageTestCase(unittest.TestCase):
             self.assertRaises(TracError, page.rename, name)
 
     def test_invalid_version(self):
-        data = [(1, 42, 'joe', '::1', 'First revision', 'Rev1', 0),
-                (2, 42, 'joe', '::1', 'Second revision', 'Rev2', 0)]
-        with self.env.db_transaction as db:
-            for d in data:
-                db("INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-                   ('TestPage',) + d)
+        data = (1, 42, 'joe', '::1', 'Bla bla', 'Testing', 0)
+        self.env.db_transaction(
+            "INSERT INTO wiki VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+            ('TestPage',) + data)
 
-        page = WikiPage(self.env, 'TestPage', '1abc')
-        self.assertEqual(2, page.version)
+        self.assertRaises(ValueError, WikiPage, self.env,
+                          'TestPage', '1abc')
 
         resource = Resource('wiki', 'TestPage')
-        page = WikiPage(self.env, resource, '1abc')
-        self.assertEqual(2, page.version)
+        self.assertRaises(ValueError, WikiPage, self.env,
+                          resource, '1abc')
 
         resource = Resource('wiki', 'TestPage', '1abc')
         page = WikiPage(self.env, resource)
-        self.assertEqual(2, page.version)
-
-        resource = Resource('wiki', 'TestPage', 1)
-        page = WikiPage(self.env, resource)
-        self.assertEqual(1, page.version)
-
-        resource = Resource('wiki', 'TestPage', 2)
-        page = WikiPage(self.env, resource, 1)
         self.assertEqual(1, page.version)
 
 
