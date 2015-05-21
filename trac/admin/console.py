@@ -12,6 +12,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import cmd
 import os.path
 import pkg_resources
@@ -33,7 +35,6 @@ from trac.util.text import console_print, exception_to_unicode, printout, \
                            getpreferredencoding
 from trac.util.translation import _, ngettext, has_babel, cleandoc_
 from trac.versioncontrol.api import RepositoryManager
-from trac.web.chrome import default_mainnav_order, default_metanav_order
 from trac.wiki.admin import WikiAdmin
 from trac.wiki.macros import WikiMacroBase
 
@@ -108,16 +109,16 @@ class TracAdmin(cmd.Cmd):
             rv = cmd.Cmd.onecmd(self, line) or 0
         except SystemExit:
             raise
-        except AdminCommandError as e:
+        except AdminCommandError, e:
             printerr(_("Error: %(msg)s", msg=to_unicode(e)))
             if e.show_usage:
                 print
                 self.do_help(e.cmd or self.arg_tokenize(line)[0])
             rv = 2
-        except TracError as e:
+        except TracError, e:
             printerr(exception_to_unicode(e))
             rv = 2
-        except Exception as e:
+        except Exception, e:
             printerr(exception_to_unicode(e))
             rv = 2
             if self.env_check():
@@ -160,7 +161,7 @@ Type:  '?' or 'help' for help on commands.
             if not self.__env:
                 self._init_env()
             return self.__env
-        except Exception as e:
+        except Exception, e:
             printerr(_("Failed to open environment: %(err)s",
                        err=exception_to_unicode(e, traceback=True)))
             sys.exit(1)
@@ -245,7 +246,7 @@ Type:  '?' or 'help' for help on commands.
         if self.env_check():
             try:
                 comp = self.cmd_mgr.complete_command(args, cmd_only)
-            except Exception as e:
+            except Exception, e:
                 printerr()
                 printerr(_('Completion error: %(err)s',
                            err=exception_to_unicode(e)))
@@ -272,9 +273,9 @@ Type:  '?' or 'help' for help on commands.
                 self._init_env()
             if self.needs_upgrade is None:
                 self.needs_upgrade = self.__env.needs_upgrade()
-        except TracError as e:
+        except TracError, e:
             raise AdminCommandError(to_unicode(e))
-        except Exception as e:
+        except Exception, e:
             raise AdminCommandError(exception_to_unicode(e))
         args = self.arg_tokenize(line)
         if args[0] == 'upgrade':
@@ -447,15 +448,10 @@ in order to initialize and prepare the project database.
                 ('project', 'name', project_name),
                 ('trac', 'database', db_str),
             ]
-            def add_nav_order_options(section, default):
-                for i, name in enumerate(default, 1):
-                    options.append((section, name + '.order', float(i)))
-            add_nav_order_options('mainnav', default_mainnav_order)
-            add_nav_order_options('metanav', default_metanav_order)
             if repository_dir:
                 options.extend([
-                    ('repositories', '.type', repository_type),
-                    ('repositories', '.dir', repository_dir),
+                    ('trac', 'repository_type', repository_type),
+                    ('trac', 'repository_dir', repository_dir),
                 ])
             if inherit_paths:
                 options.append(('inherit', 'file',
@@ -463,7 +459,7 @@ in order to initialize and prepare the project database.
             try:
                 self.__env = Environment(self.envname, create=True,
                                          options=options)
-            except Exception as e:
+            except Exception, e:
                 initenv_error(_('Failed to create environment.'))
                 printerr(e)
                 traceback.print_exc()
@@ -481,7 +477,7 @@ in order to initialize and prepare the project database.
                     if repos:
                         printout(_(" Indexing default repository"))
                         repos.sync(self._resync_feedback)
-                except TracError as e:
+                except TracError, e:
                     printerr(_("""
 ---------------------------------------------------------------------
 Warning: couldn't index the default repository.
@@ -494,7 +490,7 @@ You can nevertheless start using your Trac environment, but
 you'll need to check again your trac.ini file and the [trac]
 repository_type and repository_path settings.
 """))
-        except Exception as e:
+        except Exception, e:
             initenv_error(to_unicode(e))
             traceback.print_exc()
             return 2

@@ -63,7 +63,7 @@ class WikiParser(Component):
 
     PROCESSOR = r"(\s*)#\!([\w+-][\w+-/]*)"
     PROCESSOR_PARAM = r'''(?P<proc_pname>[-\w]+)''' \
-                      r'''=(?P<proc_pval>".*?"|'.*?'|[-,\w]+)'''
+                      r'''=(?P<proc_pval>".*?"|'.*?'|[-\w]+)'''
 
     def _set_anchor(name, sep):
         return r'=#(?P<anchorname>%s)(?:%s(?P<anchorlabel>[^\]]*))?' % \
@@ -239,8 +239,8 @@ def parse_processor_args(processor_args):
     >>> parse_processor_args('ab="c de -f gh=ij" -')
     {'ab': 'c de -f gh=ij'}
 
-    >>> sorted(parse_processor_args('ab=c de -f gh="ij klmn" p=q-r,s').items())
-    [('ab', 'c'), ('de', True), ('f', False), ('gh', 'ij klmn'), ('p', 'q-r,s')]
+    >>> sorted(parse_processor_args('ab=c de -f gh="ij klmn"').items())
+    [('ab', 'c'), ('de', True), ('f', False), ('gh', 'ij klmn')]
 
     >>> args = 'data-name=foo-bar data-true -data-false'
     >>> sorted(parse_processor_args(args).items())

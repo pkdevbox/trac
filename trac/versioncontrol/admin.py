@@ -207,8 +207,7 @@ class RepositoryAdminPanel(Component):
                     valid = True
                     for field in db_provider.repository_attrs:
                         value = normalize_whitespace(req.args.get(field))
-                        if (value is not None
-                            or field in ('hidden', 'sync_per_request')) \
+                        if (value is not None or field == 'hidden') \
                                 and value != info.get(field):
                             changes[field] = value
                     if 'dir' in changes and not \
@@ -218,9 +217,9 @@ class RepositoryAdminPanel(Component):
                         db_provider.modify_repository(reponame, changes)
                         add_notice(req, _('Your changes have been saved.'))
                         name = req.args.get('name')
-                        resync = tag.code('trac-admin %s repository resync '
-                                          '"%s"' % (self.env.path,
-                                                    name or '(default)'))
+                        resync = tag.tt('trac-admin %s repository resync '
+                                        '"%s"' % (self.env.path,
+                                                  name or '(default)'))
                         if 'dir' in changes:
                             msg = tag_('You should now run %(resync)s to '
                                        'synchronize Trac with the repository.',
@@ -232,10 +231,10 @@ class RepositoryAdminPanel(Component):
                                        resync=resync)
                             add_notice(req, msg)
                         if name and name != path_info and not 'alias' in info:
-                            cset_added = tag.code('trac-admin %s changeset '
-                                                  'added "%s" $REV'
-                                                  % (self.env.path,
-                                                     name or '(default)'))
+                            cset_added = tag.tt('trac-admin %s changeset '
+                                                'added "%s" $REV'
+                                                % (self.env.path,
+                                                   name or '(default)'))
                             msg = tag_('You will need to update your '
                                        'post-commit hook to call '
                                        '%(cset_added)s with the new '
@@ -270,15 +269,15 @@ class RepositoryAdminPanel(Component):
                         name = name or '(default)'
                         add_notice(req, _('The repository "%(name)s" has been '
                                           'added.', name=name))
-                        resync = tag.code('trac-admin %s repository resync '
-                                           '"%s"' % (self.env.path, name))
+                        resync = tag.tt('trac-admin %s repository resync '
+                                        '"%s"' % (self.env.path, name))
                         msg = tag_('You should now run %(resync)s to '
                                    'synchronize Trac with the repository.',
                                    resync=resync)
                         add_notice(req, msg)
-                        cset_added = tag.code('trac-admin %s changeset '
-                                              'added "%s" $REV'
-                                              % (self.env.path, name))
+                        cset_added = tag.tt('trac-admin %s changeset '
+                                            'added "%s" $REV'
+                                            % (self.env.path, name))
                         doc = tag.a(_("documentation"),
                                     href=req.href.wiki('TracRepositoryAdmin')
                                          + '#Synchronization')
@@ -334,8 +333,7 @@ class RepositoryAdminPanel(Component):
                                                          reponame in db_repos))
                             for (reponame, info) in all_repos.iteritems())
         types = sorted([''] + rm.get_supported_types())
-        data.update({'types': types,
-                     'default_type': rm.default_repository_type,
+        data.update({'types': types, 'default_type': rm.repository_type,
                      'repositories': repositories})
 
         return 'admin_repositories.html', data
@@ -344,14 +342,13 @@ class RepositoryAdminPanel(Component):
         """Extend repository info for rendering."""
         info['name'] = reponame
         info['hidden'] = as_bool(info.get('hidden'))
-        info['sync_per_request'] = as_bool(info.get('sync_per_request'))
         info['editable'] = editable
         if not info.get('alias'):
             if info.get('dir') is not None:
                 info['prettydir'] = breakable_path(info['dir']) or ''
             try:
                 repos = RepositoryManager(self.env).get_repository(reponame)
-            except InvalidRepository as e:
+            except InvalidRepository, e:
                 info['error'] = e
             except TracError:
                 pass  # Probably "unsupported connector"

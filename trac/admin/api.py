@@ -125,10 +125,10 @@ class AdminCommandManager(Component):
                     fargs = args[len(parts):]
                     try:
                         return f(*fargs)
-                    except AdminCommandError as e:
+                    except AdminCommandError, e:
                         e.cmd = ' '.join(parts)
                         raise
-                    except TypeError as e:
+                    except TypeError, e:
                         tb = traceback.extract_tb(sys.exc_info()[2])
                         if len(tb) == 1:
                             raise AdminCommandError(_("Invalid arguments"),

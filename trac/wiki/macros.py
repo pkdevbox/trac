@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from fnmatch import fnmatchcase
 from itertools import groupby
 import inspect
@@ -38,10 +40,8 @@ from trac.wiki.api import IWikiMacroProvider, WikiSystem, parse_args
 from trac.wiki.formatter import (
     format_to_html, format_to_oneliner, extract_link, OutlineFormatter
 )
-from trac.wiki.interwiki import InterWikiMap
 
 
-# TODO: should be moved in .api
 class WikiMacroBase(Component):
     """Abstract base class for wiki macros."""
 
@@ -86,14 +86,9 @@ class TitleIndexMacro(WikiMacroBase):
 
     Accepts a prefix string as parameter: if provided, only pages with names
     that start with the prefix are included in the resulting list. If this
-    parameter is omitted, all pages are listed. If the prefix is specified,
-    a second argument of value `hideprefix` can be given as well, in order
-    to remove that prefix from the output.
-
-    The prefix string supports the standard relative-path notation ''when
-    using the macro in a wiki page''. A prefix string starting with `./`
-    will be relative to the current page, and parent pages can be
-    specified using `../`.
+    parameter is omitted, all pages are listed.
+    If the prefix is specified, a second argument of value `hideprefix`
+    can be given as well, in order to remove that prefix from the output.
 
     Alternate `format` and `depth` named parameters can be specified:
      - `format=compact`: The pages are displayed as comma-separated links.
@@ -126,6 +121,7 @@ class TitleIndexMacro(WikiMacroBase):
         minsize = max(int(kw.get('min', 1)), 1)
         minsize_group = max(minsize, 2)
         depth = int(kw.get('depth', -1))
+        start = prefix.count('/') if prefix else 0
         format = kw.get('format', '')
 
         def parse_list(name):
@@ -135,17 +131,12 @@ class TitleIndexMacro(WikiMacroBase):
         includes = parse_list('include') or ['*']
         excludes = parse_list('exclude')
 
-        wiki = formatter.wiki
-        resource = formatter.resource
-        if prefix and resource and resource.realm == 'wiki':
-            prefix = wiki.resolve_relative_name(prefix, resource.id)
-
-        start = prefix.count('/') if prefix else 0
-
         if hideprefix:
             omitprefix = lambda page: page[len(prefix):]
         else:
             omitprefix = lambda page: page
+
+        wiki = formatter.wiki
 
         pages = sorted(page for page in wiki.get_pages(prefix)
                        if (depth < 0 or depth >= page.count('/') - start)
@@ -461,15 +452,14 @@ class ImageMacro(WikiMacroBase):
      * `file` to refer to a local attachment named 'file'. This only works from
        within that wiki page or a ticket.
 
-    The file specification may also refer to:
-     * repository files, using the `source:file` syntax
-       (`source:file@rev` works also).
-     * files, using direct URLs: `/file` for a project-relative,
-       `//file` for a server-relative, or `http://server/file` for
-       absolute location. An InterWiki prefix may be used.
-     * embedded data using the
-       [http://tools.ietf.org/html/rfc2397 rfc2397] `data` URL scheme,
-       provided the URL is enclosed in quotes.
+    Also, the file specification may refer to repository files, using the
+    `source:file` syntax (`source:file@rev` works also).
+
+    Files can also be accessed with a direct URLs; `/file` for a
+    project-relative, `//file` for a server-relative, or `http://server/file`
+    for absolute location of the file. The
+    [http://tools.ietf.org/html/rfc2397 rfc2397] `data` URL scheme is also
+    supported if the URL is enclosed in quotes.
 
     The remaining arguments are optional and allow configuring the attributes
     and style of the rendered `<img>` element:
@@ -606,16 +596,11 @@ class ImageMacro(WikiMacroBase):
         # parse filespec argument to get realm and id if contained.
         parts = [i.strip('''['"]''')
                  for i in self._split_filespec_re.split(filespec)[1::2]]
-        realm = parts[0] if parts else None
         url = raw_url = desc = None
         attachment = None
-        interwikimap = InterWikiMap(self.env)
-        if realm in ('http', 'https', 'ftp', 'data'):  # absolute
+        if parts and parts[0] in ('http', 'https', 'ftp', 'data'):  # absolute
             raw_url = url = filespec
             desc = url.rsplit('?')[0]
-        elif realm in interwikimap:
-            url, desc = interwikimap.url(realm, ':'.join(parts[1:]))
-            raw_url = url
         elif filespec.startswith('//'):       # server-relative
             raw_url = url = filespec[1:]
             desc = url.rsplit('?')[0]
@@ -723,7 +708,7 @@ class MacroListMacro(WikiMacroBase):
                     name_descriptions = [
                         (name, macro_provider.get_macro_description(name))
                         for name in names]
-                except Exception as e:
+                except Exception, e:
                     yield system_message(
                         _("Error: Can't get description for macro %(name)s",
                           name=names[0]), e), names
@@ -806,7 +791,7 @@ class TracIniMacro(WikiMacroBase):
             (tag.h3(tag.code('[%s]' % section), id='%s-section' % section),
              format_to_html(self.env, formatter.context, section_doc),
              tag.table(class_='wiki')(tag.tbody(
-                 tag.tr(tag.td(tag.code(option.name)),
+                 tag.tr(tag.td(tag.tt(option.name)),
                         tag.td(format_to_oneliner(
                             self.env, formatter.context, getdoc(option))),
                         default_cell(option),
@@ -848,7 +833,7 @@ class KnownMimeTypesMacro(WikiMacroBase):
                                  href=formatter.context.href.wiki(
                                      'WikiProcessors'))))),
                 tag.tbody(
-                    tag.tr(tag.th(tag.code(mime_type),
+                    tag.tr(tag.th(tag.tt(mime_type),
                                   style="text-align: left"),
                            tag.td(tag.code(
                                ' '.join(sorted(mime_types[mime_type])))))

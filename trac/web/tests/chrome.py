@@ -18,10 +18,8 @@ import unittest
 
 from genshi.builder import tag
 import trac.tests.compat
-from trac.config import ConfigurationError
 from trac.core import Component, TracError, implements
-from trac.perm import PermissionSystem
-from trac.test import EnvironmentStub, MockPerm, locale_en
+from trac.test import EnvironmentStub, locale_en
 from trac.tests.contentgen import random_sentence
 from trac.util import create_file
 from trac.web.chrome import (
@@ -32,7 +30,6 @@ from trac.web.href import Href
 
 class Request(object):
     locale = None
-    perm = MockPerm()
     args = {}
     def __init__(self, **kwargs):
         self.chrome = {}
@@ -40,25 +37,17 @@ class Request(object):
             setattr(self, k, v)
 
 
-def clear_component_registry(tc):
-    from trac.core import ComponentMeta
-    tc._old_registry = ComponentMeta._registry
-    ComponentMeta._registry = {}
-
-
-def restore_component_registry(tc):
-    from trac.core import ComponentMeta
-    ComponentMeta._registry = tc._old_registry
-
-
 class ChromeTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub()
-        clear_component_registry(self)
+        from trac.core import ComponentMeta
+        self._old_registry = ComponentMeta._registry
+        ComponentMeta._registry = {}
 
     def tearDown(self):
-        restore_component_registry(self)
+        from trac.core import ComponentMeta
+        ComponentMeta._registry = self._old_registry
 
     def _get_navigation_item(self, items, name):
         for item in items:
@@ -262,13 +251,14 @@ class ChromeTestCase(unittest.TestCase):
         links = chrome.prepare_request(req)['links']
         self.assertEqual('/trac.cgi/chrome/common/foo.ico',
                          links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('/trac.cgi/chrome/common/foo.ico',
+                         links['shortcut icon'][0]['href'])
 
         # URL relative to the server root for icon config option
         self.env.config.set('project', 'icon', '/favicon.ico')
         links = chrome.prepare_request(req)['links']
         self.assertEqual('/favicon.ico', links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('/favicon.ico', links['shortcut icon'][0]['href'])
 
         # Absolute URL for icon config option
         self.env.config.set('project', 'icon',
@@ -276,7 +266,8 @@ class ChromeTestCase(unittest.TestCase):
         links = chrome.prepare_request(req)['links']
         self.assertEqual('http://example.com/favicon.ico',
                          links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('http://example.com/favicon.ico',
+                         links['shortcut icon'][0]['href'])
 
     def test_nav_contributor(self):
         class TestNavigationContributor(Component):
@@ -309,6 +300,50 @@ class ChromeTestCase(unittest.TestCase):
         self.assertEqual({'name': 'test', 'label': 'Test', 'active': True},
                          nav['metanav'][0])
 
+    def test_nav_contributor_order(self):
+        class TestNavigationContributor1(Component):
+            implements(INavigationContributor)
+            def get_active_navigation_item(self, req):
+                return None
+            def get_navigation_items(self, req):
+                yield 'metanav', 'test1', 'Test 1'
+        class TestNavigationContributor2(Component):
+            implements(INavigationContributor)
+            def get_active_navigation_item(self, req):
+                return None
+            def get_navigation_items(self, req):
+                yield 'metanav', 'test2', 'Test 2'
+        req = Request(abs_href=Href('http://example.org/trac.cgi'),
+                      href=Href('/trac.cgi'), base_path='/trac.cgi',
+                      path_info='/',
+                      add_redirect_listener=lambda listener: None)
+        chrome = Chrome(self.env)
+
+        # Test with both items set in the order option
+        self.env.config.set('trac', 'metanav', 'test2, test1')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test2', items[0]['name'])
+        self.assertEqual('test1', items[1]['name'])
+
+        # Test with only test1 in the order options
+        self.env.config.set('trac', 'metanav', 'test1')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test1', items[0]['name'])
+        self.assertEqual('test2', items[1]['name'])
+
+        # Test with only test2 in the order options
+        self.env.config.set('trac', 'metanav', 'test2')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test2', items[0]['name'])
+        self.assertEqual('test1', items[1]['name'])
+
+        # Test with none in the order options (order corresponds to
+        # registration order)
+        self.env.config.set('trac', 'metanav', 'foo, bar')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test1', items[0]['name'])
+        self.assertEqual('test2', items[1]['name'])
+
     def test_add_jquery_ui_timezone_list_has_z(self):
         chrome = Chrome(self.env)
 
@@ -321,47 +356,6 @@ class ChromeTestCase(unittest.TestCase):
         chrome.add_jquery_ui(req)
         self.assertIn({'value': 'Z', 'label': '+00:00'},
                       req.chrome['script_data']['jquery_ui']['timezone_list'])
-
-    def test_invalid_default_dateinfo_format_raises_exception(self):
-        self.env.config.set('trac', 'default_dateinfo_format', u'ābšolute')
-
-        self.assertEqual(u'ābšolute',
-                         self.env.config.get('trac', 'default_dateinfo_format'))
-        self.assertRaises(ConfigurationError, getattr, Chrome(self.env),
-                          'default_dateinfo_format')
-
-    def test_authorinfo(self):
-        chrome = Chrome(self.env)
-        req = Request()
-
-        self.assertEqual('<span class="trac-author-anonymous">anonymous</span>',
-                         str(chrome.authorinfo(req, 'anonymous')))
-        self.assertEqual('<span class="trac-author">(none)</span>',
-                         str(chrome.authorinfo(req, '(none)')))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo(req, None)))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo(req, '')))
-        self.assertEqual('<span class="trac-author">user@example.org</span>',
-                         str(chrome.authorinfo(req, 'user@example.org')))
-        self.assertEqual('<span class="trac-author">User One &lt;user@example.org&gt;</span>',
-                         str(chrome.authorinfo(req, 'User One <user@example.org>')))
-
-    def test_authorinfo_short(self):
-        chrome = Chrome(self.env)
-
-        self.assertEqual('<span class="trac-author-anonymous">anonymous</span>',
-                         str(chrome.authorinfo_short('anonymous')))
-        self.assertEqual('<span class="trac-author">(none)</span>',
-                         str(chrome.authorinfo_short('(none)')))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo_short(None)))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo_short('')))
-        self.assertEqual('<span class="trac-author">user</span>',
-                         str(chrome.authorinfo_short('User One <user@example.org>')))
-        self.assertEqual('<span class="trac-author">user</span>',
-                         str(chrome.authorinfo_short('user@example.org')))
 
     def test_navigation_item_customization(self):
         class TestNavigationContributor1(Component):
@@ -446,9 +440,6 @@ class ChromeTestCase2(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.env.path)
 
-    def test_permission_requestor(self):
-        self.assertIn('EMAIL_VIEW', PermissionSystem(self.env).get_actions())
-
     def test_malicious_filename_raises(self):
         req = Request(path_info='/chrome/site/../conf/trac.ini')
         self.assertTrue(self.chrome.match_request(req))
@@ -475,71 +466,10 @@ class ChromeTestCase2(unittest.TestCase):
         self.assertRaises(RequestDone, self.chrome.process_request, req)
 
 
-class NavigationOrderTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub()
-        clear_component_registry(self)
-        self.req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                           href=Href('/trac.cgi'), base_path='/trac.cgi',
-                           path_info='/',
-                           add_redirect_listener=lambda listener: None)
-        self.chrome = Chrome(self.env)
-
-        class TestNavigationContributor1(Component):
-            implements(INavigationContributor)
-            def get_active_navigation_item(self, req):
-                return None
-            def get_navigation_items(self, req):
-                yield 'metanav', 'test1', 'Test 1'
-
-        class TestNavigationContributor2(Component):
-            implements(INavigationContributor)
-            def get_active_navigation_item(self, req):
-                return None
-            def get_navigation_items(self, req):
-                yield 'metanav', 'test2', 'Test 2'
-
-    def tearDown(self):
-        restore_component_registry(self)
-
-    def test_explicit_ordering(self):
-        """Ordering is explicitly specified."""
-        self.env.config.set('metanav', 'test1.order', 2)
-        self.env.config.set('metanav', 'test2.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
-
-    def test_partial_explicit_ordering_1(self):
-        """Ordering for one item is explicitly specified."""
-        self.env.config.set('metanav', 'test1.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
-
-    def test_partial_explicit_ordering_2(self):
-        """Ordering for one item is explicitly specified."""
-        self.env.config.set('metanav', 'test2.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
-
-    def test_implicit_ordering(self):
-        """When not specified, ordering is alphabetical."""
-        self.env.config.set('metanav', 'foo.order', 1)
-        self.env.config.set('metanav', 'bar.order', 2)
-
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(ChromeTestCase))
     suite.addTest(unittest.makeSuite(ChromeTestCase2))
-    suite.addTest(unittest.makeSuite(NavigationOrderTestCase))
     return suite
 
 
