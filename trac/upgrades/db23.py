@@ -1,16 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2009-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
-
 from trac.db import Table, Column, Index, DatabaseManager
 
 def do_upgrade(env, ver, cursor):
@@ -21,7 +8,7 @@ def do_upgrade(env, ver, cursor):
     cursor.execute("CREATE TEMPORARY TABLE nc_old "
                    "AS SELECT * FROM node_change")
     cursor.execute("DROP TABLE node_change")
-
+    
     tables = [Table('repository', key=('id', 'name'))[
                 Column('id'),
                 Column('name'),
@@ -42,12 +29,12 @@ def do_upgrade(env, ver, cursor):
                 Column('base_path'),
                 Column('base_rev'),
                 Index(['repos', 'rev'])]]
-
+    
     db_connector, _ = DatabaseManager(env)._get_connector()
     for table in tables:
         for stmt in db_connector.to_sql(table):
             cursor.execute(stmt)
-
+    
     cursor.execute("INSERT INTO revision (repos,rev,time,author,message) "
                    "SELECT '',rev,time,author,message FROM rev_old")
     cursor.execute("DROP TABLE rev_old")
@@ -56,7 +43,7 @@ def do_upgrade(env, ver, cursor):
                    "SELECT '',rev,path,node_type,change_type,base_path,"
                    "base_rev FROM nc_old")
     cursor.execute("DROP TABLE nc_old")
-
+    
     cursor.execute("INSERT INTO repository (id,name,value) "
                    "SELECT '',name,value FROM system "
                    "WHERE name IN ('repository_dir', 'youngest_rev')")

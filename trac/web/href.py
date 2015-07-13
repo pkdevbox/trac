@@ -16,12 +16,7 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
-import re
-
 from trac.util.text import unicode_quote, unicode_urlencode
-
-
-slashes_re = re.compile(r'/{2,}')
 
 
 class Href(object):
@@ -33,8 +28,6 @@ class Href(object):
     the path of the URL:
 
     >>> href = Href('/trac')
-    >>> repr(href)
-    "<Href '/trac'>"
     >>> href('ticket', 540)
     '/trac/ticket/540'
     >>> href('ticket', 540, 'attachment', 'bugfix.patch')
@@ -125,11 +118,10 @@ class Href(object):
     '/trac/ticket/540'
     >>> href.browser('/trunk/README.txt', format='txt')
     '/trac/browser/trunk/README.txt?format=txt'
-
-    The ``path_safe`` argument specifies the characters that don't
-    need to be quoted in the path arguments. Likewise, the
-    ``query_safe`` argument specifies the characters that don't need
-    to be quoted in the query string:
+    
+    The path_safe argument specifies the characters that don't need to be
+    quoted in the path arguments. Likewise, the query_safe argument specifies
+    the characters that don't need to be quoted in the query string:
 
     >>> href = Href('')
     >>> href.milestone('<look,here>', param='<here,too>')
@@ -145,9 +137,6 @@ class Href(object):
         self.path_safe = path_safe
         self.query_safe = query_safe
         self._derived = {}
-
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.base)
 
     def __call__(self, *args, **kw):
         href = self.base
@@ -175,13 +164,13 @@ class Href(object):
         path = '/'.join(unicode_quote(unicode(arg).strip('/'), self.path_safe)
                         for arg in args if arg is not None)
         if path:
-            href += '/' + slashes_re.sub('/', path).lstrip('/')
+            href += '/' + path
         elif not href:
             href = '/'
 
         # assemble the query string
         for k, v in kw.items():
-            add_param(k[:-1] if k.endswith('_') else k, v)
+            add_param(k.endswith('_') and k[:-1] or k, v)
         if params:
             href += '?' + unicode_urlencode(params, self.query_safe)
 
@@ -192,17 +181,12 @@ class Href(object):
             self._derived[name] = lambda *args, **kw: self(name, *args, **kw)
         return self._derived[name]
 
-    _printable_safe = ''.join(map(chr, xrange(0x21, 0x7f)))
-
     def __add__(self, rhs):
-        if not rhs:
-            return self.base or '/'
-        if rhs.startswith('?'):
-            return (self.base or '/') + \
-                   unicode_quote(rhs, self._printable_safe)
-        if not rhs.startswith('/'):
-            rhs = '/' + rhs
-        return self.base + unicode_quote(rhs, self._printable_safe)
+        if rhs.startswith('/'):
+            return self.base + rhs
+        if rhs:
+            return self.base + '/' + rhs
+        return self.base or '/'
 
 
 if __name__ == '__main__':

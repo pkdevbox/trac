@@ -1,16 +1,5 @@
-# -*- coding: utf-8 -*-
-#
 # Copyright (C) 2013 Edgewall Software
-# Copyright (C) 2013 Christian Boos <cboos@edgewall.org>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
+# This file is distributed under the same license as the Trac project.
 
 """
 
@@ -30,9 +19,9 @@ committing:
 
 Example workflow 2), force a pull of all changes from Transifex::
 
-  make update updateopts=-N
+  make update
   tx pull -f
-  make update updateopts=-N
+  make update
   svn diff > tx.diff
   python l10n_diff_index.py tx.diff
   svn revert -R .
@@ -49,8 +38,6 @@ This makes it easier to go through the potentially interesting changes
 only, and apply the corresponding chunks if needed.
 
 """
-
-from __future__ import print_function
 
 from bisect import bisect_left
 import re
@@ -87,18 +74,16 @@ def index_diffs(path, diffs):
     return index
 
 def write_index_for(path):
-    with open(path, 'rb') as f:
-        diffs = unicode(f.read(), 'utf-8')
+    diffs = unicode(file(path, 'rb').read(), 'utf-8')
     changes = index_diffs(path, diffs)
     if changes:
         index = path + '.index'
-        with open(index, 'wb') as idx:
+        with file(index, 'wb') as idx:
             for n, line in changes:
-                print((u"%s:%s: %s" % (path, n, line)).encode('utf-8'),
-                      file=idx)
-        print("%s: %d changes indexed in %s" % (path, len(changes), index))
+                print>>idx, (u"%s:%s: %s" % (path, n, line)).encode('utf-8')
+        print "%s: %d changes indexed in %s" % (path, len(changes), index)
     else:
-        print("%s: no interesting changes" % path)
+        print "%s: no interesting changes" % (path,)
 
 if __name__ == '__main__':
     import sys

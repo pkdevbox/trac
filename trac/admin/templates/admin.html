@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -27,12 +17,12 @@
       <div id="tabs">
         <ul py:for="category, panels in groupby(panels, lambda p: p.category)"
             py:with="cat_is_active = category.id == active_cat">
-          <li class="${'active' if cat_is_active else None}">
+          <li class="${cat_is_active and 'active' or None}">
             ${category.label}
             <ul>
               <li py:for="panel in panels" py:with="panel = panel.panel;
                       pan_is_active = cat_is_active and panel.id == active_panel"
-                  class="${'active' if pan_is_active else None}">
+                  class="${pan_is_active and 'active' or None}">
                 <a href="${href.admin(category.id, panel.id)}">${panel.label}</a>
               </li>
             </ul>

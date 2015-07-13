@@ -89,11 +89,11 @@
               .appendTo("body");
 
             // workaround non-clickable "Close" issue in Firefox
-            if ($.browser.mozilla || $.browser.webkit)
+            if ($.browser.mozilla || $.browser.safari)
               message.find("div.inlinebuttons").next().css("clear", "right");
   
             show();
-          }, 'html');
+          });
         } else if (message_is_visible) {
           hide();
         } else {

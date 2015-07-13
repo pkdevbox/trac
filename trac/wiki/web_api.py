@@ -12,20 +12,16 @@
 # history and logs, available at http://trac.edgewall.org/log/.
 
 from trac.core import *
+from trac.mimeview.api import Context
 from trac.resource import Resource
-from trac.util import as_int
 from trac.web.api import IRequestHandler
-from trac.web.chrome import chrome_info_script, web_context
-from trac.wiki.api import WikiSystem
 from trac.wiki.formatter import format_to
-
+ 
 
 class WikiRenderer(Component):
     """Wiki text renderer."""
 
     implements(IRequestHandler)
-
-    is_valid_default_handler = False
 
     # IRequestHandler methods
 
@@ -38,9 +34,14 @@ class WikiRenderer(Component):
         # requests from TRAC_ADMIN for testing purposes.
         if req.method != 'POST':
             req.perm.require('TRAC_ADMIN')
-        realm = req.args.get('realm', WikiSystem.realm)
+        realm = req.args.get('realm', 'wiki')
         id = req.args.get('id')
-        version = as_int(req.args.get('version'), None)
+        version = req.args.get('version')
+        if version is not None:
+            try:
+                version = int(version)
+            except ValueError:
+                version = None
         text = req.args.get('text', '')
         flavor = req.args.get('flavor')
         options = {}
@@ -49,9 +50,8 @@ class WikiRenderer(Component):
                                                   or 0))
         if 'shorten' in req.args:
             options['shorten'] = bool(int(req.args['shorten'] or 0))
-
+        
         resource = Resource(realm, id=id, version=version)
-        context = web_context(req, resource)
-        rendered = format_to(self.env, flavor, context, text, **options) + \
-                   chrome_info_script(req)
+        context = Context.from_request(req, resource)
+        rendered = format_to(self.env, flavor, context, text, **options)
         req.send(rendered.encode('utf-8'))

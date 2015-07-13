@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2015 Edgewall Software
@@ -17,9 +17,9 @@ import sys
 from pkg_resources import resource_listdir, resource_string
 
 from trac.loader import load_components
+from trac.mimeview.api import Context
 from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.util.text import printout
-from trac.web.chrome import web_context
 from trac.web.href import Href
 from trac.wiki.formatter import Formatter
 from trac.wiki.model import WikiPage
@@ -135,10 +135,13 @@ def download_default_pages(names, prefix):
             response = conn.getresponse()
             content = response.read()
         if response.status == 200 and content:
-            with open('trac/wiki/default-pages/' + name, 'w') as f:
+            f = open('trac/wiki/default-pages/' + name, 'w')
+            try:
                 lines = content.replace('\r\n', '\n').splitlines(True)
                 f.write(''.join(line for line in lines
                                      if line.strip() != '[[TranslatedPages]]'))
+            finally:
+                f.close()
             sys.stdout.write('\tdone.\n')
         else:
             sys.stdout.write('\tmissing or empty.\n')
@@ -160,13 +163,15 @@ def main():
 
     env = EnvironmentStub()
     load_components(env)
-    with env.db_transaction:
+
+    @env.with_transaction()
+    def prepare_pages(db):
         for name in names:
             wiki = WikiPage(env, name)
             wiki.text = resource_string('trac.wiki', 'default-pages/' +
                                         name).decode('utf-8')
             if wiki.text:
-                wiki.save('trac', '')
+                wiki.save('trac', '', '::1')
             else:
                 printout('%s: Skipped empty page' % name)
 
@@ -176,7 +181,7 @@ def main():
         wiki = WikiPage(env, name)
         if not wiki.exists:
             continue
-        context = web_context(req, wiki.resource)
+        context = Context.from_request(req, wiki.resource)
         out = DummyIO()
         DefaultWikiChecker(env, context, name).format(wiki.text, out)
 

@@ -1,16 +1,5 @@
-# -*- coding: utf-8 -*-
-#
 # Copyright (C) 2013 Edgewall Software
-# Copyright (C) 2013 Christian Boos <cboos@edgewall.org>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
+# This file is distributed under the same license as the Trac project.
 
 """
 
@@ -39,7 +28,7 @@ msgid_msgstr_re = re.compile(r'''
     ''', re.MULTILINE | re.VERBOSE)
 
 def reset_file(path):
-    with open(path, 'rb+') as f:
+    with file(path, 'rb+') as f:
         eol = '\r\n'
         content = f.read()
         if eol not in content:

@@ -10,7 +10,7 @@
     <image py:if="chrome.logo.src_abs">
       <title>$project.name</title>
       <url>$chrome.logo.src_abs</url>
-      <link>${abs_href.report(report.id if report.id != -1 else '')}</link>
+      <link>${abs_href.report(report.id != -1 and report.id or '')}</link>
     </image>
     <generator>Trac v${trac.version}</generator>
 
@@ -31,7 +31,7 @@
                   <title>#$row.id: $cell.value</title>
                 </py:when>
                 <py:when test="col == 'description'">
-                  <description>${unicode(wiki_to_html(context.child(row.resource), cell.value))}</description>
+                  <description>${unicode(wiki_to_html(context(row.resource), cell.value))}</description>
                 </py:when>
               </py:choose>
             </py:with>

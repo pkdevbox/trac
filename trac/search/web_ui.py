@@ -21,17 +21,17 @@ from genshi.builder import tag
 
 from trac.config import IntOption, ListOption
 from trac.core import *
+from trac.mimeview import Context
 from trac.perm import IPermissionRequestor
 from trac.search.api import ISearchSource
-from trac.util.datefmt import format_datetime, user_time
+from trac.util.datefmt import format_datetime
 from trac.util.html import find_element
 from trac.util.presentation import Paginator
 from trac.util.text import quote_query_string
 from trac.util.translation import _
-from trac.web.api import IRequestHandler
-from trac.web.chrome import (INavigationContributor, ITemplateProvider,
-                             add_link, add_stylesheet, add_warning,
-                             web_context)
+from trac.web import IRequestHandler
+from trac.web.chrome import add_link, add_stylesheet, add_warning, \
+                            INavigationContributor, ITemplateProvider
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import extract_link
 
@@ -42,15 +42,13 @@ class SearchModule(Component):
                ITemplateProvider, IWikiSyntaxProvider)
 
     search_sources = ExtensionPoint(ISearchSource)
-
+    
     RESULTS_PER_PAGE = 10
 
     min_query_length = IntOption('search', 'min_query_length', 3,
-        """Minimum length of query string allowed when performing a search.
-        """)
+        """Minimum length of query string allowed when performing a search.""")
 
-    default_disabled_filters = ListOption('search',
-                                          'default_disabled_filters',
+    default_disabled_filters = ListOption('search', 'default_disabled_filters',
         doc="""Specifies which search filters should be disabled by
                default on the search page. This will also restrict the
                filters for the quick search function. The filter names
@@ -60,7 +58,7 @@ class SearchModule(Component):
                the `get_search_filters()` method, the first member of
                returned tuple. Once disabled, search filters can still
                be manually enabled by the user on the search page.
-               (''since 0.12'')""")
+               (since 0.12)""")
 
     # INavigationContributor methods
 
@@ -80,8 +78,7 @@ class SearchModule(Component):
     # IRequestHandler methods
 
     def match_request(self, req):
-        return re.match(r'/search(?:/opensearch)?$', req.path_info) \
-               is not None
+        return re.match(r'/search(?:/opensearch)?$', req.path_info) is not None
 
     def process_request(self, req):
         req.perm.assert_permission('SEARCH_VIEW')
@@ -95,7 +92,7 @@ class SearchModule(Component):
         for source in self.search_sources:
             available_filters.extend(source.get_search_filters(req) or [])
         available_filters.sort(key=lambda f: f[1].lower())
-
+        
         filters = self._get_selected_filters(req, available_filters)
         data = self._prepare_data(req, query, available_filters, filters)
         if query:
@@ -142,8 +139,7 @@ class SearchModule(Component):
     # IRequestHandler helper methods
 
     def _get_selected_filters(self, req, available_filters):
-        """Return selected filters or the default filters if none was
-        selected.
+        """Return selected filters or the default filters if none was selected.
         """
         filters = [f[0] for f in available_filters if f[0] in req.args]
         if not filters:
@@ -151,7 +147,7 @@ class SearchModule(Component):
                        if f[0] not in self.default_disabled_filters and
                        (len(f) < 3 or len(f) > 2 and f[2])]
         return filters
-
+        
     def _prepare_data(self, req, query, available_filters, filters):
         return {'filters': [{'name': f[0], 'label': f[1],
                              'active': f[0] in filters}
@@ -161,14 +157,14 @@ class SearchModule(Component):
     def _check_quickjump(self, req, kwd):
         """Look for search shortcuts"""
         noquickjump = int(req.args.get('noquickjump', '0'))
-        # Source quickjump  FIXME: delegate to ISearchSource.search_quickjump
+        # Source quickjump   FIXME: delegate to ISearchSource.search_quickjump
         quickjump_href = None
         if kwd[0] == '/':
             quickjump_href = req.href.browser(kwd)
             name = kwd
             description = _('Browse repository path %(path)s', path=kwd)
         else:
-            context = web_context(req, 'search')
+            context = Context.from_request(req, 'search')
             link = find_element(extract_link(self.env, context, kwd), 'href')
             if link is not None:
                 quickjump_href = link.attrib.get('href')
@@ -179,14 +175,14 @@ class SearchModule(Component):
             if not quickjump_href.startswith(req.base_path or '/'):
                 noquickjump = True
             if noquickjump:
-                return {'href': quickjump_href, 'name': tag.em(name),
+                return {'href': quickjump_href, 'name': tag.EM(name),
                         'description': description}
             else:
                 req.redirect(quickjump_href)
 
     def _get_search_terms(self, query):
         """Break apart a search query into its various search terms.
-
+        
         Terms are grouped implicitly by word boundary, or explicitly by (single
         or double) quotes.
         """
@@ -205,7 +201,7 @@ class SearchModule(Component):
         if terms and (len(terms) > 1 or
                       len(terms[0]) >= self.min_query_length):
             return terms
-
+        
         add_warning(req, _('Search query too short. '
                            'Query must be at least %(num)s characters long.',
                            num=self.min_query_length))
@@ -222,10 +218,10 @@ class SearchModule(Component):
         results = Paginator(results, page - 1, self.RESULTS_PER_PAGE)
         for idx, result in enumerate(results):
             results[idx] = {'href': result[0], 'title': result[1],
-                            'date': user_time(req, format_datetime, result[2]),
+                            'date': format_datetime(result[2]),
                             'author': result[3], 'excerpt': result[4]}
 
-        pagedata = []
+        pagedata = []    
         shown_pages = results.get_shown_pages(21)
         for shown_page in shown_pages:
             page_href = req.href.search([(f, 'on') for f in filters],
@@ -239,7 +235,7 @@ class SearchModule(Component):
 
         results.current_page = {'href': None, 'class': 'current',
                                 'string': str(results.page + 1),
-                                'title': None}
+                                'title':None}
 
         if results.has_next_page:
             next_href = req.href.search(zip(filters, ['on'] * len(filters)),

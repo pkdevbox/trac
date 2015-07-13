@@ -15,8 +15,6 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import print_function
-
 try:
     import os
     import pkg_resources
@@ -27,23 +25,23 @@ try:
         if 'TRAC_ENV' in os.environ:
             egg_cache = os.path.join(os.environ['TRAC_ENV'], '.egg-cache')
         elif 'TRAC_ENV_PARENT_DIR' in os.environ:
-            egg_cache = os.path.join(os.environ['TRAC_ENV_PARENT_DIR'],
+            egg_cache = os.path.join(os.environ['TRAC_ENV_PARENT_DIR'], 
                                      '.egg-cache')
         pkg_resources.set_extraction_path(egg_cache)
     from trac.web import fcgi_frontend
     fcgi_frontend.run()
 except SystemExit:
     raise
-except Exception as e:
-    print("Content-Type: text/plain\r\n\r\n", end=' ')
-    print("Oops...")
-    print()
-    print("Trac detected an internal error:")
-    print()
-    print(e)
-    print()
+except Exception, e:
+    print 'Content-Type: text/plain\r\n\r\n',
+    print 'Oops...'
+    print
+    print 'Trac detected an internal error:'
+    print
+    print e
+    print
     import traceback
     import StringIO
     tb = StringIO.StringIO()
     traceback.print_exc(file=tb)
-    print(tb.getvalue())
+    print tb.getvalue()

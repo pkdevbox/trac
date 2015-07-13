@@ -1,28 +1,15 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2006-2013 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
-
+import os
 import shutil
 import tempfile
 import unittest
 
 from trac.attachment import Attachment
-from trac.mimeview.api import RenderingContext
+from trac.mimeview.api import Context
 from trac.resource import Resource
 from trac.search.web_ui import SearchModule
 from trac.test import MockPerm
 from trac.web.href import Href
 from trac.wiki.tests import formatter
-
 
 SEARCH_TEST_CASES = u"""
 ============================== search: link resolver
@@ -129,13 +116,11 @@ attachment:file.txt?format=raw
 def attachment_setup(tc):
     import trac.ticket.api
     import trac.wiki.api
-    tc.env.path = tempfile.mkdtemp(prefix='trac-tempenv-')
-    with tc.env.db_transaction as db:
-        db("INSERT INTO wiki (name,version) VALUES ('SomePage/SubPage',1)")
-        db("INSERT INTO ticket (id) VALUES (123)")
-    attachment = Attachment(tc.env, 'ticket', 123)
-    attachment.insert('file.txt', tempfile.TemporaryFile(), 0)
+    tc.env.path = os.path.join(tempfile.gettempdir(), 'trac-tempenv')
+    os.mkdir(tc.env.path)
     attachment = Attachment(tc.env, 'wiki', 'WikiStart')
+    attachment.insert('file.txt', tempfile.TemporaryFile(), 0)
+    attachment = Attachment(tc.env, 'ticket', 123)
     attachment.insert('file.txt', tempfile.TemporaryFile(), 0)
     attachment = Attachment(tc.env, 'wiki', 'SomePage/SubPage')
     attachment.insert('foo.txt', tempfile.TemporaryFile(), 0)
@@ -164,9 +149,9 @@ def email_default_context():
             return action != 'EMAIL_VIEW'
         __contains__ = has_permission
 
-    context = RenderingContext(Resource('wiki', 'WikiStart'), href=Href('/'),
-                               perm=NoEmailViewPerm())
-    context.req = None # 1.0 FIXME .req shouldn't be required by formatter
+    context = Context(Resource('wiki', 'WikiStart'), href=Href('/'), 
+                      perm=NoEmailViewPerm())
+    context.req = None # 0.12 FIXME .req shouldn't be required by formatter
     return context
 
 
@@ -193,9 +178,9 @@ def suite():
                                   context=('wiki', 'WikiStart'),
                                   setup=attachment_setup,
                                   teardown=attachment_teardown))
-    suite.addTest(formatter.suite(EMAIL_TEST_CASE_DEFAULT, file=__file__,
+    suite.addTest(formatter.suite(EMAIL_TEST_CASE_DEFAULT, file=__file__, 
                                   context=email_default_context()))
-    suite.addTest(formatter.suite(EMAIL_TEST_CASE_NEVER_OBFUSCATE,
+    suite.addTest(formatter.suite(EMAIL_TEST_CASE_NEVER_OBFUSCATE, 
                                   file=__file__,
                                   context=email_default_context(),
                                   setup=email_never_obfuscate_setup))
@@ -203,3 +188,4 @@ def suite():
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')
+

@@ -1,19 +1,8 @@
 @ECHO OFF
 ::
-:: Copyright (C) 2007-2013 Edgewall Software
-:: Copyright (C) 2007 Markus Tacker <m@tacker.org>
-:: Copyright (C) 2007 Christian Boos <cboos@edgewall.org>
-:: All rights reserved.
-::
-:: This software is licensed as described in the file COPYING, which
-:: you should have received as part of this distribution. The terms
-:: are also available at http://trac.edgewall.com/license.html.
-::
-:: This software consists of voluntary contributions made by many
-:: individuals. For the exact contribution history, see the revision
-:: history and logs, available at http://trac.edgewall.org/.
 :: Trac post-commit-hook script for Windows
 ::
+:: Contributed by markus, modified by cboos.
 :: Modified for the multirepos branch to use the `changeset` command.
 
 :: Usage:
@@ -26,7 +15,7 @@
 ::
 :: 3. Verify that the hook is working:
 ::
-::      - enable DEBUG level logging to a file and to the console
+::      - enable DEBUG level logging to a file and to the console 
 ::        (see TracLogging)
 ::
 ::      - call the trac-post-commit-hook.cmd from a cmd.exe shell:
@@ -90,6 +79,6 @@ set REV=%2
 
 %TRAC_ADMIN% "%TRAC_ENV%" changeset added "%REPOS%" "%REV%"
 
-:: Based on either the symbolic name or the %REPOS% information,
+:: Based on either the symbolic name or the %REPOS% information, 
 :: Trac will figure out which repository (or which scoped repositories)
 :: it has to synchronize.

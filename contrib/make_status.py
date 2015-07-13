@@ -1,12 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2014-2015 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
+# Copyright (C) 2014 Edgewall Software
+# This file is distributed under the same license as the Trac project.
 
 import StringIO
 import warnings
@@ -32,6 +25,7 @@ PACKAGES = [
     ("Mercurial",         'mercurial.util.version()'),
     ("Pygments",          'pygments.__version__'),
     ("Pytz",              'pytz.__version__'),
+    ("ConfigObj",         'configobj.__version__'),
     ("Docutils",          'docutils.__version__'),
     ("Twill",             'twill.__version__'),
     ("LXML",              'lxml.etree.__version__'),

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2006-2013 Edgewall Software
+# Copyright (C)2006-2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -14,27 +14,16 @@
 import doctest
 import unittest
 from StringIO import StringIO
+import sys
 
-from genshi import Stream, Namespace
-from genshi.core import Attrs, TEXT, START, END
-from genshi.input import HTMLParser
-
-import trac.tests.compat
-from trac.core import Component, implements
+from trac.core import *
 from trac.test import EnvironmentStub
 from trac.mimeview import api
 from trac.mimeview.api import get_mimetype, IContentConverter, Mimeview, \
                               _group_lines
-from trac.web.api import Request, RequestDone
-
-
-def make_environ(scheme='http', server_name='example.org', server_port=80,
-                 method='GET', script_name='/trac', **kwargs):
-    environ = {'wsgi.url_scheme': scheme, 'wsgi.input': StringIO(''),
-               'REQUEST_METHOD': method, 'SERVER_NAME': server_name,
-               'SERVER_PORT': server_port, 'SCRIPT_NAME': script_name}
-    environ.update(kwargs)
-    return environ
+from genshi import Stream, Namespace
+from genshi.core import Attrs, TEXT, START, END
+from genshi.input import HTMLParser
 
 
 class GetMimeTypeTestCase(unittest.TestCase):
@@ -42,11 +31,11 @@ class GetMimeTypeTestCase(unittest.TestCase):
     def test_from_suffix_using_MIME_MAP(self):
         self.assertEqual('text/plain', get_mimetype('README', None))
         self.assertEqual('text/plain', get_mimetype('README.txt', None))
-
+        
     def test_from_suffix_using_mimetypes(self):
         accepted = ('image/png', 'image/x-png')
         self.assertTrue(get_mimetype('doc/trac_logo.png', None) in accepted)
-
+        
     def test_from_content_using_CONTENT_RE(self):
         self.assertEqual('text/x-python',
                          get_mimetype('xxx', """
@@ -109,9 +98,9 @@ class MimeviewTestCase(unittest.TestCase):
 
         mimeview = Mimeview(self.env)
         conversions = mimeview.get_supported_conversions('text/x-sample')
-        self.assertEqual(Converter0(self.env), conversions[0].converter)
-        self.assertEqual(Converter1(self.env), conversions[1].converter)
-        self.assertEqual(Converter2(self.env), conversions[2].converter)
+        self.assertEqual(Converter0(self.env), conversions[0][-1])
+        self.assertEqual(Converter1(self.env), conversions[1][-1])
+        self.assertEqual(Converter2(self.env), conversions[2][-1])
 
 class GroupLinesTestCase(unittest.TestCase):
 
@@ -123,22 +112,22 @@ class GroupLinesTestCase(unittest.TestCase):
     def test_text_only_stream(self):
         input = [(TEXT, "test", (None, -1, -1))]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 1)
-        self.assertIsInstance(lines[0], Stream)
-        self.assertEqual(lines[0].events, input)
+        self.assertEquals(len(lines), 1)
+        self.assertTrue(isinstance(lines[0], Stream))
+        self.assertEquals(lines[0].events, input)
 
     def test_text_only_stream2(self):
         input = [(TEXT, "test\n", (None, -1, -1))]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 1)
-        self.assertIsInstance(lines[0], Stream)
-        self.assertEqual(lines[0].events, [(TEXT, "test", (None, -1, -1))])
+        self.assertEquals(len(lines), 1)
+        self.assertTrue(isinstance(lines[0], Stream))
+        self.assertEquals(lines[0].events, [(TEXT, "test", (None, -1, -1))])
 
     def test_simplespan(self):
-        input = HTMLParser(StringIO(u"<span>test</span>"), encoding=None)
+        input = HTMLParser(StringIO("<span>test</span>"))
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 1)
-        self.assertIsInstance(lines[0], Stream)
+        self.assertEquals(len(lines), 1)
+        self.assertTrue(isinstance(lines[0], Stream))
         for (a, b) in zip(lines[0], input):
             self.assertEqual(a, b)
 
@@ -148,17 +137,17 @@ class GroupLinesTestCase(unittest.TestCase):
         """
         input = [(TEXT, "", (None, -1, -1))]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 0)
+        self.assertEquals(len(lines), 0)
 
     def test_newline_stream(self):
         input = [(TEXT, "\n", (None, -1, -1))]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 1)
+        self.assertEquals(len(lines), 1)
 
     def test_newline_stream2(self):
         input = [(TEXT, "\n\n\n", (None, -1, -1))]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), 3)
+        self.assertEquals(len(lines), 3)
 
     def test_empty_text_in_span(self):
         """
@@ -171,192 +160,57 @@ class GroupLinesTestCase(unittest.TestCase):
                 ]
         lines = list(_group_lines(input))
         self.assertEqual(len(lines), 0)
-
+                 
     def test_newline(self):
         """
         If the text element does not end with a newline, it's not properly
         closed.
         """
-        input = HTMLParser(StringIO(u'<span class="c">a\nb</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">a\nb</span>'))
         expected = ['<span class="c">a</span>',
                     '<span class="c">b</span>',
                    ]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), len(expected))
+        self.assertEquals(len(lines), len(expected))
         for a, b in zip(lines, expected):
-            self.assertEqual(a.render('html'), b)
+            self.assertEquals(a.render('html'), b)
 
     def test_newline2(self):
         """
         Same as test_newline above, but make sure it behaves properly wrt
         the trailing \\n, especially given it's inside an element.
         """
-        input = HTMLParser(StringIO(u'<span class="c">a\nb\n</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">a\nb\n</span>'))
         expected = ['<span class="c">a</span>',
                     '<span class="c">b</span>',
                    ]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), len(expected))
+        self.assertEquals(len(lines), len(expected))
         for a, b in zip(lines, expected):
-            self.assertEqual(a.render('html'), b)
+            self.assertEquals(a.render('html'), b)
 
     def test_multinewline(self):
         """
         ditto.
         """
-        input = HTMLParser(StringIO(u'<span class="c">\n\n\na</span>'),
-            encoding=None)
+        input = HTMLParser(StringIO('<span class="c">\n\n\na</span>'))
         expected = ['<span class="c"></span>',
                     '<span class="c"></span>',
                     '<span class="c"></span>',
                     '<span class="c">a</span>',
                    ]
         lines = list(_group_lines(input))
-        self.assertEqual(len(lines), len(expected))
+        self.assertEquals(len(lines), len(expected))
         for a, b in zip(lines, expected):
-            self.assertEqual(a.render('html'), b)
-
-
-class TestMimeviewConverter(Component):
-
-    implements(IContentConverter)
-
-    in_mimetype = __module__ + '.' + __name__
-
-    def get_supported_conversions(self):
-        yield ('text', self.__module__, 'txt', self.in_mimetype, 'text/plain',
-               8)
-
-    def convert_content(self, req, mimetype, content, key):
-        if content == 'iterable-bytes':
-            def fn_bytes():
-                for idx in xrange(256):
-                    yield 'b' * 256
-            return fn_bytes(), 'text/plain'
-        if content == 'iterable-unicode':
-            def fn_unicode():
-                for idx in xrange(0x10000):
-                    yield u'ü'
-            return fn_unicode(), 'text/plain'
-        if content == 'bytes':
-            return 'a' * 0x10000, 'text/plain'
-        if content == 'unicode':
-            return u'Ü' * 0x10000, 'text/plain'
-
-
-class MimeviewConverterTestCase(unittest.TestCase):
-
-    in_mimetype = TestMimeviewConverter.in_mimetype
-
-    def setUp(self):
-        self.env = EnvironmentStub(enable=['trac.*', TestMimeviewConverter])
-        self.status = None
-        self.headers = None
-        self.buf = None
-
-    def tearDown(self):
-        pass
-
-    def _make_req(self):
-        self.status = None
-        self.headers = None
-        self.buf = StringIO()
-        def start_response(status, headers):
-            self.status = status
-            self.headers = dict((header.lower(), value)
-                                for header, value in headers)
-            return self.buf.write
-        return Request(make_environ(), start_response)
-
-    def _test_convert_content(self, expected, content, iterable):
-        mimeview = Mimeview(self.env)
-        output = mimeview.convert_content(self._make_req(), self.in_mimetype,
-                                          content, 'text', iterable=iterable)
-        if iterable:
-            self.assertNotIn(type(output[0]), (str, unicode))
-            self.assertEqual(expected, ''.join(output[0]))
-        else:
-            self.assertEqual(type(expected), type(output[0]))
-            self.assertEqual(expected, output[0])
-        self.assertEqual('text/plain', output[1])
-        self.assertEqual('txt', output[2])
-
-    def test_convert_content_iterable_bytes(self):
-        self._test_convert_content('b' * 0x10000, 'iterable-bytes', False)
-
-    def test_convert_content_iterable_unicode(self):
-        self._test_convert_content(u'ü' * 0x10000, 'iterable-unicode', False)
-
-    def test_convert_content_bytes(self):
-        self._test_convert_content('a' * 0x10000, 'bytes', False)
-
-    def test_convert_content_unicode(self):
-        self._test_convert_content(u'Ü' * 0x10000, 'unicode', False)
-
-    def test_convert_content_iterable_bytes_iterable(self):
-        self._test_convert_content('b' * 0x10000, 'iterable-bytes', True)
-
-    def test_convert_content_iterable_unicode_iterable(self):
-        self._test_convert_content(u'ü' * 0x10000, 'iterable-unicode', True)
-
-    def test_convert_content_bytes_iterable(self):
-        self._test_convert_content('a' * 0x10000, 'bytes', True)
-
-    def test_convert_content_unicode_iterable(self):
-        self._test_convert_content(u'Ü' * 0x10000, 'unicode', True)
-
-    def _test_send_converted(self, expected, content, use_chunked_encoding):
-        self.env.config.set('trac', 'use_chunked_encoding',
-                            'true' if use_chunked_encoding else 'false')
-        mimeview = Mimeview(self.env)
-        req = self._make_req()
-        self.assertRaises(RequestDone, mimeview.send_converted, req,
-                          self.in_mimetype, content, 'text')
-        result = self.buf.getvalue()
-        if use_chunked_encoding:
-            self.assertNotIn('content-length', self.headers)
-        else:
-            self.assertIn('content-length', self.headers)
-            self.assertEqual(str(len(expected)),
-                             self.headers['content-length'])
-        self.assertEqual('text/plain', self.headers['content-type'])
-        self.assertEqual(set(expected), set(result))
-        self.assertEqual(expected, result)
-
-    def test_send_converted_iterable_bytes(self):
-        self._test_send_converted('b' * 0x10000, 'iterable-bytes', False)
-
-    def test_send_converted_iterable_unicode(self):
-        self._test_send_converted('ü' * 0x10000, 'iterable-unicode', False)
-
-    def test_send_converted_bytes(self):
-        self._test_send_converted('a' * 0x10000, 'bytes', False)
-
-    def test_send_converted_unicode(self):
-        self._test_send_converted('Ü' * 0x10000, 'unicode', False)
-
-    def test_send_converted_iterable_bytes_chunked(self):
-        self._test_send_converted('b' * 0x10000, 'iterable-bytes', True)
-
-    def test_send_converted_iterable_unicode_chunked(self):
-        self._test_send_converted('ü' * 0x10000, 'iterable-unicode', True)
-
-    def test_send_converted_bytes_chunked(self):
-        self._test_send_converted('a' * 0x10000, 'bytes', True)
-
-    def test_send_converted_unicode_chunked(self):
-        self._test_send_converted('Ü' * 0x10000, 'unicode', True)
+            self.assertEquals(a.render('html'), b)
 
 
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(api))
-    suite.addTest(unittest.makeSuite(GetMimeTypeTestCase))
-    suite.addTest(unittest.makeSuite(MimeviewTestCase))
-    suite.addTest(unittest.makeSuite(GroupLinesTestCase))
-    suite.addTest(unittest.makeSuite(MimeviewConverterTestCase))
+    suite.addTest(unittest.makeSuite(GetMimeTypeTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(MimeviewTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(GroupLinesTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

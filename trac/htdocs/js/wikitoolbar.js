@@ -1,30 +1,27 @@
-(function($){
 
+
+(function($){
+  
+  
   window.addWikiFormattingToolbar = function(textarea) {
     if ((document.selection == undefined)
      && (textarea.setSelectionRange == undefined)) {
       return;
     }
-
+  
     var toolbar = document.createElement("div");
     toolbar.className = "wikitoolbar";
-
+  
     function addButton(id, title, fn) {
       var a = document.createElement("a");
       a.href = "#";
       a.id = id;
       a.title = title;
-      a.onclick = function() {
-        if ($(textarea).prop("disabled") === false &&
-            $(textarea).prop("readonly") === false) {
-          try { fn() } catch (e) { }
-        }
-        return false;
-      };
+      a.onclick = function() { try { fn() } catch (e) { } return false };
       a.tabIndex = 400;
       toolbar.appendChild(a);
     }
-
+  
     function encloseSelection(prefix, suffix) {
       textarea.focus();
       var start, end, sel, scrollPos, subst;
@@ -55,15 +52,15 @@
         textarea.scrollTop = scrollPos;
       }
     }
-
-    addButton("strong", _("Bold text: **Example**"), function() {
-      encloseSelection("**", "**");
+  
+    addButton("strong", _("Bold text: '''Example'''"), function() {
+      encloseSelection("'''", "'''");
     });
     addButton("em", _("Italic text: ''Example''"), function() {
       encloseSelection("''", "''");
     });
-    addButton("heading", _("Heading: == Example"), function() {
-      encloseSelection("\n== ", "", "Heading");
+    addButton("heading", _("Heading: == Example =="), function() {
+      encloseSelection("\n== ", " ==\n", "Heading");
     });
     addButton("link", _("Link: [http://www.example.com/ Example]"), function() {
       encloseSelection("[", "]");
@@ -77,19 +74,20 @@
     addButton("np", _("New paragraph"), function() {
       encloseSelection("\n\n", "");
     });
-    addButton("br", _("Line break: \\\\"), function() {
-      encloseSelection("\\\\\n", "");
+    addButton("br", _("Line break: [[BR]]"), function() {
+      encloseSelection("[[BR]]\n", "");
     });
     addButton("img", _("Image: [[Image()]]"), function() {
       encloseSelection("[[Image(", ")]]");
     });
-
+  
     $(textarea).before(toolbar);
   }
 
-  // Add toolbar to all <textarea> elements on the page with the class 'wikitext'.
-  $(document).ready(function() {
-    $("textarea.wikitext").each(function() { addWikiFormattingToolbar(this) });
-  });
-
 })(jQuery);
+
+// Add the toolbar to all <textarea> elements on the page with the class
+// 'wikitext'.
+jQuery(document).ready(function($) {
+  $("textarea.wikitext").each(function() { addWikiFormattingToolbar(this) });
+});

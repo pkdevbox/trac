@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -17,7 +7,7 @@
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="layout.html" />
   <head>
-    <title i18n:msg="name">Milestone ${milestone.name}</title>
+    <title>Milestone ${milestone.name}</title>
     <link py:if="'MILESTONE_MODIFY' in perm(milestone.resource)" rel="alternate" type="application/x-wiki"
           title="Edit this milestone" href="${href.milestone(milestone.name, action='edit')}" />
     <script type="text/javascript">
@@ -30,8 +20,8 @@
 
   <body>
     <div id="content" class="milestone">
-      <h1 i18n:msg="name">Milestone ${milestone.name}</h1>
-      <div class="info trac-progress">
+      <h1>Milestone ${milestone.name}</h1>
+      <div class="info">
         <py:choose>
           <p py:when="milestone.completed" class="date">
             <i18n:msg params="duration, date">
@@ -55,7 +45,7 @@
         <xi:include href="progress_bar.html" py:if="stats.count"/>
       </div>
 
-      <form py:if="available_groups and stats.count" id="stats" class="trac-groupprogress" action="">
+      <form py:if="available_groups and stats.count" id="stats" action="">
         <fieldset>
           <legend>
             <label for="by" i18n:msg="stat_title">${stats.title.capitalize()} by</label>
@@ -69,13 +59,32 @@
               jQuery(document).ready(function ($) { $(".noscript").attr("style", "display: none"); });
             </script>
           </legend>
-          <xi:include href="progress_bar_grouped.html" py:if="groups"
-                      py:with="summary = _('Shows the milestone completion status grouped by %(grouped_by)s',
-                                           grouped_by=grouped_by)"/>
+          <table py:if="groups" summary="Shows the milestone completion status grouped by ${grouped_by}">
+            <tr py:for="group in groups">
+              <th scope="row" py:choose="">
+                <i py:when="not group.name"><a href="${group.stats_href}">(none)</a></i>
+                <a py:when="grouped_by in ['owner', 'reporter']"
+                   py:with="obfus_name = format_author(group.name)"
+                   py:strip="obfus_name != group.name"
+                   href="${group.stats_href}">${obfus_name}</a>
+                <a py:otherwise="" href="${group.stats_href}">${group.name}</a>
+              </th>
+              <td>
+                <xi:include href="progress_bar.html"
+                            py:with="stats = group.stats;
+                                     interval_hrefs = (group.interval_hrefs, None)
+                                                      [bool(grouped_by in ['owner', 'reporter']
+                                                            and group.name and group.name != format_author(group.name))];
+                                     percent = '%d / %d' % (group.stats.done_count, group.stats.count);
+                                     legend=False;
+                                     style='width: %d%%' % (group.percent_of_max_total * 0.8)"/>
+              </td>
+            </tr>
+          </table>
         </fieldset>
       </form>
 
-      <div py:if="milestone.description" class="description trac-content" xml:space="preserve">
+      <div class="description" xml:space="preserve">
         ${wiki_to_html(context, milestone.description)}
       </div>
 

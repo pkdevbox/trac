@@ -1,17 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-# Copyright (C) 2007-2013 Edgewall Software
-# Copyright (C) 2007 Eli Carter <retracile@gmail.com>
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.com/license.html.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/.
-
 from genshi.builder import tag
 
 from trac.core import implements,Component
@@ -29,14 +15,12 @@ class VoteOperation(Component):
     This is a sample action controller illustrating how to create additional
     ''operations''.
 
-    Don't forget to add `VoteOperation` to the workflow
-    option in the `[ticket]` section in TracIni.
-    If there is no other workflow option, the line will look like this:
-    {{{
-    workflow = ConfigurableTicketWorkflow,VoteOperation
-    }}}
-    """
+    Don't forget to add `VoteOperation` to the workflow option in [ticket].
+    If there is no workflow option, the line will look like this:
 
+    workflow = ConfigurableTicketWorkflow,VoteOperation
+    """
+    
     implements(ITicketActionController)
 
     def get_ticket_actions(self, req, ticket):

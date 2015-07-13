@@ -17,7 +17,7 @@
 from trac.db import Table, Column, Index
 
 # Database version identifier. Used for automatic upgrades.
-db_version = 41
+db_version = 26
 
 def __mkreports(reports):
     """Utility function used to create report data in same syntax as the
@@ -58,9 +58,8 @@ schema = [
         Column('name'),
         Column('value')],
     Table('cache', key='id')[
-        Column('id', type='int'),
-        Column('generation', type='int'),
-        Column('key')],
+        Column('id'),
+        Column('generation', type='int')],
 
     # Attachments
     Table('attachment', key=('type', 'id', 'filename'))[
@@ -92,22 +91,20 @@ schema = [
         Column('value')],
     Table('revision', key=('repos', 'rev'))[
         Column('repos', type='int'),
-        Column('rev', key_size=40),
+        Column('rev', key_size=20),
         Column('time', type='int64'),
         Column('author'),
         Column('message'),
         Index(['repos', 'time'])],
-    Table('node_change', key='id')[
-        Column('id', auto_increment=True),
+    Table('node_change', key=('repos', 'rev', 'path', 'change_type'))[
         Column('repos', type='int'),
-        Column('rev', key_size=40),
+        Column('rev', key_size=20),
         Column('path', key_size=255),
         Column('node_type', size=1),
-        Column('change_type', size=1),
+        Column('change_type', size=1, key_size=2),
         Column('base_path'),
         Column('base_rev'),
-        Index(['repos', 'rev', 'path']),
-        Index(['repos', 'path', 'rev'])],
+        Index(['repos', 'rev'])],
 
     # Ticket system
     Table('ticket', key='id')[
@@ -129,7 +126,7 @@ schema = [
         Column('description'),
         Column('keywords'),
         Index(['time']),
-        Index(['status'])],
+        Index(['status'])],    
     Table('ticket_change', key=('ticket', 'time', 'field'))[
         Column('ticket', type='int'),
         Column('time', type='int64'),
@@ -168,30 +165,6 @@ schema = [
         Column('title'),
         Column('query'),
         Column('description')],
-
-    # Notification system
-    Table('notify_subscription', key='id')[
-        Column('id', auto_increment=True),
-        Column('time', type='int64'),
-        Column('changetime', type='int64'),
-        Column('class'),
-        Column('sid'),
-        Column('authenticated', type='int'),
-        Column('distributor'),
-        Column('format'),
-        Column('priority', type='int'),
-        Column('adverb'),
-        Index(['sid', 'authenticated']),
-        Index(['class'])],
-    Table('notify_watch', key='id')[
-        Column('id', auto_increment=True),
-        Column('sid'),
-        Column('authenticated', type='int'),
-        Column('class'),
-        Column('realm'),
-        Column('target'),
-        Index(['sid', 'authenticated', 'class']),
-        Index(['class', 'realm', 'target'])],
 ]
 
 
@@ -202,13 +175,13 @@ schema = [
 def get_reports(db):
     return (
 ('Active Tickets',
-"""\
+"""
  * List all active tickets by priority.
  * Color each row based on priority.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
-   id AS ticket, summary, component, version, milestone, t.type AS type,
+   id AS ticket, summary, component, version, milestone, t.type AS type, 
    owner, status,
    time AS created,
    changetime AS _changetime, description AS _description,
@@ -220,17 +193,17 @@ SELECT p.value AS __color__,
 """),
 #----------------------------------------------------------------------------
  ('Active Tickets by Version',
-"""\
+"""
 This report shows how to color results by priority,
 while grouping results by version.
 
 Last modification time, description and reporter are included as hidden fields
 for useful RSS export.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
    version AS __group__,
-   id AS ticket, summary, component, version, t.type AS type,
+   id AS ticket, summary, component, version, t.type AS type, 
    owner, status,
    time AS created,
    changetime AS _changetime, description AS _description,
@@ -243,32 +216,33 @@ SELECT p.value AS __color__,
 """),
 #----------------------------------------------------------------------------
 ('Active Tickets by Milestone',
-"""\
+"""
 This report shows how to color results by priority,
 while grouping results by milestone.
 
 Last modification time, description and reporter are included as hidden fields
 for useful RSS export.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
    %s AS __group__,
-   id AS ticket, summary, component, version, t.type AS type,
+   id AS ticket, summary, component, version, t.type AS type, 
    owner, status,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed'
+  WHERE status <> 'closed' 
   ORDER BY (milestone IS NULL),milestone, %s, t.type, time
 """ % (db.concat("'Milestone '", 'milestone'), db.cast('p.value', 'int'))),
 #----------------------------------------------------------------------------
 ('Accepted, Active Tickets by Owner',
-"""\
+"""
 List accepted tickets, group by ticket owner, sorted by priority.
 """,
-"""\
+"""
+
 SELECT p.value AS __color__,
    owner AS __group__,
    id AS ticket, summary, component, milestone, t.type AS type, time AS created,
@@ -281,11 +255,11 @@ SELECT p.value AS __color__,
 """),
 #----------------------------------------------------------------------------
 ('Accepted, Active Tickets by Owner (Full Description)',
-"""\
+"""
 List tickets accepted, group by ticket owner.
 This report demonstrates the use of full-row display.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
    owner AS __group__,
    id AS ticket, summary, component, milestone, t.type AS type, time AS created,
@@ -298,76 +272,66 @@ SELECT p.value AS __color__,
 """),
 #----------------------------------------------------------------------------
 ('All Tickets By Milestone  (Including closed)',
-"""\
+"""
 A more complex example to show how to make advanced reports.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
    t.milestone AS __group__,
-   (CASE status
+   (CASE status 
       WHEN 'closed' THEN 'color: #777; background: #ddd; border-color: #ccc;'
-      ELSE
+      ELSE 
         (CASE owner WHEN $USER THEN 'font-weight: bold' END)
     END) AS __style__,
-   id AS ticket, summary, component, status,
+   id AS ticket, summary, component, status, 
    resolution,version, t.type AS type, priority, owner,
    changetime AS modified,
    time AS _time,reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  ORDER BY (milestone IS NULL), milestone DESC, (status = 'closed'),
+  ORDER BY (milestone IS NULL), milestone DESC, (status = 'closed'), 
         (CASE status WHEN 'closed' THEN changetime ELSE (-1) * %s END) DESC
 """ % db.cast('p.value', 'int')),
 #----------------------------------------------------------------------------
 ('My Tickets',
-"""\
-This report demonstrates the use of the automatically set
+"""
+This report demonstrates the use of the automatically set 
 USER dynamic variable, replaced with the username of the
 logged in user when executed.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
-       (CASE
-         WHEN owner = $USER AND status = 'accepted' THEN 'Accepted'
-         WHEN owner = $USER THEN 'Owned'
-         WHEN reporter = $USER THEN 'Reported'
-         ELSE 'Commented' END) AS __group__,
-       t.id AS ticket, summary, component, version, milestone,
-       t.type AS type, priority, t.time AS created,
-       t.changetime AS _changetime, description AS _description,
-       reporter AS _reporter
+   (CASE status WHEN 'accepted' THEN 'Accepted' ELSE 'Owned' END) AS __group__,
+   id AS ticket, summary, component, version, milestone,
+   t.type AS type, priority, time AS created,
+   changetime AS _changetime, description AS _description,
+   reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE t.status <> 'closed' AND
-        (owner = $USER OR reporter = $USER OR
-         EXISTS (SELECT * FROM ticket_change tc
-                 WHERE tc.ticket = t.id AND tc.author = $USER AND
-                       tc.field = 'comment'))
-  ORDER BY (COALESCE(owner, '') = $USER AND status = 'accepted') DESC,
-           COALESCE(owner, '') = $USER DESC,
-           COALESCE(reporter, '') = $USER DESC,
-           """ + db.cast('p.value', 'int') + """, milestone, t.type, t.time
+  WHERE t.status <> 'closed' AND owner = $USER
+  ORDER BY (status = 'accepted') DESC, """ + db.cast('p.value', 'int') + 
+  """, milestone, t.type, time
 """),
 #----------------------------------------------------------------------------
 ('Active Tickets, Mine first',
-"""\
+"""
  * List all active tickets by priority.
  * Show all tickets owned by the logged in user in a group first.
 """,
-"""\
+"""
 SELECT p.value AS __color__,
-   (CASE owner
-     WHEN $USER THEN 'My Tickets'
-     ELSE 'Active Tickets'
+   (CASE owner 
+     WHEN $USER THEN 'My Tickets' 
+     ELSE 'Active Tickets' 
     END) AS __group__,
-   id AS ticket, summary, component, version, milestone, t.type AS type,
+   id AS ticket, summary, component, version, milestone, t.type AS type, 
    owner, status,
    time AS created,
    changetime AS _changetime, description AS _description,
    reporter AS _reporter
   FROM ticket t
   LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-  WHERE status <> 'closed'
+  WHERE status <> 'closed' 
   ORDER BY (COALESCE(owner, '') = $USER) DESC, """
   + db.cast('p.value', 'int') + """, milestone, t.type, time
 """))

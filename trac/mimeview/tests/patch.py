@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2006-2013 Edgewall Software
+# Copyright (C)2006-2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -17,10 +17,10 @@ import unittest
 from genshi.core import Stream
 from genshi.input import HTMLParser, XML
 
-from trac.mimeview.api import Mimeview
+from trac.mimeview.api import Mimeview, Context
 from trac.mimeview.patch import PatchRenderer
 from trac.test import EnvironmentStub, Mock, MockPerm
-from trac.web.chrome import Chrome, web_context
+from trac.web.chrome import Chrome
 from trac.web.href import Href
 
 
@@ -31,22 +31,22 @@ class PatchRendererTestCase(unittest.TestCase):
         req = Mock(base_path='', chrome={}, args={}, session={},
                    abs_href=Href('/'), href=Href('/'), locale='',
                    perm=MockPerm(), authname=None, tz=None)
-        self.context = web_context(req)
+        self.context = Context.from_request(req)
         self.patch = Mimeview(env).renderers[0]
         patch_html = open(os.path.join(os.path.split(__file__)[0],
                                        'patch.html'))
-        self.patch_html = Stream(list(HTMLParser(patch_html, encoding='utf-8')))
+        self.patch_html = Stream(list(HTMLParser(patch_html)))
 
     def _expected(self, expected_id):
         return self.patch_html.select('//div[@id="%s"]/div' % expected_id)
 
     def _test(self, expected_id, result):
-        expected = self._expected(expected_id).render(encoding='utf-8')
-        result = XML(result.render(encoding='utf-8')).render(encoding='utf-8')
+        expected = str(self._expected(expected_id))
+        result = str(XML(result))
         expected, result = expected.splitlines(), result.splitlines()
         for exp, res in zip(expected, result):
-            self.assertEqual(exp, res)
-        self.assertEqual(len(expected), len(result))
+            self.assertEquals(exp, res)
+        self.assertEquals(len(expected), len(result))
 
     def test_simple(self):
         """
@@ -78,7 +78,7 @@ class PatchRendererTestCase(unittest.TestCase):
 @@ -1 +1 @@
 -ONELINE
 \ No newline at end of file
-+ONELINE
++ONELINE        
 """)
         self.assertTrue(result)
         self._test('no_newline_in_base', result)
@@ -105,10 +105,10 @@ class PatchRendererTestCase(unittest.TestCase):
              '@@ -1 +1 @@',
              '-aa\tb',
              '+aaxb'], 8)
-        self.assertEqual('aa<del>&nbsp; &nbsp; &nbsp; </del>b',
-                         str(changes[0]['diffs'][0][0]['base']['lines'][0]))
-        self.assertEqual('aa<ins>x</ins>b',
-                         str(changes[0]['diffs'][0][0]['changed']['lines'][0]))
+        self.assertEquals('aa<del>&nbsp; &nbsp; &nbsp; </del>b',
+                          str(changes[0]['diffs'][0][0]['base']['lines'][0]))
+        self.assertEquals('aa<ins>x</ins>b',
+                          str(changes[0]['diffs'][0][0]['changed']['lines'][0]))
 
     def test_diff_to_hdf_leading_ws(self):
         """Regression test related to #5795"""
@@ -118,14 +118,14 @@ class PatchRendererTestCase(unittest.TestCase):
              '@@ -1 +1 @@',
              '-*a',
              '+ *a'], 8)
-        self.assertEqual('<del></del>*a',
-                         str(changes[0]['diffs'][0][0]['base']['lines'][0]))
-        self.assertEqual('<ins>&nbsp;</ins>*a',
-                         str(changes[0]['diffs'][0][0]['changed']['lines'][0]))
+        self.assertEquals('<del></del>*a',
+                          str(changes[0]['diffs'][0][0]['base']['lines'][0]))
+        self.assertEquals('<ins>&nbsp;</ins>*a',
+                          str(changes[0]['diffs'][0][0]['changed']['lines'][0]))
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(PatchRendererTestCase))
+    suite.addTest(unittest.makeSuite(PatchRendererTestCase, 'test'))
     return suite
 
 if __name__ == '__main__':

@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -22,6 +12,7 @@
 
   <body>
     <div id="content" class="roadmap">
+      <h1>Roadmap</h1>
 
       <form id="prefs" method="get" action="">
         <div>
@@ -39,12 +30,10 @@
         </div>
       </form>
 
-      <h1>Roadmap</h1>
-
       <div class="milestones">
         <div py:for="idx, milestone in enumerate(milestones)" class="milestone">
 
-          <div class="info trac-progress" py:with="mstats = milestone_stats[idx]">
+          <div class="info" py:with="mstats = milestone_stats[idx]">
             <h2><a href="${href.milestone(milestone.name)}">
               Milestone: <em>${milestone.name}</em>
             </a></h2>
@@ -70,21 +59,21 @@
             </py:choose>
             <xi:include href="progress_bar.html" py:if="mstats.stats.count"
                         py:with="stats = mstats.stats; interval_hrefs = mstats.interval_hrefs;
-                                 stats_href = mstats.stats_href" />
+                                 stats_href = mstats.stats_href"/>
           </div>
 
           <div class="description" xml:space="preserve">
-            ${wiki_to_html(context.child(milestone.resource), milestone.description)}
+            ${wiki_to_html(context(milestone.resource), milestone.description)}
           </div>
 
         </div>
       </div>
 
       <div py:if="'MILESTONE_CREATE' in perm" class="buttons">
-        <form id="add" method="get" action="${href.milestone()}"><div>
-          <input type="hidden" name="action" value="new" />
-          <input type="submit" value="${_('Add new milestone')}" />
-        </div></form>
+       <form method="get" action="${href.milestone()}"><div>
+        <input type="hidden" name="action" value="new" />
+        <input type="submit" value="${_('Add new milestone')}" />
+       </div></form>
       </div>
 
       <div id="help" i18n:msg=""><strong>Note:</strong> See

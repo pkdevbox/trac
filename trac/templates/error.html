@@ -1,13 +1,3 @@
-<!--!  Copyright (C) 2006-2014 Edgewall Software
-
-  This software is licensed as described in the file COPYING, which
-  you should have received as part of this distribution. The terms
-  are also available at http://trac.edgewall.com/license.html.
-
-  This software consists of voluntary contributions made by many
-  individuals. For the exact contribution history, see the revision
-  history and logs, available at http://trac.edgewall.org/.
--->
 <!DOCTYPE html
     PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
@@ -18,6 +8,7 @@
   <xi:include href="layout.html" />
   <head>
     <title>${title or _('Error')}</title>
+    <link rel="stylesheet" type="text/css" href="${chrome.htdocs_location}css/code.css"/>
     <script py:if="frames" type="text/javascript">/*<![CDATA[*/
       jQuery(document).ready(function($) {
         $("#traceback a").click(function() {
@@ -47,16 +38,17 @@
        $("#traceback ul").show();
        $("#traceback pre").hide();
        $("#tbtoggle").parent().show();
+
+       $("#systeminfo").append("<tr><th>jQuery</th><td>" + $().jquery + "</td></tr>");
+       $("#systeminfo").before("<p>User Agent: <tt>" + navigator.userAgent + "</tt></p>");
       });
     /*]]>*/</script>
     <script type="text/javascript">/*<![CDATA[*/
       jQuery(document).ready(function($) {
         $("form.newticket textarea").each(function() {
-          $(this).val($(this).val()
-                             .replace(/#USER_AGENT#/m, navigator.userAgent)
-                             .replace(/#JQUERY#/m, $().jquery)
-                             .replace(/#JQUERYUI#/m, $.ui.version)
-                             .replace(/#JQUERYTP#/m, $.timepicker.version));
+          $(this).text($(this).text()
+                         .replace(/#USER_AGENT#/m, navigator.userAgent)
+                         .replace(/#JQUERY#/m, $().jquery));
         });
       });
     /*]]>*/</script>
@@ -65,11 +57,11 @@
   <py:def function="create_ticket(url=None)">
     <input type="hidden" name="reporter" value="${get_reporter_id(req)}" />
     <input py:if="url == trac.homepage.strip('/')" type="hidden" name="version"
-           value="${trac.version.split('-', 1)[0] if 'dev' in trac.version else trac.version}" />
+           value="${'dev' in trac.version and trac.version.split('-', 1)[0] or trac.version}" />
     <input type="hidden" name="$arg" value="$value" py:for="arg, value in tracker_args.iteritems()" />
     <input type="hidden" name="summary" value="$message" />
     <textarea name="description" rows="3" cols="10">
-${description_en if url else description}</textarea>
+${url and description_en or description}</textarea>
     <span class="inlinebuttons">
       <input type="submit" name="create" value="${_('Create')}" />
     </span>
@@ -81,7 +73,7 @@ ${description_en if url else description}</textarea>
         <py:when test="'TracError'">
           <h1>$title</h1>
           <py:choose test="">
-            <p py:when="not find_element(message, tag='p')" class="message">$message</p>
+            <p py:when="istext(message)" class="message">$message</p>
             <py:otherwise>$message</py:otherwise>
           </py:choose>
         </py:when>
@@ -152,7 +144,7 @@ ${description_en if url else description}</textarea>
                     <li class="frame" py:for="idx, frame in enumerate(frames)">
                       <a href="#frame${idx}" id="frame${idx}"><span i18n:msg="file, line, function" py:strip="">
                         <span class="file">File "${frame.filename}",
-                        line <strong>${frame.lineno + 1}</strong>, in</span>
+                        line <b>${frame.lineno + 1}</b>, in</span>
                         <var>${frame.function}</var></span>
                       </a>
                       <div py:if="frame.line" class="source" style="display: none">
@@ -161,7 +153,7 @@ ${description_en if url else description}</textarea>
                           <thead><tr><th class="lineno">Line</th><th class="content"></th></tr></thead>
                           <tbody>
                             <tr py:for="i, line in enumerate(frame.lines_before + [frame.line] + frame.lines_after)"
-                                class="${'current' if i == len(frame.lines_before) else None}">
+                                class="${i == len(frame.lines_before) and 'current' or None}">
                               <th>${frame.lineno + i + 1 - len(frame.lines_before)}</th><td>${line or u'\xa0'}</td>
                             </tr>
                           </tbody>
@@ -173,7 +165,7 @@ ${description_en if url else description}</textarea>
                           <thead><tr><th>Name</th><th>Value</th></tr></thead>
                           <tbody>
                             <tr py:for="idx, (name, value) in enumerate(sorted(frame.vars.items()))"
-                                class="${'odd' if idx % 2 else None}">
+                                class="${idx % 2 and 'odd' or None}">
                               <th scope="row"><var>$name</var></th>
                               <td><code>${shorten_line(repr(value))}</code></td>
                             </tr>
@@ -188,7 +180,25 @@ ${description_en if url else description}</textarea>
                   <p style="display: none"><input type="button" id="tbtoggle" value="${_('Switch to plain text view')}" /></p>
                 </div>
               </py:if>
-              <xi:include href="environment_info.html" py:with="systeminfo = get_systeminfo()"/>
+              <h2>System Information:</h2>
+              <table class="listing" id="systeminfo">
+                <tr py:for="name, value in get_systeminfo()">
+                  <th>$name</th>
+                  <td>$value</td>
+                </tr>
+              </table>
+              <py:if test="plugins">
+                <h2>Enabled Plugins:</h2>
+                <table class="listing" id="plugins">
+                  <tr py:for="plugin in plugins">
+                    <th py:with="url = plugin.info.home_page or plugin.info.author_email and 'mailto:' + plugin.info.author_email">
+                      <a py:strip="not url" href="$url">$plugin.name</a>
+                    </th>
+                    <td>${plugin.version or _('N/A')}</td>
+                    <td class="file"><a py:strip="'frame_idx' not in plugin" href="#frame$plugin.frame_idx">$plugin.path</a></td>
+                  </tr>
+                </table>
+              </py:if>
             </py:otherwise>
           </py:choose>
         </py:when>

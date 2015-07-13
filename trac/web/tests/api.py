@@ -1,80 +1,14 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright (C) 2005-2015 Edgewall Software
-# All rights reserved.
-#
-# This software is licensed as described in the file COPYING, which
-# you should have received as part of this distribution. The terms
-# are also available at http://trac.edgewall.org/wiki/TracLicense.
-#
-# This software consists of voluntary contributions made by many
-# individuals. For the exact contribution history, see the revision
-# history and logs, available at http://trac.edgewall.org/log/.
 
-import os.path
-import shutil
 import sys
-import tempfile
 import unittest
 from StringIO import StringIO
 
-import trac.tests.compat
-from genshi.builder import tag
-from trac import perm
 from trac.core import TracError
-from trac.test import EnvironmentStub, Mock, MockPerm, locale_en
-from trac.util import create_file
+from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.util.datefmt import utc
 from trac.util.text import shorten_line
-from trac.web.api import HTTPBadRequest, HTTPInternalError, Request, \
-                         RequestDone, parse_arg_list
-from tracopt.perm.authz_policy import AuthzPolicy
-
-
-class RequestHandlerPermissionsTestCaseBase(unittest.TestCase):
-
-    authz_policy = None
-
-    def setUp(self, module_class):
-        self.path = tempfile.mkdtemp(prefix='trac-')
-        if self.authz_policy is not None:
-            self.authz_file = os.path.join(self.path, 'authz_policy.conf')
-            create_file(self.authz_file, self.authz_policy)
-            self.env = EnvironmentStub(enable=['trac.*', AuthzPolicy],
-                                       path=self.path)
-            self.env.config.set('authz_policy', 'authz_file', self.authz_file)
-            self.env.config.set('trac', 'permission_policies',
-                                'AuthzPolicy, DefaultPermissionPolicy')
-        else:
-            self.env = EnvironmentStub(path=self.path)
-        self.req_handler = module_class(self.env)
-
-    def tearDown(self):
-        self.env.reset_db()
-        shutil.rmtree(self.path)
-
-    def create_request(self, authname='anonymous', **kwargs):
-        kw = {'perm': perm.PermissionCache(self.env, authname), 'args': {},
-              'href': self.env.href, 'abs_href': self.env.abs_href,
-              'tz': utc, 'locale': None, 'lc_time': locale_en,
-              'session': Mock(get=lambda k, d=None: d,
-                              set=lambda k, v, d=None: None),
-              'authname': authname, 'chrome': {'notices': [], 'warnings': []},
-              'method': None, 'get_header': lambda v: None, 'is_xhr': False}
-        kw.update(kwargs)
-        return Mock(**kw)
-
-    def get_navigation_items(self, req):
-        return self.req_handler.get_navigation_items(req)
-
-    def grant_perm(self, username, *actions):
-        permsys = perm.PermissionSystem(self.env)
-        for action in actions:
-            permsys.grant_permission(username, action)
-
-    def process_request(self, req):
-        self.assertTrue(self.req_handler.match_request(req))
-        return self.req_handler.process_request(req)
+from trac.web.api import Request, RequestDone, parse_arg_list
 
 
 def _make_environ(scheme='http', server_name='example.org',
@@ -109,16 +43,6 @@ class RequestTestCase(unittest.TestCase):
 
     def _make_environ(self, *args, **kwargs):
         return _make_environ(*args, **kwargs)
-
-    def test_is_xhr_true(self):
-        environ = self._make_environ(HTTP_X_REQUESTED_WITH='XMLHttpRequest')
-        req = Request(environ, None)
-        self.assertTrue(req.is_xhr)
-
-    def test_is_xhr_false(self):
-        environ = self._make_environ()
-        req = Request(environ, None)
-        self.assertFalse(req.is_xhr)
 
     def test_base_url(self):
         environ = self._make_environ()
@@ -192,20 +116,6 @@ class RequestTestCase(unittest.TestCase):
         self.assertEqual('http://example.com/trac/test',
                          headers_sent['Location'])
 
-    def test_write_iterable(self):
-        buf = StringIO()
-        def write(data):
-            buf.write(data)
-        def start_response(status, headers):
-            return write
-        environ = self._make_environ(method='GET')
-
-        buf = StringIO()
-        req = Request(environ, start_response)
-        req.send_header('Content-Type', 'text/plain;charset=utf-8')
-        req.write(('Foo', 'bar', 'baz'))
-        self.assertEqual('Foobarbaz', buf.getvalue())
-
     def test_write_unicode(self):
         buf = StringIO()
         def write(data):
@@ -213,38 +123,16 @@ class RequestTestCase(unittest.TestCase):
         def start_response(status, headers):
             return write
         environ = self._make_environ(method='HEAD')
+        req = Request(environ, start_response)
+        req.send_header('Content-Type', 'text/plain;charset=utf-8')
+        # we didn't set Content-Length, so we get a RuntimeError for that
+        self.assertRaises(RuntimeError, req.write, u'Föö')
 
         req = Request(environ, start_response)
         req.send_header('Content-Type', 'text/plain;charset=utf-8')
         req.send_header('Content-Length', 0)
         # anyway we're not supposed to send unicode, so we get a ValueError
         self.assertRaises(ValueError, req.write, u'Föö')
-        self.assertRaises(ValueError, req.write, ('F', u'öo'))
-
-    def test_send_iterable(self):
-        baton = {'content': StringIO(), 'status': None, 'headers': None}
-        def write(data):
-            baton['content'].write(data)
-        def start_response(status, headers):
-            baton['status'] = status
-            baton['headers'] = headers
-            return write
-        environ = self._make_environ(method='GET')
-
-        def iterable():
-            yield 'line1,'
-            yield ''
-            yield 'line2,'
-            yield 'line3\n'
-
-        req = Request(environ, start_response)
-        self.assertRaises(RequestDone, req.send, iterable())
-        self.assertEqual('200 Ok', baton['status'])
-        self.assertEqual([('Cache-Control', 'must-revalidate'),
-                          ('Expires', 'Fri, 01 Jan 1999 00:00:00 GMT'),
-                          ('Content-Type', 'text/html;charset=utf-8')],
-                         baton['headers'])
-        self.assertEqual('line1,line2,line3\n', baton['content'].getvalue())
 
     def test_invalid_cookies(self):
         environ = self._make_environ(HTTP_COOKIE='bad:key=value;')
@@ -256,7 +144,7 @@ class RequestTestCase(unittest.TestCase):
         req = Request(environ, None)
         self.assertEqual('Set-Cookie: key=value1',
                          str(req.incookie).rstrip(';'))
-
+        
     def test_read(self):
         environ = self._make_environ(**{'wsgi.input': StringIO('test input')})
         req = Request(environ, None)
@@ -282,93 +170,6 @@ class RequestTestCase(unittest.TestCase):
                                         'QUERY_STRING': 'action=foo'})
         req = Request(environ, None)
         self.assertEqual('bar', req.args['action'])
-
-    def test_qs_invalid_value_bytes(self):
-        environ = self._make_environ(**{'QUERY_STRING': 'name=%FF'})
-        req = Request(environ, None)
-        self.assertRaises(HTTPBadRequest, lambda: req.arg_list)
-
-    def test_qs_invalid_name_bytes(self):
-        environ = self._make_environ(**{'QUERY_STRING': '%FF=value'})
-        req = Request(environ, None)
-        self.assertRaises(HTTPBadRequest, lambda: req.arg_list)
-
-
-class RequestSendFileTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.status = None
-        self.headers = None
-        self.response = StringIO()
-        self.dir = tempfile.mkdtemp(prefix='trac-')
-        self.filename = os.path.join(self.dir, 'test.txt')
-        self.data = 'contents\n'
-        create_file(self.filename, self.data, 'wb')
-        self.req = None
-
-    def tearDown(self):
-        if self.req and self.req._response:
-            self.req._response.close()
-        shutil.rmtree(self.dir)
-
-    def _start_response(self, status, headers):
-        self.status = status
-        self.headers = dict(headers)
-        def write(data):
-            self.response.write(data)
-        return write
-
-    def _create_req(self, use_xsendfile=False, xsendfile_header='X-Sendfile',
-                    **kwargs):
-        req = Request(_make_environ(**kwargs), self._start_response)
-        req.callbacks.update({'use_xsendfile': lambda r: use_xsendfile,
-                              'xsendfile_header': lambda r: xsendfile_header})
-        self.req = req
-        return req
-
-    def test_send_file(self):
-        req = self._create_req()
-        self.assertRaises(RequestDone, req.send_file, self.filename,
-                          'text/plain')
-        self.assertEqual('200 Ok', self.status)
-        self.assertEqual('text/plain', self.headers['Content-Type'])
-        self.assertEqual(str(len(self.data)), self.headers['Content-Length'])
-        self.assertNotIn('X-Sendfile', self.headers)
-        self.assertEqual(self.data, ''.join(req._response))
-        self.assertEqual('', self.response.getvalue())
-
-    def test_send_file_with_xsendfile(self):
-        req = self._create_req(use_xsendfile=True)
-        self.assertRaises(RequestDone, req.send_file, self.filename,
-                          'text/plain')
-        self.assertEqual('200 Ok', self.status)
-        self.assertEqual('text/plain', self.headers['Content-Type'])
-        self.assertEqual(self.filename, self.headers['X-Sendfile'])
-        self.assertEqual(None, req._response)
-        self.assertEqual('', self.response.getvalue())
-
-    def test_send_file_with_xsendfile_header(self):
-        req = self._create_req(use_xsendfile=True,
-                               xsendfile_header='X-Accel-Redirect')
-        self.assertRaises(RequestDone, req.send_file, self.filename,
-                          'text/plain')
-        self.assertEqual('200 Ok', self.status)
-        self.assertEqual('text/plain', self.headers['Content-Type'])
-        self.assertEqual(self.filename, self.headers['X-Accel-Redirect'])
-        self.assertNotIn('X-Sendfile', self.headers)
-        self.assertEqual(None, req._response)
-        self.assertEqual('', self.response.getvalue())
-
-    def test_send_file_with_xsendfile_and_empty_header(self):
-        req = self._create_req(use_xsendfile=True, xsendfile_header='')
-        self.assertRaises(RequestDone, req.send_file, self.filename,
-                          'text/plain')
-        self.assertEqual('200 Ok', self.status)
-        self.assertEqual('text/plain', self.headers['Content-Type'])
-        self.assertEqual(str(len(self.data)), self.headers['Content-Length'])
-        self.assertNotIn('X-Sendfile', self.headers)
-        self.assertEqual(self.data, ''.join(req._response))
-        self.assertEqual('', self.response.getvalue())
 
 
 class SendErrorTestCase(unittest.TestCase):
@@ -482,21 +283,21 @@ class SendErrorTestCase(unittest.TestCase):
                       result['headers'])
         return content
 
+    def assertIn(self, member, container, msg=None):
+        if member not in container:
+            raise self.failureException(msg or '%r not in %r' %
+                                               (member, container))
+
+    def assertNotIn(self, member, container, msg=None):
+        if member in container:
+            raise self.failureException(msg or '%r in %r' %
+                                               (member, container))
+
 
 class ParseArgListTestCase(unittest.TestCase):
 
     def test_qs_str(self):
         args = parse_arg_list('k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
-        self.assertTrue(unicode, type(args[0][0]))
-        self.assertTrue(unicode, type(args[0][1]))
-        self.assertEqual(u'kéy', args[0][0])
-        self.assertEqual(u'resumé', args[0][1])
-        self.assertTrue(unicode, type(args[1][0]))
-        self.assertEqual(u'résumé', args[1][0])
-
-    def test_qs_str_with_prefix(self):
-        """The leading `?` should be stripped from the query string."""
-        args = parse_arg_list('?k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
         self.assertTrue(unicode, type(args[0][0]))
         self.assertTrue(unicode, type(args[0][1]))
         self.assertEqual(u'kéy', args[0][0])
@@ -514,40 +315,12 @@ class ParseArgListTestCase(unittest.TestCase):
         self.assertEqual(u'résu&mé', args[1][0])
 
 
-class HTTPExceptionTestCase(unittest.TestCase):
-
-    def test_tracerror_with_string_as_argument(self):
-        e1 = TracError('the message')
-        e2 = HTTPInternalError(e1)
-        self.assertEqual('500 Trac Error (the message)', unicode(e2))
-
-    def test_tracerror_with_fragment_as_argument(self):
-        e1 = TracError(tag(tag.b('the message')))
-        e2 = HTTPInternalError(e1)
-        self.assertEqual('500 Trac Error (<b>the message</b>)', unicode(e2))
-
-    def test_exception_with_string_as_argument(self):
-        e1 = Exception('the message')
-        e2 = HTTPInternalError(e1)
-        self.assertEqual('500 Internal Server Error (the message)',
-                         unicode(e2))
-
-    def test_exception_with_fragment_as_argument(self):
-        e1 = Exception(tag(tag.b('the message')))
-        e2 = HTTPInternalError(e1)
-        self.assertEqual('500 Internal Server Error (<b>the message</b>)',
-                         unicode(e2))
-
-
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(RequestTestCase))
-    suite.addTest(unittest.makeSuite(RequestSendFileTestCase))
-    suite.addTest(unittest.makeSuite(SendErrorTestCase))
-    suite.addTest(unittest.makeSuite(ParseArgListTestCase))
-    suite.addTest(unittest.makeSuite(HTTPExceptionTestCase))
+    suite.addTest(unittest.makeSuite(RequestTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(SendErrorTestCase, 'test'))
+    suite.addTest(unittest.makeSuite(ParseArgListTestCase, 'test'))
     return suite
 
-
 if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+    unittest.main()

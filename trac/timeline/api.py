@@ -27,7 +27,7 @@ class ITimelineEventProvider(Interface):
 
     def get_timeline_filters(req):
         """Return a list of filters that this event provider supports.
-
+        
         Each filter must be a (name, label) tuple, where `name` is the internal
         name, and `label` is a human-readable name for display.
 
@@ -43,24 +43,31 @@ class ITimelineEventProvider(Interface):
         The `filters` parameters is a list of the enabled filters, each item
         being the name of the tuples returned by `get_timeline_filters`.
 
-        The events are `(kind, date, author, data)` tuples, where `kind`
-        is a string used for categorizing the event, `date` is a `datetime`
-        object, `author` is a string and `data` is some private data that
-        the component will reuse when rendering the event.
+        Since 0.11, the events are `(kind, date, author, data)` tuples,
+        where `kind` is a string used for categorizing the event, `date`
+        is a `datetime` object, `author` is a string and `data` is some
+        private data that the component will reuse when rendering the event.
 
         When the event has been created indirectly by another module,
         like this happens when calling `AttachmentModule.get_timeline_events()`
         the tuple can also specify explicitly the provider by returning tuples
         of the following form: `(kind, date, author, data, provider)`.
+
+        Before version 0.11,  the events returned by this function used to
+        be tuples of the form `(kind, href, title, date, author, markup)`.
+        This is still supported but less flexible, as `href`, `title` and
+        `markup` are not context dependent.
         """
 
     def render_timeline_event(context, field, event):
         """Display the title of the event in the given context.
 
-        :param context: the `RenderingContext` object that can be used for
+        :param context: the rendering `Context` object that can be used for
                         rendering
         :param field: what specific part information from the event should
                       be rendered: can be the 'title', the 'description' or
                       the 'url'
         :param event: the event tuple, as returned by `get_timeline_events`
         """
+
+
