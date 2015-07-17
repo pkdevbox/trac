@@ -43,9 +43,6 @@ def image_setup(tc):
     attachment = Attachment(tc.env, 'wiki', 'page:fr')
     attachment.description = "image in page:fr"
     attachment.insert('img.png', StringIO(''), 0, 2)
-    tc.env.config.set('interwiki', 'shields', 'https://img.shields.io/')
-    tc.env.config.set('interwiki', 'travis',
-                      'https://travis-ci.org/$1?branch=$2')
     htdocs_location = 'http://assets.example.org/common'
     tc.context.req.chrome['htdocs_location'] = htdocs_location
     tc.env.config.set('trac', 'htdocs_location', htdocs_location)
@@ -165,20 +162,6 @@ IMAGE_MACRO_TEST_CASES = u"""
 ------------------------------
 <p>
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoAQMAAAC2MCouAAAAA1BMVEXLQ0MOAUiXAAAAC0lEQVQIHWMYYQAAAPAAASEIRrcAAAAASUVORK5CYII=" alt="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoAQMAAAC2MCouAAAAA1BMVEXLQ0MOAUiXAAAAC0lEQVQIHWMYYQAAAPAAASEIRrcAAAAASUVORK5CYII=" title="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoAQMAAAC2MCouAAAAA1BMVEXLQ0MOAUiXAAAAC0lEQVQIHWMYYQAAAPAAASEIRrcAAAAASUVORK5CYII=" />
-</p>
-============================== InterWiki
-[[Image(shields:travis/edgewall/trac.svg, link=trac:source:/trunk)]]
-[[Image(travis:edgewall/trac.svg:1.0-stable, link=trac:source:/branches/1.0-stable)]]
-------------------------------
-<p>
-<a style="padding:0; border:none" href="http://trac.edgewall.org/intertrac/source%3A/trunk"><img src="https://img.shields.io/travis/edgewall/trac.svg" alt="travis/edgewall/trac.svg in shields" title="travis/edgewall/trac.svg in shields" /></a>
-<a style="padding:0; border:none" href="http://trac.edgewall.org/intertrac/source%3A/branches/1.0-stable"><img src="https://travis-ci.org/edgewall/trac.svg?branch=1.0-stable" alt="edgewall/trac.svg:1.0-stable in travis" title="edgewall/trac.svg:1.0-stable in travis" /></a>
-</p>
-============================== InterWiki, nolink
-[[Image(shields:pypi/dm/trac.svg, nolink)]]
-------------------------------
-<p>
-<img src="https://img.shields.io/pypi/dm/trac.svg" alt="pypi/dm/trac.svg in shields" title="pypi/dm/trac.svg in shields" />
 </p>
 ==============================
 [[Image(notfound.png, nolink)]]
@@ -300,55 +283,6 @@ TITLEINDEX3_MACRO_TEST_CASES = u"""
 ------------------------------
 ============================== TitleIndex, hierarchy format, prefix hidden
 [[TitleIndex(WikiStart/,hideprefix,format=hierarchy)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">First</a></li><li><a href="/wiki/WikiStart/Second">Second</a></li><li><a href="/wiki/WikiStart/Third">Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix
-[[TitleIndex(../../WikiStart)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart">WikiStart</a></li><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix with trailing slash
-[[TitleIndex(../../WikiStart/)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ..
-[[TitleIndex(..)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart">WikiStart</a></li><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ../
-[[TitleIndex(../)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">WikiStart/First</a></li><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li><li><a href="/wiki/WikiStart/Third">WikiStart/Third</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix .
-[[TitleIndex(.)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/Second">WikiStart/Second</a></li></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative prefix ./
-[[TitleIndex(./)]]
-------------------------------
-<p>
-</p><div class="titleindex"><ul></ul></div><p>
-</p>
-------------------------------
-============================== TitleIndex, relative hidden prefix ../
-[[TitleIndex(../,hideprefix)]]
 ------------------------------
 <p>
 </p><div class="titleindex"><ul><li><a href="/wiki/WikiStart/First">First</a></li><li><a href="/wiki/WikiStart/Second">Second</a></li><li><a href="/wiki/WikiStart/Third">Third</a></li></ul></div><p>
@@ -519,8 +453,8 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-42-section"><code>[section-42]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="default"><code>value</code></td></tr>\
-<tr class="odd"><td><code>option2</code></td><td>blah</td><td class="default"><code>value</code></td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="default"><code>value</code></td></tr>\
+<tr class="odd"><td><tt>option2</tt></td><td>blah</td><td class="default"><code>value</code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -532,7 +466,7 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-list-section"><code>[section-list]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="default"><code>4.2|42|42||0|enabled</code></td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="default"><code>4.2|42|42||0|enabled</code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -544,11 +478,11 @@ TRACINI_MACRO_TEST_CASES = u"""\
 </p><div class="tracini">\
 <h3 id="section-def-section"><code>[section-def]</code></h3>\
 <table class="wiki"><tbody>\
-<tr class="even"><td><code>option1</code></td><td></td><td class="nodefault">(no default)</td></tr>\
-<tr class="odd"><td><code>option2</code></td><td></td><td class="nodefault">(no default)</td></tr>\
-<tr class="even"><td><code>option3</code></td><td></td><td class="default"><code>0</code></td></tr>\
-<tr class="odd"><td><code>option4</code></td><td></td><td class="default"><code>disabled</code></td></tr>\
-<tr class="even"><td><code>option5</code></td><td></td><td class="nodefault">(no default)</td></tr>\
+<tr class="even"><td><tt>option1</tt></td><td></td><td class="nodefault">(no default)</td></tr>\
+<tr class="odd"><td><tt>option2</tt></td><td></td><td class="nodefault">(no default)</td></tr>\
+<tr class="even"><td><tt>option3</tt></td><td></td><td class="default"><code>0</code></td></tr>\
+<tr class="odd"><td><tt>option4</tt></td><td></td><td class="default"><code>disabled</code></td></tr>\
+<tr class="even"><td><tt>option5</tt></td><td></td><td class="default"><code></code></td></tr>\
 </tbody></table>\
 </div><p>
 </p>
@@ -561,8 +495,7 @@ def tracini_setup(tc):
         option_a1 = (Option)('section-42', 'option1', 'value', doc='')
         option_a2 = (Option)('section-42', 'option2', 'value', doc='blah')
         option_l1 = (ListOption)('section-list', 'option1',
-                                 [4.2, '42', 42, None, 0, True], sep='|',
-                                 keep_empty=True)
+                                 [4.2, '42', 42, None, 0, True], sep='|')
         option_d1 = (Option)('section-def', 'option1', None)
         option_d2 = (Option)('section-def', 'option2', '')
         option_d3 = (IntOption)('section-def', 'option3', 0)
@@ -584,8 +517,7 @@ def suite():
                                   teardown=titleindex_teardown))
     suite.addTest(formatter.suite(TITLEINDEX3_MACRO_TEST_CASES, file=__file__,
                                   setup=titleindex3_setup,
-                                  teardown=titleindex_teardown,
-                                  context=('wiki', 'WikiStart/Second')))
+                                  teardown=titleindex_teardown))
     suite.addTest(formatter.suite(TITLEINDEX4_MACRO_TEST_CASES, file=__file__,
                                   setup=titleindex4_setup,
                                   teardown=titleindex_teardown))

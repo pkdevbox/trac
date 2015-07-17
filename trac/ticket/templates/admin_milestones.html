@@ -22,9 +22,12 @@
   <xi:include href="admin.html" />
   <head>
     <title>Milestones</title>
-    <script type="text/javascript">
+    <script type="text/javascript"
+            py:if="view == 'detail' and can_modify or
+                   view == 'list' and can_create">
       jQuery(document).ready(function($) {
-        $("#millist").addSelectAllCheckboxes();
+        $("#duedate").datetimepicker();
+        $("#completeddate").datetimepicker();
       });
     </script>
   </head>
@@ -33,7 +36,64 @@
     <h2>Manage Milestones <span py:if="view == 'list'" class="trac-count">(${len(milestones)})</span></h2>
 
     <py:choose test="view">
-      <xi:include py:when="'detail'" href="milestone_edit_form.html" />
+      <form py:when="'detail'" class="mod" method="post" id="modifymilestone" action=""
+            py:with="disabled = 'disabled' if not can_modify else None;
+                     readonly = 'readonly' if not can_modify else None">
+        <fieldset>
+          <legend>Modify Milestone:</legend>
+          <div class="field">
+            <label>Name:<br /> <input type="text" name="name" class="trac-autofocus"
+                                      value="$milestone.name" readonly="${readonly}" /></label>
+          </div>
+          <div class="field">
+            <label>Due:<br />
+              <input type="text" id="duedate" name="duedate" size="${len(datetime_hint)}"
+                     value="${milestone.due and format_datetime(milestone.due)}" readonly="${readonly}"
+                     title="${_('Format: %(datehint)s', datehint=datetime_hint)}"/>
+              <span class="hint" i18n:msg="datehint">Format: $datetime_hint</span>
+            </label>
+          </div>
+          <div class="field">
+            <label>
+              <input type="checkbox" id="completed" name="completed"
+                     checked="${milestone.completed or None}" disabled="${disabled}"/>
+              Completed:<br />
+            </label>
+            <label>
+              <input type="text" id="completeddate" name="completeddate"
+                     size="${len(datetime_hint)}"
+                     value="${format_datetime(milestone.completed)}" readonly="${readonly}"
+                     title="${_('Format: %(datehint)s', datehint=datetime_hint)}" />
+              <span class="hint" i18n:msg="datehint">Format: $datetime_hint</span>
+            </label>
+            <script type="text/javascript">
+              jQuery(document).ready(function($) {
+                function updateCompletedDate() {
+                  $("#completeddate").enable($("#completed").checked());
+                }
+                $("#completed").click(updateCompletedDate);
+                updateCompletedDate();
+              });
+            </script>
+          </div>
+          <div class="field">
+            <fieldset>
+              <label for="description" i18n:msg="">
+                Description: (you may use <a tabindex="42" href="${href.wiki('WikiFormatting')}">WikiFormatting</a> here)
+              </label>
+              <p>
+              <textarea id="description" name="description" class="wikitext trac-fullwidth trac-resizable"
+                        rows="6" cols="60" readonly="${readonly}">
+${milestone.description}</textarea>
+              </p>
+            </fieldset>
+          </div>
+          <div class="buttons">
+            <input type="submit" name="save" value="${_('Save')}" class="trac-disable-on-submit" disabled="${disabled}"/>
+            <input type="submit" name="cancel" value="${_('Cancel')}"/>
+          </div>
+        </fieldset>
+      </form>
 
       <py:otherwise>
         <form class="addnew" id="addmilestone" method="post" action="" py:if="can_create">
@@ -43,10 +103,9 @@
               <label>Name: <input type="text" name="name" id="name" size="22"/></label>
             </div>
             <div class="field">
-              <input type="hidden" name="due" value="1" />
-                <label>Due:
-                <input type="text" id="duedate" class="trac-datetimepicker"
-                       name="duedate" size="${len(datetime_hint)}"
+              <label>
+                Due:
+                <input type="text" id="duedate" name="duedate" size="${len(datetime_hint)}"
                        title="${_('Format: %(datehint)s', datehint=datetime_hint)}"/>
                 <span class="hint" i18n:msg="datetimehint">Format: $datetime_hint</span>
               </label>
@@ -61,17 +120,13 @@
           <form id="milestone_table" method="post" action="" py:when="milestones">
             <table class="listing" id="millist">
               <thead>
-                <tr><th class="sel" py:if="can_remove"></th>
-                  <th>Name</th><th>Due</th><th>Completed</th>
-                  <th title="Default milestone for new tickets">Default</th>
-                  <th title="Default milestone for retargeting tickets">Retarget</th>
-                  <th title="Number of tickets associated with milestone">Tickets</th>
+                <tr><th class="sel" py:if="can_remove">&nbsp;</th>
+                  <th>Name</th><th>Due</th><th>Completed</th><th>Default</th><th>Tickets</th>
                 </tr>
               </thead>
-              <tbody><tr py:for="milestone in milestones">
-                <td class="sel" py:if="can_remove">
-                  <input type="checkbox" class="trac-disable-determinant"
-                         name="sel" value="$milestone.name" />
+              <tbody><tr py:for="(milestone, ticket_count) in milestones">
+                <td py:if="can_remove">
+                  <input type="checkbox" name="sel" value="$milestone.name" />
                 </td>
                 <td>
                   <a href="${panel_href(milestone.name)}">${milestone.name}</a>
@@ -83,24 +138,15 @@
                   ${format_datetime(milestone.completed)}
                 </py:if></td>
                 <td class="default">
-                  <input type="radio" name="ticket_default" value="$milestone.name"
-                         checked="${milestone.name==ticket_default or None}" />
+                  <input type="radio" name="default" value="$milestone.name"
+                         checked="${milestone.name==default or None}" />
                 </td>
-                <td class="default">
-                  <input type="radio" name="retarget_default" value="$milestone.name"
-                         checked="${milestone.name==retarget_default or None}" />
-                </td>
-                <td class="num" py:with="ticket_count = milestone.get_num_tickets()">
-                  <a py:strip="ticket_count == 0"
-                     href="${query_href(milestone.name)}">$ticket_count</a>
-                </td>
+                <td class="num">${ticket_count}</td>
               </tr></tbody>
             </table>
             <div class="buttons">
               <input type="submit" name="apply" value="${_('Apply changes')}" />
-              <input type="submit" name="remove" class="trac-disable trac-disable-on-submit" value="${_('Remove selected items')}" py:if="can_remove" />
-              <input type="submit" title="Clear default ticket milestone and default retargeting milestone"
-                     name="clear" value="${_('Clear defaults')}" />
+              <input type="submit" name="remove" class="trac-disable-on-submit" value="${_('Remove selected items')}" py:if="can_remove"/>
             </div>
             <p class="help">
               You can remove all items from this list to completely hide this

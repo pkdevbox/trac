@@ -15,8 +15,6 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import print_function
-
 try:
     import os
     import pkg_resources
@@ -34,18 +32,18 @@ try:
     cgi_frontend.run()
 except SystemExit:
     raise
-except Exception as e:
+except Exception, e:
     import sys
     import traceback
 
-    print(e, file=sys.stderr)
+    print>>sys.stderr, e
     traceback.print_exc(file=sys.stderr)
 
-    print("Status: 500 Internal Server Error")
-    print("Content-Type: text/plain")
-    print()
-    print("Oops...")
-    print()
-    print("Trac detected an internal error:", e)
-    print()
+    print 'Status: 500 Internal Server Error'
+    print 'Content-Type: text/plain'
+    print
+    print 'Oops...'
+    print
+    print 'Trac detected an internal error:', e
+    print
     traceback.print_exc(file=sys.stdout)

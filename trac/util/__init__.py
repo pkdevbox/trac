@@ -17,6 +17,8 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Matthew Good <trac@matt-good.net>
 
+from __future__ import with_statement
+
 from cStringIO import StringIO
 import csv
 import errno
@@ -30,16 +32,14 @@ import random
 import re
 import shutil
 import sys
-import string
 import struct
 import tempfile
 import time
 from urllib import quote, unquote, urlencode
 
-from trac.util.compat import any, md5, sha1, sorted
-from trac.util.datefmt import to_datetime, to_timestamp, utc
-from trac.util.text import exception_to_unicode, to_unicode, \
-                           getpreferredencoding
+from .compat import any, md5, sha1, sorted
+from .datefmt import to_datetime, to_timestamp, utc
+from .text import exception_to_unicode, to_unicode, getpreferredencoding
 
 
 def get_reporter_id(req, arg_name=None):
@@ -146,7 +146,7 @@ if os.name == 'nt':
         # Fall back to "move away and replace"
         try:
             os.rename(src, dst)
-        except OSError as e:
+        except OSError, e:
             if e.errno != errno.EEXIST:
                 raise
             old = "%s-%08x" % (dst, random.randint(0, sys.maxint))
@@ -234,16 +234,10 @@ def read_file(path, mode='r'):
 
 
 def create_file(path, data='', mode='w'):
-    """Create a new file with the given data.
-
-    :data: string or iterable of strings.
-    """
+    """Create a new file with the given data."""
     with open(path, mode) as f:
         if data:
-            if isinstance(data, basestring):
-                f.write(data)
-            else:  # Assume iterable
-                f.writelines(data)
+            f.write(data)
 
 
 def create_unique_file(path):
@@ -256,7 +250,7 @@ def create_unique_file(path):
             if hasattr(os, 'O_BINARY'):
                 flags += os.O_BINARY
             return path, os.fdopen(os.open(path, flags, 0666), 'w')
-        except OSError as e:
+        except OSError, e:
             if e.errno != errno.EEXIST:
                 raise
             idx += 1
@@ -281,7 +275,7 @@ else:
         missing."""
         try:
             os.utime(filename, None)
-        except OSError as e:
+        except OSError, e:
             if e.errno == errno.ENOENT:
                 with open(filename, 'ab'):
                     pass
@@ -360,7 +354,7 @@ class NaivePopen:
 
     Example::
 
-      print(Popen3('grep spam','\\n\\nhere spam\\n\\n').out)
+      print Popen3('grep spam','\\n\\nhere spam\\n\\n').out
     """
     def __init__(self, command, input=None, capturestderr=None):
         outfile = tempfile.mktemp()
@@ -390,39 +384,35 @@ class NaivePopen:
 
 
 def terminate(process):
-    """Terminate the process.
-
-    If the process has already finished and has not been waited for,
-    the function does not raise OSError and WindowsError exceptions unlike
-    a terminate method of `subprocess.Popen`.
-
-    :param process: the integer id (`pid`) of the process.
+    """Python 2.5 compatibility method.
+    os.kill is not available on Windows before Python 2.7.
+    In Python 2.6 subprocess.Popen has a terminate method.
+    (It also seems to have some issues on Windows though.)
     """
 
-    pid = process if isinstance(process, int) else process.pid
-
-    def terminate_win():
+    def terminate_win(process):
         import ctypes
         PROCESS_TERMINATE = 1
         handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE,
-                                                    False, pid)
+                                                    False,
+                                                    process.pid)
         ctypes.windll.kernel32.TerminateProcess(handle, -1)
         ctypes.windll.kernel32.CloseHandle(handle)
 
-    def terminate_nix():
+    def terminate_nix(process):
         import os
         import signal
         try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError as e:
+            os.kill(process.pid, signal.SIGTERM)
+        except OSError, e:
             # If the process has already finished and has not been
             # waited for, killing it raises an ESRCH error on Cygwin
             if e.errno != errno.ESRCH:
                 raise
 
     if sys.platform == 'win32':
-        return terminate_win()
-    return terminate_nix()
+        return terminate_win(process)
+    return terminate_nix(process)
 
 
 def makedirs(path, overwrite=False):
@@ -473,17 +463,17 @@ def copytree(src, dst, symlinks=False, skip=[], overwrite=False):
                     remove_if_overwriting(dstname)
                     shutil.copy2(srcname, dstname)
                 # XXX What about devices, sockets etc.?
-            except (IOError, OSError) as why:
+            except (IOError, OSError), why:
                 errors.append((srcname, dstname, str(why)))
             # catch the Error from the recursive copytree so that we can
             # continue with other files
-            except shutil.Error as err:
+            except shutil.Error, err:
                 errors.extend(err.args[0])
         try:
             shutil.copystat(src, dst)
         except WindowsError:
             pass  # Ignore errors due to limited Windows copystat support
-        except OSError as why:
+        except OSError, why:
             errors.append((src, dst, str(why)))
         if errors:
             raise shutil.Error(errors)
@@ -543,6 +533,7 @@ def arity(f):
 def get_last_traceback():
     """Retrieve the last traceback as an `unicode` string."""
     import traceback
+    from StringIO import StringIO
     tb = StringIO()
     traceback.print_exc(file=tb)
     return to_unicode(tb.getvalue())
@@ -635,7 +626,7 @@ def safe__import__(module_name):
     already_imported = sys.modules.copy()
     try:
         return __import__(module_name, globals(), locals(), [])
-    except Exception as e:
+    except Exception, e:
         for modname in sys.modules.copy():
             if modname not in already_imported:
                 del(sys.modules[modname])
@@ -653,7 +644,7 @@ def safe_repr(x):
     """
     try:
         return to_unicode(repr(x))
-    except Exception as e:
+    except Exception, e:
         return "<%s object at 0x%X (repr() error: %s)>" % (
             fq_class_name(x), id(x), exception_to_unicode(e))
 
@@ -769,7 +760,6 @@ def get_pkginfo(dist):
         else:
             return {}
     import email
-    import email.errors
     from trac.util.translation import _
     attrs = ('author', 'author-email', 'license', 'home-page', 'summary',
              'description', 'version')
@@ -781,12 +771,12 @@ def get_pkginfo(dist):
         pkginfo = email.message_from_string(dist.get_metadata(metadata))
         for attr in [key for key in attrs if key in pkginfo]:
             info[normalize(attr)] = pkginfo[attr]
-    except IOError as e:
+    except IOError, e:
         err = _("Failed to read %(metadata)s file for %(dist)s: %(err)s",
                 metadata=metadata, dist=dist, err=to_unicode(e))
         for attr in attrs:
             info[normalize(attr)] = err
-    except email.errors.MessageError as e:
+    except email.Errors.MessageError, e:
         err = _("Failed to parse %(metadata)s file for %(dist)s: %(err)s",
                 metadata=metadata, dist=dist, err=to_unicode(e))
         for attr in attrs:
@@ -830,12 +820,6 @@ def hex_entropy(digits=32):
     """Generate `digits` number of hex digits of entropy."""
     result = ''.join('%.2x' % ord(v) for v in urandom((digits + 1) // 2))
     return result[:digits] if len(result) > digits else result
-
-
-def salt(length=2):
-    """Returns a string of `length` random letters and numbers."""
-    return ''.join(random.choice(string.ascii_letters + string.digits + '/.')
-                   for x in range(length))
 
 
 # Original license for md5crypt:
@@ -1180,8 +1164,7 @@ class lazy(object):
         instance.__dict__[self.fn.__name__] = value
 
     def __delete__(self, instance):
-        if self.fn.__name__ in instance.__dict__:
-            del instance.__dict__[self.fn.__name__]
+        del instance.__dict__[self.fn.__name__]
 
 
 # -- algorithmic utilities
@@ -1193,6 +1176,22 @@ def embedded_numbers(s):
     pieces = DIGITS.split(s)
     pieces[1::2] = map(int, pieces[1::2])
     return pieces
+
+
+def pairwise(iterable):
+    """
+    >>> list(pairwise([0, 1, 2, 3]))
+    [(0, 1), (1, 2), (2, 3)]
+
+    .. deprecated :: 0.11
+       if this really needs to be used, rewrite it without izip
+    """
+    a, b = tee(iterable)
+    try:
+        b.next()
+    except StopIteration:
+        pass
+    return izip(a, b)
 
 
 def partition(iterable, order=None):
@@ -1255,18 +1254,6 @@ def to_list(splittable, sep=','):
     """
     split = [x.strip() for x in splittable.split(sep)]
     return [item for item in split if item]
-
-
-def sub_val(the_list, item_to_remove, item_to_add):
-    """Substitute an item if the item is found in a list, otherwise leave
-    the list unmodified.
-    """
-    try:
-        index = the_list.index(item_to_remove)
-    except ValueError:
-        pass
-    else:
-        the_list[index] = item_to_add
 
 
 # Imports for backward compatibility (at bottom to avoid circular dependencies)

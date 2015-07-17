@@ -27,6 +27,9 @@ import textwrap
 from urllib import quote, quote_plus, unquote
 from unicodedata import east_asian_width
 
+from trac.util.translation import _
+
+
 CRLF = '\r\n'
 
 class Empty(unicode):
@@ -225,15 +228,19 @@ def quote_query_string(text):
 
 
 def to_utf8(text, charset='latin1'):
-    """Convert input to a UTF-8 `str` object.
+    """Convert a string to an UTF-8 `str` object.
 
     If the input is not an `unicode` object, we assume the encoding is
     already UTF-8, ISO Latin-1, or as specified by the optional
     *charset* parameter.
     """
-    if isinstance(text, str):
+    if isinstance(text, unicode):
+        u = text
+    else:
         try:
+            # Do nothing if it's already utf-8
             u = unicode(text, 'utf-8')
+            return text
         except UnicodeError:
             try:
                 # Use the user supplied charset if possible
@@ -241,11 +248,6 @@ def to_utf8(text, charset='latin1'):
             except UnicodeError:
                 # This should always work
                 u = unicode(text, 'latin1')
-        else:
-            # Do nothing if it's already utf-8
-            return text
-    else:
-        u = to_unicode(text)
     return u.encode('utf-8')
 
 
@@ -327,8 +329,14 @@ def text_width(text, ambiwidth=1):
 
 _default_ambiwidth = 1  # Default width of East Asian Ambiguous (A)
 if os.name == 'nt':
-    import ctypes
-    codepage = ctypes.windll.kernel32.GetConsoleOutputCP()
+    try:
+        # `ctypes` is available since Python 2.5
+        import ctypes
+        codepage = ctypes.windll.kernel32.GetConsoleOutputCP()
+    except ImportError:
+        # Try to retrieve the codepage from stderr and stdout
+        codepage = (sys.stderr.encoding or sys.stdout.encoding or '')[2:]
+        codepage = codepage.isdigit() and int(codepage) or 0
 
     if codepage in (932,  # Japanese (Shift-JIS)
                     936,  # Chinese Simplified (GB2312)
@@ -602,20 +610,12 @@ def normalize_whitespace(text, to_space=u'\u00a0', remove=u'\u200b'):
         text = text.replace(each, '')
     return text
 
-
 def unquote_label(txt):
     """Remove (one level of) enclosing single or double quotes.
 
     .. versionadded :: 1.0
     """
     return txt[1:-1] if txt and txt[0] in "'\"" and txt[0] == txt[-1] else txt
-
-
-def cleandoc(message):
-    """Removes uniform indentation and leading/trailing whitespace."""
-    from inspect import cleandoc
-    return cleandoc(message).strip()
-
 
 # -- Conversion
 
@@ -630,7 +630,6 @@ def pretty_size(size, format='%.1f'):
 
     jump = 1024
     if size < jump:
-        from trac.util.translation import _
         return _('%(size)s bytes', size=size)
 
     units = ['KB', 'MB', 'GB', 'TB']
@@ -718,17 +717,3 @@ def levenshtein_distance(lhs, rhs):
                             prev[ridx] + cost)) # substitution
         prev = curr
     return prev[-1]
-
-
-sub_vars_re = re.compile("[$]([A-Z_][A-Z0-9_]*)")
-
-def sub_vars(text, args):
-    """Substitute $XYZ-style variables in a string with provided values.
-
-    :param text: string containing variables to substitute.
-    :param args: dictionary with keys matching the variables to be substituted.
-                 The keys should not be prefixed with the $ character."""
-    def repl(match):
-        key = match.group(1)
-        return args[key] if key in args else '$' + key
-    return sub_vars_re.sub(repl, text)

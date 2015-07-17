@@ -20,11 +20,11 @@ import trac.tests.compat
 from trac.util.text import empty, expandtabs, fix_eol, javascript_quote, \
                            levenshtein_distance, normalize_whitespace, \
                            print_table, quote_query_string, shorten_line, \
-                           strip_line_ws, stripws, sub_vars, text_width, \
-                           to_js_string, to_unicode, to_utf8, \
-                           unicode_from_base64, unicode_quote, \
-                           unicode_quote_plus, unicode_to_base64, \
-                           unicode_unquote, unicode_urlencode, wrap
+                           strip_line_ws, stripws, text_width, \
+                           to_js_string, to_unicode, unicode_from_base64, \
+                           unicode_quote, unicode_quote_plus, \
+                           unicode_to_base64, unicode_unquote, \
+                           unicode_urlencode, wrap
 
 
 class ToUnicodeTestCase(unittest.TestCase):
@@ -47,20 +47,20 @@ class ToUnicodeTestCase(unittest.TestCase):
         u = u'\uB144'
         try:
             raise ValueError, '%s is not a number.' % u
-        except ValueError as e:
+        except ValueError, e:
             self.assertEqual(u'\uB144 is not a number.', to_unicode(e))
 
     def test_from_exception_using_str_args(self):
         u = u'Das Ger\xe4t oder die Ressource ist belegt'
         try:
             raise ValueError, u.encode('utf-8')
-        except ValueError as e:
+        except ValueError, e:
             self.assertEqual(u, to_unicode(e))
 
     def test_from_windows_error(self):
         try:
             os.stat('non/existent/file.txt')
-        except OSError as e:
+        except OSError, e:
             uc = to_unicode(e)
             self.assertIsInstance(uc, unicode, uc)
             self.assertTrue(uc.startswith('[Error '), uc)
@@ -73,7 +73,7 @@ class ToUnicodeTestCase(unittest.TestCase):
             s = socket.socket(af, socktype, proto)
             try:
                 s.connect(sa)
-            except socket.error as e:
+            except socket.error, e:
                 uc = to_unicode(e)
                 self.assertIsInstance(uc, unicode, uc)
                 if hasattr(e, 'strerror'):
@@ -159,31 +159,6 @@ class QuoteQueryStringTestCase(unittest.TestCase):
         text = u'type=the Ü thing&component=comp\x7fonent'
         self.assertEqual('type=the+%C3%9C+thing&component=comp%7Fonent',
                          quote_query_string(text))
-
-
-class ToUtf8TestCase(unittest.TestCase):
-    def test_unicode(self):
-        self.assertEqual('à', to_utf8('à'))
-        self.assertEqual('ç', to_utf8('ç'))
-
-    def test_boolean(self):
-        self.assertEqual('True', to_utf8(True))
-        self.assertEqual('False', to_utf8(False))
-
-    def test_int(self):
-        self.assertEqual('-1', to_utf8(-1))
-        self.assertEqual('0', to_utf8(0))
-        self.assertEqual('1', to_utf8(1))
-
-    def test_utf8(self):
-        self.assertEqual('à', to_utf8(u'à'))
-        self.assertEqual('ç', to_utf8(u'ç'))
-
-    def test_exception_with_utf8_message(self):
-        self.assertEqual('thė mèssägē', to_utf8(Exception('thė mèssägē')))
-
-    def test_exception_with_unicode_message(self):
-        self.assertEqual('thė mèssägē', to_utf8(Exception(u'thė mèssägē')))
 
 
 class WhitespaceTestCase(unittest.TestCase):
@@ -393,6 +368,7 @@ class StripwsTestCase(unittest.TestCase):
                                  leading=False, trailing=False))
 
 
+
 class LevenshteinDistanceTestCase(unittest.TestCase):
     def test_distance(self):
         self.assertEqual(5, levenshtein_distance('kitten', 'sitting'))
@@ -400,14 +376,6 @@ class LevenshteinDistanceTestCase(unittest.TestCase):
         self.assertEqual(2, levenshtein_distance('comfig', 'config'))
         self.assertEqual(5, levenshtein_distance('update', 'upgrade'))
         self.assertEqual(0, levenshtein_distance('milestone', 'milestone'))
-
-
-class SubVarsTestCase(unittest.TestCase):
-    def test_sub_vars(self):
-        subtext = sub_vars("$USER's tickets for '$COMPONENT', $MILESTONE",
-                           {'USER': 'user1', 'COMPONENT': 'component1'})
-        self.assertEqual("user1's tickets for 'component1', $MILESTONE",
-                         subtext)
 
 
 class ShortenLineTestCase(unittest.TestCase):
@@ -427,6 +395,7 @@ class ShortenLineTestCase(unittest.TestCase):
         self.assertEqual('abcde ...', shorten_line(text, 9))
 
 
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(ToUnicodeTestCase))
@@ -435,7 +404,6 @@ def suite():
     suite.addTest(unittest.makeSuite(JavascriptQuoteTestCase))
     suite.addTest(unittest.makeSuite(ToJsStringTestCase))
     suite.addTest(unittest.makeSuite(QuoteQueryStringTestCase))
-    suite.addTest(unittest.makeSuite(ToUtf8TestCase))
     suite.addTest(unittest.makeSuite(WhitespaceTestCase))
     suite.addTest(unittest.makeSuite(TextWidthTestCase))
     suite.addTest(unittest.makeSuite(PrintTableTestCase))
@@ -444,7 +412,6 @@ def suite():
     suite.addTest(unittest.makeSuite(UnicodeBase64TestCase))
     suite.addTest(unittest.makeSuite(StripwsTestCase))
     suite.addTest(unittest.makeSuite(LevenshteinDistanceTestCase))
-    suite.addTest(unittest.makeSuite(SubVarsTestCase))
     suite.addTest(unittest.makeSuite(ShortenLineTestCase))
     return suite
 

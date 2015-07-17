@@ -26,7 +26,8 @@ from trac.core import *
 from trac.resource import IResourceManager
 from trac.util.text import unquote_label
 from trac.util.translation import _
-from trac.wiki.parser import WikiParser
+
+from .parser import WikiParser
 
 
 class IWikiChangeListener(Interface):
@@ -53,9 +54,6 @@ class IWikiChangeListener(Interface):
 
     def wiki_page_renamed(page, old_name):
         """Called when a page has been renamed."""
-
-    def wiki_page_comment_modified(page, old_comment):
-        """Called when a page comment has been modified."""
 
 
 class IWikiPageManipulator(Interface):
@@ -110,6 +108,9 @@ class IWikiMacroProvider(Interface):
            description.
         """
 
+    def render_macro(req, name, content):
+        """Return the HTML output of the macro :deprecated:"""
+
     def is_inline(content):
         """Return `True` if the content generated is an inline XHTML element.
 
@@ -120,7 +121,10 @@ class IWikiMacroProvider(Interface):
         """Called by the formatter when rendering the parsed wiki text.
 
         .. versionadded:: 0.11
-
+          This form is preferred over `render_macro`, as
+          you get the `formatter`, which knows the current `.context`
+          (and the `.req`, but ideally you shouldn't use it in your
+          macros).
         .. versionchanged:: 0.12
            added the `args` parameter
 
@@ -260,30 +264,28 @@ class WikiSystem(Component):
     macro_providers = ExtensionPoint(IWikiMacroProvider)
     syntax_providers = ExtensionPoint(IWikiSyntaxProvider)
 
-    realm = 'wiki'
-
     ignore_missing_pages = BoolOption('wiki', 'ignore_missing_pages', 'false',
-        """Enable/disable highlighting CamelCase links to missing pages.
-        """)
+        """Enable/disable highlighting CamelCase links to missing pages
+        (''since 0.9'').""")
 
     split_page_names = BoolOption('wiki', 'split_page_names', 'false',
-        """Enable/disable splitting the WikiPageNames with space characters.
-        """)
+        """Enable/disable splitting the WikiPageNames with space characters
+        (''since 0.10'').""")
 
     render_unsafe_content = BoolOption('wiki', 'render_unsafe_content', 'false',
         """Enable/disable the use of unsafe HTML tags such as `<script>` or
-        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor].
+        `<embed>` with the HTML [wiki:WikiProcessors WikiProcessor]
+        (''since 0.10.4'').
 
         For public sites where anonymous users can edit the wiki it is
-        recommended to leave this option disabled.
-        """)
+        recommended to leave this option disabled (which is the default).""")
 
     safe_schemes = ListOption('wiki', 'safe_schemes',
         'cvs, file, ftp, git, irc, http, https, news, sftp, smb, ssh, svn, '
         'svn+ssh',
         doc="""List of URI schemes considered "safe", that will be rendered as
         external links even if `[wiki] render_unsafe_content` is `false`.
-        """)
+        (''since 0.11.8'')""")
 
     @cached
     def pages(self):
@@ -306,12 +308,6 @@ class WikiSystem(Component):
     def has_page(self, pagename):
         """Whether a page with the specified name exists."""
         return pagename.rstrip('/') in self.pages
-
-    def resolve_relative_name(self, pagename, referrer):
-        """Resolves a pagename relative to a referrer pagename."""
-        if pagename.startswith(('./', '../')) or pagename in ('.', '..'):
-            return self._resolve_relative_name(pagename, referrer)
-        return pagename
 
     # IWikiSyntaxProvider methods
 
@@ -410,7 +406,7 @@ class WikiSystem(Component):
             query = '&' + query[1:]
         pagename = pagename.rstrip('/') or 'WikiStart'
         referrer = ''
-        if formatter.resource and formatter.resource.realm == self.realm:
+        if formatter.resource and formatter.resource.realm == 'wiki':
             referrer = formatter.resource.id
         if pagename.startswith('/'):
             pagename = pagename.lstrip('/')
@@ -419,7 +415,7 @@ class WikiSystem(Component):
         else:
             pagename = self._resolve_scoped_name(pagename, referrer)
         label = unquote_label(label)
-        if 'WIKI_VIEW' in formatter.perm(self.realm, pagename, version):
+        if 'WIKI_VIEW' in formatter.perm('wiki', pagename, version):
             href = formatter.href.wiki(pagename, version=version) + query \
                    + fragment
             if self.has_page(pagename):
@@ -427,8 +423,7 @@ class WikiSystem(Component):
             else:
                 if ignore_missing:
                     return original_label or label
-                if 'WIKI_CREATE' in \
-                        formatter.perm(self.realm, pagename, version):
+                if 'WIKI_CREATE' in formatter.perm('wiki', pagename, version):
                     return tag.a(label + '?', class_='missing wiki',
                                  href=href, rel='nofollow')
                 else:
@@ -446,7 +441,7 @@ class WikiSystem(Component):
             if comp == '..':
                 if base:
                     base.pop()
-            elif comp != '.':
+            elif comp and comp != '.':
                 base.extend(components[i:])
                 break
         return '/'.join(base)
@@ -478,7 +473,7 @@ class WikiSystem(Component):
     # IResourceManager methods
 
     def get_resource_realms(self):
-        yield self.realm
+        yield 'wiki'
 
     def get_resource_description(self, resource, format, **kwargs):
         """

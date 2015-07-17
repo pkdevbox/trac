@@ -14,18 +14,16 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import os.path
 import time
-from abc import ABCMeta, abstractmethod
-from datetime import datetime
 
 from trac.admin import AdminCommandError, IAdminCommandProvider, get_dir_list
 from trac.config import ConfigSection, ListOption, Option
 from trac.core import *
 from trac.resource import IResourceManager, Resource, ResourceNotFound
-from trac.util import as_bool
 from trac.util.concurrency import threading
-from trac.util.datefmt import utc
 from trac.util.text import printout, to_unicode, exception_to_unicode
 from trac.util.translation import _
 from trac.web.api import IRequestFilter
@@ -118,7 +116,7 @@ class DbRepositoryProvider(Component):
     implements(IRepositoryProvider, IAdminCommandProvider)
 
     repository_attrs = ('alias', 'description', 'dir', 'hidden', 'name',
-                        'sync_per_request', 'type', 'url')
+                        'type', 'url')
 
     # IRepositoryProvider methods
 
@@ -195,8 +193,6 @@ class DbRepositoryProvider(Component):
             raise AdminCommandError(_('Invalid key "%(key)s"', key=key))
         if key == 'dir':
             value = os.path.abspath(value)
-        if key in ('hidden', 'sync_per_request'):
-            value = '1' if as_bool(value) else None
         self.modify_repository(reponame, {key: value})
         if not reponame:
             reponame = '(default)'
@@ -294,10 +290,6 @@ class RepositoryManager(Component):
 
     implements(IRequestFilter, IResourceManager, IRepositoryProvider)
 
-    changeset_realm = 'changeset'
-    source_realm = 'source'
-    repository_realm = 'repository'
-
     connectors = ExtensionPoint(IRepositoryConnector)
     providers = ExtensionPoint(IRepositoryProvider)
     change_listeners = ExtensionPoint(IRepositoryChangeListener)
@@ -316,14 +308,34 @@ class RepositoryManager(Component):
 
         (''since 0.12'')""")
 
-    default_repository_type = Option('versioncontrol',
-                                     'default_repository_type', 'svn',
-        """Default repository connector type.
+    repository_type = Option('trac', 'repository_type', 'svn',
+        """Default repository connector type. (''since 0.10'')
 
-        This is used as the default repository type for repositories defined
-        in the [[TracIni#repositories-section repositories]] section or using
-        the "Repositories" admin panel. (''since 0.12'')
+        This is also used as the default repository type for repositories
+        defined in [[TracIni#repositories-section repositories]] or using the
+        "Repositories" admin panel. (''since 0.12'')
         """)
+
+    repository_dir = Option('trac', 'repository_dir', '',
+        """Path to the default repository. This can also be a relative path
+        (''since 0.11'').
+
+        This option is deprecated, and repositories should be defined in the
+        [TracIni#repositories-section repositories] section, or using the
+        "Repositories" admin panel. (''since 0.12'')""")
+
+    repository_sync_per_request = ListOption('trac',
+        'repository_sync_per_request', '(default)',
+        doc="""List of repositories that should be synchronized on every page
+        request.
+
+        Leave this option empty if you have set up post-commit hooks calling
+        `trac-admin $ENV changeset added` on all your repositories
+        (recommended). Otherwise, set it to a comma-separated list of
+        repository names. Note that this will negatively affect performance,
+        and will prevent changeset listeners from receiving events from the
+        repositories specified here. The default is to synchronize the default
+        repository, for backward compatibility. (''since 0.12'')""")
 
     def __init__(self):
         self._cache = {}
@@ -336,36 +348,42 @@ class RepositoryManager(Component):
     def pre_process_request(self, req, handler):
         from trac.web.chrome import Chrome, add_warning
         if handler is not Chrome(self.env):
-            for repo_info in self.get_all_repositories().values():
-                if not as_bool(repo_info.get('sync_per_request')):
-                    continue
+            for reponame in self.repository_sync_per_request:
                 start = time.time()
-                repo_name = repo_info['name'] or '(default)'
+                if is_default(reponame):
+                    reponame = ''
                 try:
-                    repo = self.get_repository(repo_info['name'])
-                    repo.sync()
-                except TracError as e:
+                    repo = self.get_repository(reponame)
+                    if repo:
+                        repo.sync()
+                    else:
+                        self.log.warning("Unable to find repository '%s' for "
+                                         "synchronization",
+                                         reponame or '(default)')
+                        continue
+                except TracError, e:
                     add_warning(req,
                         _("Can't synchronize with repository \"%(name)s\" "
                           "(%(error)s). Look in the Trac log for more "
-                          "information.", name=repo_name,
+                          "information.", name=reponame or '(default)',
                           error=to_unicode(e)))
-                except Exception as e:
+                except Exception, e:
                     add_warning(req,
                         _("Failed to sync with repository \"%(name)s\": "
                           "%(error)s; repository information may be out of "
                           "date. Look in the Trac log for more information "
                           "including mitigation strategies.",
-                          name=repo_name, error=to_unicode(e)))
+                          name=reponame or '(default)', error=to_unicode(e)))
                     self.log.error(
                         "Failed to sync with repository \"%s\"; You may be "
                         "able to reduce the impact of this issue by "
-                        "configuring the sync_per_request option; see "
+                        "configuring [trac] repository_sync_per_request; see "
                         "http://trac.edgewall.org/wiki/TracRepositoryAdmin"
-                        "#ExplicitSync for more detail: %s", repo_name,
+                        "#ExplicitSync for more detail: %s",
+                        reponame or '(default)',
                         exception_to_unicode(e, traceback=True))
                 self.log.info("Synchronized '%s' repository in %0.2f seconds",
-                              repo_name, time.time() - start)
+                              reponame or '(default)', time.time() - start)
         return handler
 
     def post_process_request(self, req, template, data, content_type):
@@ -374,12 +392,12 @@ class RepositoryManager(Component):
     # IResourceManager methods
 
     def get_resource_realms(self):
-        yield self.changeset_realm
-        yield self.source_realm
-        yield self.repository_realm
+        yield 'changeset'
+        yield 'source'
+        yield 'repository'
 
     def get_resource_description(self, resource, format=None, **kwargs):
-        if resource.realm == self.changeset_realm:
+        if resource.realm == 'changeset':
             parent = resource.parent
             reponame = parent and parent.id
             id = resource.id
@@ -387,7 +405,7 @@ class RepositoryManager(Component):
                 return _("Changeset %(rev)s in %(repo)s", rev=id, repo=reponame)
             else:
                 return _("Changeset %(rev)s", rev=id)
-        elif resource.realm == self.source_realm:
+        elif resource.realm == 'source':
             parent = resource.parent
             reponame = parent and parent.id
             id = resource.id
@@ -409,43 +427,43 @@ class RepositoryManager(Component):
             # TRANSLATOR: file /path/to/file.py at version 13 in reponame
             return _('%(kind)s %(id)s%(at_version)s%(in_repo)s',
                      kind=kind, id=id, at_version=version, in_repo=in_repo)
-        elif resource.realm == self.repository_realm:
+        elif resource.realm == 'repository':
             if not resource.id:
                 return _("Default repository")
             return _("Repository %(repo)s", repo=resource.id)
 
     def get_resource_url(self, resource, href, **kwargs):
-        if resource.realm == self.changeset_realm:
+        if resource.realm == 'changeset':
             parent = resource.parent
             return href.changeset(resource.id, parent and parent.id or None)
-        elif resource.realm == self.source_realm:
+        elif resource.realm == 'source':
             parent = resource.parent
             return href.browser(parent and parent.id or None, resource.id,
                                 rev=resource.version or None)
-        elif resource.realm == self.repository_realm:
+        elif resource.realm == 'repository':
             return href.browser(resource.id or None)
 
     def resource_exists(self, resource):
-        if resource.realm == self.repository_realm:
+        if resource.realm == 'repository':
             reponame = resource.id
         else:
             reponame = resource.parent.id
         repos = self.env.get_repository(reponame)
         if not repos:
             return False
-        if resource.realm == self.changeset_realm:
+        if resource.realm == 'changeset':
             try:
                 repos.get_changeset(resource.id)
                 return True
             except NoSuchChangeset:
                 return False
-        elif resource.realm == self.source_realm:
+        elif resource.realm == 'source':
             try:
                 repos.get_node(resource.id, resource.version)
                 return True
             except NoSuchNode:
                 return False
-        elif resource.realm == self.repository_realm:
+        elif resource.realm == 'repository':
             return True
 
     # IRepositoryProvider methods
@@ -458,10 +476,13 @@ class RepositoryManager(Component):
         """
         repositories = self.repositories_section
         reponames = {}
+        # eventually add pre-0.12 default repository
+        if self.repository_dir:
+            reponames[''] = {'dir': self.repository_dir}
         # first pass to gather the <name>.dir entries
         for option in repositories:
             if option.endswith('.dir') and repositories.get(option):
-                reponames[option[:-4]] = {'sync_per_request': False}
+                reponames[option[:-4]] = {}
         # second pass to gather aliases
         for option in repositories:
             alias = repositories.get(option)
@@ -545,7 +566,7 @@ class RepositoryManager(Component):
         rdir = repoinfo.get('dir')
         if not rdir:
             return None
-        rtype = repoinfo.get('type') or self.default_repository_type
+        rtype = repoinfo.get('type') or self.repository_type
 
         # get a Repository for the reponame (use a thread-level cache)
         with self.env.db_transaction: # prevent possible deadlock, see #4465
@@ -595,8 +616,7 @@ class RepositoryManager(Component):
         hierarchy and return the name of its associated repository.
         """
         while context:
-            if context.resource.realm in (self.source_realm,
-                                          self.changeset_realm):
+            if context.resource.realm in ('source', 'changeset'):
                 return context.resource.parent.id
             context = context.parent
 
@@ -670,13 +690,17 @@ class RepositoryManager(Component):
         errors = []
         for repos in sorted(repositories, key=lambda r: r.reponame):
             reponame = repos.reponame or '(default)'
+            if reponame in self.repository_sync_per_request:
+                self.log.warn("Repository '%s' should be removed from [trac] "
+                              "repository_sync_per_request for explicit "
+                              "synchronization", reponame)
             repos.sync()
             for rev in revs:
                 args = []
                 if event == 'changeset_modified':
                     try:
                         old_changeset = repos.sync_changeset(rev)
-                    except NoSuchChangeset as e:
+                    except NoSuchChangeset, e:
                         errors.append(exception_to_unicode(e))
                         self.log.warn(
                             "No changeset '%s' found in repository '%s'. "
@@ -691,7 +715,7 @@ class RepositoryManager(Component):
                     try:
                         repos.sync_changeset(rev)
                         changeset = repos.get_changeset(rev)
-                    except NoSuchChangeset as e:
+                    except NoSuchChangeset, e:
                         errors.append(exception_to_unicode(e))
                         self.log.warn(
                             "No changeset '%s' found in repository '%s'. "
@@ -768,17 +792,9 @@ class NoSuchNode(ResourceNotFound):
 class Repository(object):
     """Base class for a repository provided by a version control system."""
 
-    __metaclass__ = ABCMeta
-
     has_linear_changesets = False
 
     scope = '/'
-
-    realm = RepositoryManager.repository_realm
-
-    @property
-    def resource(self):
-        return Resource(self.realm, self.reponame)
 
     def __init__(self, name, params, log):
         """Initialize a repository.
@@ -799,15 +815,11 @@ class Repository(object):
         self.reponame = params['name']
         self.id = params['id']
         self.log = log
+        self.resource = Resource('repository', self.reponame)
 
-    def __repr__(self):
-        return '<%s %r %r %r>' % (self.__class__.__name__,
-                                  self.id, self.name, self.scope)
-
-    @abstractmethod
     def close(self):
         """Close the connection to the repository."""
-        pass
+        raise NotImplementedError
 
     def get_base(self):
         """Return the name of the base repository for this repository.
@@ -864,10 +876,9 @@ class Repository(object):
         """
         return None
 
-    @abstractmethod
     def get_changeset(self, rev):
         """Retrieve a Changeset corresponding to the given revision `rev`."""
-        pass
+        raise NotImplementedError
 
     def get_changeset_uid(self, rev):
         """Return a globally unique identifier for the ''rev'' changeset.
@@ -899,7 +910,6 @@ class Repository(object):
         except TracError:
             return False
 
-    @abstractmethod
     def get_node(self, path, rev=None):
         """Retrieve a Node from the repository at the given path.
 
@@ -909,21 +919,18 @@ class Repository(object):
         revision is returned, otherwise the Node corresponding to the youngest
         revision is returned.
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def get_oldest_rev(self):
         """Return the oldest revision stored in the repository."""
-        pass
+        raise NotImplementedError
     oldest_rev = property(lambda self: self.get_oldest_rev())
 
-    @abstractmethod
     def get_youngest_rev(self):
         """Return the youngest revision in the repository."""
-        pass
+        raise NotImplementedError
     youngest_rev = property(lambda self: self.get_youngest_rev())
 
-    @abstractmethod
     def previous_rev(self, rev, path=''):
         """Return the revision immediately preceding the specified revision.
 
@@ -932,9 +939,8 @@ class Repository(object):
 
         In presence of multiple parents, this follows the first parent.
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def next_rev(self, rev, path=''):
         """Return the revision immediately following the specified revision.
 
@@ -943,42 +949,33 @@ class Repository(object):
 
         In presence of multiple children, this follows the first child.
         """
-        pass
+        raise NotImplementedError
 
     def parent_revs(self, rev):
         """Return a list of parents of the specified revision."""
         parent = self.previous_rev(rev)
         return [parent] if parent is not None else []
 
-    @abstractmethod
     def rev_older_than(self, rev1, rev2):
         """Provides a total order over revisions.
 
         Return `True` if `rev1` is an ancestor of `rev2`.
         """
-        pass
+        raise NotImplementedError
 
-    # @abstractmethod
     def get_path_history(self, path, rev=None, limit=None):
         """Retrieve all the revisions containing this path.
 
         If given, `rev` is used as a starting point (i.e. no revision
         ''newer'' than `rev` should be returned).
         The result format should be the same as the one of Node.get_history()
-
-        :since 1.1.2: The method should be implemented in subclasses since
-                      it will be made abstract in Trac 1.3.1. A `TypeError`
-                      will result when instantiating classes that don't
-                      implement the method.
         """
         raise NotImplementedError
 
-    @abstractmethod
     def normalize_path(self, path):
         """Return a canonical representation of path in the repos."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def normalize_rev(self, rev):
         """Return a (unique) canonical representation of a revision.
 
@@ -992,7 +989,7 @@ class Repository(object):
 
         :raise NoSuchChangeset: If the given `rev` isn't found.
         """
-        pass
+        raise NotImplementedError
 
     def short_rev(self, rev):
         """Return a compact representation of a revision in the repos.
@@ -1012,7 +1009,6 @@ class Repository(object):
         """
         return self.normalize_rev(rev)
 
-    @abstractmethod
     def get_changes(self, old_path, old_rev, new_path, new_rev,
                     ignore_ancestry=1):
         """Generates changes corresponding to generalized diffs.
@@ -1023,7 +1019,7 @@ class Repository(object):
         The old_node is assumed to be None when the change is an ADD,
         the new_node is assumed to be None when the change is a DELETE.
         """
-        pass
+        raise NotImplementedError
 
     def is_viewable(self, perm):
         """Return True if view permission is granted on the repository."""
@@ -1035,16 +1031,12 @@ class Repository(object):
 class Node(object):
     """Represents a directory or file in the repository at a given revision."""
 
-    __metaclass__ = ABCMeta
-
     DIRECTORY = "dir"
     FILE = "file"
 
-    realm = RepositoryManager.source_realm
-
-    @property
-    def resource(self):
-        return Resource(self.realm, self.path, self.rev, self.repos.resource)
+    resource = property(lambda self: Resource('source', self.path,
+                                              version=self.rev,
+                                              parent=self.repos.resource))
 
     # created_path and created_rev properties refer to the Node "creation"
     # in the Subversion meaning of a Node in a versioned tree (see #3340).
@@ -1062,20 +1054,13 @@ class Node(object):
         self.rev = rev
         self.kind = kind
 
-    def __repr__(self):
-        name = u'%s:%s' % (self.repos.name, self.path)
-        if self.rev is not None:
-            name += '@' + unicode(self.rev)
-        return '<%s %r>' % (self.__class__.__name__, name)
-
-    @abstractmethod
     def get_content(self):
         """Return a stream for reading the content of the node.
 
         This method will return `None` for directories.
         The returned object must support a `read([len])` method.
         """
-        pass
+        raise NotImplementedError
 
     def get_processed_content(self, keyword_substitution=True, eol_hint=None):
         """Return a stream for reading the content of the node, with some
@@ -1094,16 +1079,14 @@ class Node(object):
         """
         return self.get_content()
 
-    @abstractmethod
     def get_entries(self):
         """Generator that yields the immediate child entries of a directory.
 
         The entries are returned in no particular order.
         If the node is a file, this method returns `None`.
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def get_history(self, limit=None):
         """Provide backward history for this Node.
 
@@ -1116,7 +1099,7 @@ class Node(object):
 
         :param limit: if given, yield at most ``limit`` results.
         """
-        pass
+        raise NotImplementedError
 
     def get_previous(self):
         """Return the change event corresponding to the previous revision.
@@ -1130,7 +1113,6 @@ class Node(object):
             else:
                 return p
 
-    @abstractmethod
     def get_annotations(self):
         """Provide detailed backward history for the content of this Node.
 
@@ -1138,41 +1120,37 @@ class Node(object):
         for that node.
         Only expected to work on (text) FILE nodes, of course.
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def get_properties(self):
         """Returns the properties (meta-data) of the node, as a dictionary.
 
         The set of properties depends on the version control system.
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def get_content_length(self):
         """The length in bytes of the content.
 
         Will be `None` for a directory.
         """
-        pass
+        raise NotImplementedError
     content_length = property(lambda self: self.get_content_length())
 
-    @abstractmethod
     def get_content_type(self):
         """The MIME type corresponding to the content, if known.
 
         Will be `None` for a directory.
         """
-        pass
+        raise NotImplementedError
     content_type = property(lambda self: self.get_content_type())
 
     def get_name(self):
         return self.path.split('/')[-1]
     name = property(lambda self: self.get_name())
 
-    @abstractmethod
     def get_last_modified(self):
-        pass
+        raise NotImplementedError
     last_modified = property(lambda self: self.get_last_modified())
 
     isdir = property(lambda self: self.kind == Node.DIRECTORY)
@@ -1189,8 +1167,6 @@ class Node(object):
 class Changeset(object):
     """Represents a set of changes committed at once in a repository."""
 
-    __metaclass__ = ABCMeta
-
     ADD = 'add'
     COPY = 'copy'
     DELETE = 'delete'
@@ -1202,11 +1178,8 @@ class Changeset(object):
     OTHER_CHANGES = (ADD, DELETE)
     ALL_CHANGES = DIFF_CHANGES + OTHER_CHANGES
 
-    realm = RepositoryManager.changeset_realm
-
-    @property
-    def resource(self):
-        return Resource(self.realm, self.rev, parent=self.repos.resource)
+    resource = property(lambda self: Resource('changeset', self.rev,
+                                              parent=self.repos.resource))
 
     def __init__(self, repos, rev, message, author, date):
         self.repos = repos
@@ -1214,10 +1187,6 @@ class Changeset(object):
         self.message = message or ''
         self.author = author or ''
         self.date = date
-
-    def __repr__(self):
-        name = u'%s@%s' % (self.repos.name, self.rev)
-        return '<%s %r>' % (self.__class__.__name__, name)
 
     def get_properties(self):
         """Returns the properties (meta-data) of the node, as a dictionary.
@@ -1230,7 +1199,6 @@ class Changeset(object):
         """
         return []
 
-    @abstractmethod
     def get_changes(self):
         """Generator that produces a tuple for every change in the changeset.
 
@@ -1243,7 +1211,7 @@ class Changeset(object):
         The `base_path` and `base_rev` are the source path and rev for the
         action (`None` and `-1` in the case of an ADD change).
         """
-        pass
+        raise NotImplementedError
 
     def get_branches(self):
         """Yield branches to which this changeset belong.
@@ -1260,32 +1228,11 @@ class Changeset(object):
         """
         return []
 
-    def get_bookmarks(self):
-        """Yield bookmarks associated with this changeset.
-
-        .. versionadded :: 1.1.5
-        """
-        return []
-
     def is_viewable(self, perm):
         """Return True if view permission is granted on the changeset."""
         return 'CHANGESET_VIEW' in perm(self.resource)
 
     can_view = is_viewable  # 0.12 compatibility
-
-
-class EmptyChangeset(Changeset):
-    """Changeset that contains no changes. This is typically used when the
-    changeset can't be retrieved."""
-
-    def __init__(self, repos, rev, message=None, author=None, date=None):
-        if date is None:
-            date = datetime(1970, 1, 1, tzinfo=utc)
-        super(EmptyChangeset, self).__init__(repos, rev, message, author,
-                                             date)
-
-    def get_changes(self):
-        return iter([])
 
 
 # Note: Since Trac 0.12, Exception PermissionDenied class is gone,

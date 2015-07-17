@@ -68,9 +68,9 @@ class MockRepository(Repository):
 
     def get_changeset(self, rev):
         assert rev % 3 == 1  # allow only 3n + 1
-        return MockChangeset(self, rev, 'message-%d' % rev, 'author-%d' % rev,
-                             datetime(2001, 1, 1, tzinfo=utc) +
-                             timedelta(seconds=rev))
+        return Changeset(self, rev, 'message-%d' % rev, 'author-%d' % rev,
+                         datetime(2001, 1, 1, tzinfo=utc) +
+                         timedelta(seconds=rev))
 
     def previous_rev(self, rev, path=''):
         assert rev % 3 == 1  # allow only 3n + 1
@@ -90,22 +90,6 @@ class MockRepository(Repository):
 
     def rev_older_than(self, rev1, rev2):
         return self.normalize_rev(rev1) < self.normalize_rev(rev2)
-
-    def close(self):
-        pass
-
-    def _not_implemented(self, *args, **kwargs):
-        raise NotImplementedError
-
-    get_changes = _not_implemented
-    get_oldest_rev = _not_implemented
-    next_rev = _not_implemented
-
-
-class MockChangeset(Changeset):
-
-    def get_changes(self):
-        raise StopIteration
 
 
 class MockNode(Node):
@@ -136,17 +120,6 @@ class MockNode(Node):
             if rev == 40:
                 path += '-old'
             rev -= 3
-
-    def _not_implemented(self, *args, **kwargs):
-        raise NotImplementedError
-
-    get_annotations = _not_implemented
-    get_content = _not_implemented
-    get_content_length = _not_implemented
-    get_content_type = _not_implemented
-    get_entries = _not_implemented
-    get_last_modified = _not_implemented
-    get_properties = _not_implemented
 
 
 class LogModuleTestCase(RequestHandlerPermissionsTestCaseBase):
@@ -254,7 +227,7 @@ class LogModuleTestCase(RequestHandlerPermissionsTestCaseBase):
             req = self.create_request(path_info='/log/mock/file', **kwargs)
             try:
                 self.process_request(req)
-            except NoSuchChangeset as e:
+            except NoSuchChangeset, e:
                 self.assertEqual(message, unicode(e))
 
         fn('No changeset 101 in the repository', args={'rev': '101'})
@@ -442,7 +415,7 @@ class LogModuleTestCase(RequestHandlerPermissionsTestCaseBase):
             req = self.create_request(path_info='/log/mock/file', **kwargs)
             try:
                 self.process_request(req)
-            except NoSuchChangeset as e:
+            except NoSuchChangeset, e:
                 self.assertEqual(message, unicode(e))
 
         fn('No changeset 101 in the repository', args={'revs': '101'})

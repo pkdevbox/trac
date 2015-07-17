@@ -14,7 +14,6 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
-from abc import ABCMeta, abstractmethod
 import errno
 import socket
 import sys
@@ -60,8 +59,6 @@ class _FileWrapper(object):
 
 class WSGIGateway(object):
     """Abstract base class for WSGI servers or gateways."""
-
-    __metaclass__ = ABCMeta
 
     wsgi_version = (1, 0)
     wsgi_multithread = True
@@ -122,12 +119,11 @@ class WSGIGateway(object):
         self.headers_set = [status, headers]
         return self._write
 
-    @abstractmethod
     def _write(self, data):
         """Callback for writing data to the response.
 
         Concrete subclasses must implement this method."""
-        pass
+        raise NotImplementedError
 
 
 class WSGIRequestHandler(BaseHTTPRequestHandler):
@@ -184,7 +180,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler):
     def handle_one_request(self):
         try:
             environ = self.setup_environ()
-        except (IOError, socket.error) as e:
+        except (IOError, socket.error), e:
             environ = None
             if e.args[0] in (errno.EPIPE, errno.ECONNRESET, 10053, 10054):
                 # client disconnect
@@ -200,7 +196,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler):
         """We need to help the garbage collector a little."""
         try:
             BaseHTTPRequestHandler.finish(self)
-        except (IOError, socket.error) as e:
+        except (IOError, socket.error), e:
             # ignore an exception if client disconnects
             if e.args[0] not in (errno.EPIPE, errno.ECONNRESET, 10053, 10054):
                 raise
@@ -244,7 +240,7 @@ class WSGIServerGateway(WSGIGateway):
                 self.handler.wfile.write('%x\r\n%s\r\n' % (len(data), data))
             else:
                 self.handler.wfile.write(data)
-        except (IOError, socket.error) as e:
+        except (IOError, socket.error), e:
             if e.args[0] in (errno.EPIPE, errno.ECONNRESET, 10053, 10054):
                 # client disconnect
                 self.handler.close_connection = 1

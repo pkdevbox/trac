@@ -18,11 +18,6 @@
   <xi:include href="admin.html" />
   <head>
     <title>$label_plural</title>
-    <script type="text/javascript">
-      jQuery(document).ready(function($) {
-        $("#enumlist").addSelectAllCheckboxes();
-      });
-    </script>
   </head>
 
   <body>
@@ -32,17 +27,17 @@
     </h2>
 
     <py:choose test="view">
-      <form py:when="'detail'" id="edit" class="mod" method="post" action="">
+      <form py:when="'detail'" class="mod" id="modenum" method="post" action="">
         <fieldset>
           <legend i18n:msg="label_singular">Modify $label_singular:</legend>
           <div class="field">
             <label>Name: <input type="text" name="name" class="trac-autofocus" value="${enum.name}" /></label>
           </div>
+          <div class="buttons">
+            <input type="submit" name="save" class="trac-disable-on-submit" value="${_('Save')}"/>
+            <input type="submit" name="cancel" value="${_('Cancel')}"/>
+          </div>
         </fieldset>
-        <div class="buttons">
-          <input type="submit" name="save" class="trac-disable-on-submit" value="${_('Submit changes')}"/>
-          <input type="submit" name="cancel" value="${_('Cancel')}"/>
-        </div>
       </form>
 
       <py:otherwise>
@@ -62,16 +57,13 @@
           <form py:when="enums" id="enumtable" method="post" action="">
             <table class="listing" id="enumlist">
               <thead>
-                <tr><th class="sel"></th>
+                <tr><th class="sel">&nbsp;</th>
                   <th>Name</th><th>Default</th><th>Order</th>
                 </tr>
               </thead>
               <tbody>
                 <tr py:for="enum in enums">
-                  <td class="sel">
-                    <input type="checkbox" class="trac-disable-determinant"
-                           name="sel" value="${enum.name}" />
-                  </td>
+                  <td><input type="checkbox" name="sel" value="${enum.name}" /></td>
                   <td><a href="${panel_href(enum.name)}">${enum.name}</a></td>
                   <td class="default">
                     <input type="radio" name="default" value="${enum.name}"
@@ -88,8 +80,7 @@
             </table>
             <div class="buttons">
               <input type="submit" name="apply" value="${_('Apply changes')}" />
-              <input type="submit" name="remove" class="trac-disable trac-disable-on-submit" value="${_('Remove selected items')}" />
-              <input type="submit" name="clear" value="${_('Clear default')}" />
+              <input type="submit" name="remove" class="trac-disable-on-submit" value="${_('Remove selected items')}" />
             </div>
             <p class="help">
               You can remove all items from this list to completely hide this

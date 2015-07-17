@@ -14,6 +14,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from datetime import datetime
 
 import trac.tests.compat
@@ -73,12 +75,6 @@ class CacheTestCase(unittest.TestCase):
                   """, (args[-1][0][0],))
 
     # Tests
-
-    def test_repr(self):
-        repos = self.get_repos()
-        cache = CachedRepository(self.env, repos, self.log)
-        self.assertEqual("<CachedRepository 1 'test-repos' '/'>",
-                         repr(cache))
 
     def test_initial_sync_with_empty_repos(self):
         repos = self.get_repos()

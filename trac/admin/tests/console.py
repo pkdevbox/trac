@@ -13,7 +13,6 @@
 #
 # Author: Tim Moloney <t.moloney@verizon.net>
 
-import copy
 import difflib
 import inspect
 import os
@@ -47,8 +46,7 @@ import trac.wiki.web_ui
 from trac.admin.api import AdminCommandManager, IAdminCommandProvider, \
                            console_date_format, get_console_locale
 from trac.admin.console import TracAdmin, TracAdminHelpMacro
-from trac.config import ConfigSection, Option
-from trac.core import Component, ComponentMeta, implements
+from trac.core import Component, implements
 from trac.test import EnvironmentStub
 from trac.util.datefmt import format_date, get_date_format_hint, \
                               get_datetime_format_hint
@@ -144,9 +142,6 @@ class TracadminTestCase(unittest.TestCase):
         docs = AdminCommandManager(self.env).get_command_help(list(args))
         self.assertEqual(1, len(docs))
         return docs[0][2]
-
-    def _complete_command(self, *args):
-        return AdminCommandManager(self.env).complete_command(list(args))
 
     def assertExpectedResult(self, output, args=None):
         test_name = inspect.stack()[1][3]
@@ -487,34 +482,6 @@ class TracadminTestCase(unittest.TestCase):
         self.assertEqual(0, rv, output)
         self.assertExpectedResult(output)
 
-    def test_component_add_complete_optional_owner_restrict_owner_false(self):
-        """Tests completion of the 'component add <component>' command with
-        [ticket] restrict_owner = false.
-        """
-        self._execute('config set ticket restrict_owner false')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'add',
-                                        'new_component', '')
-        self.assertEqual([], output)
-
-    def test_component_add_complete_optional_owner_restrict_owner_true(self):
-        """Tests completion of the 'component add <component>' command with
-        [ticket] restrict_owner = true.
-        """
-        self._execute('config set ticket restrict_owner true')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'add',
-                                        'new_component', '')
-        self.assertEqual(['user1', 'user3'], output)
-
     def test_component_add_error_already_exists(self):
         """
         Tests the 'component add' command in trac-admin.  This particular
@@ -562,38 +529,6 @@ class TracadminTestCase(unittest.TestCase):
         rv, output = self._execute('component list')
         self.assertEqual(0, rv, output)
         self.assertExpectedResult(output)
-
-    def test_component_chown_complete_component(self):
-        """Tests completion of the 'component chown' command.
-        """
-        output = self._complete_command('component', 'chown', '')
-        self.assertEqual(['component1', 'component2'], output)
-
-    def test_component_chown_complete_owner_restrict_owner_false(self):
-        """Tests completion of the 'component chown <component>' command with
-        [ticket] restrict_owner = false.
-        """
-        self._execute('config set ticket restrict_owner false')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'chown', 'component1', '')
-        self.assertEqual([], output)
-
-    def test_component_chown_complete_owner_restrict_owner_true(self):
-        """Tests completion of the 'component chown <component>' command with
-        [ticket] restrict_owner = true.
-        """
-        self._execute('config set ticket restrict_owner true')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'chown', 'component1', '')
-        self.assertEqual(['user1', 'user3'], output)
 
     def test_component_chown_error_bad_component(self):
         """
@@ -1328,21 +1263,6 @@ class TracadminTestCase(unittest.TestCase):
         rv, output = self._execute('session list name00')
         self.assertExpectedResult(output)
 
-    def test_session_set_attr_default_handler(self):
-        _prep_session_table(self.env)
-        rv, output = \
-            self._execute('session set default_handler name00 SearchModule')
-        self.assertEqual(0, rv, output)
-        rv, output = self._execute('session list name00')
-        self.assertExpectedResult(output)
-
-    def test_session_set_attr_default_handler_invalid(self):
-        _prep_session_table(self.env)
-        rv, output = \
-            self._execute('session set default_handler name00 InvalidModule')
-        self.assertEqual(2, rv, output)
-        self.assertExpectedResult(output)
-
     def test_session_set_attr_missing_attr(self):
         rv, output = self._execute('session set')
         self.assertEqual(2, rv, output)
@@ -1479,68 +1399,11 @@ class TracAdminHelpMacroTestCase(unittest.TestCase):
         self.assertTrue(unicode_help in help)
 
 
-class TracAdminComponentTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True, enable=('trac.*',),
-                                   disable=('trac.tests.*',))
-        self._admin = TracAdmin()
-        self._admin.env_set('', self.env)
-        self._orig = {
-            'ComponentMeta._components': ComponentMeta._components,
-            'ComponentMeta._registry': ComponentMeta._registry,
-            'ConfigSection.registry': ConfigSection.registry,
-            'Option.registry': Option.registry,
-        }
-        ComponentMeta._components = list(ComponentMeta._components)
-        ComponentMeta._registry = dict((interface, list(classes))
-                                       for interface, classes
-                                       in ComponentMeta._registry.iteritems())
-        ConfigSection.registry = {}
-        Option.registry = {}
-
-        class CompA(Component):
-            from trac.config import Option
-            opt1 = Option('compa', 'opt1', 1)
-            opt2 = Option('compa', 'opt2', 2)
-
-    def tearDown(self):
-        self.env = None
-        self._admin = None
-        ComponentMeta._components = self._orig['ComponentMeta._components']
-        ComponentMeta._registry = self._orig['ComponentMeta._registry']
-        ConfigSection.registry = self._orig['ConfigSection.registry']
-        Option.registry = self._orig['Option.registry']
-
-    def _execute(self, cmd, strip_trailing_space=True, input=None):
-        return execute_cmd(self._admin, cmd,
-                           strip_trailing_space=strip_trailing_space,
-                           input=input)
-
-    def test_config_component_enable(self):
-        self.env.config.save()
-        initial_file = copy.deepcopy(self.env.config.parser)
-
-        rv, output = self._execute('config set components '
-                                   'trac.admin.tests.console.* enabled')
-
-        self.assertEqual(0, rv, output)
-        self.assertFalse(initial_file.has_section('compa'))
-        self.assertIn('compa', self.env.config)
-        self.assertIn('1', self.env.config.parser.get('compa', 'opt1'))
-        self.assertIn('2', self.env.config.parser.get('compa', 'opt2'))
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TracadminTestCase))
     suite.addTest(unittest.makeSuite(TracadminNoEnvTestCase))
     suite.addTest(unittest.makeSuite(TracAdminHelpMacroTestCase))
-    if __name__ == 'trac.admin.tests.console':
-        suite.addTest(unittest.makeSuite(TracAdminComponentTestCase))
-    else:
-        print("SKIP: trac.admin.tests.console.TracAdminComponentTestCase "
-              "(__name__ is not trac.admin.tests.console)")
     return suite
 
 
