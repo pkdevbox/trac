@@ -12,6 +12,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import os
 import codecs
 from collections import deque
@@ -24,7 +26,6 @@ from threading import Lock
 import time
 import weakref
 
-from trac.core import TracBaseError
 from trac.util import terminate
 from trac.util.compat import close_fds
 from trac.util.text import to_unicode
@@ -32,7 +33,7 @@ from trac.util.text import to_unicode
 __all__ = ['GitError', 'GitErrorSha', 'Storage', 'StorageFactory']
 
 
-class GitError(TracBaseError):
+class GitError(Exception):
     pass
 
 class GitErrorSha(GitError):
@@ -131,7 +132,7 @@ class GitCore(object):
     def __execute(self, git_cmd, *cmd_args):
         """execute git command and return file-like object of stdout"""
 
-        #print("DEBUG:", git_cmd, cmd_args, file=sys.stderr)
+        #print >>sys.stderr, "DEBUG:", git_cmd, cmd_args
 
         p = self.__pipe(git_cmd, stdout=PIPE, stderr=PIPE, *cmd_args)
         stdout_data, stderr_data = p.communicate()
@@ -332,7 +333,7 @@ class Storage(object):
             result['v_compatible'] = split_version >= GIT_VERSION_MIN_REQUIRED
             return result
 
-        except Exception as e:
+        except Exception, e:
             raise GitError("Could not retrieve GIT version (tried to "
                            "execute/parse '%s --version' but got %s)"
                            % (git_bin, repr(e)))
@@ -402,7 +403,7 @@ class Storage(object):
         try:
             with open(head_file, 'rb'):
                 pass
-        except IOError as e:
+        except IOError, e:
             raise GitError("Make sure the Git repository '%s' is readable: %s"
                            % (git_dir, to_unicode(e)))
 

@@ -16,6 +16,8 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from datetime import datetime
 
 from trac.core import *
@@ -31,46 +33,20 @@ class WikiPage(object):
     :since 1.0.3: the `ipnr` is deprecated and will be removed in 1.3.1
     """
 
-    realm = WikiSystem.realm
+    realm = 'wiki'
 
-    @property
-    def resource(self):
-        return Resource(self.realm, self.name, self._resource_version)
-
-    def __init__(self, env, name=None, version=None):
-        """Create a new page object or retrieves an existing page.
-
-        :param env: an `Environment` object.
-        :param name: the page name or a `Resource` object.
-        :param version: the page version. The value takes precedence over the
-                        `Resource` version when both are specified.
-        """
+    def __init__(self, env, name=None, version=None, db=None):
         self.env = env
-        if version:
-            try:
-                version = int(version)
-            except ValueError:
-                version = None
-
         if isinstance(name, Resource):
-            resource = name
-            name = resource.id
-            if version is None and resource.version is not None:
-                try:
-                    version = int(resource.version)
-                except ValueError:
-                    version = None
-
+            self.resource = name
+            name = self.resource.id
+        else:
+            if version:
+                version = int(version)  # must be a number or None
+            self.resource = Resource('wiki', name, version)
         self.name = name
-        # The version attribute always returns the version of the page,
-        # however resource.version will be None when version hasn't been
-        # specified when creating the object and the object represents the
-        # most recent version of the page. This behavior is used in web_ui.py
-        # to determine whether to render a versioned page, or just the most
-        # recent version of the page.
-        self._resource_version = version
         if name:
-            self._fetch(name, version)
+            self._fetch(name, version, db)
         else:
             self.version = 0
             self.text = self.comment = self.author = ''
@@ -79,7 +55,7 @@ class WikiPage(object):
         self.old_text = self.text
         self.old_readonly = self.readonly
 
-    def _fetch(self, name, version=None):
+    def _fetch(self, name, version=None, db=None):
         if version is not None:
             sql = """SELECT version, time, author, text, comment, readonly
                      FROM wiki WHERE name=%s AND version=%s"""
@@ -103,17 +79,13 @@ class WikiPage(object):
             self.time = None
             self.readonly = 0
 
-    def __repr__(self):
-        if self.name is None:
-            name = self.name
-        else:
-            name = u'%s@%s' % (self.name, self.version)
-        return '<%s %r>' % (self.__class__.__name__, name)
-
     exists = property(lambda self: self.version > 0)
 
-    def delete(self, version=None):
+    def delete(self, version=None, db=None):
         """Delete one or all versions of a page.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if not self.exists:
             raise TracError(_("Cannot delete non-existent page"))
@@ -138,7 +110,7 @@ class WikiPage(object):
                 del WikiSystem(self.env).pages
                 # Delete orphaned attachments
                 from trac.attachment import Attachment
-                Attachment.delete_all(self.env, self.realm, self.name)
+                Attachment.delete_all(self.env, 'wiki', self.name)
 
         # Let change listeners know about the deletion
         if not self.exists:
@@ -149,9 +121,11 @@ class WikiPage(object):
                 if hasattr(listener, 'wiki_page_version_deleted'):
                     listener.wiki_page_version_deleted(self)
 
-    def save(self, author, comment, remote_addr=None, t=None):
+    def save(self, author, comment, remote_addr=None, t=None, db=None):
         """Save a new version of a page.
 
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+                    in version 1.1.1
         :since 1.0.3: `remote_addr` is optional and deprecated, and will be
                       removed in 1.3.1
         """
@@ -173,6 +147,7 @@ class WikiPage(object):
                             author, remote_addr, self.text, comment,
                             self.readonly))
                 self.version += 1
+                self.resource = self.resource(version=self.version)
             else:
                 db("UPDATE wiki SET readonly=%s WHERE name=%s",
                    (self.readonly, self.name))
@@ -223,40 +198,23 @@ class WikiPage(object):
             del WikiSystem(self.env).pages
             # Reparent attachments
             from trac.attachment import Attachment
-            Attachment.reparent_all(self.env, self.realm, old_name,
-                                    self.realm, new_name)
+            Attachment.reparent_all(self.env, 'wiki', old_name, 'wiki',
+                                    new_name)
 
-        self.name = new_name
+        self.name = self.resource.id = new_name
         self.env.log.info("Renamed page %s to %s", old_name, new_name)
 
         for listener in WikiSystem(self.env).change_listeners:
             if hasattr(listener, 'wiki_page_renamed'):
                 listener.wiki_page_renamed(self, old_name)
 
-    def edit_comment(self, new_comment):
-        """Edit comment of wiki page version in-place."""
-        if not self.exists:
-            raise TracError(_("Cannot edit comment of non-existent page"))
-
-        old_comment = self.comment
-
-        with self.env.db_transaction as db:
-            db("UPDATE wiki SET comment=%s WHERE name=%s AND version=%s",
-               (new_comment, self.name, self.version))
-
-        self.comment = new_comment
-        self.env.log.info("Changed comment on page %s version %s to %s",
-                          self.name, self.version, new_comment)
-
-        for listener in WikiSystem(self.env).change_listeners:
-            if hasattr(listener, 'wiki_page_comment_modified'):
-                listener.wiki_page_comment_modified(self, old_comment)
-
-    def get_history(self):
+    def get_history(self, db=None):
         """Retrieve the edit history of a wiki page.
 
-        :return: a tuple containing the `version`, `datetime`, `author`,
+        :returns: a tuple containing the `version`, `datetime`, `author`,
                   `comment` and `ipnr`.
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+                    in version 1.1.1
         :since 1.0.3: use of `ipnr` is deprecated and will be removed in 1.3.1
         """
         for version, ts, author, comment, ipnr in self.env.db_query("""

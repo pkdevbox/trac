@@ -25,7 +25,7 @@
       <input type="hidden" name="ui.use_symbols_cb" value="" />
       <label>
         <input type="checkbox" name="ui.use_symbols" value="1"
-               checked="${session.get('ui.use_symbols') or None}" />
+               checked="${settings.session.get('ui.use_symbols') or None}" />
         Use only symbols for buttons.
       </label>
       <p class="hint" i18n:msg="">Display only the icon or symbol for
@@ -36,29 +36,11 @@
       <input type="hidden" name="ui.hide_help_cb" value="" />
       <label>
         <input type="checkbox" name="ui.hide_help" value="1"
-               checked="${session.get('ui.hide_help') or None}" />
+               checked="${settings.session.get('ui.hide_help') or None}" />
         Hide help links.
       </label>
       <p class="hint" i18n:msg="">Don't show the various help links.
       This reduces the verbosity of the pages.</p>
-    </div>
-    <div class="field" py:with="session_default_handler = session.get('default_handler');
-                       default_handler = session_default_handler or project_default_handler">
-      <label for="default_handler">Default handler:</label>
-      <select id="default_handler" name="default_handler">
-        <option value="" i18n:msg="handler">Default ($project_default_handler)</option>
-        <option py:if="session_default_handler and
-                       session_default_handler not in valid_default_handlers"
-                selected="True"
-                value="$session_default_handler">$session_default_handler</option>
-        <option py:for="handler in valid_default_handlers"
-                selected="${handler == session_default_handler or None}"
-                value="$handler">$handler</option>
-      </select>
-      <span py:if="default_handler not in valid_default_handlers"
-            class="hint" i18n:msg="handler">
-        $default_handler is not a valid IRequestHandler or is not enabled.
-      </span>
     </div>
 
   </body>

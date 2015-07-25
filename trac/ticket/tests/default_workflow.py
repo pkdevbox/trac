@@ -11,10 +11,6 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
-from __future__ import print_function
-
-import os
-import tempfile
 import unittest
 
 import trac.tests.compat
@@ -22,33 +18,6 @@ from trac.perm import PermissionCache, PermissionSystem
 from trac.test import EnvironmentStub, Mock
 from trac.ticket.api import TicketSystem
 from trac.ticket.model import Ticket
-from trac.util import create_file
-from tracopt.perm.authz_policy import AuthzPolicy
-
-
-class ConfigurableTicketWorkflowTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True)
-        self.ctlr = TicketSystem(self.env).action_controllers[0]
-
-    def tearDown(self):
-        self.env.reset_db()
-
-    def test_get_all_actions_custom_attribute(self):
-        """Custom attribute in ticket-workflow."""
-        config = self.env.config['ticket-workflow']
-        config.set('resolve.set_milestone', 'reject')
-        all_actions = self.ctlr.get_all_actions()
-
-        resolve_action = None
-        for name, attrs in all_actions.items():
-            if name == 'resolve':
-                resolve_action = attrs
-
-        self.assertIsNotNone(resolve_action)
-        self.assertIn('set_milestone', resolve_action.keys())
-        self.assertEqual('reject', resolve_action['set_milestone'])
 
 
 class ResetActionTestCase(unittest.TestCase):
@@ -107,150 +76,8 @@ class ResetActionTestCase(unittest.TestCase):
         self.assertEqual('review', chgs2['status'])
 
 
-class SetOwnerAttributeTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True)
-        self.perm_sys = PermissionSystem(self.env)
-        self.ctlr = TicketSystem(self.env).action_controllers[0]
-        self.ticket = Ticket(self.env)
-        self.ticket['status'] = 'new'
-        self.ticket.insert()
-        with self.env.db_transaction as db:
-            for user in ('user1', 'user2', 'user3', 'user4'):
-                db("INSERT INTO session VALUES (%s, %s, %s)", (user, 1, 0))
-        permissions = [
-            ('user1', 'TICKET_EDIT_CC'),
-            ('user2', 'TICKET_EDIT_CC'),
-            ('user2', 'TICKET_BATCH_MODIFY'),
-            ('user3', 'TICKET_ADMIN'),
-            ('user4', 'TICKET_VIEW'),
-            ('user1', 'group1'),
-            ('user2', 'group1'),
-            ('user2', 'group2'),
-            ('user3', 'group2'),
-            ('user4', 'group3')
-        ]
-        for perm in permissions:
-            self.perm_sys.grant_permission(*perm)
-        self.req = Mock(authname='user1', args={},
-                        perm=PermissionCache(self.env, 'user0'))
-        self.expected = """\
-to <select name="action_reassign_reassign_owner" \
-id="action_reassign_reassign_owner"><option selected="True" \
-value="user1">user1</option><option value="user2">user2</option>\
-<option value="user3">user3</option></select>"""
-
-    def _reload_workflow(self):
-        self.ctlr.actions = self.ctlr.get_all_actions()
-
-    def tearDown(self):
-        self.env.reset_db()
-
-    def test_users(self):
-        self.env.config.set('ticket-workflow', 'reassign.set_owner',
-                            'user1, user2, user3')
-        self._reload_workflow()
-
-        args = self.req, self.ticket, 'reassign'
-        label, control, hints = self.ctlr.render_ticket_action_control(*args)
-
-        self.assertEqual(self.expected, str(control))
-
-    def test_groups(self):
-        self.env.config.set('ticket-workflow', 'reassign.set_owner',
-                            'group1, group2')
-        self._reload_workflow()
-
-        args = self.req, self.ticket, 'reassign'
-        label, control, hints = self.ctlr.render_ticket_action_control(*args)
-
-        self.assertEqual(self.expected, str(control))
-
-    def test_permission(self):
-        self.env.config.set('ticket-workflow', 'reassign.set_owner',
-                            'TICKET_EDIT_CC, TICKET_BATCH_MODIFY')
-        self._reload_workflow()
-
-        args = self.req, self.ticket, 'reassign'
-        label, control, hints = self.ctlr.render_ticket_action_control(*args)
-
-        self.assertEqual(self.expected, str(control))
-
-
-class RestrictOwnerTestCase(unittest.TestCase):
-
-    def setUp(self):
-        tmpdir = os.path.realpath(tempfile.gettempdir())
-        self.env = EnvironmentStub(enable=['trac.*', AuthzPolicy], path=tmpdir)
-        self.env.config.set('trac', 'permission_policies',
-                            'AuthzPolicy, DefaultPermissionPolicy')
-        self.env.config.set('ticket', 'restrict_owner', True)
-
-        self.perm_sys = PermissionSystem(self.env)
-        self.env.insert_known_users([
-            ('user1', '', ''), ('user2', '', ''),
-            ('user3', '', ''), ('user4', '', '')
-        ])
-        self.perm_sys.grant_permission('user1', 'TICKET_MODIFY')
-        self.perm_sys.grant_permission('user2', 'TICKET_VIEW')
-        self.perm_sys.grant_permission('user3', 'TICKET_MODIFY')
-        self.perm_sys.grant_permission('user4', 'TICKET_MODIFY')
-        self.authz_file = os.path.join(tmpdir, 'trac-authz-policy')
-        create_file(self.authz_file)
-        self.env.config.set('authz_policy', 'authz_file', self.authz_file)
-        self.ctlr = TicketSystem(self.env).action_controllers[0]
-        self.req1 = Mock(authname='user1', args={},
-                         perm=PermissionCache(self.env, 'user1'))
-        self.ticket = Ticket(self.env)
-        self.ticket['status'] = 'new'
-        self.ticket.insert()
-
-    def tearDown(self):
-        self.env.reset_db()
-        os.remove(self.authz_file)
-
-    def _reload_workflow(self):
-        self.ctlr.actions = self.ctlr.get_all_actions()
-
-    def test_set_owner(self):
-        """Restricted owners list contains users with TICKET_MODIFY.
-        """
-        ctrl = self.ctlr.render_ticket_action_control(self.req1, self.ticket,
-                                                      'reassign')
-
-        self.assertEqual('reassign', ctrl[0])
-        self.assertIn('value="user1">user1</option>', str(ctrl[1]))
-        self.assertNotIn('value="user2">user2</option>', str(ctrl[1]))
-        self.assertIn('value="user3">user3</option>', str(ctrl[1]))
-        self.assertIn('value="user4">user4</option>', str(ctrl[1]))
-
-    def test_set_owner_fine_grained_permissions(self):
-        """Fine-grained permission checks when populating the restricted
-        owners list (#10833).
-        """
-        create_file(self.authz_file, """\
-[ticket:1]
-user4 = !TICKET_MODIFY
-""")
-
-        ctrl = self.ctlr.render_ticket_action_control(self.req1, self.ticket,
-                                                      'reassign')
-
-        self.assertEqual('reassign', ctrl[0])
-        self.assertIn('value="user1">user1</option>', str(ctrl[1]))
-        self.assertNotIn('value="user2">user2</option>', str(ctrl[1]))
-        self.assertIn('value="user3">user3</option>', str(ctrl[1]))
-        self.assertNotIn('value="user4">user4</option>', str(ctrl[1]))
-
-
 def suite():
-    suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(ConfigurableTicketWorkflowTestCase))
-    suite.addTest(unittest.makeSuite(ResetActionTestCase))
-    suite.addTest(unittest.makeSuite(SetOwnerAttributeTestCase))
-    suite.addTest(unittest.makeSuite(RestrictOwnerTestCase))
-    return suite
+    return unittest.makeSuite(ResetActionTestCase)
 
 
 if __name__ == '__main__':

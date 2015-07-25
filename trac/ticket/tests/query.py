@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from datetime import datetime, timedelta
 import difflib
 import re
@@ -165,14 +167,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
     def test_all_ordered_by_priority(self):
         query = Query(self.env) # priority is default order
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            cast_priority = db.cast('priority.value', 'int')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
-          'cast_priority': cast_priority})
+          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
         self.assertEqual(['blocker', 'blocker', 'critical', 'major', 'minor',
@@ -182,14 +182,12 @@ ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
     def test_all_ordered_by_priority_desc(self):
         query = Query(self.env, desc=1) # priority is default order
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            cast_priority = db.cast('priority.value', 'int')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='' DESC,%(cast_priority)s DESC,t.id""" % {
-          'cast_priority': cast_priority})
+          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
         self.assertEqual(['', '', '', '', 'trivial', 'minor', 'major',
@@ -273,14 +271,12 @@ ORDER BY COALESCE(t.milestone,'')='' DESC,COALESCE(milestone.completed,0)=0 DESC
     def test_grouped_by_priority(self):
         query = Query(self.env, group='priority')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            cast_priority = db.cast('priority.value', 'int')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.milestone AS milestone,t.component AS component,t.priority AS priority,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(priority.value,'')='',%(cast_priority)s,t.id""" % {
-          'cast_priority': cast_priority})
+          'cast_priority': self.env.get_read_db().cast('priority.value', 'int')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
         self.assertEqual(['blocker', 'blocker', 'critical', 'major', 'minor',
@@ -319,14 +315,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
     def test_constrained_by_owner_containing(self):
         query = Query.from_string(self.env, 'owner~=someone', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['someone', 'someone_else', 'someone',
@@ -336,14 +330,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
     def test_constrained_by_owner_not_containing(self):
         query = Query.from_string(self.env, 'owner!~=someone', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') NOT %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['%someone%'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['', '', 'none', '', '', 'none'],
@@ -352,14 +344,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
     def test_constrained_by_owner_beginswith(self):
         query = Query.from_string(self.env, 'owner^=someone', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['someone%'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['someone', 'someone_else', 'someone',
@@ -369,14 +359,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
     def test_constrained_by_owner_endswith(self):
         query = Query.from_string(self.env, 'owner$=someone', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['%someone'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['someone', 'someone'], [t['owner'] for t in tickets])
@@ -386,8 +374,6 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
         self._update_tickets('foo', [None, '', 'something'])
         query = Query.from_string(self.env, 'foo=something', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            foo = db.quote('foo')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value,%(foo)s.value AS %(foo)s
 FROM ticket AS t
@@ -395,7 +381,7 @@ FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(%(foo)s.value,'')=%%s))
 ORDER BY COALESCE(t.id,0)=0,t.id"""
-        % {'foo': foo})
+        % {'foo': self.env.get_read_db().quote('foo')})
         self.assertEqual(['something'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['something'] * 3, [t['foo'] for t in tickets])
@@ -405,15 +391,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id"""
         self._update_tickets('foo', [None, '', 'something'])
         query = Query(self.env, group='foo', order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            foo = db.quote('foo')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value,%(foo)s.value AS %(foo)s
 FROM ticket AS t
   LEFT OUTER JOIN ticket_custom AS %(foo)s ON (%(foo)s.ticket=t.id AND %(foo)s.name='foo')
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 ORDER BY COALESCE(%(foo)s.value,'')='',%(foo)s.value,COALESCE(t.id,0)=0,t.id"""
-        % {'foo': foo})
+        % {'foo': self.env.get_read_db().quote('foo')})
         self.assertEqual([], args)
         tickets = query.execute(self.req)
         self.assertEqual(['something'] * 3 + [''] * 7,
@@ -573,15 +557,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
         query = Query.from_string(self.env, 'owner~=someone|someone_else',
                                   order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqual(['%someone%', '%someone/_else%'], args)
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.milestone AS milestone,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((COALESCE(t.owner,'') %(like)s OR COALESCE(t.owner,'') %(like)s))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         tickets = query.execute(self.req)
         self.assertEqual(['someone', 'someone_else', 'someone',
                           'someone_else'],
@@ -688,15 +670,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""")
     def test_constrained_by_time_range(self):
         query = Query.from_string(self.env, 'created=2008-08-01..2008-09-01', order='id')
         sql, args = query.get_sql(self.req)
-        with self.env.db_query as db:
-            cast_time = db.cast('t.time', 'int64')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.time AS time,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((%(cast_time)s>=%%s AND %(cast_time)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': cast_time})
+          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
         self.assertEqual(['2008-08-10T12:34:56.987654+00:00',
@@ -707,15 +687,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
     def test_constrained_by_time_range_exclusion(self):
         query = Query.from_string(self.env, 'created!=2008-08-01..2008-09-01', order='id')
         sql, args = query.get_sql(self.req)
-        with self.env.db_query as db:
-            cast_time = db.cast('t.time', 'int64')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.time AS time,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((NOT (%(cast_time)s>=%%s AND %(cast_time)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': cast_time})
+          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
         self.assertEqual(['2008-07-01T12:34:56.987654+00:00',
@@ -730,15 +708,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
     def test_constrained_by_time_range_open_right(self):
         query = Query.from_string(self.env, 'created=2008-08-01..', order='id')
         sql, args = query.get_sql(self.req)
-        with self.env.db_query as db:
-            cast_time = db.cast('t.time', 'int64')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.time AS time,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((%(cast_time)s>=%%s))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': cast_time})
+          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
         self.assertEqual([1217548800000000L], args)
         tickets = query.execute(self.req)
         self.assertEqual(['2008-08-10T12:34:56.987654+00:00',
@@ -752,15 +728,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
     def test_constrained_by_time_range_open_left(self):
         query = Query.from_string(self.env, 'created=..2008-09-01', order='id')
         sql, args = query.get_sql(self.req)
-        with self.env.db_query as db:
-            cast_time = db.cast('t.time', 'int64')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.time AS time,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((%(cast_time)s<%%s))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_time': cast_time})
+          'cast_time': self.env.get_read_db().cast('t.time', 'int64')})
         self.assertEqual([1220227200000000L], args)
         tickets = query.execute(self.req)
         self.assertEqual(['2008-07-01T12:34:56.987654+00:00',
@@ -775,15 +749,13 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
     def test_constrained_by_time_range_modified(self):
         query = Query.from_string(self.env, 'modified=2008-08-01..2008-09-01', order='id')
         sql, args = query.get_sql(self.req)
-        with self.env.db_query as db:
-            cast_changetime = db.cast('t.changetime', 'int64')
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.changetime AS changetime,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.time AS time,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((%(cast_changetime)s>=%%s AND %(cast_changetime)s<%%s)))
 ORDER BY COALESCE(t.id,0)=0,t.id""" % {
-          'cast_changetime': cast_changetime})
+          'cast_changetime': self.env.get_read_db().cast('t.changetime', 'int64')})
         self.assertEqual([1217548800000000L, 1220227200000000L], args)
         tickets = query.execute(self.req)
         self.assertEqual(['2008-08-01T12:34:56.987654+00:00',
@@ -796,14 +768,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {
         query = Query.from_string(self.env, 'keywords~=foo -bar baz',
                                   order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.keywords AS keywords,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE (((COALESCE(t.keywords,'') %(like)s AND COALESCE(t.keywords,'') NOT %(like)s AND COALESCE(t.keywords,'') %(like)s)))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['%foo%', '%bar%', '%baz%'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['foo baz'], [t['keywords'] for t in tickets])
@@ -812,14 +782,12 @@ ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
         query = Query.from_string(self.env, 'keywords!~=foo -bar baz',
                                   order='id')
         sql, args = query.get_sql()
-        with self.env.db_query as db:
-            like = db.like()
         self.assertEqualSQL(sql,
 """SELECT t.id AS id,t.summary AS summary,t.keywords AS keywords,t.owner AS owner,t.type AS type,t.status AS status,t.priority AS priority,t.time AS time,t.changetime AS changetime,priority.value AS priority_value
 FROM ticket AS t
   LEFT OUTER JOIN enum AS priority ON (priority.type='priority' AND priority.name=priority)
 WHERE ((NOT (COALESCE(t.keywords,'') %(like)s AND COALESCE(t.keywords,'') NOT %(like)s AND COALESCE(t.keywords,'') %(like)s)))
-ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': like})
+ORDER BY COALESCE(t.id,0)=0,t.id""" % {'like': self.env.get_read_db().like()})
         self.assertEqual(['%foo%', '%bar%', '%baz%'], args)
         tickets = query.execute(self.req)
         self.assertEqual(['', '', 'foo', 'bar', 'baz', 'foo bar', 'bar baz',

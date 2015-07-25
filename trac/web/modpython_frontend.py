@@ -16,6 +16,8 @@
 # Author: Christopher Lenz <cmlenz@gmx.de>
 #         Matthew Good <trac@matt-good.net>
 
+from __future__ import with_statement
+
 import os
 import pkg_resources
 import sys
@@ -109,7 +111,7 @@ class ModPythonGateway(WSGIGateway):
         self._send_headers()
         try:
             self.req.sendfile(fileobj.name)
-        except IOError as e:
+        except IOError, e:
             if 'client closed connection' not in str(e):
                 raise
 
@@ -117,7 +119,7 @@ class ModPythonGateway(WSGIGateway):
         self._send_headers()
         try:
             self.req.write(data)
-        except IOError as e:
+        except IOError, e:
             if 'client closed connection' not in str(e):
                 raise
 

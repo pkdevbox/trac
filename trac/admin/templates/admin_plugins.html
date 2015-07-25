@@ -25,12 +25,12 @@
         function setGroupTogglerState() {
           var table = $(this).closest("table.listing");
           var checkboxes = $("td.sel input:checkbox:enabled", table);
-          var num_selected = checkboxes.filter(":checked").length;
-          var none_selected = num_selected === 0;
-          var all_selected = num_selected === checkboxes.length;
+          var numSelected = checkboxes.filter(":checked").length;
+          var noneSelected = numSelected === 0;
+          var allSelected = numSelected === checkboxes.length;
           $("th.sel input:checkbox", table)
-            .prop({"checked": all_selected,
-                   "indeterminate": !(none_selected || all_selected)});
+            .prop({"checked": allSelected,
+                   "indeterminate": !(noneSelected || allSelected)});
         }
         // Add group event behavior for controlling state of toggler
         $("table.listing td.sel input:checkbox:enabled")
@@ -71,11 +71,11 @@
         <legend>Install Plugin:</legend>
         <div class="field">
           <label i18n:msg="">
-            File: <input type="file" name="plugin_file" class="trac-disable-determinant" disabled="${readonly or None}" />
+            File: <input type="file" name="plugin_file" disabled="${readonly or None}" />
           </label>
         </div>
         <div class="buttons">
-          <input type="submit" name="install" class="trac-disable trac-disable-on-submit"
+          <input type="submit" name="install" class="trac-disable-on-submit"
                  value="${_('Install')}" disabled="${readonly or None}" />
         </div>
         <p class="help" py:choose="readonly">

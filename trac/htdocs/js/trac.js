@@ -22,61 +22,6 @@
     }
   }
 
-  // Add a Select All checkbox to each thead in the table.
-  $.fn.addSelectAllCheckboxes = function() {
-    var $table = this;
-    if ($("tr td.sel", $table).length > 0) {
-      $("tr th.sel", $table).append(
-        $('<input type="checkbox" name="toggle_group" />').attr({
-          title: _("Toggle group")
-        }).click(function() {
-          $("tr td.sel input",
-            $(this).closest("thead, tbody").next())
-              .prop("checked", this.checked).change();
-        })
-      );
-      $("tr td.sel", $table).click(function() {
-        var $tbody = $(this).closest("tbody");
-        var $checkboxes = $("tr td.sel input", $tbody);
-        var num_selected = $checkboxes.filter(":checked").length;
-        var none_selected = num_selected === 0;
-        var all_selected = num_selected === $checkboxes.length;
-        $("tr th.sel input", $tbody.prev())
-          .prop({"checked": all_selected,
-                 "indeterminate": !(none_selected || all_selected)});
-      });
-    }
-  }
-
-  // Conditionally disable the submit button. Returns a jQuery object.
-  $.fn.disableSubmit = function(determinant) {
-    determinant = $(determinant);
-    var subject = $(this);
-    var isDisabled;
-    if (determinant.is("input:checkbox")) {
-      isDisabled = function () {
-          return determinant.filter(":checked").length === 0;
-      }
-    } else if (determinant.is("input:file")) {
-      isDisabled = function () {
-          return !determinant.val();
-      }
-    } else {
-      return subject;
-    }
-    function toggleDisabled() {
-      subject.prop("disabled", isDisabled);
-      if (subject.prop("disabled")) {
-        subject.attr("title", _("At least one item must be selected"))
-      } else {
-        subject.removeAttr("title");
-      }
-    }
-    determinant.change(toggleDisabled);
-    toggleDisabled();
-    return subject;
-  }
-
   $.fn.enable = function(enabled) {
     if (enabled == undefined) enabled = true;
     return this.each(function() {
@@ -204,25 +149,6 @@
     }
   };
 
-  var warn_unsaved_changes;
-
-  // Prompt a warning if leaving the page with unsaved changes
-  $.setWarningUnsavedChanges = function(enabled, message) {
-    if (enabled) {
-      if (!warn_unsaved_changes) {
-        $(window).bind("beforeunload", function() {
-          return warn_unsaved_changes;
-        });
-      }
-      warn_unsaved_changes = message || _("You have unsaved changes. Your " +
-        "changes will be lost if you leave this page before saving your " +
-        "changes.");
-    } else {
-      $(window).unbind("beforeunload");
-      warn_unsaved_changes = null;
-    }
-  };
-
   // Escape special HTML characters (&<>")
   var quote = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"};
 
@@ -262,6 +188,24 @@
     if (!textarea || textarea.rows == undefined) return;
     $(textarea).height("");
     textarea.rows = rows;
+  }
+
+  // The following are defined for backwards compatibility with releases prior
+  // to Trac 0.11
+
+  window.addEvent = function(elem, type, func) {
+    $(elem).bind(type, func);
+  }
+  window.addHeadingLinks = function(container, title) {
+    $.each(["h1", "h2", "h3", "h4", "h5", "h6"], function() {
+      $(this, container).addAnchor(title);
+    });
+  }
+  window.enableControl = function(id, enabled) {
+    $("#" + id).enable(enabled);
+  }
+  window.getAncestorByTagName = function(elem, tagName) {
+    return $(elem).parents(tagName).get(0);
   }
 
 })(jQuery);

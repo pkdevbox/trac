@@ -13,14 +13,11 @@
 #
 # Author: Tim Moloney <t.moloney@verizon.net>
 
-import copy
 import difflib
 import inspect
 import os
 import re
-import shutil
 import sys
-import tempfile
 import unittest
 from StringIO import StringIO
 
@@ -49,11 +46,8 @@ import trac.wiki.web_ui
 from trac.admin.api import AdminCommandManager, IAdminCommandProvider, \
                            console_date_format, get_console_locale
 from trac.admin.console import TracAdmin, TracAdminHelpMacro
-from trac.config import ConfigSection, Option
-from trac.core import Component, ComponentMeta, implements
-from trac.env import Environment
+from trac.core import Component, implements
 from trac.test import EnvironmentStub
-from trac.util import create_file
 from trac.util.datefmt import format_date, get_date_format_hint, \
                               get_datetime_format_hint
 from trac.util.translation import get_available_locales, has_babel
@@ -111,7 +105,11 @@ def execute_cmd(tracadmin, cmd, strip_trailing_space=True, input=None):
         sys.stdout = _out
 
 
-class TracAdminTestCaseBase(unittest.TestCase):
+class TracadminTestCase(unittest.TestCase):
+    """
+    Tests the output of trac-admin and is meant to be used with
+    .../trac/tests.py.
+    """
 
     expected_results_file = os.path.join(os.path.dirname(__file__),
                                          'console-tests.txt')
@@ -119,10 +117,31 @@ class TracAdminTestCaseBase(unittest.TestCase):
     expected_results = load_expected_results(expected_results_file,
                                              '===== (test_[^ ]+) =====')
 
+    def setUp(self):
+        self.env = EnvironmentStub(default_data=True, enable=('trac.*',),
+                                   disable=('trac.tests.*',))
+        self._admin = TracAdmin()
+        self._admin.env_set('', self.env)
+
+        # Set test date to 11th Jan 2004
+        self._test_date = '2004-01-11'
+
+    def tearDown(self):
+        self.env = None
+
     def _execute(self, cmd, strip_trailing_space=True, input=None):
         return execute_cmd(self._admin, cmd,
                            strip_trailing_space=strip_trailing_space,
                            input=input)
+
+    @property
+    def _datetime_format_hint(self):
+        return get_datetime_format_hint(get_console_locale(self.env))
+
+    def _get_command_help(self, *args):
+        docs = AdminCommandManager(self.env).get_command_help(list(args))
+        self.assertEqual(1, len(docs))
+        return docs[0][2]
 
     def assertExpectedResult(self, output, args=None):
         test_name = inspect.stack()[1][3]
@@ -153,38 +172,6 @@ class TracAdminTestCaseBase(unittest.TestCase):
             unittest.TestCase.assertEqual(self, expected_results, output,
                                           "%r != %r\n%s" % (expected_results,
                                                             output, diff()))
-
-
-class TracadminTestCase(TracAdminTestCaseBase):
-    """
-    Tests the output of trac-admin and is meant to be used with
-    .../trac/tests.py.
-    """
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True, enable=('trac.*',),
-                                   disable=('trac.tests.*',))
-        self._admin = TracAdmin()
-        self._admin.env_set('', self.env)
-
-        # Set test date to 11th Jan 2004
-        self._test_date = '2004-01-11'
-
-    def tearDown(self):
-        self.env = None
-
-    @property
-    def _datetime_format_hint(self):
-        return get_datetime_format_hint(get_console_locale(self.env))
-
-    def _get_command_help(self, *args):
-        docs = AdminCommandManager(self.env).get_command_help(list(args))
-        self.assertEqual(1, len(docs))
-        return docs[0][2]
-
-    def _complete_command(self, *args):
-        return AdminCommandManager(self.env).complete_command(list(args))
-
     # Help test
 
     def test_help_ok(self):
@@ -495,34 +482,6 @@ class TracadminTestCase(TracAdminTestCaseBase):
         self.assertEqual(0, rv, output)
         self.assertExpectedResult(output)
 
-    def test_component_add_complete_optional_owner_restrict_owner_false(self):
-        """Tests completion of the 'component add <component>' command with
-        [ticket] restrict_owner = false.
-        """
-        self._execute('config set ticket restrict_owner false')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'add',
-                                        'new_component', '')
-        self.assertEqual([], output)
-
-    def test_component_add_complete_optional_owner_restrict_owner_true(self):
-        """Tests completion of the 'component add <component>' command with
-        [ticket] restrict_owner = true.
-        """
-        self._execute('config set ticket restrict_owner true')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'add',
-                                        'new_component', '')
-        self.assertEqual(['user1', 'user3'], output)
-
     def test_component_add_error_already_exists(self):
         """
         Tests the 'component add' command in trac-admin.  This particular
@@ -570,38 +529,6 @@ class TracadminTestCase(TracAdminTestCaseBase):
         rv, output = self._execute('component list')
         self.assertEqual(0, rv, output)
         self.assertExpectedResult(output)
-
-    def test_component_chown_complete_component(self):
-        """Tests completion of the 'component chown' command.
-        """
-        output = self._complete_command('component', 'chown', '')
-        self.assertEqual(['component1', 'component2'], output)
-
-    def test_component_chown_complete_owner_restrict_owner_false(self):
-        """Tests completion of the 'component chown <component>' command with
-        [ticket] restrict_owner = false.
-        """
-        self._execute('config set ticket restrict_owner false')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'chown', 'component1', '')
-        self.assertEqual([], output)
-
-    def test_component_chown_complete_owner_restrict_owner_true(self):
-        """Tests completion of the 'component chown <component>' command with
-        [ticket] restrict_owner = true.
-        """
-        self._execute('config set ticket restrict_owner true')
-        self._execute('session add user1')
-        self._execute('session add user3')
-        self._execute('permission add user1 TICKET_MODIFY')
-        self._execute('permission add user2 TICKET_VIEW')
-        self._execute('permission add user3 TICKET_MODIFY')
-        output = self._complete_command('component', 'chown', 'component1', '')
-        self.assertEqual(['user1', 'user3'], output)
 
     def test_component_chown_error_bad_component(self):
         """
@@ -1336,21 +1263,6 @@ class TracadminTestCase(TracAdminTestCaseBase):
         rv, output = self._execute('session list name00')
         self.assertExpectedResult(output)
 
-    def test_session_set_attr_default_handler(self):
-        _prep_session_table(self.env)
-        rv, output = \
-            self._execute('session set default_handler name00 SearchModule')
-        self.assertEqual(0, rv, output)
-        rv, output = self._execute('session list name00')
-        self.assertExpectedResult(output)
-
-    def test_session_set_attr_default_handler_invalid(self):
-        _prep_session_table(self.env)
-        rv, output = \
-            self._execute('session set default_handler name00 InvalidModule')
-        self.assertEqual(2, rv, output)
-        self.assertExpectedResult(output)
-
     def test_session_set_attr_missing_attr(self):
         rv, output = self._execute('session set')
         self.assertEqual(2, rv, output)
@@ -1487,143 +1399,11 @@ class TracAdminHelpMacroTestCase(unittest.TestCase):
         self.assertTrue(unicode_help in help)
 
 
-class TracAdminComponentTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True, enable=('trac.*',),
-                                   disable=('trac.tests.*',))
-        self._admin = TracAdmin()
-        self._admin.env_set('', self.env)
-        self._orig = {
-            'ComponentMeta._components': ComponentMeta._components,
-            'ComponentMeta._registry': ComponentMeta._registry,
-            'ConfigSection.registry': ConfigSection.registry,
-            'Option.registry': Option.registry,
-        }
-        ComponentMeta._components = list(ComponentMeta._components)
-        ComponentMeta._registry = dict((interface, list(classes))
-                                       for interface, classes
-                                       in ComponentMeta._registry.iteritems())
-        ConfigSection.registry = {}
-        Option.registry = {}
-
-        class CompA(Component):
-            from trac.config import Option
-            opt1 = Option('compa', 'opt1', 1)
-            opt2 = Option('compa', 'opt2', 2)
-
-    def tearDown(self):
-        self.env = None
-        self._admin = None
-        ComponentMeta._components = self._orig['ComponentMeta._components']
-        ComponentMeta._registry = self._orig['ComponentMeta._registry']
-        ConfigSection.registry = self._orig['ConfigSection.registry']
-        Option.registry = self._orig['Option.registry']
-
-    def _execute(self, cmd, strip_trailing_space=True, input=None):
-        return execute_cmd(self._admin, cmd,
-                           strip_trailing_space=strip_trailing_space,
-                           input=input)
-
-    def test_config_component_enable(self):
-        self.env.config.save()
-        initial_file = copy.deepcopy(self.env.config.parser)
-
-        rv, output = self._execute('config set components '
-                                   'trac.admin.tests.console.* enabled')
-
-        self.assertEqual(0, rv, output)
-        self.assertFalse(initial_file.has_section('compa'))
-        self.assertIn('compa', self.env.config)
-        self.assertIn('1', self.env.config.parser.get('compa', 'opt1'))
-        self.assertIn('2', self.env.config.parser.get('compa', 'opt2'))
-
-
-class TracAdminInitenvTestCase(TracAdminTestCaseBase):
-
-    def setUp(self):
-        self.parent_dir = tempfile.mkdtemp()
-        self.env_path = os.path.join(self.parent_dir, 'trac')
-        self._admin = TracAdmin(self.env_path)
-
-    def tearDown(self):
-        shutil.rmtree(self.parent_dir)
-
-    def test_config_argument(self):
-        """Options contained in file specified by the --config argument
-        are written to trac.ini.
-        """
-        config_file = os.path.join(self.parent_dir, 'config.ini')
-        create_file(config_file, """\
-[the-plugin]
-option_a = 1
-option_b = 2
-[components]
-the_plugin.* = enabled
-[project]
-name = project2
-        """)
-        rv, output = self._execute('initenv project1 sqlite:db/sqlite.db '
-                                   '--config=%s' % config_file)
-        env = Environment(self.env_path)
-        cfile = env.config.parser
-
-        self.assertEqual(0, rv, output)
-        self.assertEqual('1', cfile.get('the-plugin', 'option_a'))
-        self.assertEqual('2', cfile.get('the-plugin', 'option_b'))
-        self.assertEqual('enabled', cfile.get('components', 'the_plugin.*'))
-        self.assertEqual('project1', cfile.get('project', 'name'))
-        self.assertEqual('sqlite:db/sqlite.db', cfile.get('trac', 'database'))
-        for (section, name), option in \
-                Option.get_registry(env.compmgr).iteritems():
-            if (section, name) not in \
-                    (('trac', 'database'), ('project', 'name')):
-                self.assertEqual(option.default, cfile.get(section, name))
-
-    def test_config_argument_has_invalid_path(self):
-        """Exception is raised when --config argument is an invalid path."""
-        config_file = os.path.join(self.parent_dir, 'config.ini')
-        rv, output = self._execute('initenv project1 sqlite:db/sqlite.db '
-                                   '--config=%s' % config_file)
-
-        self.assertEqual(2, rv, output)
-        self.assertExpectedResult(output, {
-            'env_path': self.env_path,
-            'config_file': config_file,
-        })
-
-    def test_config_argument_has_invalid_value(self):
-        """Exception is raised when --config argument specifies a malformed
-        configuration file.
-        """
-        config_file = os.path.join(self.parent_dir, 'config.ini')
-        create_file(config_file, """\
-[the-plugin]
-option_a = 1
-[components
-the_plugin.* = enabled
-        """)
-        rv, output = self._execute('initenv project1 sqlite:db/sqlite.db '
-                                   '--config=%s' % config_file)
-
-        self.assertEqual(2, rv, output)
-        self.assertExpectedResult(output, {
-            'env_path': self.env_path,
-            'config_file': config_file,
-        })
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TracadminTestCase))
     suite.addTest(unittest.makeSuite(TracadminNoEnvTestCase))
     suite.addTest(unittest.makeSuite(TracAdminHelpMacroTestCase))
-    if __name__ == 'trac.admin.tests.console':
-        suite.addTest(unittest.makeSuite(TracAdminComponentTestCase))
-    else:
-        print("SKIP: trac.admin.tests.console.TracAdminComponentTestCase "
-              "(__name__ is not trac.admin.tests.console)")
-    suite.addTest(unittest.makeSuite(TracAdminInitenvTestCase))
     return suite
 
 

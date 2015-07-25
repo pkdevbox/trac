@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009-2014 Edgewall Software
+# Copyright (C) 2009 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -35,6 +35,8 @@
 # IN THE SOFTWARE.
 # ----------------------------------------------------------------------------
 
+from __future__ import with_statement
+
 from datetime import datetime
 import re
 
@@ -42,11 +44,10 @@ from genshi.builder import tag
 
 from trac.config import BoolOption, Option
 from trac.core import Component, implements
-from trac.notification.api import NotificationSystem
 from trac.perm import PermissionCache
 from trac.resource import Resource
 from trac.ticket import Ticket
-from trac.ticket.notification import TicketChangeEvent
+from trac.ticket.notification import TicketNotifyEmail
 from trac.util.datefmt import utc
 from trac.util.text import exception_to_unicode
 from trac.util.translation import _, cleandoc_
@@ -75,13 +76,6 @@ class CommitTicketUpdater(Component):
     command ticket:1, ticket:2
     command ticket:1 & ticket:2
     command ticket:1 and ticket:2
-    }}}
-
-    Using the long-form syntax allows a comment to be included in the
-    reference, e.g.:
-    {{{
-    command ticket:1#comment:1
-    command ticket:1#comment:description
     }}}
 
     In addition, the ':' character can be omitted and issue or bug can be used
@@ -113,8 +107,8 @@ class CommitTicketUpdater(Component):
     envelope = Option('ticket', 'commit_ticket_update_envelope', '',
         """Require commands to be enclosed in an envelope.
 
-        Must be empty or contain two characters. For example, if set to `[]`,
-        then commands must be in the form of `[closes #4]`.""")
+        Must be empty or contain two characters. For example, if set to "[]",
+        then commands must be in the form of [closes #4].""")
 
     commands_close = Option('ticket', 'commit_ticket_update_commands.close',
         'close closed closes fix fixed fixes',
@@ -124,7 +118,7 @@ class CommitTicketUpdater(Component):
         'addresses re references refs see',
         """Commands that add a reference, as a space-separated list.
 
-        If set to the special value `<ALL>`, all tickets referenced by the
+        If set to the special value <ALL>, all tickets referenced by the
         message will get a reference to the changeset.""")
 
     check_perms = BoolOption('ticket', 'commit_ticket_update_check_perms',
@@ -139,16 +133,15 @@ class CommitTicketUpdater(Component):
         """Send ticket change notification when updating a ticket.""")
 
     ticket_prefix = '(?:#|(?:ticket|issue|bug)[: ]?)'
-    ticket_reference = ticket_prefix + \
-                       '[0-9]+(?:#comment:([0-9]+|description))?'
+    ticket_reference = ticket_prefix + '[0-9]+'
     ticket_command = (r'(?P<action>[A-Za-z]*)\s*.?\s*'
                       r'(?P<ticket>%s(?:(?:[, &]*|[ ]?and[ ]?)%s)*)' %
                       (ticket_reference, ticket_reference))
 
     @property
     def command_re(self):
-        begin, end = (re.escape(self.envelope[0:1]),
-                      re.escape(self.envelope[1:2]))
+        (begin, end) = (re.escape(self.envelope[0:1]),
+                        re.escape(self.envelope[1:2]))
         return re.compile(begin + self.ticket_command + end)
 
     ticket_re = re.compile(ticket_prefix + '([0-9]+)')
@@ -162,7 +155,8 @@ class CommitTicketUpdater(Component):
             return
         tickets = self._parse_message(changeset.message)
         comment = self.make_ticket_comment(repos, changeset)
-        self._update_tickets(tickets, changeset, comment, datetime.now(utc))
+        self._update_tickets(tickets, changeset, comment,
+                             datetime.now(utc))
 
     def changeset_modified(self, repos, changeset, old_changeset):
         if self._is_duplicate(changeset):
@@ -174,7 +168,8 @@ class CommitTicketUpdater(Component):
         tickets = dict(each for each in tickets.iteritems()
                        if each[0] not in old_tickets)
         comment = self.make_ticket_comment(repos, changeset)
-        self._update_tickets(tickets, changeset, comment, datetime.now(utc))
+        self._update_tickets(tickets, changeset, comment,
+                             datetime.now(utc))
 
     def _is_duplicate(self, changeset):
         # Avoid duplicate changes with multiple scoped repositories
@@ -232,19 +227,19 @@ In [changeset:"%s" %s]:
                     if save:
                         ticket.save_changes(authname, comment, date)
                 if save:
-                    self._notify(ticket, date, changeset.author, comment)
-            except Exception as e:
+                    self._notify(ticket, date)
+            except Exception, e:
                 self.log.error("Unexpected error while processing ticket "
                                "#%s: %s", tkt_id, exception_to_unicode(e))
 
-    def _notify(self, ticket, date, author, comment):
+    def _notify(self, ticket, date):
         """Send a ticket update notification."""
         if not self.notify:
             return
-        event = TicketChangeEvent('changed', ticket, date, author, comment)
+        tn = TicketNotifyEmail(self.env)
         try:
-            NotificationSystem(self.env).notify(event)
-        except Exception as e:
+            tn.notify(ticket, newticket=False, modtime=date)
+        except Exception, e:
             self.log.error("Failure sending notification on change to "
                            "ticket #%s: %s", ticket.id,
                            exception_to_unicode(e))
@@ -261,8 +256,6 @@ In [changeset:"%s" %s]:
         return functions
 
     def _authname(self, changeset):
-        """Returns the author of the changeset, normalizing the casing if
-        [trac] ignore_author_case is true."""
         return changeset.author.lower() \
                if self.env.config.getbool('trac', 'ignore_auth_case') \
                else changeset.author

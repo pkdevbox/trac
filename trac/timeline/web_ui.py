@@ -17,9 +17,9 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from datetime import datetime, timedelta
 import pkg_resources
 import re
-from datetime import datetime, timedelta
 
 from genshi.builder import tag
 
@@ -29,14 +29,14 @@ from trac.perm import IPermissionRequestor
 from trac.timeline.api import ITimelineEventProvider
 from trac.util import as_int
 from trac.util.datefmt import format_date, format_datetime, format_time, \
-                              localtz, parse_date, pretty_timedelta, \
-                              to_datetime, to_utimestamp, user_time, utc
+                              parse_date, to_utimestamp, to_datetime, utc, \
+                              pretty_timedelta, user_time
 from trac.util.text import exception_to_unicode, to_unicode
 from trac.util.translation import _, tag_
 from trac.web import IRequestHandler, IRequestFilter
-from trac.web.chrome import (Chrome, INavigationContributor,
-                             ITemplateProvider, add_link, add_stylesheet,
-                             add_warning, auth_link, prevnext_nav, web_context)
+from trac.web.chrome import (Chrome, INavigationContributor, ITemplateProvider,
+                             add_link, add_stylesheet, add_warning, auth_link,
+                             prevnext_nav, web_context)
 from trac.wiki.api import IWikiSyntaxProvider
 from trac.wiki.formatter import concat_path_query_fragment, \
                                 split_url_into_path_query_fragment
@@ -51,12 +51,11 @@ class TimelineModule(Component):
 
     default_daysback = IntOption('timeline', 'default_daysback', 30,
         """Default number of days displayed in the Timeline, in days.
-        """)
+        (''since 0.9.'')""")
 
     max_daysback = IntOption('timeline', 'max_daysback', 90,
         """Maximum number of days (-1 for unlimited) displayable in the
-        Timeline.
-        """)
+        Timeline. (''since 0.11'')""")
 
     abbreviated_messages = BoolOption('timeline', 'abbreviated_messages',
                                       True,
@@ -64,7 +63,7 @@ class TimelineModule(Component):
 
         This only affects the default rendering, and can be overriden by
         specific event providers, see their own documentation.
-        """)
+        (''Since 0.11'')""")
 
     _authors_pattern = re.compile(r'(-)?(?:"([^"]*)"|\'([^\']*)\'|([^\s]+))')
 
@@ -74,7 +73,7 @@ class TimelineModule(Component):
         return 'timeline'
 
     def get_navigation_items(self, req):
-        if 'TIMELINE_VIEW' in req.perm('timeline'):
+        if 'TIMELINE_VIEW' in req.perm:
             yield ('mainnav', 'timeline',
                    tag.a(_("Timeline"), href=req.href.timeline(), accesskey=2))
 
@@ -89,15 +88,15 @@ class TimelineModule(Component):
         return req.path_info == '/timeline'
 
     def process_request(self, req):
-        req.perm('timeline').require('TIMELINE_VIEW')
+        req.perm.assert_permission('TIMELINE_VIEW')
 
         format = req.args.get('format')
         maxrows = int(req.args.get('max', 50 if format == 'rss' else 0))
         lastvisit = int(req.session.get('timeline.lastvisit', '0'))
 
         # indication of new events is unchanged when form is updated by user
-        revisit = any(a in req.args
-                      for a in ['update', 'from', 'daysback', 'author'])
+        revisit = any(a in req.args for a in ['update', 'from', 'daysback',
+                                              'author'])
         if revisit:
             lastvisit = int(req.session.get('timeline.nextlastvisit',
                                             lastvisit))
@@ -114,7 +113,7 @@ class TimelineModule(Component):
             if reqfromdate:
                 try:
                     precisedate = user_time(req, parse_date, reqfromdate)
-                except TracError as e:
+                except TracError, e:
                     add_warning(req, e)
                 else:
                     fromdate = precisedate.astimezone(req.tz)
@@ -196,11 +195,12 @@ class TimelineModule(Component):
             try:
                 for event in provider.get_timeline_events(req, start, stop,
                                                           filters) or []:
-                    author = (event[2] or '').lower()
+                    # Check for 0.10 events
+                    author = (event[2 if len(event) < 6 else 4] or '').lower()
                     if (not include or author in include) \
                             and author not in exclude:
                         events.append(self._event_data(provider, event))
-            except Exception as e:  # cope with a failure of that provider
+            except Exception, e:  # cope with a failure of that provider
                 self._provider_failure(e, req, provider, filters,
                                        [f[0] for f in available_filters])
 
@@ -212,6 +212,7 @@ class TimelineModule(Component):
         data['events'] = events
 
         if format == 'rss':
+            data['email_map'] = Chrome(self.env).get_email_map()
             rss_context = web_context(req, absurls=True)
             rss_context.set_hints(wiki_flavor='html', shorten_lines=False)
             data['context'] = rss_context
@@ -280,46 +281,27 @@ class TimelineModule(Component):
     def post_process_request(self, req, template, data, content_type):
         if data:
             def pretty_dateinfo(date, format=None, dateonly=False):
-                if not date:
-                    return ''
-                if format == 'date':
-                    absolute = user_time(req, format_date, date)
-                else:
-                    absolute = user_time(req, format_datetime, date)
-                now = datetime.now(localtz)
-                relative = pretty_timedelta(date, now)
+                absolute = user_time(req, format_datetime, date)
+                relative = pretty_timedelta(date)
                 if not format:
                     format = req.session.get('dateinfo',
                                  Chrome(self.env).default_dateinfo_format)
-                if format == 'relative':
-                    if date > now:
-                        label = _("in %(relative)s", relative=relative) \
-                                if not dateonly else relative
-                        title = _("on %(date)s at %(time)s",
-                                  date=user_time(req, format_date, date),
-                                  time=user_time(req, format_time, date))
-                        return tag.span(label, title=title)
-                    else:
-                        label = _("%(relative)s ago", relative=relative) \
-                                if not dateonly else relative
-                        title = _("See timeline at %(absolutetime)s",
-                                  absolutetime=absolute)
-                else:
+                if format == 'absolute':
                     if dateonly:
                         label = absolute
                     elif req.lc_time == 'iso8601':
                         label = _("at %(iso8601)s", iso8601=absolute)
-                    elif format == 'date':
-                        label = _("on %(date)s", date=absolute)
                     else:
                         label = _("on %(date)s at %(time)s",
                                   date=user_time(req, format_date, date),
                                   time=user_time(req, format_time, date))
-                    if date > now:
-                        title = _("in %(relative)s", relative=relative)
-                        return tag.span(label, title=title)
                     title = _("See timeline %(relativetime)s ago",
                               relativetime=relative)
+                else:
+                    label = _("%(relativetime)s ago", relativetime=relative) \
+                            if not dateonly else relative
+                    title = _("See timeline at %(absolutetime)s",
+                              absolutetime=absolute)
                 return self.get_timeline_link(req, date, label,
                                               precision='second', title=title)
             def dateinfo(date):
@@ -350,7 +332,7 @@ class TimelineModule(Component):
                 dt = parse_date(path, utc, locale='iso8601', hint='iso8601')
                 return self.get_timeline_link(formatter.req, dt, label,
                                               precision, query, fragment)
-            except TracError as e:
+            except TracError, e:
                 return tag.a(label, title=to_unicode(e),
                              class_='timeline missing')
         yield 'timeline', link_resolver
@@ -371,12 +353,19 @@ class TimelineModule(Component):
     def _event_data(self, provider, event):
         """Compose the timeline event date from the event tuple and prepared
         provider methods"""
-        if len(event) == 5:  # with special provider
-            kind, date, author, data, provider = event
-        else:
-            kind, date, author, data = event
-        render = lambda field, context: \
-                 provider.render_timeline_event(context, field, event)
+        if len(event) == 6: # 0.10 events
+            kind, url, title, date, author, markup = event
+            data = {'url': url, 'title': title, 'description': markup}
+            render = lambda field, context: data.get(field)
+        else: # 0.11 events
+            if len(event) == 5: # with special provider
+                kind, date, author, data, provider = event
+            else:
+                kind, date, author, data = event
+            render = lambda field, context: \
+                    provider.render_timeline_event(context, field, event)
+        if not isinstance(date, datetime):
+            date = datetime.fromtimestamp(date, utc)
         dateuid = to_utimestamp(date)
         return {'kind': kind, 'author': author, 'date': date,
                 'dateuid': dateuid, 'render': render, 'event': event,
@@ -406,7 +395,7 @@ class TimelineModule(Component):
         raise TracError(tag(
             tag.p(tag_("Event provider %(name)s failed for filters "
                        "%(kinds)s: ",
-                       name=tag.code(ep.__class__.__name__),
+                       name=tag.tt(ep.__class__.__name__),
                        kinds=', '.join('"%s"' % ep_kinds[f] for f in
                                        current_filters & ep_filters)),
                   tag.strong(exception_to_unicode(exc)), class_='message'),

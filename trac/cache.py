@@ -11,12 +11,16 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/.
 
+from __future__ import with_statement
+
 import functools
 
-from trac.core import Component
-from trac.util.concurrency import ThreadLocal, threading
+from .core import Component
+from .util import arity
+from .util.concurrency import ThreadLocal, threading
 
 __all__ = ['CacheManager', 'cached']
+
 
 _id_to_key = {}
 
@@ -171,7 +175,8 @@ def cached(fn_or_attr=None):
         connection.  This is the same connection that can be retrieved
         via the normal `~trac.env.Environment.db_query` or
         `~trac.env.Environment.db_transaction`, so this is no longer
-        needed and is not supported.
+        needed, though methods supporting that argument are still
+        supported (but will be removed in version 1.1.1).
     """
     if hasattr(fn_or_attr, '__call__'):
         return CachedSingletonProperty(fn_or_attr)
@@ -239,7 +244,10 @@ class CacheManager(Component):
                     return data
 
                 # Retrieve data from the database
-                data = retriever(instance)
+                if arity(retriever) == 2:
+                    data = retriever(instance, db)
+                else:
+                    data = retriever(instance)
                 local_cache[id] = self._cache[id] = data, db_generation
                 local_meta[id] = db_generation
                 return data

@@ -1,7 +1,7 @@
 = The Trac Environment
 
 [[TracGuideToc]]
-[[PageOutline(2-5)]]
+[[PageOutline]]
 
 Trac uses a directory structure and a database for storing project data. The directory is referred to as the environment.
 
@@ -27,13 +27,6 @@ $ trac-admin /path/to/myproject initenv
  - Also, it seems that project names with spaces can be problematic for authentication, see [trac:#7163].
 
  - TracPlugins located in a [TracIni#inherit-section shared plugins folder] that is defined in an [TracIni#GlobalConfiguration inherited configuration] are currently not loaded during creation, and hence, if they need to create extra tables for example, you'll need to [TracUpgrade#UpgradetheTracEnvironment upgrade the environment] before being able to use it.
-
-{{{#!div style="border: 1pt dotted; margin: 1em"
-**Caveat:** don't confuse the //Trac environment directory// with the //source code repository directory//.
-
-This is a common beginners' mistake.
-It happens that the structure for a Trac environment is loosely modeled after the Subversion repository directory structure, but those are two disjoint entities and they are not and //must not// be located at the same place.
-}}}
 
 == Database Connection Strings
 
@@ -102,9 +95,30 @@ mysql://johndoe:letmein@localhost:3306/trac
 
 == Source Code Repository
 
-A single environment can be connected to more than one repository. However, by default Trac is not connected to any source code repository, and the ''Browse Source'' toolbar item will not be displayed.
+Since Trac 0.12, a single environment can be connected to more than one repository. There are many different ways to connect repositories to an environment, see TracRepositoryAdmin. This page also details the various attributes that can be set for a repository, such as `type`, `url`, `description`.
 
-There are many different ways to connect repositories to an environment, see TracRepositoryAdmin. A single repository can be specified when the environment is created by passing the optional arguments `repository_type` and `repository_dir` to the `initenv` command.
+In Trac 0.12 `trac-admin` no longer asks questions related to repositories. Therefore, by default Trac is not connected to any source code repository, and the ''Browse Source'' toolbar item will not be displayed.
+You can also explicitly disable the `trac.versioncontrol.*` components, which are otherwise still loaded:
+{{{#!ini
+[components]
+trac.versioncontrol.* = disabled
+}}}
+
+For some version control systems, it is possible to specify not only the path to the repository, but also a ''scope'' within the repository. Trac will then only show information related to the files and changesets below that scope. The Subversion backend for Trac supports this. For other types, check the corresponding plugin's documentation.
+
+Example of a configuration for a Subversion repository used as the default repository:
+{{{#!ini
+[trac]
+repository_type = svn
+repository_dir = /path/to/your/repository
+}}}
+
+The configuration for a scoped Subversion repository would be:
+{{{#!ini
+[trac]
+repository_type = svn
+repository_dir = /path/to/your/repository/scope/within/repos
+}}}
 
 == Directory Structure
 
@@ -123,6 +137,11 @@ An environment directory will usually consist of the following files and directo
  * `plugins` - Environment-specific [wiki:TracPlugins plugins].
  * `templates` - Custom Genshi environment-specific templates.
   * `site.html` - Method to customize header, footer, and style, described in TracInterfaceCustomization#SiteAppearance.
+
+=== Caveat: don't confuse a ''Trac environment directory'' with the ''source code repository directory'' #Caveat
+
+This is a common beginners' mistake.
+It happens that the structure for a Trac environment is loosely modelled after the Subversion repository directory structure, but those are two disjoint entities and they are not and ''must not'' be located at the same place.
 
 ----
 See also: TracAdmin, TracBackup, TracIni, TracGuide

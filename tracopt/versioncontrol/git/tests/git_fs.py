@@ -19,7 +19,6 @@ from cStringIO import StringIO
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE
 
-import trac.tests.compat
 from trac.core import TracError
 from trac.test import EnvironmentStub, Mock, MockPerm, locate
 from trac.tests.compat import rmtree
@@ -253,8 +252,7 @@ class GitNormalTestCase(BaseTestCase):
 
     def _create_req(self, **kwargs):
         data = dict(args={}, perm=MockPerm(), href=Href('/'), chrome={},
-                    authname='trac', tz=utc, get_header=lambda name: None,
-                    is_xhr=False)
+                    authname='trac', tz=utc, get_header=lambda name: None)
         data.update(kwargs)
         return Mock(**data)
 
@@ -654,34 +652,6 @@ class StopSync(Exception):
     pass
 
 
-class GitConnectorTestCase(BaseTestCase):
-
-    def _git_version_from_system_info(self):
-        git_version = None
-        for name, version in self.env.get_systeminfo():
-            if name == 'GIT':
-                git_version = version
-        return git_version
-
-    def test_get_system_info_repository_not_initialized(self):
-        # GitConnector is not a required component when there are no Git
-        # repositories configured, and the Git version is not returned in
-        # system info.
-        self.assertFalse(GitConnector(self.env).required)
-        self.assertIsNone(self._git_version_from_system_info())
-
-    def test_get_system_info_repository_initialized(self):
-        # GitConnector is a required component when there are Git
-        # repositories configured, and the Git version is returned in
-        # system info.
-        self._git_init()
-        self._add_repository()
-        self._repomgr.get_repository('gitrepos')
-
-        self.assertTrue(GitConnector(self.env).required)
-        self.assertIsNotNone(self._git_version_from_system_info())
-
-
 def suite():
     suite = unittest.TestSuite()
     if GitCommandMixin.git_bin:
@@ -691,7 +661,6 @@ def suite():
         suite.addTest(unittest.makeSuite(GitNormalTestCase))
         suite.addTest(unittest.makeSuite(GitRepositoryTestCase))
         suite.addTest(unittest.makeSuite(GitCachedRepositoryTestCase))
-        suite.addTest(unittest.makeSuite(GitConnectorTestCase))
     else:
         print("SKIP: tracopt/versioncontrol/git/tests/git_fs.py (git cli "
               "binary, 'git', not found)")

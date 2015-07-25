@@ -29,21 +29,10 @@ from trac.util import create_file
 from trac.util.datefmt import utc, localtz, format_date, format_datetime
 from trac.util.text import to_utf8
 
-
-class AdminEnumDefaultTestCaseSetup(FunctionalTwillTestCaseSetup):
-    def test_default(self, enum, name):
-        url = self._tester.url + '/admin/ticket/%s' % enum
-        tc.go(url)
-        tc.url(url + '$')
-        tc.find(name)
-        tc.formvalue('enumtable', 'default', name)
-        tc.submit('apply')
-        tc.url(url + '$')
-        tc.find('radio.*"%s"\\schecked="checked"' % name)
-        # Test the "Clear default" button
-        tc.go(url)
-        tc.submit('clear', formname='enumtable')
-        tc.notfind('type="radio" name="default" value=".+" checked="checked"')
+try:
+    from configobj import ConfigObj
+except ImportError:
+    ConfigObj = None
 
 
 class TestTickets(FunctionalTwillTestCaseSetup):
@@ -172,8 +161,8 @@ class TicketManipulator(Component):
             tc.url(self._tester.url + '/newticket$')
             tc.find("A ticket with the summary <em>Testing ticket "
                     "manipulator</em> already exists.")
-            tc.find("The ticket field <strong>reporter</strong> is invalid:"
-                    " The ticket <strong>reporter</strong> is <em>invalid</em>.")
+            tc.find("The ticket field 'reporter' is invalid: The"
+                    " ticket <strong>reporter</strong> is <em>invalid</em>.")
         finally:
             env.config.set('components', plugin_name + '.*', 'disabled')
             env.config.save()
@@ -313,7 +302,8 @@ class TestTicketQueryLinks(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Test ticket query links"""
         count = 3
-        ticket_ids = [self._tester.create_ticket('TestTicketQueryLinks%s' % i)
+        ticket_ids = [self._tester.create_ticket(
+                        summary='TestTicketQueryLinks%s' % i)
                       for i in range(count)]
         self._tester.go_to_query()
         # We don't have the luxury of javascript, so this is a multi-step
@@ -673,15 +663,6 @@ class TestAdminComponentDefault(FunctionalTwillTestCaseSetup):
         tc.go(self._tester.url + '/newticket')
         tc.find('<option selected="selected" value="%s">%s</option>'
                 % (name, name))
-        # Test the "Clear default" button
-        self._testenv.set_config('ticket', 'allowed_empty_fields', 'component')
-        tc.go(component_url)
-        tc.submit('clear', formname='component_table')
-        tc.notfind('type="radio" name="default" value=".+" checked="checked"')
-        self._tester.create_ticket()
-        tc.find('<th id="h_component" class="missing">\s*Component:\s*</th>'
-                '\s*<td headers="h_component">\s*</td>')
-        self._testenv.remove_config('ticket', 'allowed_empty_fields')
 
 
 class TestAdminComponentDetail(FunctionalTwillTestCaseSetup):
@@ -693,7 +674,7 @@ class TestAdminComponentDetail(FunctionalTwillTestCaseSetup):
         tc.go(component_url)
         tc.follow(name)
         desc = 'Some component description'
-        tc.formvalue('edit', 'description', desc)
+        tc.formvalue('modcomp', 'description', desc)
         tc.submit('cancel')
         tc.url(component_url + '$')
         tc.follow(name)
@@ -755,83 +736,46 @@ class TestAdminMilestoneDuplicates(FunctionalTwillTestCaseSetup):
         tc.formvalue('addmilestone', 'name', name)
         tc.submit()
         tc.notfind(internal_error)
-        tc.find('Milestone "%s" already exists, please choose '
-                'another name.' % name)
+        tc.find('Milestone "%s" already exists' % name)
         tc.notfind('%s')
-
-
-class TestAdminMilestoneListing(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Admin milestone listing."""
-        name1 = self._tester.create_milestone()
-        self._tester.create_ticket(info={'milestone': name1})
-        name2 = self._tester.create_milestone()
-
-        milestone_url = self._tester.url + '/admin/ticket/milestones'
-        tc.go(milestone_url)
-        tc.url(milestone_url)
-        tc.find(r'<a href="/admin/ticket/milestones/%(name)s">%(name)s</a>'
-                % {'name': name1})
-        tc.find(r'<a href="/query\?groupby=status&amp;milestone=%(name)s">'
-                r'1</a>' % {'name': name1})
-        tc.find(r'<a href="/admin/ticket/milestones/%(name)s">%(name)s</a>'
-                % {'name': name2})
-        tc.notfind(r'<a href="/query\?groupby=status&amp;milestone=%(name)s">'
-                   r'0</a>' % {'name': name2})
 
 
 class TestAdminMilestoneDetail(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Admin modify milestone details"""
-        name = self._tester.create_milestone()
-
-        milestone_url = self._tester.url + '/admin/ticket/milestones'
-        def go_to_milestone_detail():
-            tc.go(milestone_url)
-            tc.url(milestone_url)
-            tc.follow(name)
-            tc.url(milestone_url + '/' + name)
+        name = "DetailMilestone"
+        # Create a milestone
+        self._tester.create_milestone(name)
 
         # Modify the details of the milestone
-        go_to_milestone_detail()
-        tc.formvalue('edit', 'due', True)
-        tc.formvalue('edit', 'description', 'Some description.')
+        milestone_url = self._tester.url + "/admin/ticket/milestones"
+        tc.go(milestone_url)
+        tc.url(milestone_url)
+        tc.follow(name)
+        tc.url(milestone_url + '/' + name)
+        tc.formvalue('modifymilestone', 'description', 'Some description.')
         tc.submit('save')
         tc.url(milestone_url)
 
-        # Milestone is not closed
+        # Make sure the milestone isn't closed
         self._tester.go_to_roadmap()
         tc.find(name)
 
-        # Cancel more modifications and modification are not saved
-        go_to_milestone_detail()
-        tc.formvalue('edit', 'description', '~~Some other description.~~')
+        # Cancel more modifications
+        tc.go(milestone_url)
+        tc.url(milestone_url)
+        tc.follow(name)
+        tc.formvalue('modifymilestone', 'description',
+                     '~~Some other description.~~')
         tc.submit('cancel')
         tc.url(milestone_url)
+
+        # Verify the correct modifications show up
         self._tester.go_to_roadmap()
         tc.find('Some description.')
         tc.follow(name)
         tc.find('Some description.')
 
-        # Milestone is readonly when user doesn't have MILESTONE_MODIFY
-        self._tester.logout()
-        self._testenv.grant_perm('user', 'TICKET_ADMIN')
-        self._tester.login('user')
-        go_to_milestone_detail()
-        try:
-            tc.find(r'<input[^>]+id="name"[^>]+readonly="readonly"')
-            tc.find(r'<input[^>]+id="due"[^>]+disabled="disabled"')
-            tc.find(r'<input[^>]+id="duedate"[^>]+readonly="readonly"')
-            tc.find(r'<input[^>]+id="completed"[^>]+disabled="disabled"')
-            tc.find(r'<input[^>]+id="completeddate"[^>]+readonly="readonly"')
-            tc.find(r'<textarea[^>]+id="description"[^>]+readonly="readonly"')
-            tc.find(r'<input[^>]+name="save"[^>]+disabled="disabled"')
-            tc.submit('cancel', 'edit')
-            tc.url(milestone_url)
-        finally:
-            self._tester.logout()
-            self._testenv.revoke_perm('user', 'TICKET_ADMIN')
-            self._tester.login('admin')
 
 class TestAdminMilestoneDue(FunctionalTwillTestCaseSetup):
     def runTest(self):
@@ -860,8 +804,7 @@ class TestAdminMilestoneDetailDue(FunctionalTwillTestCaseSetup):
         duedate = datetime.now(tz=utc)
         duedate_string = format_datetime(duedate, tzinfo=utc,
                                          locale=locale_en)
-        tc.formvalue('edit', 'due', True)
-        tc.formvalue('edit', 'duedate', duedate_string)
+        tc.formvalue('modifymilestone', 'due', duedate_string)
         tc.submit('save')
         tc.url(milestone_url + '$')
         tc.find(name + '(<[^>]*>|\\s)*'+ duedate_string, 's')
@@ -878,7 +821,7 @@ class TestAdminMilestoneDetailRename(FunctionalTwillTestCaseSetup):
         self._tester.go_to_url(milestone_url)
         tc.follow(name1)
         tc.url(milestone_url + '/' + name1)
-        tc.formvalue('edit', 'name', name2)
+        tc.formvalue('modifymilestone', 'name', name2)
         tc.submit('save')
 
         tc.find(r"Your changes have been saved\.")
@@ -903,7 +846,7 @@ class TestAdminMilestoneCompleted(FunctionalTwillTestCaseSetup):
         tc.url(milestone_url)
         tc.follow(name)
         tc.url(milestone_url + '/' + name)
-        tc.formvalue('edit', 'completed', True)
+        tc.formvalue('modifymilestone', 'completed', True)
         tc.submit('save')
         tc.url(milestone_url + "$")
 
@@ -918,10 +861,10 @@ class TestAdminMilestoneCompletedFuture(FunctionalTwillTestCaseSetup):
         tc.url(milestone_url)
         tc.follow(name)
         tc.url(milestone_url + '/' + name)
-        tc.formvalue('edit', 'completed', True)
+        tc.formvalue('modifymilestone', 'completed', True)
         cdate = datetime.now(tz=utc) + timedelta(days=2)
         cdate_string = format_date(cdate, tzinfo=localtz, locale=locale_en)
-        tc.formvalue('edit', 'completeddate', cdate_string)
+        tc.formvalue('modifymilestone', 'completeddate', cdate_string)
         tc.submit('save')
         tc.find('Completion date may not be in the future')
         # And make sure it wasn't marked as completed.
@@ -981,99 +924,21 @@ class TestAdminMilestoneNonRemoval(FunctionalTwillTestCaseSetup):
         tc.find('No milestone selected')
 
 
-class TestAdminMilestoneDefaults(FunctionalTwillTestCaseSetup):
+class TestAdminMilestoneDefault(FunctionalTwillTestCaseSetup):
     def runTest(self):
-        """Admin set default ticket milestone, default retarget milestone
-        and clear defaults."""
-        def clear_defaults():
-            # Test the "Clear default" button
-            tc.go(milestone_url)
-            tc.submit('clear', formname='milestone_table')
-            tc.notfind('type="radio" name="ticket_default" '
-                       'value=".+" checked="checked"')
-            tc.notfind('type="radio" name="retarget_default" '
-                       'value=".+" checked="checked"')
-            self._tester.go_to_ticket(tid)
-            tc.find('<th id="h_milestone" class="missing">[ \t\n]+'
-                    'Milestone:[ \t\n]+</th>[ \t\n]+'
-                    '(?!<td headers="h_milestone">)')
-            self._tester.go_to_milestone(mid2)
-            tc.submit(formname='deletemilestone')
-            tc.notfind('<option selected="selected" value="%s">%s</option>'
-                       % (mid1, mid1))
-
+        """Admin set default milestone"""
+        name = "DefaultMilestone"
+        self._tester.create_milestone(name)
         milestone_url = self._tester.url + "/admin/ticket/milestones"
-        tid = self._tester.create_ticket()
-        mid1 = self._tester.create_milestone()
-        mid2 = self._tester.create_milestone()
-        self._tester.create_ticket(info={'milestone': mid2})
-
-        # Set default ticket milestone
         tc.go(milestone_url)
-        tc.formvalue('milestone_table', 'ticket_default', mid1)
+        tc.formvalue('milestone_table', 'default', name)
         tc.submit('apply')
-        tc.find('type="radio" name="ticket_default" value="%s" '
-                'checked="checked"' % mid1)
-        tc.notfind('type="radio" name="retarget_default" value=".+" '
-                   'checked="checked"')
+        tc.find('type="radio" name="default" value="%s" checked="checked"' % \
+                name)
         # verify it is the default on the newticket page.
         tc.go(self._tester.url + '/newticket')
         tc.find('<option selected="selected" value="%s">%s</option>'
-                % (mid1, mid1))
-        clear_defaults()
-
-        # Set default retarget to milestone
-        tc.go(milestone_url)
-        tc.formvalue('milestone_table', 'retarget_default', mid1)
-        tc.submit('apply')
-        tc.find('type="radio" name="retarget_default" value="%s" '
-                'checked="checked"' % mid1)
-        tc.notfind('type="radio" name="ticket_default" value=".+" '
-                   'checked="checked"')
-        # verify it is the default on the confirm delete page.
-        self._tester.go_to_milestone(mid2)
-        tc.submit(formname='deletemilestone')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (mid1, mid1))
-        clear_defaults()
-
-        # Set both
-        tc.go(milestone_url)
-        tc.formvalue('milestone_table', 'ticket_default', mid1)
-        tc.formvalue('milestone_table', 'retarget_default', mid1)
-        tc.submit('apply')
-        tc.find('type="radio" name="ticket_default" value="%s" '
-                'checked="checked"' % mid1)
-        tc.find('type="radio" name="retarget_default" value="%s" '
-                'checked="checked"' % mid1)
-        # verify it is the default on the newticket page.
-        tc.go(self._tester.url + '/newticket')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (mid1, mid1))
-        # verify it is the default on the confirm delete page.
-        self._tester.go_to_milestone(mid2)
-        tc.submit(formname='deletemilestone')
-        tc.find('<option selected="selected" value="%s">%s</option>'
-                % (mid1, mid1))
-        clear_defaults()
-
-        #Set neither
-        tc.go(milestone_url)
-        tc.submit('apply', formname='milestone_table')
-        tc.notfind('type="radio" name="retarget_default" value=".+" '
-                   'checked="checked"')
-        tc.notfind('type="radio" name="ticket_default" value=".+" '
-                   'checked="checked"')
-        # verify no default on the newticket page.
-        tc.go(self._tester.url + '/newticket')
-        tc.find('<th id="h_milestone" class="missing">[ \t\n]+'
-                'Milestone:[ \t\n]+</th>[ \t\n]+'
-                '(?!<td headers="h_milestone">)')
-        # verify none selected on the confirm delete page.
-        self._tester.go_to_milestone(mid2)
-        tc.submit(formname='deletemilestone')
-        tc.notfind('<option selected="selected" value="%s">%s</option>'
-                   % (mid1, mid1))
+                % (name, name))
 
 
 class TestAdminPriority(FunctionalTwillTestCaseSetup):
@@ -1109,7 +974,7 @@ class TestAdminPriorityModify(FunctionalTwillTestCaseSetup):
         tc.url(priority_url + '$')
         tc.find(name)
         tc.follow(name)
-        tc.formvalue('edit', 'name', name * 2)
+        tc.formvalue('modenum', 'name', name * 2)
         tc.submit('save')
         tc.url(priority_url + '$')
         tc.find(name * 2)
@@ -1159,11 +1024,19 @@ class TestAdminPriorityNonRemoval(FunctionalTwillTestCaseSetup):
         tc.find('No priority selected')
 
 
-class TestAdminPriorityDefault(AdminEnumDefaultTestCaseSetup):
+class TestAdminPriorityDefault(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Admin default priority"""
-        name = self._tester.create_priority()
-        self.test_default('priority', name)
+        name = "DefaultPriority"
+        self._tester.create_priority(name)
+        priority_url = self._tester.url + '/admin/ticket/priority'
+        tc.go(priority_url)
+        tc.url(priority_url + '$')
+        tc.find(name)
+        tc.formvalue('enumtable', 'default', name)
+        tc.submit('apply')
+        tc.url(priority_url + '$')
+        tc.find('radio.*"%s"\\schecked="checked"' % name)
 
 
 class TestAdminPriorityDetail(FunctionalTwillTestCaseSetup):
@@ -1179,14 +1052,14 @@ class TestAdminPriorityDetail(FunctionalTwillTestCaseSetup):
         tc.url(priority_url + '$')
         tc.follow(name + '1')
         tc.url(priority_url + '/' + name + '1')
-        tc.formvalue('edit', 'name', name + '2')
+        tc.formvalue('modenum', 'name', name + '2')
         tc.submit('save')
         tc.url(priority_url + '$')
 
         # Cancel more modifications
         tc.go(priority_url)
         tc.follow(name)
-        tc.formvalue('edit', 'name', name + '3')
+        tc.formvalue('modenum', 'name', name + '3')
         tc.submit('cancel')
         tc.url(priority_url + '$')
 
@@ -1257,13 +1130,6 @@ class TestAdminResolutionDuplicates(FunctionalTwillTestCaseSetup):
         tc.find('Resolution value "%s" already exists' % name)
 
 
-class TestAdminResolutionDefault(AdminEnumDefaultTestCaseSetup):
-    def runTest(self):
-        """Admin default resolution"""
-        name = self._tester.create_resolution()
-        self.test_default('resolution', name)
-
-
 class TestAdminSeverity(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Admin create severity"""
@@ -1287,13 +1153,6 @@ class TestAdminSeverityDuplicates(FunctionalTwillTestCaseSetup):
         tc.find('Severity value "%s" already exists' % name)
 
 
-class TestAdminSeverityDefault(AdminEnumDefaultTestCaseSetup):
-    def runTest(self):
-        """Admin default severity"""
-        name = self._tester.create_severity()
-        self.test_default('severity', name)
-
-
 class TestAdminType(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Admin create type"""
@@ -1315,13 +1174,6 @@ class TestAdminTypeDuplicates(FunctionalTwillTestCaseSetup):
         self._tester.create_type(name)
         self._tester.create_type(name)
         tc.find('Type value "%s" already exists' % name)
-
-
-class TestAdminTypeDefault(AdminEnumDefaultTestCaseSetup):
-    def runTest(self):
-        """Admin default type"""
-        name = self._tester.create_type()
-        self.test_default('type', name)
 
 
 class TestAdminVersion(FunctionalTwillTestCaseSetup):
@@ -1364,7 +1216,7 @@ class TestAdminVersionDetail(FunctionalTwillTestCaseSetup):
         tc.follow(name)
 
         desc = 'Some version description.'
-        tc.formvalue('edit', 'description', desc)
+        tc.formvalue('modifyversion', 'description', desc)
         tc.submit('save')
         tc.url(version_admin)
         tc.follow(name)
@@ -1381,7 +1233,7 @@ class TestAdminVersionDetailTime(FunctionalTwillTestCaseSetup):
         tc.url(version_admin)
         tc.follow(name)
 
-        tc.formvalue('edit', 'time', '')
+        tc.formvalue('modifyversion', 'time', '')
         tc.submit('save')
         tc.url(version_admin + '$')
         tc.find(name + '(<[^>]*>|\\s)*<[^>]* name="default" value="%s"'
@@ -1399,7 +1251,7 @@ class TestAdminVersionDetailCancel(FunctionalTwillTestCaseSetup):
         tc.follow(name)
 
         desc = 'Some other version description.'
-        tc.formvalue('edit', 'description', desc)
+        tc.formvalue('modifyversion', 'description', desc)
         tc.submit('cancel')
         tc.url(version_admin)
         tc.follow(name)
@@ -1463,14 +1315,6 @@ class TestAdminVersionDefault(FunctionalTwillTestCaseSetup):
         tc.go(self._tester.url + '/newticket')
         tc.find('<option selected="selected" value="%s">%s</option>'
                 % (name, name))
-        # Test the "Clear default" button
-        tc.go(version_url)
-        tc.submit('clear', formname='version_table')
-        tc.notfind('type="radio" name="default" value=".+" checked="checked"')
-        self._tester.create_ticket()
-        tc.find('<th id="h_version" class="missing">[ \t\n]+'
-                'Version:[ \t\n]+</th>[ \t\n]+'
-                '(?!<td headers="h_version">)')
 
 
 class TestNewReport(FunctionalTwillTestCaseSetup):
@@ -1542,37 +1386,6 @@ UNION ALL SELECT 'attachment', 'file.ext', 'wiki', 'WikiStart'
                 'file[.]ext [(]WikiStart[)]</a>')
 
 
-class TestReportDynamicVariables(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Generate a report with dynamic variables in title, summary
-        and SQL"""
-        summary = random_sentence(3)
-        fields = {'component': 'component1'}
-        ticket_id = self._tester.create_ticket(summary, fields)
-        reportnum = self._tester.create_report(
-           "$USER's tickets for component $COMPONENT",
-           """SELECT DISTINCT
-               t.id AS ticket, summary, component, version, milestone,
-               t.type AS type, priority, t.time AS created,
-               t.changetime AS _changetime, summary AS _description,
-               reporter AS _reporter
-              FROM ticket t
-              LEFT JOIN enum p ON p.name = t.priority AND p.type = 'priority'
-              LEFT JOIN ticket_change tc ON tc.ticket = t.id AND tc.author = $USER
-               AND tc.field = 'comment'
-              WHERE t.status <> 'closed'
-               AND component = $COMPONENT
-               AND (owner = $USER OR reporter = $USER OR author = $USER)
-            """,
-           "Tickets assigned to $USER for component $COMPONENT"
-        )
-        self._tester.go_to_report(reportnum, fields)
-        tc.find("admin's tickets for component component1")
-        tc.find("Tickets assigned to admin for component component1")
-        tc.find('<a title="View ticket" href="/ticket/%s">%s</a>' %
-                (ticket_id, summary))
-
-
 class TestMilestone(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Create a milestone."""
@@ -1585,7 +1398,6 @@ class TestMilestone(FunctionalTwillTestCaseSetup):
         tc.formvalue('edit', 'name', name)
         tc.formvalue('edit', 'due', True)
         tc.formvalue('edit', 'duedate', due)
-        tc.notfind("Retarget associated open tickets to milestone:")
         tc.submit('add')
         tc.url(self._tester.url + '/milestone/' + name + '$')
         tc.find(r'<h1>Milestone %s</h1>' % name)
@@ -1620,21 +1432,14 @@ class TestMilestoneClose(FunctionalTwillTestCaseSetup):
     to the selected milestone"""
     def runTest(self):
         name = self._tester.create_milestone()
+        retarget_to = self._tester.create_milestone()
         tid1 = self._tester.create_ticket(info={'milestone': name})
+        tid2 = self._tester.create_ticket(info={'milestone': name})
         tc.formvalue('propertyform', 'action', 'resolve')
         tc.formvalue('propertyform',
                      'action_resolve_resolve_resolution', 'fixed')
         tc.submit('submit')
 
-        # Check that hint is shown when there are no open tickets to retarget
-        self._tester.go_to_milestone(name)
-        tc.submit(formname='editmilestone')
-        tc.find("There are no open tickets associated with this milestone.")
-
-        retarget_to = self._tester.create_milestone()
-
-        # Check that open tickets retargeted, closed not retargeted
-        tid2 = self._tester.create_ticket(info={'milestone': name})
         self._tester.go_to_milestone(name)
         completed = format_datetime(datetime.now(tz=utc) - timedelta(hours=1),
                                     tzinfo=localtz, locale=locale_en)
@@ -1649,43 +1454,45 @@ class TestMilestoneClose(FunctionalTwillTestCaseSetup):
                 'have been retargeted to milestone "%s".'
                 % (name, retarget_to))
         tc.find("Completed")
-
-        # Closed ticket will not be retargeted.
         self._tester.go_to_ticket(tid1)
+        tc.find('<a class="milestone" href="/milestone/%(name)s" '
+                'title="No date set">%(name)s</a>' % {'name': retarget_to})
+        tc.find('changed from <em>%s</em> to <em>%s</em>'
+                % (name, retarget_to))
+        tc.find("Ticket retargeted after milestone closed")
+        self._tester.go_to_ticket(tid2)
         tc.find('<a class="closed milestone" href="/milestone/%(name)s" '
                 'title="Completed .+ ago (.+)">%(name)s</a>'
                 % {'name': name})
         tc.notfind('changed from <em>%s</em> to <em>%s</em>'
                    % (name, retarget_to))
         tc.notfind("Ticket retargeted after milestone closed")
-        # Open ticket will be retargeted.
-        self._tester.go_to_ticket(tid2)
-        tc.find('<a class="milestone" href="/milestone/%(name)s" '
-                'title="No date set">%(name)s</a>' % {'name': retarget_to})
-        tc.find('changed from <em>%s</em> to <em>%s</em>'
-                % (name, retarget_to))
-        tc.find("Ticket retargeted after milestone closed")
 
 
 class TestMilestoneDelete(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Delete a milestone and verify that tickets are retargeted
         to the selected milestone."""
-        def submit_delete(name, retarget_to=None, tid=None):
-            tc.submit('delete', 'delete-confirm')
+        def delete_milestone(name, retarget_to=None, tid=None):
+            self._tester.go_to_milestone(name)
+            tc.submit(formname='deletemilestone')
+            if retarget_to is not None:
+                tc.formvalue('edit', 'target', retarget_to)
+            tc.submit('delete', formname='edit')
+
             tc.url(self._tester.url + '/roadmap')
             tc.find('The milestone "%s" has been deleted.' % name)
             tc.notfind('Milestone:.*%s' % name)
+            if retarget_to is not None:
+                tc.find('Milestone:.*%s' % retarget_to)
             retarget_notice = 'The tickets associated with milestone "%s" ' \
                               'have been retargeted to milestone "%s".' \
                               % (name, str(retarget_to))
-            if retarget_to is not None:
-                tc.find('Milestone:.*%s' % retarget_to)
             if tid is not None:
                 tc.find(retarget_notice)
                 self._tester.go_to_ticket(tid)
                 tc.find('Changed[ \t\n]+<a .*>\d+ seconds? ago</a>'
-                        '[ \t\n]+by <span class="trac-author">admin</span>')
+                        '[ \t\n]+by admin')
                 if retarget_to is not None:
                     tc.find('<a class="milestone" href="/milestone/%(name)s" '
                             'title="No date set">%(name)s</a>'
@@ -1705,33 +1512,26 @@ class TestMilestoneDelete(FunctionalTwillTestCaseSetup):
 
         # No tickets associated with milestone to be retargeted
         name = self._tester.create_milestone()
-        self._tester.go_to_milestone(name)
-        tc.submit(formname='deletemilestone')
-        tc.find("There are no tickets associated with this milestone.")
-        submit_delete(name)
+        delete_milestone(name)
 
         # Don't select a milestone to retarget to
         name = self._tester.create_milestone()
         tid = self._tester.create_ticket(info={'milestone': name})
-        self._tester.go_to_milestone(name)
-        tc.submit(formname='deletemilestone')
-        submit_delete(name, tid=tid)
+        delete_milestone(name, tid=tid)
 
         # Select a milestone to retarget to
         name = self._tester.create_milestone()
         retarget_to = self._tester.create_milestone()
         tid = self._tester.create_ticket(info={'milestone': name})
-        self._tester.go_to_milestone(name)
-        tc.submit(formname='deletemilestone')
-        tc.formvalue('delete-confirm', 'target', retarget_to)
-        submit_delete(name, retarget_to, tid)
+        delete_milestone(name, retarget_to, tid)
 
         # Just navigate to the page and select cancel
         name = self._tester.create_milestone()
         tid = self._tester.create_ticket(info={'milestone': name})
+
         self._tester.go_to_milestone(name)
         tc.submit(formname='deletemilestone')
-        tc.submit('cancel', 'delete-confirm')
+        tc.submit('cancel', formname='edit')
 
         tc.url(self._tester.url + '/milestone/%s' % name)
         tc.notfind('The milestone "%s" has been deleted.' % name)
@@ -1743,28 +1543,6 @@ class TestMilestoneDelete(FunctionalTwillTestCaseSetup):
         tc.notfind('<strong class="trac-field-milestone">Milestone</strong>'
                    '[ \t\n]*<em>%s</em>[ \t\n]*deleted' % name)
         tc.notfind("Ticket retargeted after milestone deleted<br />")
-
-        # No attachments associated with milestone
-        name = self._tester.create_milestone()
-        self._tester.go_to_milestone(name)
-        tc.formvalue('deletemilestone', 'action', 'delete')
-        tc.submit()
-        tc.notfind("The following attachments will also be deleted:")
-        tc.submit('delete', 'delete-confirm')
-        tc.find('The milestone "%s" has been deleted.' % name)
-        tc.url(self._tester.url)
-
-        # Attachments associated with milestone
-        name = self._tester.create_milestone()
-        filename = self._tester.attach_file_to_milestone(name)
-        self._tester.go_to_milestone(name)
-        tc.formvalue('deletemilestone', 'action', 'delete')
-        tc.submit()
-        tc.find("The following attachments will also be deleted:")
-        tc.find(filename)
-        tc.submit('delete', 'delete-confirm')
-        tc.find('The milestone "%s" has been deleted.' % name)
-        tc.url(self._tester.url)
 
 
 class TestMilestoneRename(FunctionalTwillTestCaseSetup):
@@ -1784,8 +1562,7 @@ class TestMilestoneRename(FunctionalTwillTestCaseSetup):
         tc.find("Your changes have been saved.")
         tc.find(r"<h1>Milestone %s</h1>" % new_name)
         self._tester.go_to_ticket(tid)
-        tc.find('Changed[ \t\n]+<a .*>\d+ seconds? ago</a>[ \t\n]+'
-                'by <span class="trac-author">admin</span>')
+        tc.find('Changed[ \t\n]+<a .*>\d+ seconds? ago</a>[ \t\n]+by admin')
         tc.find('<a class="milestone" href="/milestone/%(name)s" '
                 'title="No date set">%(name)s</a>' % {'name': new_name})
         tc.find('<strong class="trac-field-milestone">Milestone</strong>'
@@ -1826,7 +1603,7 @@ class RegressionTestTicket4447(FunctionalTwillTestCaseSetup):
                        'Another Custom Field')
         env.config.save()
 
-        ticketid = self._tester.create_ticket("Hello World")
+        ticketid = self._tester.create_ticket(summary="Hello World")
         self._tester.add_comment(ticketid)
         tc.notfind('<strong class="trac-field-newfield">Another Custom Field'
                    '</strong>[ \t\n]+<em></em>[ \t\n]+deleted')
@@ -1882,7 +1659,7 @@ class RegressionTestTicket5022(FunctionalTwillTestCaseSetup):
         """Test for regression of http://trac.edgewall.org/ticket/5022
         """
         summary = 'RegressionTestTicket5022'
-        ticket_id = self._tester.create_ticket(summary)
+        ticket_id = self._tester.create_ticket(summary=summary)
         tc.go(self._tester.url + '/newticket?id=%s' % ticket_id)
         tc.notfind(summary)
 
@@ -2095,13 +1872,13 @@ class RegressionTestTicket6048(FunctionalTwillTestCaseSetup):
         env.config.set('ticket', 'workflow',
                        prevconfig + ',DeleteTicketActionController')
         env.config.save()
-        env = self._testenv.get_trac_environment()  # reload environment
+        env = self._testenv.get_trac_environment() # reload environment
 
         # Create a ticket and delete it
         ticket_id = self._tester.create_ticket('RegressionTestTicket6048')
         # (Create a second ticket so that the ticket id does not get reused
         # and confuse the tester object.)
-        self._tester.create_ticket('RegressionTestTicket6048b')
+        self._tester.create_ticket(summary='RegressionTestTicket6048b')
         self._tester.go_to_ticket(ticket_id)
         tc.find('delete ticket')
         tc.formvalue('propertyform', 'action', 'delete')
@@ -2114,7 +1891,7 @@ class RegressionTestTicket6048(FunctionalTwillTestCaseSetup):
         # Remove the DeleteTicket plugin
         env.config.set('ticket', 'workflow', prevconfig)
         env.config.save()
-        self._testenv.get_trac_environment()  # reload environment
+        env = self._testenv.get_trac_environment() # reload environment
         for ext in ('py', 'pyc', 'pyo'):
             filename = os.path.join(self._testenv.tracdir, 'plugins',
                                     'DeleteTicket.%s' % ext)
@@ -2186,7 +1963,7 @@ class RegressionTestTicket6912a(FunctionalTwillTestCaseSetup):
         try:
             self._tester.create_component(name='RegressionTestTicket6912a',
                                           owner='')
-        except twill.utils.ClientForm.ItemNotFoundError as e:
+        except twill.utils.ClientForm.ItemNotFoundError, e:
             raise twill.errors.TwillAssertionError(e)
 
 
@@ -2197,10 +1974,10 @@ class RegressionTestTicket6912b(FunctionalTwillTestCaseSetup):
                                       owner='admin')
         tc.follow('RegressionTestTicket6912b')
         try:
-            tc.formvalue('edit', 'owner', '')
-        except twill.utils.ClientForm.ItemNotFoundError as e:
+            tc.formvalue('modcomp', 'owner', '')
+        except twill.utils.ClientForm.ItemNotFoundError, e:
             raise twill.errors.TwillAssertionError(e)
-        tc.submit('save', formname='edit')
+        tc.submit('save', formname='modcomp')
         tc.find('RegressionTestTicket6912b</a>[ \n\t]*</td>[ \n\t]*'
                 '<td class="owner"></td>', 's')
 
@@ -2298,8 +2075,7 @@ class RegressionTestTicket8247(FunctionalTwillTestCaseSetup):
         tc.go(ticket_url)
         tc.find('<strong class="trac-field-milestone">Milestone</strong>'
                 '[ \n\t]*<em>%s</em> deleted' % name)
-        tc.find('Changed <a.* ago</a> by '
-                '<span class="trac-author">admin</span>')
+        tc.find('Changed <a.* ago</a> by admin')
         tc.notfind('</a> ago by anonymous')
 
 
@@ -2349,115 +2125,6 @@ class RegressionTestTicket9981(FunctionalTwillTestCaseSetup):
         tc.find('<a class="closed ticket"[ \t\n]+'
                 'href="/ticket/%(num)s#comment:1"[ \t\n]+'
                 'title="Comment 1 for Ticket #%(num)s"' % {'num': tid1})
-
-
-class RegressionTestTicket10010(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Test for regression of http://trac.edgewall.org/ticket/10010
-        Allow configuring the default retargeting option when closing or
-        deleting a milestone."""
-        m1 = self._tester.create_milestone()
-        m2 = self._tester.create_milestone()
-        self._tester.create_ticket(info={'milestone': m1})
-        def go_to_and_find_markup(markup, find=True):
-            self._tester.go_to_milestone(m1)
-            tc.formvalue('editmilestone', 'action', 'edit')
-            tc.submit()
-            if find:
-                tc.find(markup)
-            else:
-                tc.notfind(markup)
-            self._tester.go_to_milestone(m1)
-            tc.formvalue('editmilestone', 'action', 'delete')
-            tc.submit()
-            if find:
-                tc.find(markup)
-            else:
-                tc.notfind(markup)
-        try:
-            go_to_and_find_markup('<option selected="selected" ', False)
-            self._testenv.set_config('milestone', 'default_retarget_to', m2)
-            go_to_and_find_markup('<option selected="selected" '
-                                  'value="%(name)s">%(name)s</option>' % {'name': m2})
-            self._testenv.set_config('milestone', 'default_retarget_to', m1)
-            go_to_and_find_markup('<option selected="selected" ', False)
-            self._testenv.set_config('milestone', 'default_retarget_to', '')
-            go_to_and_find_markup('<option selected="selected" ', False)
-        finally:
-            self._testenv.remove_config('milestone', 'default_retarget_to')
-
-
-class RegressionTestTicket10772(FunctionalTwillTestCaseSetup):
-    def runTest(self):
-        """Test for regression of http://trac.edgewall.org/ticket/10772"""
-        def find_prop(field, value=None):
-            if value and field == 'type':
-                tc.find(r'<span class="trac-%(field)s">\s*'
-                        r'<a href="/query\?status=!closed&amp;'
-                        r'%(field)s=%(value)s">\s*%(value)s\s*</a>\s*</span>'
-                        % {'field': field, 'value': value})
-            elif value and field == 'milestone':
-                tc.find(r'<td headers="h_%(field)s">\s*'
-                        r'<a class="%(field)s" href="/%(field)s/%(value)s" '
-                        r'title=".+">\s*%(value)s\s*</a>\s*</td>'
-                        % {'field': field, 'value': value})
-            elif value:
-                tc.find(r'<td headers="h_%(field)s">\s*'
-                        r'<a href="/query\?status=!closed&amp;'
-                        r'%(field)s=%(value)s">\s*%(value)s\s*</a>\s*</td>'
-                        % {'field': field, 'value': value})
-            else:
-                tc.find(r'<td headers="h_%(field)s">\s*</td>'
-                        % {'field': field})
-
-        self._testenv.set_config('ticket', 'allowed_empty_fields',
-                                 'component, milestone, priority, version')
-
-        try:
-            # TODO: use the //Clear default// buttons to clear these values
-            self._tester.go_to_admin("Components")
-            tc.submit('clear', formname='component_table')
-            self._tester.go_to_admin("Milestones")
-            tc.submit('clear', formname='milestone_table')
-            self._tester.go_to_admin("Versions")
-            tc.submit('clear', formname='version_table')
-            self._tester.go_to_admin("Priorities")
-            tc.formvalue('enumtable', 'default', 'major')
-            tc.submit('apply')
-
-            self._tester.create_ticket('ticket summary')
-
-            find_prop('component')
-            find_prop('milestone')
-            find_prop('priority', 'major')
-            find_prop('version')
-
-            self._testenv.set_config('ticket', 'allowed_empty_fields', '')
-            self._tester.go_to_admin("Components")
-            tc.formvalue('component_table', 'default', 'component2')
-            tc.submit('apply')
-            self._tester.go_to_admin("Milestones")
-            tc.formvalue('milestone_table', 'ticket_default', 'milestone2')
-            tc.submit('apply')
-            self._tester.go_to_admin("Priorities")
-            tc.formvalue('enumtable', 'default', 'minor')
-            tc.submit('apply')
-            self._tester.go_to_admin("Versions")
-            tc.formvalue('version_table', 'default', '2.0')
-            tc.submit('apply')
-            self._tester.go_to_admin("Ticket Types")
-            tc.formvalue('enumtable', 'default', 'task')
-            tc.submit('apply')
-
-            self._tester.create_ticket('ticket summary')
-
-            find_prop('component', 'component2')
-            find_prop('milestone', 'milestone2')
-            find_prop('priority', 'minor')
-            find_prop('version', '2.0')
-            find_prop('type', 'task')
-        finally:
-            self._testenv.remove_config('ticket', 'allowed_empty_fields')
 
 
 class RegressionTestTicket10984(FunctionalTwillTestCaseSetup):
@@ -2531,10 +2198,6 @@ class RegressionTestTicket11176(FunctionalTwillTestCaseSetup):
         Fine-grained permission checks should be enforced on the Report list
         page, the report pages and query pages."""
         self._testenv.enable_authz_permpolicy("""
-            [ticket:*]
-            anonymous = TICKET_VIEW
-            [report:-1]
-            anonymous = REPORT_VIEW
             [report:1]
             anonymous = REPORT_VIEW
             [report:2]
@@ -2586,7 +2249,7 @@ class RegressionTestTicket11590(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Test for regression of http://trac.edgewall.org/ticket/11590"""
         report_id = self._tester.create_report('#11590', 'SELECT 1',
-                                               '[. this report]')
+                                               '[./ this report]')
         self._tester.go_to_view_tickets()
         tc.notfind(internal_error)
         tc.find('<a class="report" href="[^>"]*?/report/%s">this report</a>' %
@@ -2616,6 +2279,18 @@ class RegressionTestTicket11618(FunctionalTwillTestCaseSetup):
             self._tester.login('admin')
 
 
+class RegressionTestTicket11930(FunctionalTwillTestCaseSetup):
+    def runTest(self):
+        """Test for regression of http://trac.edgewall.org/ticket/11930
+        Workflow action labels are present on the ticket page.
+        """
+        self._tester.create_ticket()
+        tc.find('<label for="action_leave">leave</label>[ \n\t]+as new')
+        tc.find('<label for="action_resolve">resolve</label>[ \n\t]+as')
+        tc.find('<label for="action_reassign">reassign</label>[ \n\t]+to')
+        tc.find('<label for="action_accept">accept</label>')
+
+
 class RegressionTestTicket11996(FunctionalTwillTestCaseSetup):
     def runTest(self):
         """Field default value is only selected for new tickets.
@@ -2627,7 +2302,8 @@ class RegressionTestTicket11996(FunctionalTwillTestCaseSetup):
             self._tester.go_to_ticket()
             tc.find('<option selected="selected" value="milestone3">')
             self._tester.create_ticket(info={'milestone': ''})
-            tc.find('<td headers="h_milestone">[ \t\n]*</td>')
+            tc.find('<a class="missing milestone" href="/milestone/" '
+                    'rel="nofollow">')
             tc.notfind('<option value="milestone3" selected="selected">')
         finally:
             self._testenv.set_config('ticket', 'default_milestone', milestone)
@@ -2674,7 +2350,6 @@ def functionalSuite(suite=None):
     suite.addTest(TestAdminMilestoneAuthorization())
     suite.addTest(TestAdminMilestoneSpace())
     suite.addTest(TestAdminMilestoneDuplicates())
-    suite.addTest(TestAdminMilestoneListing())
     suite.addTest(TestAdminMilestoneDetail())
     suite.addTest(TestAdminMilestoneDue())
     suite.addTest(TestAdminMilestoneDetailDue())
@@ -2684,7 +2359,7 @@ def functionalSuite(suite=None):
     suite.addTest(TestAdminMilestoneRemove())
     suite.addTest(TestAdminMilestoneRemoveMulti())
     suite.addTest(TestAdminMilestoneNonRemoval())
-    suite.addTest(TestAdminMilestoneDefaults())
+    suite.addTest(TestAdminMilestoneDefault())
     suite.addTest(TestAdminPriority())
     suite.addTest(TestAdminPriorityAuthorization())
     suite.addTest(TestAdminPriorityModify())
@@ -2698,15 +2373,12 @@ def functionalSuite(suite=None):
     suite.addTest(TestAdminResolution())
     suite.addTest(TestAdminResolutionAuthorization())
     suite.addTest(TestAdminResolutionDuplicates())
-    suite.addTest(TestAdminResolutionDefault())
     suite.addTest(TestAdminSeverity())
     suite.addTest(TestAdminSeverityAuthorization())
     suite.addTest(TestAdminSeverityDuplicates())
-    suite.addTest(TestAdminSeverityDefault())
     suite.addTest(TestAdminType())
     suite.addTest(TestAdminTypeAuthorization())
     suite.addTest(TestAdminTypeDuplicates())
-    suite.addTest(TestAdminTypeDefault())
     suite.addTest(TestAdminVersion())
     suite.addTest(TestAdminVersionAuthorization())
     suite.addTest(TestAdminVersionDuplicates())
@@ -2719,7 +2391,6 @@ def functionalSuite(suite=None):
     suite.addTest(TestAdminVersionDefault())
     suite.addTest(TestNewReport())
     suite.addTest(TestReportRealmDecoration())
-    suite.addTest(TestReportDynamicVariables())
     suite.addTest(TestMilestone())
     suite.addTest(TestMilestoneAddAttachment())
     suite.addTest(TestMilestoneClose())
@@ -2754,13 +2425,15 @@ def functionalSuite(suite=None):
     suite.addTest(RegressionTestTicket8861())
     suite.addTest(RegressionTestTicket9084())
     suite.addTest(RegressionTestTicket9981())
-    suite.addTest(RegressionTestTicket10010())
-    suite.addTest(RegressionTestTicket10772())
     suite.addTest(RegressionTestTicket10984())
     suite.addTest(RegressionTestTicket11028())
-    suite.addTest(RegressionTestTicket11176())
     suite.addTest(RegressionTestTicket11590())
     suite.addTest(RegressionTestTicket11618())
+    if ConfigObj:
+        suite.addTest(RegressionTestTicket11176())
+    else:
+        print "SKIP: RegressionTestTicket11176 (ConfigObj not installed)"
+    suite.addTest(RegressionTestTicket11930())
     suite.addTest(RegressionTestTicket11996())
 
     return suite

@@ -165,8 +165,6 @@ The following processors are included in the Trac distribution:
 || '''`#!c`''' [[BR]] '''`#!cpp`''' (C++) [[BR]] '''`#!python`''' [[BR]] '''`#!perl`''' [[BR]] '''`#!ruby`''' [[BR]] '''`#!php`''' [[BR]] '''`#!asp`''' [[BR]] '''`#!java`''' [[BR]] '''`#!js`''' (Javascript) [[BR]] '''`#!sql`''' [[BR]] '''`#!xml`''' (XML or HTML) [[BR]] '''`#!sh`''' (!Bourne/Bash shell) [[BR]] '''etc.''' [[BR]] || Trac includes processors to provide inline syntax highlighting for source code in various languages. [[BR]] [[BR]] Trac relies on external software packages for syntax coloring, like [http://pygments.org Pygments]. [[BR]] [[BR]] See TracSyntaxColoring for information about which languages are supported and how to enable support for more languages. ||
 |||| ||
 
-Since 1.1.2 the default, coding highlighting and MIME-type processors support the argument `lineno` for adding line numbering to the code block. When a value is specified, as in `lineno=3`, the numbering will start at the specified value. When used in combination with the `lineno` argument, the `marks` argument is also supported for highlighting lines. A single line number, set of line numbers and range of line numbers are allowed. For example, `marks=3`, `marks=3-6`, `marks=3,5,7` and `marks=3-5,7` are all allowed. The specified values are relative to the numbered lines, so if `lineno=2` is specified to start the line numbering at 2, `marks=2` will result in the first line being highlighted. 
-
 Using the MIME type as processor, it is possible to syntax-highlight the same languages that are supported when browsing source code.
 
 ||||= '''MIME Type Processors''' =||
@@ -234,45 +232,7 @@ The same is valid for all other [TracSyntaxColoring#SyntaxColoringSupport mime t
  }}}
 }}}
 
-Line numbers can be added to code blocks and lines can be highlighted //(since 1.1.2)//.
-{{{
-{{{#!python lineno=3 marks=3,9-10,16
-def expand_markup(stream, ctxt=None):
-    """A Genshi stream filter for expanding `genshi.Markup` events.
-
-    Note: Expansion may not be possible if the fragment is badly
-    formed, or partial.
-    """
-    for event in stream:
-        if isinstance(event[1], Markup):
-            try:
-                for subevent in HTML(event[1]):
-                    yield subevent
-            except ParseError:
-                yield event
-        else:
-            yield event
-}}}
-}}}
-{{{#!python lineno=3 marks=3,9-10,16
-def expand_markup(stream, ctxt=None):
-    """A Genshi stream filter for expanding `genshi.Markup` events.
-
-    Note: Expansion may not be possible if the fragment is badly
-    formed, or partial.
-    """
-    for event in stream:
-        if isinstance(event[1], Markup):
-            try:
-                for subevent in HTML(event[1]):
-                    yield subevent
-            except ParseError:
-                yield event
-        else:
-            yield event
-}}}
-
-For more processor macros developed and/or contributed by users, visit the [th:WikiStart Trac Hacks] community site.
+For more processor macros developed and/or contributed by users, visit the [http://trac-hacks.org/wiki/WikiStart Trac Hacks] community site.
 
 Developing processors is no different from Wiki macros. In fact, they work the same way, only the usage syntax differs. See WikiMacros#DevelopingCustomMacros for more information.
 
