@@ -43,7 +43,7 @@ def join(*args):
     return '/'.join(arg for arg in args if arg)
 
 
-class ParseError(TracBaseError):
+class ParseError(Exception):
     """Exception thrown for parse errors in authz files"""
 
 
@@ -121,15 +121,14 @@ class AuthzSourcePolicy(Component):
 
     implements(IPermissionPolicy)
 
-    authz_file = PathOption('svn', 'authz_file', '',
+    authz_file = PathOption('trac', 'authz_file', '',
         """The path to the Subversion
-        [http://svnbook.red-bean.com/en/1.6/svn.serverconfig.pathbasedauthz.html authorization (authz) file].
+        [http://svnbook.red-bean.com/en/1.5/svn.serverconfig.pathbasedauthz.html authorization (authz) file].
         To enable authz permission checking, the `AuthzSourcePolicy` permission
-        policy must be added to `[trac] permission_policies`. Non-absolute
-        paths are relative to the Environment `conf` directory.
+        policy must be added to `[trac] permission_policies`.
         """)
 
-    authz_module_name = Option('svn', 'authz_module_name', '',
+    authz_module_name = Option('trac', 'authz_module_name', '',
         """The module prefix used in the `authz_file` for the default
         repository. If left empty, the global section is used.
         """)
@@ -209,7 +208,7 @@ class AuthzSourcePolicy(Component):
     def _get_authz_info(self):
         try:
             mtime = os.path.getmtime(self.authz_file)
-        except OSError as e:
+        except OSError, e:
             if self._authz is not None:
                 self.log.error('Error accessing authz file: %s',
                                exception_to_unicode(e))
@@ -231,7 +230,7 @@ class AuthzSourcePolicy(Component):
                                   for path in paths.itervalues()
                                   for user, result in path.iteritems()
                                   if result)
-            except Exception as e:
+            except Exception, e:
                 self._authz = None
                 self._users = set()
                 self.log.error('Error parsing authz file: %s',

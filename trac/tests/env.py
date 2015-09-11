@@ -11,6 +11,8 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 from ConfigParser import RawConfigParser
 import shutil
 import tempfile
@@ -18,10 +20,8 @@ import unittest
 
 import trac.tests.compat
 from trac import db_default
-from trac.config import ConfigurationError
-from trac.core import Component, ComponentManager, implements
-from trac.env import Environment, IEnvironmentSetupParticipant, \
-                     open_environment
+from trac.core import ComponentManager
+from trac.env import Environment
 from trac.test import EnvironmentStub
 
 
@@ -89,6 +89,26 @@ class EnvironmentTestCase(unittest.TestCase):
         self.assertEqual(db_default.db_version, self.env.database_version)
         self.assertEqual(db_default.db_version, self.env.database_initial_version)
 
+    def test_get_known_users(self):
+        """Testing env.get_known_users"""
+        with self.env.db_transaction as db:
+            db.executemany("INSERT INTO session VALUES (%s,%s,0)",
+                [('123', 0), ('tom', 1), ('joe', 1), ('jane', 1)])
+            db.executemany("INSERT INTO session_attribute VALUES (%s,%s,%s,%s)",
+                [('123', 0, 'email', 'a@example.com'),
+                 ('tom', 1, 'name', 'Tom'),
+                 ('tom', 1, 'email', 'tom@example.com'),
+                 ('joe', 1, 'email', 'joe@example.com'),
+                 ('jane', 1, 'name', 'Jane')])
+        users = {}
+        for username, name, email in self.env.get_known_users():
+            users[username] = (name, email)
+
+        self.assertTrue('anonymous' not in users)
+        self.assertEqual(('Tom', 'tom@example.com'), users['tom'])
+        self.assertEqual((None, 'joe@example.com'), users['joe'])
+        self.assertEqual(('Jane', None), users['jane'])
+
     def test_is_component_enabled(self):
         self.assertEqual(True, Environment.required)
         self.assertEqual(True, self.env.is_component_enabled(Environment))
@@ -113,154 +133,11 @@ class EnvironmentTestCase(unittest.TestCase):
         self.assertTrue(parser.has_option('logging', 'log_format'))
         self.assertEqual('', parser.get('logging', 'log_format'))
 
-    def test_needs_upgrade_legacy_participant(self):
-        """For backward compatibility with plugin, environment_needs_upgrade
-        with a `db` argument is deprecated but still allowed."""
-        participants = self.env.setup_participants
-        needs_upgrade = self.env.needs_upgrade()
-
-        class LegacyParticipant(Component):
-            implements(IEnvironmentSetupParticipant)
-            def environment_created(self):
-                pass
-            def environment_needs_upgrade(self, db):
-                return True
-            def upgrade_environment(self, db):
-                pass
-
-        self.env.enable_component(LegacyParticipant)
-
-        self.assertFalse(needs_upgrade)
-        self.assertEqual(len(participants) + 1,
-                         len(self.env.setup_participants))
-        self.assertTrue(self.env.needs_upgrade())
-
-    def test_upgrade_legacy_participant(self):
-        """For backward compatibility with plugin, upgrade with a `db`
-        argument is deprecated but still allowed."""
-        participants = self.env.setup_participants
-
-        class LegacyParticipant(Component):
-            implements(IEnvironmentSetupParticipant)
-            def environment_created(self):
-                pass
-            def environment_needs_upgrade(self, db):
-                return True
-            def upgrade_environment(self, db):
-                pass
-
-        self.env.enable_component(LegacyParticipant)
-
-        self.assertEqual(len(participants) + 1,
-                         len(self.env.setup_participants))
-        self.assertTrue(self.env.needs_upgrade())
-        self.assertTrue(self.env.upgrade())
-
-    def test_invalid_log_level_raises_exception(self):
-        self.env.config.set('logging', 'log_level', 'invalid')
-        self.env.config.save()
-
-        self.assertEqual('invalid',
-                         self.env.config.get('logging', 'log_level'))
-        self.assertRaises(ConfigurationError, open_environment,
-                          self.env.path, True)
-
-    def test_invalid_log_type_raises_exception(self):
-        self.env.config.set('logging', 'log_type', 'invalid')
-        self.env.config.save()
-
-        self.assertEqual('invalid',
-                         self.env.config.get('logging', 'log_type'))
-        self.assertRaises(ConfigurationError, open_environment,
-                          self.env.path, True)
-
-
-class KnownUsersTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub()
-        users = [
-            ('123', None, 'a@example.com', 0),
-            ('jane', 'Jane', None, 1),
-            ('joe', None, 'joe@example.com', 1),
-            ('tom', 'Tom', 'tom@example.com', 1)
-        ]
-        self.expected = []
-        for user in users:
-            self._insert_user(user)
-            if user[3] == 1:
-                self.expected.append(user[:3])
-
-    def tearDown(self):
-        self.env.reset_db()
-
-    def _insert_user(self, user):
-        with self.env.db_transaction as db:
-            db.execute("""
-                INSERT INTO session VALUES (%s,%s,0)
-                """, (user[0], user[3]))
-            db.executemany("""
-                INSERT INTO session_attribute VALUES (%s,%s,%s,%s)
-                """, [(user[0], user[3], 'name', user[1]),
-                      (user[0], user[3], 'email', user[2])])
-
-    def test_get_known_users_as_list_of_tuples(self):
-        users = list(self.env.get_known_users())
-
-        i = 0
-        for i, user in enumerate(users):
-            self.assertEqual(self.expected[i], user)
-        else:
-            self.assertEqual(2, i)
-
-    def test_get_known_users_as_dict(self):
-        users = self.env.get_known_users(as_dict=True)
-
-        self.assertEqual(3, len(users))
-        for exp in self.expected:
-            self.assertEqual(exp[1:], users[exp[0]])
-
-    def test_get_known_users_is_cached(self):
-        self.env.get_known_users()
-        self.env.get_known_users(as_dict=True)
-        self._insert_user(('user4', None, None, 1))
-
-        users_list = list(self.env.get_known_users())
-        users_dict = self.env.get_known_users(as_dict=True)
-
-        i = 0
-        for i, user in enumerate(users_list):
-            self.assertEqual(self.expected[i], user)
-            self.assertIn(self.expected[i][0], users_dict)
-        else:
-            self.assertEqual(2, i)
-            self.assertEqual(3, len(users_dict))
-
-    def test_invalidate_known_users_cache(self):
-        self.env.get_known_users()
-        self.env.get_known_users(as_dict=True)
-        user = ('user4', 'User Four', 'user4@example.net', 1)
-        self._insert_user(user)
-        self.expected.append(user[:3])
-
-        self.env.invalidate_known_users_cache()
-        users_list = self.env.get_known_users()
-        users_dict = self.env.get_known_users(as_dict=True)
-
-        i = 0
-        for i, user in enumerate(users_list):
-            self.assertEqual(self.expected[i], user)
-            self.assertIn(self.expected[i][0], users_dict)
-        else:
-            self.assertEqual(3, i)
-            self.assertEqual(4, len(users_dict))
-
 
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(EnvironmentTestCase))
     suite.addTest(unittest.makeSuite(EmptyEnvironmentTestCase))
-    suite.addTest(unittest.makeSuite(KnownUsersTestCase))
     return suite
 
 if __name__ == '__main__':

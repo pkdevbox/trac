@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2003-2014 Edgewall Software
+# Copyright (C) 2003-2009 Edgewall Software
 # Copyright (C) 2003-2006 Jonas Borgström <jonas@edgewall.com>
 # Copyright (C) 2005 Christopher Lenz <cmlenz@gmx.de>
 # Copyright (C) 2006 Christian Boos <cboos@edgewall.org>
@@ -17,19 +17,20 @@
 # Author: Jonas Borgström <jonas@edgewall.com>
 #         Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 import re
 from datetime import datetime
 
-from trac import core
 from trac.attachment import Attachment
+from trac import core
 from trac.cache import cached
 from trac.core import TracError
 from trac.resource import Resource, ResourceNotFound
 from trac.ticket.api import TicketSystem
-from trac.util import embedded_numbers
-from trac.util.datefmt import from_utimestamp, parse_date, to_utimestamp, \
-                              utc, utcmax
+from trac.util import embedded_numbers, partition
 from trac.util.text import empty
+from trac.util.datefmt import from_utimestamp, to_utimestamp, utc, utcmax
 from trac.util.translation import _
 
 __all__ = ['Ticket', 'Type', 'Status', 'Resolution', 'Priority', 'Severity',
@@ -45,53 +46,28 @@ def _fixup_cc_list(cc_value):
     return ', '.join(cclist)
 
 
-def _db_str_to_datetime(value):
-    if value is None:
-        return None
-    try:
-        return from_utimestamp(long(value))
-    except ValueError:
-        pass
-    try:
-        return parse_date(value.strip(), utc, 'datetime')
-    except Exception:
-        return None
-
-
-def _datetime_to_db_str(dt, is_custom_field):
-    if not dt:
-        return ''
-    ts = to_utimestamp(dt)
-    if is_custom_field:
-        # Padding with '0' would be easy to sort in report page for a user
-        fmt = '%018d' if ts >= 0 else '%+017d'
-        return fmt % ts
-    else:
-        return ts
-
-
 class Ticket(object):
 
-    realm = 'ticket'
-
     # Fields that must not be modified directly by the user
-    # 'owner' should eventually be a protected field (#2045)
-    protected_fields = 'resolution', 'status', 'time', 'changetime'
+    protected_fields = ('resolution', 'status', 'time', 'changetime')
 
     @staticmethod
     def id_is_valid(num):
         return 0 < int(num) <= 1L << 31
 
-    @property
-    def resource(self):
-        return Resource(self.realm, self.id, self.version)
-
-    # 0.11 compatibility. Will be removed in 1.3.1.
+    # 0.11 compatibility
     time_created = property(lambda self: self.values.get('time'))
     time_changed = property(lambda self: self.values.get('changetime'))
 
-    def __init__(self, env, tkt_id=None, version=None):
+    def __init__(self, env, tkt_id=None, db=None, version=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         self.env = env
+        if tkt_id is not None:
+            tkt_id = int(tkt_id)
+        self.resource = Resource('ticket', tkt_id, version)
         self.fields = TicketSystem(self.env).get_ticket_fields()
         self.editable_fields = \
             set(f['name'] for f in self.fields
@@ -106,16 +82,11 @@ class Ticket(object):
                 self.time_fields.append(f['name'])
         self.values = {}
         if tkt_id is not None:
-            tkt_id = int(tkt_id)
             self._fetch_ticket(tkt_id)
         else:
             self._init_defaults()
             self.id = None
-        self.version = version
         self._old = {}
-
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.id)
 
     exists = property(lambda self: self.id is not None)
 
@@ -138,15 +109,6 @@ class Ticket(object):
                         self.env.log.warning('Invalid default value "%s" '
                                              'for custom field "%s"',
                                              default, field['name'])
-                if default and field.get('type') == 'time':
-                    try:
-                        default = parse_date(default,
-                                             hint=field.get('format'))
-                    except TracError as e:
-                        self.env.log.warning('Invalid default value "%s" '
-                                             'for custom field "%s": %s',
-                                             default, field['name'], e)
-                        default = None
             if default:
                 self.values.setdefault(field['name'], default)
 
@@ -176,9 +138,7 @@ class Ticket(object):
                 SELECT name, value FROM ticket_custom WHERE ticket=%s
                 """, (tkt_id,)):
             if name in self.custom_fields:
-                if name in self.time_fields:
-                    self.values[name] = _db_str_to_datetime(value)
-                elif value is None:
+                if value is None:
                     self.values[name] = empty
                 else:
                     self.values[name] = value
@@ -189,21 +149,19 @@ class Ticket(object):
     def __setitem__(self, name, value):
         """Log ticket modifications so the table ticket_change can be updated
         """
-        if value and name not in self.time_fields:
+        if value:
             if isinstance(value, list):
                 raise TracError(_("Multi-values fields not supported yet"))
-            if self.fields.by_name(name, {}).get('type') != 'textarea':
+            field = [field for field in self.fields if field['name'] == name]
+            if field and field[0].get('type') != 'textarea':
                 value = value.strip()
         if name in self.values and self.values[name] == value:
             return
-        if name not in self._old:  # Changed field
+        if name not in self._old: # Changed field
             self._old[name] = self.values.get(name)
-        elif self._old[name] == value:  # Change of field reverted
+        elif self._old[name] == value: # Change of field reverted
             del self._old[name]
         self.values[name] = value
-
-    def __contains__(self, item):
-        return item in self.values
 
     def get_value_or_default(self, name):
         """Return the value of a field or the default value if it is undefined
@@ -216,13 +174,15 @@ class Ticket(object):
 
     def get_default(self, name):
         """Return the default value of a field."""
-        return self.fields.by_name(name, {}).get('value', '')
+        field = [field for field in self.fields if field['name'] == name]
+        if field:
+            return field[0].get('value', '')
 
     def populate(self, values):
         """Populate the ticket with 'suitable' values from a dictionary"""
         field_names = [f['name'] for f in self.fields]
         for name in [name for name in values.keys() if name in field_names]:
-            self[name] = values[name]
+            self[name] = values.get(name, '')
 
         # We have to do an extra trick to catch unchecked checkboxes
         for name in [name for name in values.keys() if name[9:] in field_names
@@ -230,8 +190,11 @@ class Ticket(object):
             if name[9:] not in values:
                 self[name[9:]] = '0'
 
-    def insert(self, when=None):
+    def insert(self, when=None, db=None):
         """Add ticket to database.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert not self.exists, 'Cannot insert an existing ticket'
 
@@ -242,6 +205,20 @@ class Ticket(object):
         if when is None:
             when = datetime.now(utc)
         self.values['time'] = self.values['changetime'] = when
+
+        # The owner field defaults to the component owner
+        if self.values.get('owner') == '< default >':
+            default_to_owner = ''
+            if self.values.get('component'):
+                try:
+                    component = Component(self.env, self['component'])
+                    default_to_owner = component.owner # even if it's empty
+                except ResourceNotFound:
+                    # No such component exists
+                    pass
+            # If the current owner is "< default >", we need to set it to
+            # _something_ else, even if that something else is blank.
+            self['owner'] = default_to_owner
 
         # Perform type conversions
         db_values = self._to_db_types(self.values)
@@ -269,10 +246,10 @@ class Ticket(object):
                 db.executemany(
                     """INSERT INTO ticket_custom (ticket, name, value)
                        VALUES (%s, %s, %s)
-                    """, [(tkt_id, c, db_values.get(c))
-                          for c in custom_fields])
+                    """, [(tkt_id, c, db_values.get(c)) for c in custom_fields])
 
-        self.id = int(tkt_id)
+        self.id = tkt_id
+        self.resource = self.resource(id=tkt_id)
         self._old = {}
 
         for listener in TicketSystem(self.env).change_listeners:
@@ -280,25 +257,15 @@ class Ticket(object):
 
         return self.id
 
-    def get_comment_number(self, cdate):
-        """Return a comment number by its date."""
-        ts = to_utimestamp(cdate)
-        for cnum, in self.env.db_query("""\
-                SELECT oldvalue FROM ticket_change
-                WHERE ticket=%s AND time=%s AND field='comment'
-                """, (self.id, ts)):
-            try:
-                return int(cnum.rsplit('.', 1)[-1])
-            except ValueError:
-                break
-
-    def save_changes(self, author=None, comment=None, when=None, cnum='',
-                     replyto=None):
+    def save_changes(self, author=None, comment=None, when=None, db=None,
+                     cnum='', replyto=None):
         """
         Store ticket changes in the database. The ticket must already exist in
         the database.  Returns False if there were no changes to save, True
         otherwise.
 
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         :since 1.0: the `cnum` parameter is deprecated, and threading should
         be controlled with the `replyto` argument
         """
@@ -310,11 +277,30 @@ class Ticket(object):
         props_unchanged = all(self.values.get(k) == v
                               for k, v in self._old.iteritems())
         if (not comment or not comment.strip()) and props_unchanged:
-            return False  # Not modified
+            return False # Not modified
 
         if when is None:
             when = datetime.now(utc)
         when_ts = to_utimestamp(when)
+
+        if 'component' in self.values:
+            # If the component is changed on a 'new' ticket
+            # then owner field is updated accordingly. (#623).
+            if self.values.get('status') == 'new' \
+                    and 'component' in self._old \
+                    and 'owner' not in self._old:
+                try:
+                    old_comp = Component(self.env, self._old['component'])
+                    old_owner = old_comp.owner or ''
+                    current_owner = self.values.get('owner') or ''
+                    if old_owner == current_owner:
+                        new_comp = Component(self.env, self['component'])
+                        if new_comp.owner:
+                            self['owner'] = new_comp.owner
+                except TracError:
+                    # If the old component has been removed from the database
+                    # we just leave the owner as is.
+                    pass
 
         # Perform type conversions
         db_values = self._to_db_types(self.values)
@@ -387,19 +373,21 @@ class Ticket(object):
         values = values.copy()
         for field, value in values.iteritems():
             if field in self.time_fields:
-                is_custom_field = field in self.custom_fields
-                values[field] = _datetime_to_db_str(value, is_custom_field)
+                values[field] = to_utimestamp(values[field])
             else:
                 values[field] = value if value else None
         return values
 
-    def get_changelog(self, when=None):
+    def get_changelog(self, when=None, db=None):
         """Return the changelog as a list of tuples of the form
         (time, author, field, oldvalue, newvalue, permanent).
 
         While the other tuple elements are quite self-explanatory,
         the `permanent` flag is used to distinguish collateral changes
         that are not yet immutable (like attachments, currently).
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         sid = str(self.id)
         when_ts = to_utimestamp(when)
@@ -433,21 +421,19 @@ class Ticket(object):
                 ORDER BY time,permanent,author
                 """
             args = (self.id, sid, sid)
-        log = []
-        for t, author, field, oldvalue, newvalue, permanent \
-                in self.env.db_query(sql, args):
-            if field in self.time_fields:
-                oldvalue = _db_str_to_datetime(oldvalue)
-                newvalue = _db_str_to_datetime(newvalue)
-            log.append((from_utimestamp(t), author, field,
-                        oldvalue or '', newvalue or '', permanent))
-        return log
+        return [(from_utimestamp(t), author, field, oldvalue or '',
+                 newvalue or '', permanent)
+                for t, author, field, oldvalue, newvalue, permanent in
+                self.env.db_query(sql, args)]
 
-    def delete(self):
+    def delete(self, db=None):
         """Delete the ticket.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         with self.env.db_transaction as db:
-            Attachment.delete_all(self.env, self.realm, self.id)
+            Attachment.delete_all(self.env, 'ticket', self.id, db)
             db("DELETE FROM ticket WHERE id=%s", (self.id,))
             db("DELETE FROM ticket_change WHERE ticket=%s", (self.id,))
             db("DELETE FROM ticket_custom WHERE ticket=%s", (self.id,))
@@ -455,8 +441,11 @@ class Ticket(object):
         for listener in TicketSystem(self.env).change_listeners:
             listener.ticket_deleted(self)
 
-    def get_change(self, cnum=None, cdate=None):
+    def get_change(self, cnum=None, cdate=None, db=None):
         """Return a ticket change by its number or date.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if cdate is None:
             row = self._find_change(cnum)
@@ -572,6 +561,7 @@ class Ticket(object):
             if old_comment is False:
                 # There was no comment field, add one, find the
                 # original author in one of the other changed fields
+                old_author = None
                 for old_author, in db("""
                         SELECT author FROM ticket_change
                         WHERE ticket=%%s AND time=%%s AND NOT field %s LIMIT 1
@@ -598,9 +588,12 @@ class Ticket(object):
                 listener.ticket_comment_modified(self, cdate, author, comment,
                                                  old_comment)
 
-    def get_comment_history(self, cnum=None, cdate=None):
+    def get_comment_history(self, cnum=None, cdate=None, db=None):
         """Retrieve the edit history of a comment identified by its number or
         date.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         if cdate is None:
             row = self._find_change(cnum)
@@ -688,7 +681,7 @@ class Ticket(object):
                         """ % db.prefix_match(),
                         (self.id, ts, db.prefix_match_value('_'))):
                     break
-            return ts, author, comment
+            return (ts, author, comment)
 
 
 def simplify_whitespace(name):
@@ -702,9 +695,7 @@ class AbstractEnum(object):
     type = None
     ticket_col = None
 
-    exists = property(lambda self: self._old_value is not None)
-
-    def __init__(self, env, name=None):
+    def __init__(self, env, name=None, db=None):
         if not self.ticket_col:
             self.ticket_col = self.type
         self.env = env
@@ -722,11 +713,13 @@ class AbstractEnum(object):
             self.value = self._old_value = None
             self.name = self._old_name = None
 
-    def __repr__(self):
-        return '<%s %r %r>' % (self.__class__.__name__, self.name, self.value)
+    exists = property(lambda self: self._old_value is not None)
 
-    def delete(self):
+    def delete(self, db=None):
         """Delete the enum value.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot delete non-existent %s" % self.type
 
@@ -742,13 +735,16 @@ class AbstractEnum(object):
                         enum.value = unicode(int(enum.value) - 1)
                         enum.update()
                 except ValueError:
-                    pass  # Ignore cast error for this non-essential operation
+                    pass # Ignore cast error for this non-essential operation
             TicketSystem(self.env).reset_ticket_fields()
         self.value = self._old_value = None
         self.name = self._old_name = None
 
-    def insert(self):
+    def insert(self, db=None):
         """Add a new enum value.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert not self.exists, "Cannot insert existing %s" % self.type
         self.name = simplify_whitespace(self.name)
@@ -769,8 +765,11 @@ class AbstractEnum(object):
         self._old_name = self.name
         self._old_value = self.value
 
-    def update(self):
+    def update(self, db=None):
         """Update the enum value.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot update non-existent %s" % self.type
         self.name = simplify_whitespace(self.name)
@@ -786,13 +785,17 @@ class AbstractEnum(object):
                 db("UPDATE ticket SET %s=%%s WHERE %s=%%s"
                    % (self.ticket_col, self.ticket_col),
                    (self.name, self._old_name))
-                TicketSystem(self.env).reset_ticket_fields()
+            TicketSystem(self.env).reset_ticket_fields()
 
         self._old_name = self.name
         self._old_value = self.value
 
     @classmethod
-    def select(cls, env):
+    def select(cls, env, db=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         with env.db_query as db:
             for name, value in db("""
                     SELECT name, value FROM enum WHERE type=%s ORDER BY
@@ -814,14 +817,11 @@ class Status(object):
         self.env = env
 
     @classmethod
-    def select(cls, env):
+    def select(cls, env, db=None):
         for state in TicketSystem(env).get_all_status():
             status = cls(env)
             status.name = state
             yield status
-
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.name)
 
 
 class Resolution(AbstractEnum):
@@ -837,10 +837,11 @@ class Severity(AbstractEnum):
 
 
 class Component(object):
-
-    exists = property(lambda self: self._old_name is not None)
-
-    def __init__(self, env, name=None):
+    def __init__(self, env, name=None, db=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         self.env = env
         self.name = self._old_name = self.owner = self.description = None
         if name:
@@ -855,11 +856,13 @@ class Component(object):
                 raise ResourceNotFound(_("Component %(name)s does not exist.",
                                          name=name))
 
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.name)
+    exists = property(lambda self: self._old_name is not None)
 
-    def delete(self):
+    def delete(self, db=None):
         """Delete the component.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot delete non-existent component"
 
@@ -869,8 +872,11 @@ class Component(object):
             self.name = self._old_name = None
             TicketSystem(self.env).reset_ticket_fields()
 
-    def insert(self):
+    def insert(self, db=None):
         """Insert a new component.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert not self.exists, "Cannot insert existing component"
         self.name = simplify_whitespace(self.name)
@@ -885,8 +891,11 @@ class Component(object):
             self._old_name = self.name
             TicketSystem(self.env).reset_ticket_fields()
 
-    def update(self):
+    def update(self, db=None):
         """Update the component.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot update non-existent component"
         self.name = simplify_whitespace(self.name)
@@ -904,13 +913,17 @@ class Component(object):
                 db("UPDATE ticket SET component=%s WHERE component=%s",
                    (self.name, self._old_name))
                 self._old_name = self.name
-                TicketSystem(self.env).reset_ticket_fields()
+            TicketSystem(self.env).reset_ticket_fields()
 
     @classmethod
-    def select(cls, env):
+    def select(cls, env, db=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         for name, owner, description in env.db_query("""
                 SELECT name, owner, description FROM component ORDER BY name
-                """):
+            """):
             component = cls(env)
             component.name = component._old_name = name
             component.owner = owner or None
@@ -974,14 +987,7 @@ class MilestoneCache(core.Component):
 
 
 class Milestone(object):
-
-    realm = 'milestone'
-
-    @property
-    def resource(self):
-        return Resource(self.realm, self.name)  ### .version !!!
-
-    def __init__(self, env, name=None):
+    def __init__(self, env, name=None, db=None):
         """Create an undefined milestone or fetch one from the database,
         if `name` is given.
 
@@ -993,16 +999,17 @@ class Milestone(object):
             if not self.cache.fetchone(name, self):
                 raise ResourceNotFound(
                     _("Milestone %(name)s does not exist.",
-                      name=name), _("Invalid milestone name."))
+                      name=name), _("Invalid milestone name"))
         else:
             self.cache.factory((None, None, None, ''), self)
-
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.name)
 
     @property
     def cache(self):
         return MilestoneCache(self.env)
+
+    @property
+    def resource(self):
+        return Resource('milestone', self.name) ### .version !!!
 
     exists = property(lambda self: self._old['name'] is not None)
     is_completed = property(lambda self: self.completed is not None)
@@ -1016,18 +1023,23 @@ class Milestone(object):
         if invalidate:
             del self.cache.milestones
 
-    def delete(self, retarget_to=None, author=None):
+    _to_old = checkin #: compatibility with hacks < 0.12.5 (remove in 1.1.1)
+
+    def delete(self, retarget_to=None, author=None, db=None):
         """Delete the milestone.
 
         :since 1.0.2: the `retarget_to` and `author` parameters are
                       deprecated and will be removed in Trac 1.3.1. Tickets
                       should be moved to another milestone by calling
                       `move_tickets` before `delete`.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         with self.env.db_transaction as db:
             self.env.log.info("Deleting milestone %s", self.name)
             db("DELETE FROM milestone WHERE name=%s", (self.name,))
-            Attachment.delete_all(self.env, self.realm, self.name)
+            Attachment.delete_all(self.env, 'milestone', self.name)
             # Don't translate ticket comment (comment:40:ticket:5658)
             self.move_tickets(retarget_to, author, "Milestone deleted")
             self._old['name'] = None
@@ -1037,8 +1049,11 @@ class Milestone(object):
         for listener in TicketSystem(self.env).milestone_change_listeners:
             listener.milestone_deleted(self)
 
-    def insert(self):
+    def insert(self, db=None):
         """Insert a new milestone.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         self.name = simplify_whitespace(self.name)
         if not self.name:
@@ -1056,8 +1071,11 @@ class Milestone(object):
         for listener in TicketSystem(self.env).milestone_change_listeners:
             listener.milestone_created(self)
 
-    def update(self, author=None):
+    def update(self, db=None, author=None):
         """Update the milestone.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         self.name = simplify_whitespace(self.name)
         if not self.name:
@@ -1069,8 +1087,8 @@ class Milestone(object):
                 # Update milestone field in tickets
                 self.move_tickets(self.name, author, "Milestone renamed")
                 # Reparent attachments
-                Attachment.reparent_all(self.env, self.realm, old['name'],
-                                        self.realm, self.name)
+                Attachment.reparent_all(self.env, 'milestone', old['name'],
+                                        'milestone', self.name)
 
             self.env.log.info("Updating milestone '%s'", old['name'])
             db("""UPDATE milestone
@@ -1108,7 +1126,7 @@ class Milestone(object):
             if not self.cache.fetchone(new_milestone):
                 raise ResourceNotFound(
                     _("Milestone %(name)s does not exist.",
-                      name=new_milestone), _("Invalid milestone name."))
+                      name=new_milestone), _("Invalid milestone name"))
         now = datetime.now(utc)
         with self.env.db_transaction as db:
             sql = "SELECT id FROM ticket WHERE milestone=%s"
@@ -1125,19 +1143,12 @@ class Milestone(object):
                     ticket.save_changes(author, comment, now)
         return tkt_ids
 
-    def get_num_tickets(self, exclude_closed=False):
-        """Returns the number of tickets associated with the milestone.
-
-        :param exclude_closed: whether tickets with status 'closed' should
-                               be excluded from the count. Defaults to False.
-        """
-        sql = "SELECT COUNT(*) FROM ticket WHERE milestone=%s"
-        if exclude_closed:
-            sql += " AND status != 'closed'"
-        return self.env.db_query(sql, (self.name,))[0][0]
-
     @classmethod
-    def select(cls, env, include_completed=True):
+    def select(cls, env, include_completed=True, db=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         milestones = MilestoneCache(env).fetchall()
         if not include_completed:
             milestones = [m for m in milestones if m.completed is None]
@@ -1150,20 +1161,23 @@ class Milestone(object):
 
 def group_milestones(milestones, include_completed):
     """Group milestones into "open with due date", "open with no due date",
-    and possibly "completed". Return a list of (label, milestones) tuples.
-
-    :since 1.1.3: the function has been moved to `trac.ticket.roadmap`. It
-                  will be removed from `trac.ticket.model` in 1.3.1.
-    """
-    from trac.ticket.roadmap import group_milestones
-    return group_milestones(milestones, include_completed)
+    and possibly "completed". Return a list of (label, milestones) tuples."""
+    def category(m):
+        return 1 if m.is_completed else 2 if m.due else 3
+    open_due_milestones, open_not_due_milestones, \
+        closed_milestones = partition([(m, category(m))
+            for m in milestones], (2, 3, 1))
+    groups = [
+        (_('Open (by due date)'), open_due_milestones),
+        (_('Open (no due date)'), open_not_due_milestones),
+    ]
+    if include_completed:
+        groups.append((_('Closed'), closed_milestones))
+    return groups
 
 
 class Version(object):
-
-    exists = property(lambda self: self._old_name is not None)
-
-    def __init__(self, env, name=None):
+    def __init__(self, env, name=None, db=None):
         self.env = env
         self.name = self._old_name = self.time = self.description = None
         if name:
@@ -1178,11 +1192,13 @@ class Version(object):
                 raise ResourceNotFound(_("Version %(name)s does not exist.",
                                          name=name))
 
-    def __repr__(self):
-        return '<%s %r>' % (self.__class__.__name__, self.name)
+    exists = property(lambda self: self._old_name is not None)
 
-    def delete(self):
+    def delete(self, db=None):
         """Delete the version.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot delete non-existent version"
 
@@ -1192,8 +1208,11 @@ class Version(object):
             self.name = self._old_name = None
             TicketSystem(self.env).reset_ticket_fields()
 
-    def insert(self):
+    def insert(self, db=None):
         """Insert a new version.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert not self.exists, "Cannot insert existing version"
         self.name = simplify_whitespace(self.name)
@@ -1207,8 +1226,11 @@ class Version(object):
             self._old_name = self.name
             TicketSystem(self.env).reset_ticket_fields()
 
-    def update(self):
+    def update(self, db=None):
         """Update the version.
+
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
         """
         assert self.exists, "Cannot update non-existent version"
         self.name = simplify_whitespace(self.name)
@@ -1230,7 +1252,11 @@ class Version(object):
         TicketSystem(self.env).reset_ticket_fields()
 
     @classmethod
-    def select(cls, env):
+    def select(cls, env, db=None):
+        """
+        :since 1.0: the `db` parameter is no longer needed and will be removed
+        in version 1.1.1
+        """
         versions = []
         for name, time, description in env.db_query("""
                 SELECT name, time, description FROM version"""):
@@ -1240,5 +1266,5 @@ class Version(object):
             version.description = description or ''
             versions.append(version)
         def version_order(v):
-            return v.time or utcmax, embedded_numbers(v.name)
+            return (v.time or utcmax, embedded_numbers(v.name))
         return sorted(versions, key=version_order, reverse=True)

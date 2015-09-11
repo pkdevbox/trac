@@ -16,7 +16,6 @@ from trac.resource import Resource
 from trac.util import as_int
 from trac.web.api import IRequestHandler
 from trac.web.chrome import chrome_info_script, web_context
-from trac.wiki.api import WikiSystem
 from trac.wiki.formatter import format_to
 
 
@@ -24,8 +23,6 @@ class WikiRenderer(Component):
     """Wiki text renderer."""
 
     implements(IRequestHandler)
-
-    is_valid_default_handler = False
 
     # IRequestHandler methods
 
@@ -38,7 +35,7 @@ class WikiRenderer(Component):
         # requests from TRAC_ADMIN for testing purposes.
         if req.method != 'POST':
             req.perm.require('TRAC_ADMIN')
-        realm = req.args.get('realm', WikiSystem.realm)
+        realm = req.args.get('realm', 'wiki')
         id = req.args.get('id')
         version = as_int(req.args.get('version'), None)
         text = req.args.get('text', '')

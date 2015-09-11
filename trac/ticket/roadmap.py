@@ -15,6 +15,8 @@
 #
 # Author: Christopher Lenz <cmlenz@gmx.de>
 
+from __future__ import with_statement
+
 from StringIO import StringIO
 from datetime import datetime, timedelta
 import re
@@ -22,22 +24,22 @@ import re
 from genshi.builder import tag
 
 from trac import __version__
-from trac.attachment import Attachment, AttachmentModule
-from trac.config import ConfigSection, ExtensionOption, Option
+from trac.attachment import AttachmentModule
+from trac.config import ConfigSection, ExtensionOption
 from trac.core import *
-from trac.notification.api import NotificationSystem
 from trac.perm import IPermissionRequestor
 from trac.resource import *
 from trac.search import ISearchSource, search_to_regexps, shorten_result
-from trac.util import as_bool, partition
+from trac.util import as_bool
 from trac.util.datefmt import parse_date, utc, pretty_timedelta, to_datetime, \
                               get_datetime_format_hint, format_date, \
                               format_datetime, from_utimestamp, user_time
 from trac.util.text import CRLF, exception_to_unicode, to_unicode
 from trac.util.translation import _, tag_
 from trac.ticket.api import TicketSystem
-from trac.ticket.notification import BatchTicketChangeEvent
-from trac.ticket.model import Milestone, MilestoneCache, Ticket
+from trac.ticket.batch import BatchTicketNotifyEmail
+from trac.ticket.model import Milestone, MilestoneCache, Ticket, \
+                              group_milestones
 from trac.timeline.api import ITimelineEventProvider
 from trac.web import IRequestHandler, RequestDone
 from trac.web.chrome import (Chrome, INavigationContributor,
@@ -197,7 +199,8 @@ class DefaultTicketGroupStatsProvider(Component):
         CSS rule: `table.progress td.<class> { background: <color> }`
         to a [TracInterfaceCustomization#SiteAppearance site/style.css] file
         for example.
-        """)
+
+        (''since 0.11'')""")
 
     default_milestone_groups =  [
         {'name': 'closed', 'status': 'closed',
@@ -292,21 +295,26 @@ class DefaultTicketGroupStatsProvider(Component):
 def get_ticket_stats(provider, tickets):
     return provider.get_ticket_group_stats([t['id'] for t in tickets])
 
-def get_tickets_for_milestone(env, milestone=None, field='component'):
+def get_tickets_for_milestone(env, db=None, milestone=None, field='component'):
     """Retrieve all tickets associated with the given `milestone`.
+
+    .. versionchanged :: 1.0
+       the `db` parameter is no longer needed and will be removed in
+       version 1.1.1
     """
-    fields = TicketSystem(env).get_ticket_fields()
-    if field in [f['name'] for f in fields if not f.get('custom')]:
-        sql = """SELECT id, status, %s FROM ticket WHERE milestone=%%s
-                 ORDER BY %s""" % (field, field)
-        args = (milestone,)
-    else:
-        sql = """SELECT id, status, value FROM ticket
-                   LEFT OUTER JOIN ticket_custom ON (id=ticket AND name=%s)
-                  WHERE milestone=%s ORDER BY value"""
-        args = (field, milestone)
-    return [{'id': tkt_id, 'status': status, field: fieldval}
-            for tkt_id, status, fieldval in env.db_query(sql, args)]
+    with env.db_query as db:
+        fields = TicketSystem(env).get_ticket_fields()
+        if field in [f['name'] for f in fields if not f.get('custom')]:
+            sql = """SELECT id, status, %s FROM ticket WHERE milestone=%%s
+                     ORDER BY %s""" % (field, field)
+            args = (milestone,)
+        else:
+            sql = """SELECT id, status, value FROM ticket
+                       LEFT OUTER JOIN ticket_custom ON (id=ticket AND name=%s)
+                      WHERE milestone=%s ORDER BY value"""
+            args = (field, milestone)
+        return [{'id': tkt_id, 'status': status, field: fieldval}
+                for tkt_id, status, fieldval in env.db_query(sql, args)]
 
 def apply_ticket_permissions(env, req, tickets):
     """Apply permissions to a set of milestone tickets as returned by
@@ -378,23 +386,6 @@ def grouped_stats_data(env, stats_provider, tickets, by, per_group_stats_data):
             percent = float(gstat.count) / float(max_count) * 100
         gs_dict['percent_of_max_total'] = percent
     return data
-
-
-def group_milestones(milestones, include_completed):
-    """Group milestones into "open with due date", "open with no due date",
-    and possibly "completed". Return a list of (label, milestones) tuples."""
-    def category(m):
-        return 1 if m.is_completed else 2 if m.due else 3
-    open_due_milestones, open_not_due_milestones, \
-        closed_milestones = partition([(m, category(m))
-                                       for m in milestones], (2, 3, 1))
-    groups = [
-        (_("Open (by due date)"), open_due_milestones),
-        (_("Open (no due date)"), open_not_due_milestones),
-    ]
-    if include_completed:
-        groups.append((_('Closed'), closed_milestones))
-    return groups
 
 
 class RoadmapModule(Component):
@@ -499,7 +490,7 @@ class RoadmapModule(Component):
             status = ticket['status']
             if status == 'new' or status == 'reopened' and not ticket['owner']:
                 return 'NEEDS-ACTION'
-            elif status in ('assigned', 'reopened'):
+            elif status == 'assigned' or status == 'reopened':
                 return 'IN-PROCESS'
             elif status == 'closed':
                 if ticket['resolution'] == 'fixed':
@@ -601,10 +592,8 @@ class MilestoneModule(Component):
     """View and edit individual milestones."""
 
     implements(INavigationContributor, IPermissionRequestor, IRequestHandler,
-               IResourceManager, ISearchSource, ITimelineEventProvider,
-               IWikiSyntaxProvider)
-
-    realm = 'milestone'
+               ITimelineEventProvider, IWikiSyntaxProvider, IResourceManager,
+               ISearchSource)
 
     stats_provider = ExtensionOption('milestone', 'stats_provider',
                                      ITicketGroupStatsProvider,
@@ -613,13 +602,6 @@ class MilestoneModule(Component):
         which is used to collect statistics on groups of tickets for display
         in the milestone views.""")
 
-    default_retarget_to = Option('milestone', 'default_retarget_to',
-        doc="""Default milestone to which tickets are retargeted when
-            closing or deleting a milestone. (''since 1.1.2'')""")
-
-    default_group_by = Option('milestone', 'default_group_by', 'component',
-        """Default field to use for grouping tickets in the grouped
-        progress bar. (''since 1.2'')""")
 
     # INavigationContributor methods
 
@@ -640,11 +622,11 @@ class MilestoneModule(Component):
 
     def get_timeline_filters(self, req):
         if 'MILESTONE_VIEW' in req.perm:
-            yield ('milestone', _('Milestones completed'))
+            yield ('milestone', _('Milestones reached'))
 
     def get_timeline_events(self, req, start, stop, filters):
         if 'milestone' in filters:
-            milestone_realm = Resource(self.realm)
+            milestone_realm = Resource('milestone')
             for name, due, completed, description \
                     in MilestoneCache(self.env).milestones.itervalues():
                 if completed and start <= completed <= stop:
@@ -682,7 +664,7 @@ class MilestoneModule(Component):
 
     def process_request(self, req):
         milestone_id = req.args.get('id')
-        req.perm(self.realm, milestone_id).require('MILESTONE_VIEW')
+        req.perm('milestone', milestone_id).require('MILESTONE_VIEW')
 
         add_link(req, 'up', req.href.roadmap(), _('Roadmap'))
 
@@ -690,9 +672,9 @@ class MilestoneModule(Component):
         try:
             milestone = Milestone(self.env, milestone_id)
         except ResourceNotFound:
-            if 'MILESTONE_CREATE' not in req.perm(self.realm, milestone_id):
+            if 'MILESTONE_CREATE' not in req.perm('milestone', milestone_id):
                 raise
-            milestone = Milestone(self.env)
+            milestone = Milestone(self.env, None)
             milestone.name = milestone_id
             action = 'edit' # rather than 'new' so that it works for POST/save
 
@@ -716,120 +698,7 @@ class MilestoneModule(Component):
 
         return self._render_view(req, milestone)
 
-    # Public methods
-
-    def get_default_due(self, req):
-        """Returns a `datetime` object representing the default due date in
-        the user's timezone. The default due time is 18:00 in the user's
-        time zone.
-        """
-        now = datetime.now(req.tz)
-        default_due = datetime(now.year, now.month, now.day, 18)
-        if now.hour > 18:
-            default_due += timedelta(days=1)
-        return to_datetime(default_due, req.tz)
-
-    def save_milestone(self, req, milestone):
-        # Instead of raising one single error, check all the constraints and
-        # let the user fix them by going back to edit mode showing the warnings
-        warnings = []
-        def warn(msg):
-            add_warning(req, msg)
-            warnings.append(msg)
-
-        milestone.description = req.args.get('description', '')
-
-        if 'due' in req.args:
-            duedate = req.args.get('duedate')
-            milestone.due = user_time(req, parse_date, duedate,
-                                      hint='datetime') \
-                            if duedate else None
-        else:
-            milestone.due = None
-
-        # -- check completed date
-        if 'completed' in req.args:
-            completed = req.args.get('completeddate', '')
-            completed = user_time(req, parse_date, completed,
-                                  hint='datetime') if completed else None
-            if completed and completed > datetime.now(utc):
-                warn(_('Completion date may not be in the future'))
-        else:
-            completed = None
-        milestone.completed = completed
-
-        # -- check the name
-        # If the name has changed, check that the milestone doesn't already
-        # exist
-        # FIXME: the whole .exists business needs to be clarified
-        #        (#4130) and should behave like a WikiPage does in
-        #        this respect.
-        new_name = req.args.get('name')
-        try:
-            new_milestone = Milestone(self.env, new_name)
-        except ResourceNotFound:
-            milestone.name = new_name
-        else:
-            if new_milestone.name != milestone.name:
-                if new_milestone.name:
-                    warn(_('Milestone "%(name)s" already exists, please '
-                           'choose another name.', name=new_milestone.name))
-                else:
-                    warn(_("You must provide a name for the milestone."))
-
-        if warnings:
-            return False
-
-        # -- actually save changes
-        if milestone.exists:
-            milestone.update(author=req.authname)
-            if completed and 'retarget' in req.args:
-                comment = req.args.get('comment', '')
-                retarget_to = req.args.get('target') or None
-                retargeted_tickets = \
-                    milestone.move_tickets(retarget_to, req.authname,
-                                           comment, exclude_closed=True)
-                add_notice(req, _('The open tickets associated with '
-                                  'milestone "%(name)s" have been retargeted '
-                                  'to milestone "%(retarget)s".',
-                                  name=milestone.name, retarget=retarget_to))
-                new_values = {'milestone': retarget_to}
-                comment = comment or \
-                          _("Open tickets retargeted after milestone closed")
-                event = BatchTicketChangeEvent(retargeted_tickets, None,
-                                               req.authname, comment,
-                                               new_values, None)
-                try:
-                    NotificationSystem(self.env).notify(event)
-                except Exception as e:
-                    self.log.error("Failure sending notification on ticket "
-                                   "batch change: %s",
-                                   exception_to_unicode(e))
-                    add_warning(req, tag_("The changes have been saved, but "
-                                          "an error occurred while sending "
-                                          "notifications: %(message)s",
-                                          message=to_unicode(e)))
-            add_notice(req, _("Your changes have been saved."))
-        else:
-            milestone.insert()
-            add_notice(req, _('The milestone "%(name)s" has been added.',
-                              name=milestone.name))
-
-        return True
-
     # Internal methods
-
-    _default_retarget_to = default_retarget_to
-
-    @property
-    def default_retarget_to(self):
-        if self._default_retarget_to and \
-           not any(self._default_retarget_to == m.name
-                   for m in Milestone.select(self.env)):
-            self.log.warn('Milestone "%s" does not exist. Update the '
-                          '"default_retarget_to" option in the [milestone] '
-                          'section of trac.ini', self._default_retarget_to)
-        return self._default_retarget_to
 
     def _do_delete(self, req, milestone):
         req.perm(milestone.resource).require('MILESTONE_DELETE')
@@ -849,12 +718,11 @@ class MilestoneModule(Component):
                               retarget=retarget_to))
             new_values = {'milestone': retarget_to}
             comment = _("Tickets retargeted after milestone deleted")
-            event = BatchTicketChangeEvent(retargeted_tickets, None,
-                                           req.authname, comment, new_values,
-                                           None)
+            tn = BatchTicketNotifyEmail(self.env)
             try:
-                NotificationSystem(self.env).notify(event)
-            except Exception as e:
+                tn.notify(retargeted_tickets, new_values, comment, None,
+                          req.authname)
+            except Exception, e:
                 self.log.error("Failure sending notification on ticket batch "
                                "change: %s", exception_to_unicode(e))
                 add_warning(req, tag_("The changes have been saved, but an "
@@ -870,10 +738,91 @@ class MilestoneModule(Component):
         else:
             req.perm(milestone.resource).require('MILESTONE_CREATE')
 
-        if self.save_milestone(req, milestone):
-            req.redirect(req.href.milestone(milestone.name))
+        old_name = milestone.name
+        new_name = req.args.get('name')
 
-        return self._render_editor(req, milestone)
+        milestone.description = req.args.get('description', '')
+
+        if 'due' in req.args:
+            due = req.args.get('duedate', '')
+            milestone.due = user_time(req, parse_date, due, hint='datetime') \
+                            if due else None
+        else:
+            milestone.due = None
+
+        completed = req.args.get('completeddate', '')
+        retarget_to = req.args.get('target') or None
+
+        # Instead of raising one single error, check all the constraints and
+        # let the user fix them by going back to edit mode showing the warnings
+        warnings = []
+        def warn(msg):
+            add_warning(req, msg)
+            warnings.append(msg)
+
+        # -- check the name
+        # If the name has changed, check that the milestone doesn't already
+        # exist
+        # FIXME: the whole .exists business needs to be clarified
+        #        (#4130) and should behave like a WikiPage does in
+        #        this respect.
+        try:
+            new_milestone = Milestone(self.env, new_name)
+            if new_milestone.name == old_name:
+                pass        # Creation or no name change
+            elif new_milestone.name:
+                warn(_('Milestone "%(name)s" already exists, please '
+                       'choose another name.', name=new_milestone.name))
+            else:
+                warn(_('You must provide a name for the milestone.'))
+        except ResourceNotFound:
+            milestone.name = new_name
+
+        # -- check completed date
+        if 'completed' in req.args:
+            completed = user_time(req, parse_date, completed,
+                                  hint='datetime') if completed else None
+            if completed and completed > datetime.now(utc):
+                warn(_('Completion date may not be in the future'))
+        else:
+            completed = None
+        milestone.completed = completed
+
+        if warnings:
+            return self._render_editor(req, milestone)
+
+        # -- actually save changes
+        if milestone.exists:
+            milestone.update(author=req.authname)
+            if completed and 'retarget' in req.args:
+                comment = req.args.get('comment', '')
+                retargeted_tickets = \
+                    milestone.move_tickets(retarget_to, req.authname,
+                                           comment, exclude_closed=True)
+                add_notice(req, _('The open tickets associated with '
+                                  'milestone "%(name)s" have been retargeted '
+                                  'to milestone "%(retarget)s".',
+                                  name=milestone.name, retarget=retarget_to))
+                new_values = {'milestone': retarget_to}
+                comment = comment or \
+                          _("Open tickets retargeted after milestone closed")
+                tn = BatchTicketNotifyEmail(self.env)
+                try:
+                    tn.notify(retargeted_tickets, new_values, comment, None,
+                              req.authname)
+                except Exception, e:
+                    self.log.error("Failure sending notification on ticket "
+                                   "batch change: %s",
+                                   exception_to_unicode(e))
+                    add_warning(req, tag_("The changes have been saved, but "
+                                          "an error occurred while sending "
+                                          "notifications: %(message)s",
+                                          message=to_unicode(e)))
+        else:
+            milestone.insert()
+
+        add_notice(req, _("Your changes have been saved."))
+        req.redirect(req.href.milestone(milestone.name))
 
     def _render_confirm(self, req, milestone):
         req.perm(milestone.resource).require('MILESTONE_DELETE')
@@ -881,23 +830,25 @@ class MilestoneModule(Component):
         milestones = [m for m in Milestone.select(self.env)
                       if m.name != milestone.name
                       and 'MILESTONE_VIEW' in req.perm(m.resource)]
-        attachments = Attachment.select(self.env, self.realm, milestone.name)
         data = {
             'milestone': milestone,
             'milestone_groups': group_milestones(milestones,
-                'TICKET_ADMIN' in req.perm),
-            'num_tickets': milestone.get_num_tickets(),
-            'retarget_to': self.default_retarget_to,
-            'attachments': list(attachments)
+                'TICKET_ADMIN' in req.perm)
         }
-        add_stylesheet(req, 'common/css/roadmap.css')
         return 'milestone_delete.html', data, None
 
     def _render_editor(self, req, milestone):
+        # Suggest a default due time of 18:00 in the user's timezone
+        now = datetime.now(req.tz)
+        default_due = datetime(now.year, now.month, now.day, 18)
+        if now.hour > 18:
+            default_due += timedelta(days=1)
+        default_due = to_datetime(default_due, req.tz)
+
         data = {
             'milestone': milestone,
             'datetime_hint': get_datetime_format_hint(req.lc_time),
-            'default_due': self.get_default_due(req),
+            'default_due': default_due,
             'milestone_groups': [],
         }
 
@@ -908,9 +859,6 @@ class MilestoneModule(Component):
                           and 'MILESTONE_VIEW' in req.perm(m.resource)]
             data['milestone_groups'] = group_milestones(milestones,
                 'TICKET_ADMIN' in req.perm)
-            data['num_open_tickets'] = milestone \
-                                       .get_num_tickets(exclude_closed=True)
-            data['retarget_to'] = self.default_retarget_to
         else:
             req.perm(milestone.resource).require('MILESTONE_CREATE')
             if milestone.name:
@@ -920,13 +868,12 @@ class MilestoneModule(Component):
         chrome = Chrome(self.env)
         chrome.add_jquery_ui(req)
         chrome.add_wiki_toolbars(req)
-        add_stylesheet(req, 'common/css/roadmap.css')
         return 'milestone_edit.html', data, None
 
     def _render_view(self, req, milestone):
         milestone_groups = []
         available_groups = []
-        default_group_by_available = False
+        component_group_available = False
         ticket_fields = TicketSystem(self.env).get_ticket_fields()
 
         # collect fields that can be used for grouping
@@ -935,13 +882,13 @@ class MilestoneModule(Component):
                     or field['name'] in ('owner', 'reporter'):
                 available_groups.append({'name': field['name'],
                                          'label': field['label']})
-                if field['name'] == self.default_group_by:
-                    default_group_by_available = True
+                if field['name'] == 'component':
+                    component_group_available = True
 
         # determine the field currently used for grouping
         by = None
-        if default_group_by_available:
-            by = self.default_group_by
+        if component_group_available:
+            by = 'component'
         elif available_groups:
             by = available_groups[0]['name']
         by = req.args.get('by', by)
@@ -1008,8 +955,6 @@ class MilestoneModule(Component):
                                  query + fragment)
 
     def _render_link(self, context, name, label, extra=''):
-        if not (name or extra):
-            return tag()
         try:
             milestone = Milestone(self.env, name)
         except ResourceNotFound:
@@ -1043,7 +988,7 @@ class MilestoneModule(Component):
                 closed = 'closed ' if milestone.is_completed else ''
                 return tag.a(label, class_='%smilestone' % closed,
                              href=href + extra, title=title)
-        elif 'MILESTONE_CREATE' in context.perm(self.realm, name):
+        elif 'MILESTONE_CREATE' in context.perm('milestone', name):
             return tag.a(label, class_='missing milestone', href=href + extra,
                          rel='nofollow')
         return tag.a(label, class_='missing milestone')
@@ -1051,7 +996,7 @@ class MilestoneModule(Component):
     # IResourceManager methods
 
     def get_resource_realms(self):
-        yield self.realm
+        yield 'milestone'
 
     def get_resource_description(self, resource, format=None, context=None,
                                  **kwargs):
@@ -1089,7 +1034,7 @@ class MilestoneModule(Component):
         if not 'milestone' in filters:
             return
         term_regexps = search_to_regexps(terms)
-        milestone_realm = Resource(self.realm)
+        milestone_realm = Resource('milestone')
         for name, due, completed, description \
                 in MilestoneCache(self.env).milestones.itervalues():
             if all(r.search(description) or r.search(name)

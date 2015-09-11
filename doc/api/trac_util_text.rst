@@ -95,8 +95,6 @@ Text formatting
 
 .. autofunction :: expandtabs
 
-.. autofunction :: is_obfuscated
-
 .. autofunction :: obfuscate_email_address
 
 .. autofunction :: text_width

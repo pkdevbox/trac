@@ -13,7 +13,6 @@
     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:py="http://genshi.edgewall.org/"
-      xmlns:i18n="http://genshi.edgewall.org/i18n"
       xmlns:xi="http://www.w3.org/2001/XInclude">
   <xi:include href="prefs.html" />
   <head>
@@ -21,6 +20,18 @@
   </head>
   <body>
 
+    <table>
+      <tr class="field">
+        <th><label for="name">Full name:</label></th>
+        <td><input type="text" id="name" name="name" size="30"
+            value="${settings.session.get('name')}" /></td>
+      </tr>
+      <tr class="field">
+        <th><label for="email">Email address:</label></th>
+        <td><input type="text" id="email" name="email" size="30"
+            value="${settings.session.get('email')}" /></td>
+      </tr>
+    </table>
     <p py:choose="" class="hint">
       <py:when test="req.authname == 'anonymous'">
         This information is used to automatically populate some forms
@@ -32,18 +43,6 @@
         notification and RSS feeds, for example.
       </py:otherwise>
     </p>
-    <table>
-      <tr class="field">
-        <th><label for="name">Full name:</label></th>
-        <td><input type="text" id="name" name="name" size="30"
-            value="${session.get('name')}" /></td>
-      </tr>
-      <tr class="field">
-        <th><label for="email">Email address:</label></th>
-        <td><input type="text" id="email" name="email" size="30"
-            value="${session.get('email')}" /></td>
-      </tr>
-    </table>
 
   </body>
 </html>

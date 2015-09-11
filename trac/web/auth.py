@@ -14,10 +14,13 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import print_function
+from __future__ import with_statement
 
-from abc import ABCMeta, abstractmethod
-from base64 import b64decode, b64encode
+try:
+    from base64 import b64decode, b64encode
+except ImportError:
+    from base64 import decodestring as b64decode
+    from base64 import encodestring as b64encode
 from hashlib import md5, sha1
 import os
 import re
@@ -31,9 +34,8 @@ from genshi.builder import tag
 from trac.config import BoolOption, IntOption, Option
 from trac.core import *
 from trac.web.api import IAuthenticator, IRequestHandler
-from trac.web.chrome import Chrome, INavigationContributor
+from trac.web.chrome import INavigationContributor
 from trac.util import hex_entropy, md5crypt
-from trac.util.compat import crypt
 from trac.util.concurrency import threading
 from trac.util.translation import _, tag_
 
@@ -56,21 +58,20 @@ class LoginModule(Component):
 
     implements(IAuthenticator, INavigationContributor, IRequestHandler)
 
-    is_valid_default_handler = False
-
     check_ip = BoolOption('trac', 'check_auth_ip', 'false',
          """Whether the IP address of the user should be checked for
-         authentication.""")
+         authentication (''since 0.9'').""")
 
     ignore_case = BoolOption('trac', 'ignore_auth_case', 'false',
-        """Whether login names should be converted to lower case.""")
+        """Whether login names should be converted to lower case
+        (''since 0.9'').""")
 
     auth_cookie_lifetime = IntOption('trac', 'auth_cookie_lifetime', 0,
         """Lifetime of the authentication cookie, in seconds.
 
         This value determines how long the browser will cache
         authentication information, and therefore, after how much
-        inactivity a user will have to log in again. The value
+        inactivity a user will have to log in again. The default value
         of 0 makes the cookie expire at the end of the browsing
         session. (''since 0.12'')""")
 
@@ -104,8 +105,8 @@ class LoginModule(Component):
 
     def get_navigation_items(self, req):
         if req.authname and req.authname != 'anonymous':
-            user = Chrome(self.env).format_author(req, req.authname)
-            yield ('metanav', 'login', _('logged in as %(user)s', user=user))
+            yield ('metanav', 'login', _('logged in as %(user)s',
+                                         user=req.authname))
             yield ('metanav', 'logout',
                    tag.form(tag.div(tag.button(_('Logout'),
                                                name='logout', type='submit')),
@@ -184,7 +185,8 @@ class LoginModule(Component):
                                              or req.base_path or '/'
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
+        if sys.version_info >= (2, 6):
+            req.outcookie['trac_auth']['httponly'] = True
         if self.auth_cookie_lifetime > 0:
             req.outcookie['trac_auth']['expires'] = self.auth_cookie_lifetime
 
@@ -223,7 +225,8 @@ class LoginModule(Component):
         req.outcookie['trac_auth']['expires'] = -10000
         if self.env.secure_cookies:
             req.outcookie['trac_auth']['secure'] = True
-        req.outcookie['trac_auth']['httponly'] = True
+        if sys.version_info >= (2, 6):
+            req.outcookie['trac_auth']['httponly'] = True
 
     def _cookie_to_name(self, req, cookie):
         # This is separated from _get_name_for_cookie(), because the
@@ -275,11 +278,8 @@ class LoginModule(Component):
 
 class HTTPAuthentication(object):
 
-    __metaclass__ = ABCMeta
-
-    @abstractmethod
     def do_auth(self, environ, start_response):
-        pass
+        raise NotImplementedError
 
 
 class PasswordFileAuthentication(HTTPAuthentication):
@@ -302,7 +302,15 @@ class BasicAuthentication(PasswordFileAuthentication):
     def __init__(self, htpasswd, realm):
         # FIXME pass a logger
         self.realm = realm
-        self.crypt = crypt
+        try:
+            import crypt
+            self.crypt = crypt.crypt
+        except ImportError:
+            try:
+                import fcrypt
+                self.crypt = fcrypt.crypt
+            except ImportError:
+                self.crypt = None
         PasswordFileAuthentication.__init__(self, htpasswd)
 
     def load(self, filename):
@@ -316,18 +324,17 @@ class BasicAuthentication(PasswordFileAuthentication):
             try:
                 u, h = line.split(':')
             except ValueError:
-                print("Warning: invalid password line in %s: %s"
-                      % (filename, line), file=sys.stderr)
+                print>>sys.stderr, 'Warning: invalid password line in %s: ' \
+                    '%s' % (filename, line)
                 continue
             if '$' in h or h.startswith('{SHA}') or self.crypt:
                 self.hash[u] = h
             else:
-                print('Warning: cannot parse password for user "%s" '
-                      'without the "crypt" module' % u, file=sys.stderr)
+                print>>sys.stderr, 'Warning: cannot parse password for ' \
+                    'user "%s" without the "crypt" module' % u
 
         if self.hash == {}:
-            print("Warning: found no users in file:", filename,
-                  file=sys.stderr)
+            print>>sys.stderr, "Warning: found no users in file:", filename
 
     def test(self, user, password):
         self.check_reload()
@@ -385,14 +392,13 @@ class DigestAuthentication(PasswordFileAuthentication):
             try:
                 u, r, a1 = line.split(':')
             except ValueError:
-                print('Warning: invalid digest line in %s: %s'
-                      % (filename, line), file=sys.stderr)
+                print>>sys.stderr, 'Warning: invalid digest line in %s: %s' \
+                    % (filename, line)
                 continue
             if r == self.realm:
                 self.hash[u] = a1
         if self.hash == {}:
-            print("Warning: found no users in realm:", self.realm,
-                  file=sys.stderr)
+            print>>sys.stderr, "Warning: found no users in realm:", self.realm
 
     def parse_auth_header(self, authorization):
         values = {}

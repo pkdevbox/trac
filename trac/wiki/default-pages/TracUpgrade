@@ -73,29 +73,20 @@ Remove above note once #9936 is fixed.
 
 === 6. Steps specific to a given Trac version
 
-==== Upgrading from Trac 1.0 to 1.1.x #to1.1.x
-
-===== Python 2.5 no longer supported
-Upgrade Python to at least 2.6, but not 3.0.
-
-===== New workflow actions
-
-The ticket creation step is now controlled with a workflow action. The default workflow has `create` and `create_and_assign` actions. The `create` action will always be added when upgrading the database. The `create_and_assign` action will be added if the workflow has an //assigned// state. You may want to edit your workflow after upgrading the database to customize the actions available on the //New Ticket// page.
-
-===== New permissions policy for read-only wiki pages
-Since 1.1.2 the read-only attribute of wiki pages is enabled and enforced only when `ReadonlyWikiPolicy` is in the list of active permission policies. If `[trac] permission_policy` has the default value `DefaultPermissionPolicy, LegacyAttachmentPolicy`, then `ReadonlyWikiPolicy` should be automatically appended to the list when upgrading the environment:
-{{{#!ini
-[trac]
-permission_policies = ReadonlyWikiPolicy,
- DefaultPermissionPolicy,
- LegacyAttachmentPolicy
-}}}
-If other permission policies are enabled, //trac.ini// will need to be edited to append `ReadonlyWikiPolicy` to the list of active `permission_policies`. See TracFineGrainedPermissions#ReadonlyWikiPolicy for additional details on the proper ordering.
-
 ==== Upgrading from Trac 0.12 to Trac 1.0 #to1.0
 
 ===== Python 2.4 no longer supported
 Upgrade Python to at least 2.5, but not 3.0.
+
+===== Obsolete Plugins
+
+Trac has added functionality equivalent to the following plugins:
+
+* [https://trac-hacks.org/wiki/BatchModifyPlugin BatchModifyPlugin]
+* ​[https://trac-hacks.org/wiki/GitPlugin GitPlugin]
+* [https://trac-hacks.org/wiki/OverrideEditPlugin OverrideEditPlugin]
+
+The plugins should be removed when upgrading Trac to 1.0.
 
 ===== Subversion components not enabled by default for new installations
 The Trac components for Subversion support are no longer enabled by default. To enable the svn support, you need to make sure the `tracopt.versioncontrol.svn` components are enabled, for example by setting the following in the TracIni:
@@ -121,6 +112,21 @@ SQLite v2.x is no longer supported. If you still use a Trac database of this for
 
 ===== [trac:PySqlite] 2 required
 [trac:PySqlite] 1.1.x is no longer supported. Please install 2.5.5 or later if possible, see [#Tracdatabaseupgrade Trac database upgrade] below.
+
+===== Obsolete Plugins
+
+Trac has added functionality equivalent to the following plugins:
+
+* [https://trac-hacks.org/wiki/AutoQueryPlugin AutoQueryPlugin]
+* ​[https://trac-hacks.org/wiki/AdminConsoleProviderPatch AdminConsoleProviderPatch]
+* [https://trac-hacks.org/wiki/AnchorMacro AnchorMacro]: see WikiFormatting#SettingAnchors
+* [https://trac-hacks.org/wiki/TicketChangePlugin TicketChangePlugin]: see [TracPermissions#TicketSystem TICKET_EDIT_COMMENT permission]
+* [https://trac-hacks.org/wiki/TicketDeletePlugin TicketDeletePlugin]: see `tracopt.ticket.deleter`
+* [https://trac-hacks.org/wiki/SubversionLocationPlugin SubversionLocationPlugin]: see TracRepositoryAdmin#Repositories
+* [https://trac-hacks.org/wiki/WikiCreoleRendererPlugin WikiCreoleRendererPlugin]: see [trac:WikiCreole]
+* [https://trac-hacks.org/wiki/RepoRevisionSyntaxPlugin RepoRevisionSyntaxPlugin] (added in 0.12.1)
+
+The plugins should be removed when upgrading Trac to 0.12.
 
 ===== Multiple Repository Support
 The latest version includes support for multiple repositories. If you plan to add more repositories to your Trac instance, please refer to TracRepositoryAdmin#Migration.
@@ -193,6 +199,9 @@ reopen.operations = del_resolution
 }}}
 
 There are some significant caveats in this, such as accepting a ticket sets it to 'assigned' state, and assigning a ticket sets it to 'new' state. So you will probably want to migrate to "basic" workflow; [trac:source:trunk/contrib/workflow/migrate_original_to_basic.py contrib/workflow/migrate_original_to_basic.py] may be helpful. See TracWorkflow for a detailed description of the new basic workflow.
+
+===== Global Configuration
+In versions prior to 0.11, the global configuration was by default located in `$prefix/share/trac/conf/trac.ini` or `/etc/trac/trac.ini`, depending on the distribution. You may want to specify that file to inherit from when upgrading.  Literally, when upgrading you have to add an `[inherit]` section to your project's `trac.ini` file. Additionally, you have to move your customized templates and common images from `$prefix/share/trac/...` to the new location.
 
 === 7. Restart the Web Server #RestarttheWebServer
 

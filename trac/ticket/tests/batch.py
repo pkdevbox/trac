@@ -11,17 +11,18 @@
 # individuals. For the exact contribution history, see the revision
 # history and logs, available at http://trac.edgewall.org/log/.
 
+from __future__ import with_statement
+
 import unittest
 from datetime import datetime, timedelta
 
 from trac.perm import DefaultPermissionPolicy, DefaultPermissionStore,\
-                      PermissionCache, PermissionSystem
+                      PermissionCache
 from trac.test import Mock, EnvironmentStub
-from trac.ticket import default_workflow, api, web_ui
+from trac.ticket import default_workflow, web_ui
 from trac.ticket.batch import BatchModifyModule
 from trac.ticket.model import Ticket
 from trac.util.datefmt import utc
-from trac.web.api import RequestDone
 from trac.web.chrome import web_context
 
 
@@ -78,29 +79,29 @@ class BatchModifyTestCase(unittest.TestCase):
         """These cannot be added through the UI, but if somebody tries
         to build their own POST data they will be ignored."""
         batch = BatchModifyModule(self.env)
-        self.req.args = {
-            'batchmod_value_summary': 'test ticket',
-            'batchmod_value_reporter': 'anonymous',
-            'batchmod_value_description': 'synergize the widgets'
-        }
+        self.req.args = {}
+        self.req.args['batchmod_value_summary'] = 'test ticket'
+        self.req.args['batchmod_value_reporter'] = 'anonymous'
+        self.req.args['batchmod_value_description'] = 'synergize the widgets'
         values = batch._get_new_ticket_values(self.req)
         self.assertEqual(len(values), 0)
 
     def test_add_batchmod_value_data_from_request(self):
         batch = BatchModifyModule(self.env)
-        self.req.args = {'batchmod_value_milestone': 'milestone1'}
+        self.req.args = {}
+        self.req.args['batchmod_value_milestone'] = 'milestone1'
         values = batch._get_new_ticket_values(self.req)
         self.assertEqual(values['milestone'], 'milestone1')
 
     def test_selected_tickets(self):
-        self.req.args = {'selected_tickets': '1,2,3'}
+        self.req.args = { 'selected_tickets' : '1,2,3' }
         batch = BatchModifyModule(self.env)
         selected_tickets = batch._get_selected_tickets(self.req)
         self.assertEqual(selected_tickets, ['1', '2', '3'])
 
     def test_no_selected_tickets(self):
         """If nothing is selected, the return value is the empty list."""
-        self.req.args = {'selected_tickets': ''}
+        self.req.args = { 'selected_tickets' : '' }
         batch = BatchModifyModule(self.env)
         selected_tickets = batch._get_selected_tickets(self.req)
         self.assertEqual(selected_tickets, [])
@@ -108,12 +109,12 @@ class BatchModifyTestCase(unittest.TestCase):
     # Assign list items
 
     def test_change_list_replace_empty_with_single(self):
-        """Replace empty field with single item."""
+        """Replace emtpy field with single item."""
         changed = self._assign_list_test_helper('', 'alice')
         self.assertEqual(changed, 'alice')
 
     def test_change_list_replace_empty_with_items(self):
-        """Replace empty field with items."""
+        """Replace emtpy field with items."""
         changed = self._assign_list_test_helper('', 'alice, bob')
         self.assertEqual(changed, 'alice, bob')
 
@@ -183,7 +184,7 @@ class BatchModifyTestCase(unittest.TestCase):
     def test_change_list_add_remove(self):
         """Remove existing item and append additional item."""
         changed = self._add_remove_list_test_helper('alice, bob', 'carol',
-                                                    'alice')
+                                                'alice')
         self.assertEqual(changed, 'bob, carol')
 
     def test_change_list_add_no_duplicates(self):
@@ -217,7 +218,7 @@ class BatchModifyTestCase(unittest.TestCase):
                                               component='foo')
         second_ticket_id = self._insert_ticket('Test 2', reporter='joe')
         selected_tickets = [first_ticket_id, second_ticket_id]
-        new_values = {'component': 'bar'}
+        new_values = { 'component' : 'bar' }
 
         batch = BatchModifyModule(self.env)
         batch._save_ticket_changes(self.req, selected_tickets, new_values, '',
@@ -247,7 +248,8 @@ class BatchModifyTestCase(unittest.TestCase):
         self.env.config.set('ticket-workflow', 'buckify', '* -> *')
         self.env.config.set('ticket-workflow', 'buckify.operations',
                                                'set_owner')
-        self.req.args = {'action_buckify_reassign_owner': 'buck'}
+        self.req.args = {}
+        self.req.args['action_buckify_reassign_owner'] = 'buck'
 
         first_ticket_id = self._insert_ticket('Test 1', reporter='joe',
                                               owner='foo')
@@ -305,89 +307,10 @@ class BatchModifyTestCase(unittest.TestCase):
             tktmod.render_timeline_event(context, 'url', batch_ev))
 
 
-class ProcessRequestTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(default_data=True, enable=[
-            default_workflow.ConfigurableTicketWorkflow,
-            DefaultPermissionPolicy, DefaultPermissionStore,
-            BatchModifyModule, api.TicketSystem, web_ui.TicketModule
-        ])
-        self.env.config.set('trac', 'permission_policies',
-                            'DefaultPermissionPolicy')
-        ps = PermissionSystem(self.env)
-        ps.grant_permission('has_ta_&_bm', 'TICKET_ADMIN')
-        ps.grant_permission('has_bm', 'TICKET_BATCH_MODIFY')
-        ps.grant_permission('has_ta_&_bm', 'TICKET_BATCH_MODIFY')
-
-    def tearDown(self):
-        self.env.reset_db()
-
-    def assertFieldChanged(self, ticket_id, field, new_value):
-        ticket = Ticket(self.env, int(ticket_id))
-        self.assertEqual(ticket[field], new_value)
-
-    def _insert_ticket(self, summary, **kw):
-        """Helper for inserting a ticket into the database"""
-        ticket = Ticket(self.env)
-        ticket['summary'] = summary
-        for k, v in kw.items():
-            ticket[k] = v
-        return ticket.insert()
-
-    def _create_request(self, authname, **kw):
-        def redirect(url, permanent=False):
-            raise RequestDone
-        default_args = {
-            'authname': authname,
-            'href': self.env.href,
-            'perm': PermissionCache(self.env, authname),
-            'redirect': redirect,
-            'session': {'query_href': ''},
-            'tz': utc,
-        }
-        default_args.update(kw)
-        return Mock(**default_args)
-
-    def test_modify_reporter_with_ticket_admin(self):
-        """User with TICKET_ADMIN can batch modify the reporter."""
-        self._insert_ticket('Ticket 1', reporter='user1')
-        self._insert_ticket('Ticket 2', reporter='user1')
-        req = self._create_request('has_ta_&_bm', args={
-            'batchmod_value_reporter': 'user2',
-            'batchmod_value_comment': '',
-            'action': 'leave',
-            'selected_tickets': '1,2',
-        })
-
-        bmm = BatchModifyModule(self.env)
-        self.assertRaises(RequestDone, bmm.process_request, req)
-        self.assertFieldChanged(1, 'reporter', 'user2')
-        self.assertFieldChanged(2, 'reporter', 'user2')
-
-    def test_modify_reporter_without_ticket_admin(self):
-        """User without TICKET_ADMIN cannot batch modify the reporter."""
-        self._insert_ticket('Ticket 1', reporter='user1')
-        self._insert_ticket('Ticket 2', reporter='user1')
-        req = self._create_request('has_bm', args={
-            'batchmod_value_reporter': 'user2',
-            'batchmod_value_comment': '',
-            'action': 'leave',
-            'selected_tickets': '1,2',
-        })
-
-        bmm = BatchModifyModule(self.env)
-        self.assertRaises(RequestDone, bmm.process_request, req)
-        self.assertFieldChanged(1, 'reporter', 'user1')
-        self.assertFieldChanged(2, 'reporter', 'user1')
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(BatchModifyTestCase))
-    suite.addTest(unittest.makeSuite(ProcessRequestTestCase))
     return suite
-
 
 if __name__ == '__main__':
     unittest.main(defaultTest='suite')

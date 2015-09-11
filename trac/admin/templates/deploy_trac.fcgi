@@ -15,8 +15,6 @@
 #
 # Author: Jonas Borgström <jonas@edgewall.com>
 
-from __future__ import print_function
-
 try:
     import os
     import pkg_resources
@@ -34,16 +32,16 @@ try:
     fcgi_frontend.run()
 except SystemExit:
     raise
-except Exception as e:
-    print("Content-Type: text/plain\r\n\r\n", end=' ')
-    print("Oops...")
-    print()
-    print("Trac detected an internal error:")
-    print()
-    print(e)
-    print()
+except Exception, e:
+    print 'Content-Type: text/plain\r\n\r\n',
+    print 'Oops...'
+    print
+    print 'Trac detected an internal error:'
+    print
+    print e
+    print
     import traceback
     import StringIO
     tb = StringIO.StringIO()
     traceback.print_exc(file=tb)
-    print(tb.getvalue())
+    print tb.getvalue()

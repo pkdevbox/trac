@@ -131,26 +131,6 @@ class NormalTests(object):
         self.assertEqual(11, self.repos.normalize_rev('11'))
         self.assertEqual(11, self.repos.normalize_rev(11))
 
-    def test_repos_display_rev(self):
-        self.assertEqual(str(HEAD), self.repos.display_rev('latest'))
-        self.assertEqual(str(HEAD), self.repos.display_rev('head'))
-        self.assertEqual(str(HEAD), self.repos.display_rev(''))
-        self.assertRaises(NoSuchChangeset,
-                          self.repos.display_rev, 'something else')
-        self.assertEqual(str(HEAD), self.repos.display_rev(None))
-        self.assertEqual('11', self.repos.display_rev('11'))
-        self.assertEqual('11', self.repos.display_rev(11))
-
-    def test_repos_short_rev(self):
-        self.assertEqual(str(HEAD), self.repos.short_rev('latest'))
-        self.assertEqual(str(HEAD), self.repos.short_rev('head'))
-        self.assertEqual(str(HEAD), self.repos.short_rev(''))
-        self.assertRaises(NoSuchChangeset,
-                          self.repos.short_rev, 'something else')
-        self.assertEqual(str(HEAD), self.repos.short_rev(None))
-        self.assertEqual('11', self.repos.short_rev('11'))
-        self.assertEqual('11', self.repos.short_rev(11))
-
     def test_rev_navigation(self):
         self.assertEqual(1, self.repos.oldest_rev)
         self.assertIsNone(self.repos.previous_rev(0))
@@ -1433,32 +1413,6 @@ class SvnCachedRepositoryTestCase(unittest.TestCase):
         RepositoryManager(self.env).reload_repositories()
 
 
-class SubversionConnectorTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub()
-        self.repos_path = tempfile.mkdtemp(prefix='trac-svnrepos-')
-        self.dbprovider = DbRepositoryProvider(self.env)
-        pool = core.svn_pool_create(None)
-        repos.svn_repos_create(self.repos_path, '', '', None, None, pool)
-        self.dbprovider.add_repository(REPOS_NAME, self.repos_path, 'svn')
-
-    def tearDown(self):
-        self.env.reset_db()
-        # clear cached repositories to avoid TypeError on termination (#11505)
-        RepositoryManager(self.env).reload_repositories()
-
-    def _svn_version_from_system_info(self):
-        svn_version = None
-        for name, version in self.env.get_systeminfo():
-            if name == 'Subversion':
-                svn_version = version
-        return svn_version
-
-    def test_get_system_info(self):
-        self.assertIsNotNone(self._svn_version_from_system_info())
-
-
 def suite():
     global REPOS_PATH
     suite = unittest.TestSuite()
@@ -1494,7 +1448,6 @@ def suite():
                 setattr(tc, skip, lambda self: None) # no skip, so we cheat...
             suite.addTest(unittest.makeSuite(
                 tc, suiteClass=SubversionRepositoryTestSetup))
-        suite.addTest(unittest.makeSuite(SubversionConnectorTestCase))
     else:
         print("SKIP: tracopt/versioncontrol/svn/tests/svn_fs.py (no svn "
               "bindings)")

@@ -93,27 +93,18 @@
                       <td class="filter" colspan="${2 if field.type in ('radio', 'checkbox', 'time') else None}"
                           py:choose="">
 
-                        <py:def function="render_options(field_name, options)"
-                                py:with="format_and_sort = lambda options: sorted(zip(options, map(format_author, options)), key=operator.itemgetter(1))"
-                                py:choose="field_name">
-                          <option py:when="'owner'"
-                                  py:for="option, option_label in format_and_sort(options)"
-                                  selected="${option == constraint_value or None}"
-                                  value="$option" py:content="option_label"></option>
-                          <option py:otherwise=""
-                                  py:for="option in options"
-                                  selected="${option == constraint_value or None}"
-                                  value="$option" py:content="option"></option>
-                        </py:def>
-
                         <py:when test="field.type == 'select'">
                           <select name="${n_field_name}">
                             <option></option>
-                            ${render_options(field.name, field.options)}
+                            <option py:for="option in field.options"
+                                    selected="${option == constraint_value or None}"
+                                    value="$option" py:content="option"></option>
                             <optgroup py:for="optgroup in field.optgroups"
                                       py:if="optgroup.options"
                                       label="${optgroup.label}">
-                              ${render_options(field.name, optgroup.options)}
+                              <option py:for="option in optgroup.options"
+                                      selected="${option == constraint_value or None}"
+                                      value="$option" py:content="option"></option>
                             </optgroup>
                           </select>
                         </py:when>
@@ -142,14 +133,12 @@
 
                         <py:when test="field.type == 'time'"
                                  py:with="(start, end) = '..' in constraint_value and constraint_value.split('..', 1)
-                                                         or (constraint_value, '');
-                                          format = field.get('format', 'datetime');
-                                          date_or_datetime = 'date' if format == 'relative' else format;">
+                                                         or (constraint_value, '')">
                           <i18n:msg>
                             <label>between</label>
-                            <input type="text" name="${n_field_name}" value="$start" size="14" class="trac-${date_or_datetime}picker" />
+                            <input type="text" name="${n_field_name}" value="$start" size="14" />
                             <label>and</label>
-                            <input type="text" name="${n_field_name}_end" value="$end" size="14" class="trac-${date_or_datetime}picker" />
+                            <input type="text" name="${n_field_name}_end" value="$end" size="14" />
                           </i18n:msg>
                         </py:when>
                       </td>
@@ -248,7 +237,7 @@
 
       <div id="trac-report-buttons" class="buttons"
            py:with="edit = report_resource and 'REPORT_MODIFY' in perm(report_resource);
-                    new = 'REPORT_CREATE' in perm('report');
+                    new = 'REPORT_CREATE' in perm;
                     delete = report_resource and 'REPORT_DELETE' in perm(report_resource)">
         <form py:if="edit" method="get" action="${url_of(report_resource)}">
           <div>

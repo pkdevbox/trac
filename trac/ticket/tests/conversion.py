@@ -16,7 +16,6 @@ import unittest
 
 from trac import __version__ as TRAC_VERSION
 from trac.mimeview.api import Mimeview
-from trac.perm import PermissionCache
 from trac.test import EnvironmentStub, Mock, MockPerm
 from trac.ticket.model import Ticket
 from trac.ticket.web_ui import TicketModule
@@ -35,8 +34,7 @@ class TicketConversionTestCase(unittest.TestCase):
         self.req = Mock(base_path='/trac.cgi', path_info='',
                         href=Href('/trac.cgi'), chrome={'logo': {}},
                         abs_href=Href('http://example.org/trac.cgi'),
-                        environ={}, perm=PermissionCache(self.env, '-'),
-                        authname='-', args={}, tz=None,
+                        environ={}, perm=[], authname='-', args={}, tz=None,
                         locale='', session=None, form_token=None)
 
     def tearDown(self):
@@ -45,7 +43,6 @@ class TicketConversionTestCase(unittest.TestCase):
     def _create_a_ticket(self):
         # 1. Creating ticket
         ticket = Ticket(self.env)
-        ticket['owner'] = ''
         ticket['reporter'] = 'santa'
         ticket['summary'] = 'Foo'
         ticket['description'] = 'Bar'

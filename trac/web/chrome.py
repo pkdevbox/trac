@@ -21,10 +21,11 @@ mostly targeting (X)HTML generation but not exclusively, RSS or other forms of
 web content are also using facilities provided here.
 """
 
+from __future__ import with_statement
+
 import datetime
 from functools import partial
 import itertools
-import operator
 import os.path
 import pkg_resources
 import pprint
@@ -46,7 +47,6 @@ from trac.config import *
 from trac.core import *
 from trac.env import IEnvironmentSetupParticipant, ISystemInfoProvider
 from trac.mimeview.api import RenderingContext, get_mimetype
-from trac.perm import IPermissionRequestor
 from trac.resource import *
 from trac.util import compat, get_reporter_id, html, presentation, \
                       get_pkginfo, pathjoin, translation
@@ -60,16 +60,12 @@ from trac.util.datefmt import (
     get_time_format_jquery_ui, user_time, get_month_names_jquery_ui,
     get_day_names_jquery_ui, get_timezone_list_jquery_ui,
     get_first_week_day_jquery_ui, get_timepicker_separator_jquery_ui,
-    get_period_names_jquery_ui, localtz)
+    get_period_names_jquery_ui)
 from trac.util.translation import _, get_available_locales
 from trac.web.api import IRequestHandler, ITemplateStreamFilter, HTTPNotFound
 from trac.web.href import Href
 from trac.wiki import IWikiSyntaxProvider
 from trac.wiki.formatter import format_to, format_to_html, format_to_oneliner
-
-default_mainnav_order = ('wiki', 'timeline', 'roadmap', 'browser',
-                         'tickets', 'newticket', 'search', 'admin')
-default_metanav_order = ('login', 'logout', 'prefs', 'help', 'about')
 
 
 class INavigationContributor(Interface):
@@ -129,7 +125,7 @@ def add_link(req, rel, href, title=None, mimetype=None, classname=None,
     linkid = '%s:%s' % (rel, href)
     linkset = req.chrome.setdefault('linkset', set())
     if linkid in linkset:
-        return  # Already added that link
+        return # Already added that link
 
     link = {'href': href, 'title': title, 'type': mimetype, 'class': classname}
     link.update(attrs)
@@ -138,7 +134,7 @@ def add_link(req, rel, href, title=None, mimetype=None, classname=None,
     linkset.add(linkid)
 
 
-def add_stylesheet(req, filename, mimetype='text/css', **attrs):
+def add_stylesheet(req, filename, mimetype='text/css', media=None):
     """Add a link to a style sheet to the chrome info so that it gets included
     in the generated HTML page.
 
@@ -149,7 +145,7 @@ def add_stylesheet(req, filename, mimetype='text/css', **attrs):
     `/chrome/` path.
     """
     href = chrome_resource_path(req, filename)
-    add_link(req, 'stylesheet', href, mimetype=mimetype, **attrs)
+    add_link(req, 'stylesheet', href, mimetype=mimetype, media=media)
 
 
 def add_script(req, filename, mimetype='text/javascript', charset='utf-8',
@@ -164,7 +160,7 @@ def add_script(req, filename, mimetype='text/javascript', charset='utf-8',
     """
     scriptset = req.chrome.setdefault('scriptset', set())
     if filename in scriptset:
-        return False  # Already added that script
+        return False # Already added that script
 
     href = chrome_resource_path(req, filename)
     script = {'href': href, 'type': mimetype, 'charset': charset,
@@ -185,6 +181,11 @@ def add_script_data(req, data={}, **kwargs):
     script_data = req.chrome.setdefault('script_data', {})
     script_data.update(data)
     script_data.update(kwargs)
+
+
+def add_javascript(req, filename):
+    """:deprecated: since 0.10, use `add_script` instead."""
+    add_script(req, filename, mimetype='text/javascript')
 
 
 def add_warning(req, msg, *args):
@@ -391,13 +392,10 @@ class Chrome(Component):
 
     Chrome is everything that is not actual page content.
     """
+    required = True
 
     implements(ISystemInfoProvider, IEnvironmentSetupParticipant,
-               IPermissionRequestor, IRequestHandler, ITemplateProvider,
-               IWikiSyntaxProvider)
-
-    required = True
-    is_valid_default_handler = False
+               IRequestHandler, ITemplateProvider, IWikiSyntaxProvider)
 
     navigation_contributors = ExtensionPoint(INavigationContributor)
     template_providers = ExtensionPoint(ITemplateProvider)
@@ -408,7 +406,8 @@ class Chrome(Component):
 
         Templates in that directory are loaded in addition to those in the
         environments `templates` directory, but the latter take precedence.
-        """)
+
+        (''since 0.11'')""")
 
     shared_htdocs_dir = PathOption('inherit', 'htdocs_dir', '',
         """Path to the //shared htdocs directory//.
@@ -426,9 +425,10 @@ class Chrome(Component):
 
     genshi_cache_size = IntOption('trac', 'genshi_cache_size', 128,
         """The maximum number of templates that the template loader will cache
-        in memory. You may want to choose a higher value if your site uses a
-        larger number of templates, and you have enough memory to spare, or
-        you can reduce it if you are short on memory.""")
+        in memory. The default value is 128. You may want to choose a higher
+        value if your site uses a larger number of templates, and you have
+        enough memory to spare, or you can reduce it if you are short on
+        memory.""")
 
     htdocs_location = Option('trac', 'htdocs_location', '',
         """Base URL for serving the core static resources below
@@ -446,80 +446,54 @@ class Chrome(Component):
         rules will be needed in the web server.""")
 
     jquery_location = Option('trac', 'jquery_location', '',
-        """Location of the jQuery !JavaScript library (version 1.11.3).
+        """Location of the jQuery !JavaScript library (version 1.7.2).
 
         An empty value loads jQuery from the copy bundled with Trac.
 
         Alternatively, jQuery could be loaded from a CDN, for example:
-        http://code.jquery.com/jquery-1.11.3.min.js,
-        http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.11.3.min.js or
-        https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js.
+        http://code.jquery.com/jquery-1.7.2.min.js,
+        http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.7.2.min.js or
+        https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js.
 
         (''since 1.0'')""")
 
     jquery_ui_location = Option('trac', 'jquery_ui_location', '',
-        """Location of the jQuery UI !JavaScript library (version 1.11.4).
+        """Location of the jQuery UI !JavaScript library (version 1.8.21).
 
         An empty value loads jQuery UI from the copy bundled with Trac.
 
         Alternatively, jQuery UI could be loaded from a CDN, for example:
-        https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js
+        https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js
         or
-        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.11.4/jquery-ui.min.js.
+        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/jquery-ui.min.js.
 
         (''since 1.0'')""")
 
     jquery_ui_theme_location = Option('trac', 'jquery_ui_theme_location', '',
         """Location of the theme to be used with the jQuery UI !JavaScript
-        library (version 1.11.4).
+        library (version 1.8.21).
 
         An empty value loads the custom Trac jQuery UI theme from the copy
         bundled with Trac.
 
         Alternatively, a jQuery UI theme could be loaded from a CDN, for
         example:
-        https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/themes/start/jquery-ui.css
+        https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/themes/start/jquery-ui.css
         or
-        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.11.4/themes/start/jquery-ui.css.
+        http://ajax.aspnetcdn.com/ajax/jquery.ui/1.8.21/themes/start/jquery-ui.css.
 
         (''since 1.0'')""")
 
-    mainnav = ConfigSection('mainnav', """Configures the main navigation bar,
-        which by default contains //Wiki//, //Timeline//, //Roadmap//,
-        //Browse Source//, //View Tickets//, //New Ticket//, //Search//  and
-        //Admin//.
+    metanav_order = ListOption('trac', 'metanav',
+                               'login, logout, prefs, help, about', doc=
+        """Order of the items to display in the `metanav` navigation bar,
+           listed by IDs. See also TracNavigation.""")
 
-        The `label`, `href`, and `order`  attributes can be specified. Entries
-        can be disabled by setting the value of the navigation item to
-        `disabled`.
-
-        The following example renames the link to WikiStart to //Home//,
-        links the //View Tickets// entry to a specific report and disables
-        the //Search// entry.
-        {{{#!ini
-        [mainnav]
-        wiki.label = Home
-        tickets.href = /report/24
-        search = disabled
-        }}}
-
-        See TracNavigation for more details.
-        """)
-
-    metanav = ConfigSection('metanav', """Configures the meta navigation
-        entries, which by default are //Login//, //Logout//, //Preferences//,
-        ''!Help/Guide'' and //About Trac//. The allowed attributes are the
-        same as for `[mainnav]`. Additionally, a special entry is supported -
-        `logout.redirect` is the page the user sees after hitting the logout
-        button. For example:
-
-        {{{#!ini
-        [metanav]
-        logout.redirect = wiki/Logout
-        }}}
-
-        See TracNavigation for more details.
-        """)
+    mainnav_order = ListOption('trac', 'mainnav',
+                               'wiki, timeline, roadmap, browser, tickets, '
+                               'newticket, search', doc=
+        """Order of the items to display in the `mainnav` navigation bar,
+           listed by IDs. See also TracNavigation.""")
 
     logo_link = Option('header_logo', 'link', '',
         """URL to link to, from the header logo.""")
@@ -548,22 +522,19 @@ class Chrome(Component):
     show_email_addresses = BoolOption('trac', 'show_email_addresses', 'false',
         """Show email addresses instead of usernames. If false, email
         addresses are obfuscated for users that don't have EMAIL_VIEW
-        permission.
+        permission. (''since 0.11'')
         """)
-
-    show_full_names = BoolOption('trac', 'show_full_names', 'true',
-        """Show full names instead of usernames. (//since 1.2//)""")
 
     never_obfuscate_mailto = BoolOption('trac', 'never_obfuscate_mailto',
         'false',
         """Never obfuscate `mailto:` links explicitly written in the wiki,
         even if `show_email_addresses` is false or the user doesn't have
-        EMAIL_VIEW permission.
+        EMAIL_VIEW permission (''since 0.11.6'').
         """)
 
     show_ip_addresses = BoolOption('trac', 'show_ip_addresses', 'false',
         """Show IP addresses for resource edits (e.g. wiki). Since 1.0.5 this
-        option is deprecated and will be removed in 1.3.1.
+        option is deprecated and will be removed in 1.3.1. (''since 0.11.3'')
         """)
 
     resizable_textareas = BoolOption('trac', 'resizable_textareas', 'true',
@@ -578,13 +549,15 @@ class Chrome(Component):
         """Inactivity timeout in seconds after which the automatic wiki preview
         triggers an update. This option can contain floating-point values. The
         lower the setting, the more requests will be made to the server. Set
-        this to 0 to disable automatic preview. (''since 0.12'')""")
+        this to 0 to disable automatic preview. The default is 2.0 seconds.
+        (''since 0.12'')""")
 
-    default_dateinfo_format = ChoiceOption('trac', 'default_dateinfo_format',
-                                           ('relative', 'absolute'),
+    default_dateinfo_format = Option('trac', 'default_dateinfo_format',
+        'relative',
         """The date information format. Valid options are 'relative' for
         displaying relative format and 'absolute' for displaying absolute
-        format. (''since 1.0'')""")
+        format. (''since 1.0'')
+        """)
 
     use_chunked_encoding = BoolOption('trac', 'use_chunked_encoding', 'false',
         """If enabled, send contents as chunked encoding in HTTP/1.1.
@@ -611,12 +584,11 @@ class Chrome(Component):
         'get_reporter_id': get_reporter_id,
         'gettext': translation.gettext,
         'group': presentation.group,
-        'groupby': compat.py_groupby,  # http://bugs.python.org/issue2246
+        'groupby': compat.py_groupby, # http://bugs.python.org/issue2246
         'http_date': http_date,
         'istext': presentation.istext,
         'javascript_quote': javascript_quote,
         'ngettext': translation.ngettext,
-        'operator': operator,
         'paginate': presentation.paginate,
         'partial': partial,
         'pathjoin': pathjoin,
@@ -653,7 +625,7 @@ class Chrome(Component):
         if babel is not None:
             info = get_pkginfo(babel).get('version')
             if not get_available_locales():
-                info += " (translations unavailable)"  # No i18n on purpose
+                info += " (translations unavailable)" # No i18n on purpose
                 self.log.warning("Locale data is missing")
             yield 'Babel', info
 
@@ -686,10 +658,10 @@ class Chrome(Component):
 </html>
 """)
 
-    def environment_needs_upgrade(self):
+    def environment_needs_upgrade(self, db):
         return False
 
-    def upgrade_environment(self):
+    def upgrade_environment(self, db):
         pass
 
     # IRequestHandler methods
@@ -721,13 +693,6 @@ class Chrome(Component):
 
         self.log.warning('File %s not found in any of %s', filename, dirs)
         raise HTTPNotFound('File %s not found', filename)
-
-    # IPermissionRequestor methods
-
-    def get_permission_actions(self):
-        """`EMAIL_VIEW` permission allows for showing email addresses even
-        if `[trac] show_email_addresses` is `false`."""
-        return ['EMAIL_VIEW']
 
     # ITemplateProvider methods
 
@@ -803,6 +768,7 @@ class Chrome(Component):
             src = chrome['icon']['src']
             mimetype = chrome['icon']['mimetype']
             add_link(req, 'icon', src, mimetype=mimetype)
+            add_link(req, 'shortcut icon', src, mimetype=mimetype)
 
         # Logo image
         chrome['logo'] = self.get_logo_data(req.href, req.abs_href)
@@ -837,7 +803,7 @@ class Chrome(Component):
                         allitems.setdefault(category, {})[name] = item
                 if contributor is handler:
                     active = contributor.get_active_navigation_item(req)
-            except Exception as e:
+            except Exception, e:
                 name = contributor.__class__.__name__
                 if isinstance(e, TracError):
                     self.log.warning("Error with navigation contributor %s",
@@ -849,18 +815,25 @@ class Chrome(Component):
                                    '"%(name)s"', name=name))
 
         nav = {}
-        for category, navitems in allitems.items():
-            sect = self.config[category]
-            order = dict((name, sect.getfloat(name + '.order', float('inf')))
-                         for name in navitems)
+        for category, items in [(k, v.items()) for k, v in allitems.items()]:
+            category_order = category + '_order'
+            if hasattr(self, category_order):
+                order = getattr(self, category_order)
+                def navcmp(x, y):
+                    if x[0] not in order:
+                        return int(y[0] in order)
+                    if y[0] not in order:
+                        return -int(x[0] in order)
+                    return cmp(order.index(x[0]), order.index(y[0]))
+                items.sort(navcmp)
+
             nav[category] = []
-            for name, label in navitems.items():
+            for name, label in items:
                 nav[category].append({
                     'name': name,
                     'label': label,
                     'active': name == active
                 })
-            nav[category].sort(key=lambda e: (order[e['name']], e['name']))
 
         chrome['nav'] = nav
 
@@ -920,7 +893,7 @@ class Chrome(Component):
         d = self._default_context_data.copy()
         d['trac'] = {
             'version': VERSION,
-            'homepage': 'http://trac.edgewall.org/',  # FIXME: use setup data
+            'homepage': 'http://trac.edgewall.org/', # FIXME: use setup data
         }
 
         href = req and req.href
@@ -954,7 +927,7 @@ class Chrome(Component):
         try:
             show_email_addresses = self.show_email_addresses or \
                                    not req or 'EMAIL_VIEW' in req.perm
-        except Exception as e:
+        except Exception, e:
             # simply log the exception here, as we might already be rendering
             # the error page
             self.log.error("Error during check of EMAIL_VIEW: %s",
@@ -962,24 +935,12 @@ class Chrome(Component):
             show_email_addresses = False
 
         def pretty_dateinfo(date, format=None, dateonly=False):
-            if not date:
-                return ''
-            if format == 'date':
-                absolute = user_time(req, format_date, date)
-            else:
-                absolute = user_time(req, format_datetime, date)
-            now = datetime.datetime.now(localtz)
-            relative = pretty_timedelta(date, now)
+            absolute = user_time(req, format_datetime, date)
+            relative = pretty_timedelta(date)
             if not format:
                 format = req.session.get('dateinfo',
                                          self.default_dateinfo_format)
-            in_or_ago = _("in %(relative)s", relative=relative) \
-                        if date > now else \
-                        _("%(relative)s ago", relative=relative)
-            if format == 'relative':
-                label = in_or_ago if not dateonly else relative
-                title = absolute
-            else:
+            if format == 'absolute':
                 if dateonly:
                     label = absolute
                 elif req.lc_time == 'iso8601':
@@ -988,7 +949,11 @@ class Chrome(Component):
                     label = _("on %(date)s at %(time)s",
                               date=user_time(req, format_date, date),
                               time=user_time(req, format_time, date))
-                title = in_or_ago
+                title = _("%(relativetime)s ago", relativetime=relative)
+            else:
+                label = _("%(relativetime)s ago", relativetime=relative) \
+                        if not dateonly else relative
+                title = absolute
             return tag.span(label, title=title)
 
         def dateinfo(date):
@@ -1015,11 +980,8 @@ class Chrome(Component):
             'perm': req and req.perm,
             'authname': req.authname if req else '<trac>',
             'locale': req and req.locale,
-            # show_email_address is deprecated: will be removed in 1.3.1
             'show_email_addresses': show_email_addresses,
             'show_ip_addresses': self.show_ip_addresses,
-            'author_email': partial(self.author_email,
-                                    email_map=self.get_email_map()),
             'authorinfo': partial(self.authorinfo, req),
             'authorinfo_short': self.authorinfo_short,
             'format_author': partial(self.format_author, req),
@@ -1070,7 +1032,7 @@ class Chrome(Component):
         return self.templates.load(filename, cls=cls)
 
     def render_template(self, req, filename, data, content_type=None,
-                        fragment=False, iterable=False, method=None):
+                        fragment=False, iterable=False):
         """Render the `filename` using the `data` for the context.
 
         The `content_type` argument is used to choose the kind of template
@@ -1078,9 +1040,6 @@ class Chrome(Component):
         otherwise), and tweak the rendering process. Doctype for `'text/html'`
         can be specified by setting the `html_doctype` attribute (default
         is `XHTML_STRICT`)
-
-        The rendering `method` (xml, xhtml or text) may be specified and is
-        inferred from the `content_type` if not specified.
 
         When `fragment` is specified, the (filtered) Genshi stream is
         returned.
@@ -1090,10 +1049,8 @@ class Chrome(Component):
         """
         if content_type is None:
             content_type = 'text/html'
-
-        if method is None:
-            method = {'text/html': 'xhtml',
-                      'text/plain': 'text'}.get(content_type, 'xml')
+        method = {'text/html': 'xhtml',
+                  'text/plain': 'text'}.get(content_type, 'xml')
 
         if method == "xhtml":
             # Retrieve post-redirect messages saved in session
@@ -1154,7 +1111,7 @@ class Chrome(Component):
                           encoding='utf-8')
             return buffer.getvalue().translate(_translate_nop,
                                                _invalid_control_chars)
-        except Exception as e:
+        except Exception, e:
             # restore what may be needed by the error template
             req.chrome.update({'early_links': None, 'early_scripts': None,
                                'early_script_data': None, 'links': links,
@@ -1219,7 +1176,7 @@ class Chrome(Component):
                     yield chunk.encode('utf-8') \
                                .translate(_translate_nop,
                                           _invalid_control_chars)
-        except Exception as e:
+        except Exception, e:
             pos = self._stream_location(stream)
             if pos:
                 location = "'%s', line %s, char %s" % pos
@@ -1231,46 +1188,6 @@ class Chrome(Component):
 
     # E-mail formatting utilities
 
-    def author_email(self, author, email_map):
-        """Returns the author email from the `email_map` if `author`
-        doesn't look like an email address."""
-        if email_map and '@' not in author and email_map.get(author):
-            author = email_map.get(author)
-        return author
-
-    def authorinfo(self, req, author, email_map=None, resource=None):
-        """Format a username to HTML.
-
-        Calls `Chrome.format_author` to format the username, and wraps
-        the formatted username in a `span` with class `trac-author`,
-        `trac-author-anonymous` or `trac-author-none`.
-
-        :param req: the `Request` object.
-        :param author: the author string to be formatted.
-        :param email_map: dictionary mapping usernames to email addresses.
-        :param resource: optional `Resource` object for `EMAIL_VIEW`
-                         fine-grained permissions checks.
-
-        :since 1.1.6: accepts the optional `resource` keyword parameter.
-        """
-        author = self.author_email(author, email_map)
-        suffix = ''
-        if author == 'anonymous':
-            suffix = '-anonymous'
-        elif not author:
-            suffix = '-none'
-        return tag.span(self.format_author(req, author, resource),
-                        class_='trac-author' + suffix)
-
-    _long_author_re = re.compile(r'.*<([^@]+)@[^@]+>\s*|([^@]+)@[^@]+')
-
-    def authorinfo_short(self, author):
-        shortened = None
-        match = self._long_author_re.match(author or '')
-        if match:
-            shortened = match.group(1) or match.group(2)
-        return self.authorinfo(None, shortened or author)
-
     def cc_list(self, cc_field):
         """Split a CC: value in a list of addresses."""
         ccs = []
@@ -1280,37 +1197,6 @@ class Chrome(Component):
                 ccs.append(cc)
         return ccs
 
-    def format_author(self, req, author, resource=None):
-        """Format a username in plain text.
-
-        If `[trac]` `show_email_addresses` is `False`, email
-        addresses will be obfuscated when the user doesn't have
-        `EMAIL_VIEW` (for the resource). Returns translated `anonymous`
-        or `none`,  when the author string is `anonymous` or evaluates
-        to `False`, respectively.
-
-        :param req: a `Request` or `RenderingContext` object.
-        :param author: the author string to be formatted.
-        :param resource: an optional `Resource` object for performing
-                         fine-grained permission checks for `EMAIL_VIEW`.
-
-        :since 1.1.6: accepts the optional `resource` keyword parameter.
-        :since 1.2: Full name is returned when `[trac]` `show_full_names`
-                    is `True`.
-        """
-        if author == 'anonymous':
-            return _("anonymous")
-        if not author:
-            return _("(none)")
-        users = self.env.get_known_users(as_dict=True)
-        if self.show_full_names and author in users:
-            name = users[author][0]
-            if name:
-                return name
-        show_email = self.show_email_addresses or \
-                     not req or 'EMAIL_VIEW' in req.perm(resource)
-        return author if show_email else obfuscate_email_address(author)
-
     def format_emails(self, context, value, sep=', '):
         """Normalize a list of e-mails and obfuscate them if needed.
 
@@ -1319,9 +1205,15 @@ class Chrome(Component):
         :param   value: a string containing a comma-separated list of e-mails
         :param     sep: the separator to use when rendering the list again
         """
-        formatted = [self.format_author(context, author)
-                     for author in self.cc_list(value)]
-        return sep.join(formatted)
+        all_cc = self.cc_list(value)
+        if not (self.show_email_addresses or 'EMAIL_VIEW' in context.perm):
+            all_cc = [obfuscate_email_address(cc) for cc in all_cc]
+        return sep.join(all_cc)
+
+    def authorinfo(self, req, author, email_map=None):
+        return self.format_author(req,
+                                  email_map and '@' not in author and
+                                  email_map.get(author) or author)
 
     def get_email_map(self):
         """Get the email addresses of all known users."""
@@ -1331,6 +1223,23 @@ class Chrome(Component):
                 if email:
                     email_map[username] = email
         return email_map
+
+    _long_author_re = re.compile(r'.*<([^@]+)@[^@]+>\s*|([^@]+)@[^@]+')
+
+    def authorinfo_short(self, author):
+        if not author or author == 'anonymous':
+            return _("anonymous")
+        match = self._long_author_re.match(author)
+        if match:
+            return match.group(1) or match.group(2)
+        return author
+
+    def format_author(self, req, author):
+        if not author or author == 'anonymous':
+            return _("anonymous")
+        if self.show_email_addresses or not req or 'EMAIL_VIEW' in req.perm:
+            return author
+        return obfuscate_email_address(author)
 
     # Element modifiers
 
@@ -1372,8 +1281,8 @@ class Chrome(Component):
             'timepicker_separator': get_timepicker_separator_jquery_ui(req),
             'show_timezone': is_iso8601,
             # default timezone must be included
-            'timezone_list': get_timezone_list_jquery_ui()
-                             if is_iso8601
+            'timezone_list': get_timezone_list_jquery_ui() \
+                             if is_iso8601 \
                              else [{'value': 'Z', 'label': '+00:00'}],
             'timezone_iso8601': is_iso8601,
         })

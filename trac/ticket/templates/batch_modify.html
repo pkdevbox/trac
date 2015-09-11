@@ -34,7 +34,7 @@
           <option></option>
           <option py:for="field_name in field_names" py:with="field = fields[field_name]"
                   py:if="field_name not in ('id', 'resolution', 'status', 'owner', 'time', 'changetime', 'summary',
-                                            'description') + (('reporter',) if 'TICKET_ADMIN' not in req.perm else ())
+                                            'reporter', 'description')
                          and fields[field_name].type != 'textarea'"
                   value="$field_name">${field.label}</option>
         </select>
@@ -43,7 +43,16 @@
 
     <tr>
       <td colspan="3">
-        <xi:include href="ticket_workflow.html" />
+        <fieldset id="batchmod_action">
+          <legend>Action</legend>
+          <div py:for="key, label, controls, hints in action_controls">
+            <input type="radio" id="action_$key" name="action" value="$key"
+                   checked="${key == action or None}" />
+            <label for="action_$key">$label</label>
+            $controls
+            <span class="hint" py:for="hint in hints">$hint</span>
+          </div>
+        </fieldset>
       </td>
     </tr>
   </table>

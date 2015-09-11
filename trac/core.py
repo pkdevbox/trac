@@ -17,7 +17,7 @@
 #         Christopher Lenz <cmlenz@gmx.de>
 
 __all__ = ['Component', 'ExtensionPoint', 'implements', 'Interface',
-           'TracBaseError', 'TracError']
+           'TracError']
 
 
 def N_(string):
@@ -27,14 +27,10 @@ def N_(string):
     return string
 
 
-class TracBaseError(Exception):
-    """Base class for all exceptions defined in Trac."""
+class TracError(Exception):
+    """Exception base class for errors in Trac."""
 
     title = N_("Trac Error")
-
-
-class TracError(TracBaseError):
-    """Standard exception for errors in Trac."""
 
     def __init__(self, message, title=None, show_traceback=False):
         """If message is a genshi.builder.tag object, everything up to
@@ -171,10 +167,6 @@ class Component(object):
 
         locals_.setdefault('_implements', []).extend(interfaces)
 
-    def __repr__(self):
-        """Return a textual representation of the component."""
-        return '<Component %s.%s>' % (self.__class__.__module__,
-                                      self.__class__.__name__)
 
 implements = Component.implements
 
@@ -210,7 +202,7 @@ class ComponentManager(object):
                 raise TracError('Component "%s" not registered' % cls.__name__)
             try:
                 component = cls(self)
-            except TypeError as e:
+            except TypeError, e:
                 raise TracError("Unable to instantiate component %r (%s)" %
                                 (cls, e))
         return component

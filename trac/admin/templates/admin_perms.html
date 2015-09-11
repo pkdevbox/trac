@@ -18,18 +18,6 @@
   <xi:include href="admin.html" />
   <head>
     <title>Permissions</title>
-    <script type="text/javascript">
-      jQuery(document).ready(function($) {
-        // Add group toggling behavior to row label.
-        $("#permlist tr, #grouplist tr").find("td:first").click(function () {
-          var checkboxes = $(this).closest('tr').find("input:checkbox");
-          var numChecked = checkboxes.filter(":checked").length;
-          var allChecked = numChecked === checkboxes.length;
-          checkboxes.prop("checked", !allChecked).change();
-        }).css({"cursor": "pointer"})
-          .attr({"title": _("Toggle all")});
-      });
-    </script>
   </head>
 
   <body>
@@ -40,6 +28,9 @@
         <fieldset>
           <legend>Grant Permission:</legend>
           <div class="field">
+            <label>Subject: <input id="gp_subject" type="text" name="subject" /></label>
+          </div>
+          <div class="field">
             <label>Action:
               <select id="action" name="action"
                       py:with="allowed_actions = [a for a in actions if a in perm]">
@@ -47,34 +38,12 @@
               </select>
             </label>
           </div>
-          <div class="field">
-            <label>Subject: <input id="gp_subject" type="text" name="subject" /></label>
-          </div>
           <div class="buttons">
             <input type="submit" name="add" class="trac-disable-on-submit" value="${_('Add')}" />
           </div>
           <p class="help">
             Grant permission for an action to a subject, which can be either a user
             or a group.
-          </p>
-        </fieldset>
-      </form>
-
-      <form id="copyperm" class="addnew" method="post" action="">
-        <fieldset>
-          <legend>Copy Permissions:</legend>
-          <div class="field">
-            <label>Subject: <input id="cp_subject" type="text" name="subject" /></label>
-          </div>
-          <div class="field">
-            <label>Target: <input id="cp_target" type="text" name="target" /></label>
-          </div>
-          <div class="buttons">
-            <input type="submit" name="copy" value="${_('Add')}"/>
-          </div>
-          <p class="help">
-            Copy all of subject's permissions to target.
-            Subject and target can be either users or groups.
           </p>
         </fieldset>
       </form>
@@ -105,17 +74,16 @@
           <tr><th>Subject</th><th>Action</th></tr>
         </thead>
         <tbody>
-          <tr py:for="idx, (subject, subject_actions) in enumerate(sorted(perms.items(), key=lambda p: p[0]))"
+          <tr py:for="idx, (subject, perm_group) in enumerate(groupby(sorted(perms), key=lambda p: p[0]))"
               class="${'odd' if idx % 2 else 'even'}">
             <td>$subject</td>
             <td>
-              <label py:for="action in subject_actions"
+              <label py:for="subject, action in perm_group"
                      py:with="invalid = action not in actions;
                               has_perm = action in perm;">
                 <!--! base64 makes it safe to use ':' as separator when passing
                       both subject and action as one query parameter -->
                 <input py:if="can_revoke" type="checkbox" name="sel"
-                       class="trac-disable-determinant"
                        title="${_('You don\'t have permission to revoke this action')
                                 if not has_perm and not invalid else None}"
                        value="${'%s:%s' % (unicode_to_base64(subject),
@@ -136,17 +104,17 @@
           <tr><th>Group</th><th>Subject</th></tr>
         </thead>
         <tbody>
-          <tr py:for="idx, (group, group_subjects) in enumerate(sorted(groups.items(), key=lambda p: p[0]))"
+          <tr py:for="idx, (group, subj_group) in enumerate(groupby(sorted(groups, key=lambda p: p[1]),
+                                                                    key=lambda p: p[1]))"
               class="${'odd' if idx % 2 else 'even'}">
             <td>$group</td>
             <td>
-              <label py:for="subject in group_subjects">
+              <label py:for="subject, action in sorted(subj_group)">
                 <!--! base64 makes it safe to use ':' as separator when passing
                       both subject and action as one query parameter -->
                 <input py:if="can_revoke" type="checkbox" name="sel"
-                       class="trac-disable-determinant"
                        value="${'%s:%s' % (unicode_to_base64(subject),
-                                           unicode_to_base64(group))}"/> $subject
+                                           unicode_to_base64(action))}"/> $subject
               </label>
             </td>
           </tr>
@@ -154,7 +122,7 @@
         </tbody>
       </table>
       <div class="buttons" py:if="can_revoke">
-        <input type="submit" name="remove" class="trac-disable" value="${_('Remove selected items')}" />
+        <input type="submit" name="remove" value="${_('Remove selected items')}" />
       </div>
     </form>
 

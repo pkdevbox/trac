@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2014-2015 Edgewall Software
+# Copyright (C) 2009-2013 Edgewall Software
 # All rights reserved.
 #
 # This software is licensed as described in the file COPYING, which
@@ -13,22 +13,13 @@
 
 import unittest
 
-from trac.ticket.tests.functional import admin, default_workflow, main
+from tracopt.mimeview.tests import php
 
 
-def functionalSuite(suite=None):
-    if not suite:
-        import trac.tests.functional
-        suite = trac.tests.functional.functionalSuite()
-
-    admin.functionalSuite(suite)
-    default_workflow.functionalSuite(suite)
-    main.functionalSuite(suite)
-
+def suite():
+    suite = unittest.TestSuite()
+    suite.addTest(php.suite())
     return suite
-
-
-suite = functionalSuite
 
 
 if __name__ == '__main__':

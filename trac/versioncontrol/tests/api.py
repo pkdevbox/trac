@@ -15,64 +15,55 @@
 # Author: Eli Carter <eli.carter@commprove.com>
 
 import unittest
-from datetime import datetime
 
 from trac.core import TracError
 from trac.resource import Resource, get_resource_description, get_resource_url
-from trac.test import EnvironmentStub, Mock
-from trac.util.datefmt import utc
-from trac.versioncontrol.api import Changeset, DbRepositoryProvider, \
-                                    EmptyChangeset, Node, Repository, \
+from trac.test import EnvironmentStub
+from trac.versioncontrol.api import DbRepositoryProvider, Repository, \
                                     RepositoryManager
 
 
 class ApiTestCase(unittest.TestCase):
 
-    def test_changeset_raises(self):
-        """Abstract base class raises a TypeError when instantiated
-        directly."""
-        self.assertRaises(TypeError, Node)
+    def setUp(self):
+        self.repo_base = Repository('testrepo', {'name': 'testrepo', 'id': 1},
+                                    None)
 
-    def test_node_raises(self):
-        """Abstract base class raises a TypeError when instantiated
-        directly."""
-        self.assertRaises(TypeError, Changeset)
+    def test_raise_NotImplementedError_close(self):
+        self.assertRaises(NotImplementedError, self.repo_base.close)
 
-    def test_repository_raises(self):
-        """Abstract base class raises a TypeError when instantiated
-        directly."""
-        self.assertRaises(TypeError, Repository)
+    def test_raise_NotImplementedError_get_changeset(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_changeset, 1)
 
-    def test_empty_changeset(self):
-        repos = Mock()
-        changeset = EmptyChangeset(repos, 1)
+    def test_raise_NotImplementedError_get_node(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_node, 'path')
 
-        self.assertEqual(repos, changeset.repos)
-        self.assertEqual(1, changeset.rev)
-        self.assertEqual('', changeset.author)
-        self.assertEqual('', changeset.message)
-        self.assertEqual(datetime(1970, 1, 1, tzinfo=utc), changeset.date)
-        self.assertEqual([], list(changeset.get_changes()))
+    def test_raise_NotImplementedError_get_oldest_rev(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_oldest_rev)
 
-    def test_repository_repr(self):
-        repos = Mock(Repository, 'testrepo',
-                     {'name': 'testrepo', 'id': 1}, None)
-        self.assertEqual("<Mock 1 'testrepo' '/'>", repr(repos))
+    def test_raise_NotImplementedError_get_youngest_rev(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_youngest_rev)
 
-    def test_node_repr(self):
-        repos = Mock(Repository, 'testrepo',
-                     {'name': 'testrepo', 'id': 1}, None)
-        node1 = Mock(Node, repos, '/trunk', None, Node.DIRECTORY)
-        node2 = Mock(Node, repos, '/trunk', 1, Node.DIRECTORY)
-        self.assertEqual("<Mock u'testrepo:/trunk'>", repr(node1))
-        self.assertEqual("<Mock u'testrepo:/trunk@1'>", repr(node2))
+    def test_raise_NotImplementedError_previous_rev(self):
+        self.assertRaises(NotImplementedError, self.repo_base.previous_rev, 1)
 
-    def test_changeset_repr(self):
-        repo = Mock(Repository, 'testrepo',
-                    {'name': 'testrepo', 'id': 1}, None)
-        changeset = Mock(Changeset, repo, 1, 'Test commit',
-                         'user@example.com', None)
-        self.assertEqual("<Mock u'testrepo@1'>", repr(changeset))
+    def test_raise_NotImplementedError_next_rev(self):
+        self.assertRaises(NotImplementedError, self.repo_base.next_rev, 1)
+
+    def test_raise_NotImplementedError_rev_older_than(self):
+        self.assertRaises(NotImplementedError, self.repo_base.rev_older_than, 1, 2)
+
+    def test_raise_NotImplementedError_get_path_history(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_path_history, 'path')
+
+    def test_raise_NotImplementedError_normalize_path(self):
+        self.assertRaises(NotImplementedError, self.repo_base.normalize_path, 'path')
+
+    def test_raise_NotImplementedError_normalize_rev(self):
+        self.assertRaises(NotImplementedError, self.repo_base.normalize_rev, 1)
+
+    def test_raise_NotImplementedError_get_changes(self):
+        self.assertRaises(NotImplementedError, self.repo_base.get_changes, 'path', 1, 'path', 2)
 
 
 class ResourceManagerTestCase(unittest.TestCase):
@@ -142,7 +133,7 @@ class DbRepositoryProviderTestCase(unittest.TestCase):
         try:
             func(*args, **kwargs)
             self.fail('%s not raised' % exc.__name__)
-        except exc as e:
+        except exc, e:
             self.assertEqual(message, unicode(e))
 
     def do_remove(self, reponame, message):

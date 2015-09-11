@@ -108,45 +108,8 @@
         .enable();
     }
 
-    var $filters = $("#filters");
-
-    // Invert or flip checkboxes in the row
-    $filters.on("click", "th label", function(event) {
-      var name = this.id.slice(6);
-      var $checkboxes = $filters.find("input[name=" + name + "]")
-                                .filter(":checkbox");
-      if (event.metaKey || event.altKey) {
-        $checkboxes.each(function() {
-          $(this).prop("checked", !this.checked)
-        });
-      }
-      else {
-        var numChecked = $checkboxes.filter(":checked").length;
-        var allChecked = numChecked == $checkboxes.length;
-        $checkboxes.each(function() { $(this).prop("checked", !allChecked) });
-      }
-      return false;
-    });
-
-    // Enable only clicked checkbox and clear others
-    $filters.on("click", "td :checkbox, td :checkbox + label", function(event) {
-      if (!event.metaKey && !event.altKey)
-        return;
-      var clicked = this.tagName === "LABEL" ?
-                    document.getElementById(this.htmlFor) : this;
-      $('input[name="' + clicked.name + '"]', $filters).prop("checked", false);
-      $(clicked).prop("checked", true);
-      if (this.tagName === "LABEL") {
-        return false;
-      }
-    }).mousedown(function(event) {
-      if (event.metaKey || event.altKey) {
-        event.preventDefault(); // Prevent border on Firefox.
-      }
-    });
-
     // Make the submit buttons for removing filters client-side triggers
-    $filters.find("input[type='submit'][name^='rm_filter_']").each(function() {
+    $("#filters input[type='submit'][name^='rm_filter_']").each(function() {
       var idx = this.name.search(/_\d+$/);
       if (idx < 0)
         idx = this.name.length;
@@ -160,7 +123,7 @@
     });
 
     // Make the drop-down menu for adding a filter a client-side trigger
-    $filters.find("select[name^=add_filter_]").change(function() {
+    $("#filters select[name^=add_filter_]").change(function() {
       if (this.selectedIndex < 1)
         return;
 
@@ -221,20 +184,11 @@
             .append(createRadio(propertyName, "0", propertyName + "_off"))
             .append(" ").append(createLabel(_("no"), propertyName + "_off"));
         } else if (property.type == "time") {
-          var endElement = createText(propertyName + "_end", 14);
-          focusElement = createText(propertyName, 14);
-          if (property.format == "datetime") {
-            focusElement.datetimepicker();
-            endElement.datetimepicker();
-          } else if (property.format == "date" ||
-                     property.format == "relative") {
-            focusElement.datepicker();
-            endElement.datepicker();
-          }
+          focusElement = createText(propertyName, 14).datepicker();
           td.append(createLabel(_("between"))).append(" ")
             .append(focusElement).append(" ")
             .append(createLabel(_("and"))).append(" ")
-            .append(endElement);
+            .append(createText(propertyName + "_end", 14).datepicker());
         }
         tr.append(td);
       } else {
@@ -248,8 +202,8 @@
         // Add the selector or text input for the actual filter value
         td = $("<td>").addClass("filter");
         if (property.type == "select") {
-          focusElement = createSelect(propertyName, property.options,
-                                      property.optional, property.optgroups);
+          focusElement = createSelect(propertyName, property.options, true,
+                                      property.optgroups);
         } else if ((property.type == "text") || (property.type == "id")
                    || (property.type == "textarea")) {
           focusElement = createText(propertyName, 42);
@@ -293,6 +247,7 @@
 
     // Add a new empty clause at the end by cloning the current last clause
     function addClause(select) {
+      var tbody = $(select).closest("tbody");
       var clauseNum = parseInt($(select).attr("name").split("_").pop());
       var tbody = $(select).closest("tbody").parents("tbody").eq(0);
       var copy = tbody.clone(true);
@@ -322,7 +277,7 @@
       // That is, if there are no filters added to this clause
       add_clause.attr("disabled", true);
     }
-  };
+  }
 
   window.initializeBatch = function() {
     // Create the appropriate input for the property.
@@ -332,8 +287,8 @@
       var focusElement = null;
       switch (property.type) {
         case 'select':
-          focusElement = createSelect(inputName, property.options,
-                                      property.optional, property.optgroups);
+          focusElement = createSelect(inputName, property.options, true,
+                                      property.optgroups)
           td.append(focusElement);
           break;
         case 'radio':
@@ -367,11 +322,6 @@
           break;
         case 'time':
           focusElement = createText(inputName, 42).addClass("time");
-          if (property.format == "datetime") {
-            focusElement.datetimepicker();
-          } else if (property.format == "date") {
-            focusElement.datepicker();
-          }
           td.append(focusElement);
           break;
       }
@@ -416,61 +366,93 @@
       return $("#add_batchmod_field option:disabled");
     }
 
-    var $table = $("table.listing");
-
     // Add a new column with checkboxes for each ticket.
     // Selecting a ticket marks it for inclusion in the batch.
-    if ($("tr td.id", $table).length > 0) {
-      $("tr th.id", $table).before($('<th class="sel">'));
-      $("tr td.id", $table).each(function() {
-        var tId = $(this).text().substring(1);
-        $(this).before(
-          $('<td class="sel">').append(
-            $('<input type="checkbox" name="selected_ticket" />').attr({
-              title: babel.format(_("Select ticket #%(id)s for modification"), {id: tId}),
-              value: tId
-            })
-          )
-        );
-      });
+    $("table.listing tr td.id").each(function() {
+      var tId = $(this).text().substring(1);
+      $(this).before(
+        $('<td class="batchmod_selector sel">').append(
+          $('<input type="checkbox" name="selected_ticket" />').attr({
+            title: babel.format(_("Select ticket %(id)s for modification"), {id: tId}),
+            value: tId
+          })));
+    });
+
+    // Add a checkbox at the top of the column
+    // to select every ticket in the group.
+    if ($("table.listing tr td.id").length) {
+        $("table.listing tr th.id").each(function() {
+          $(this).before(
+            $('<th class="batchmod_selector sel">').append(
+              $('<input type="checkbox" name="batchmod_toggleGroup" />').attr({
+                title: _("Toggle selection of all tickets shown in this group")
+              })));
+        });
     }
 
-    // Add a Select All checkbox at the top of the column.
-    $table.addSelectAllCheckboxes();
+    // Add the click behavior for the group toggle.
+    $("input[name='batchmod_toggleGroup']").click(function() {
+      $("tr td.batchmod_selector input",
+        $(this).closest("table.listing thead, table.listing tbody").next())
+        .prop("checked", this.checked);
+    });
+    $("input[name='selected_ticket']").click(function() {
+      var tbody = $(this).closest("table.listing tbody");
+      var checkboxes = $("tr td.batchmod_selector input", tbody);
+      var numSelected = checkboxes.filter(":checked").length;
+      var noneSelected = numSelected === 0;
+      var allSelected = numSelected === checkboxes.length;
+      $("tr th.batchmod_selector input", tbody.prev())
+        .prop({"checked": allSelected,
+               "indeterminate": !(noneSelected || allSelected)});
+    });
 
-    // Prevent submit of form if required items are not selected.
-    $("#batchmod_submit").disableSubmit("input[name='selected_ticket']")
-      .click(function() {
-        var valid = true;
-        // Remove existing validation messages.
-        $(".batchmod_required").remove();
-        // Check that each radio property has something selected.
-        getDisabledBatchOptions().each(function() {
-          var propertyName = $(this).val();
-          if (properties[propertyName].type == "radio") {
-            var isChecked = false;
-            var inputName = getBatchInputName(propertyName);
-            $("[name=" + inputName + "]").each(function() {
-              isChecked = isChecked || $(this).is(':checked');
-            });
-            if (!isChecked) {
-              // Select the last label in the row to add the error message.
-              $("[name=" + inputName + "] ~ label:last")
-                .after('<span class="batchmod_required">Required</span>');
-              valid = false;
-            }
-          }
-        });
-        return valid;
-      });
-
-    // Create an array of selected items on form submit.
+    // At least one ticket must be selected to submit the batch.
     $("form#batchmod_form").submit(function() {
+      // First remove all existing validation messages.
+      $(".batchmod_required").remove();
+
+      var valid = true;
       var selectedTix = [];
       $("input[name=selected_ticket]:checked").each(function() {
         selectedTix.push(this.value);
       });
       $("input[name=selected_tickets]").val(selectedTix);
+
+      // At least one ticket must be selected.
+      if (selectedTix.length === 0) {
+        $("#batchmod_submit")
+          .after('<span class="batchmod_required">' +
+                 'You must select at least one ticket.</span>');
+        valid = false;
+      }
+
+      // Check that each radio property has something selected.
+      getDisabledBatchOptions().each(function() {
+        var propertyName = $(this).val();
+        if (properties[propertyName].type == "radio") {
+          var isChecked = false;
+          var inputName = getBatchInputName(propertyName);
+          $("[name=" + inputName + "]").each(function() {
+            isChecked = isChecked || $(this).is(':checked');
+          });
+          if (!isChecked) {
+            // Select the last label in the row to add the error message
+            $("[name=" + inputName + "] ~ label:last")
+              .after('<span class="batchmod_required">Required</span>');
+            valid = false;
+          }
+        }
+      });
+
+      // Remove handler and class that prevent multi-submit
+      if (!valid) {
+        var form = $(this);
+        form.removeClass("trac-submit-is-disabled");
+        form.unbind("submit.prevent-submit");
+      }
+
+      return valid;
     });
 
     // Collapse the form by default

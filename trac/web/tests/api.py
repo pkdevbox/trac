@@ -57,10 +57,8 @@ class RequestHandlerPermissionsTestCaseBase(unittest.TestCase):
         kw = {'perm': perm.PermissionCache(self.env, authname), 'args': {},
               'href': self.env.href, 'abs_href': self.env.abs_href,
               'tz': utc, 'locale': None, 'lc_time': locale_en,
-              'session': Mock(get=lambda k, d=None: d,
-                              set=lambda k, v, d=None: None),
               'authname': authname, 'chrome': {'notices': [], 'warnings': []},
-              'method': None, 'get_header': lambda v: None, 'is_xhr': False}
+              'method': None, 'get_header': lambda v: None}
         kw.update(kwargs)
         return Mock(**kw)
 
@@ -109,16 +107,6 @@ class RequestTestCase(unittest.TestCase):
 
     def _make_environ(self, *args, **kwargs):
         return _make_environ(*args, **kwargs)
-
-    def test_is_xhr_true(self):
-        environ = self._make_environ(HTTP_X_REQUESTED_WITH='XMLHttpRequest')
-        req = Request(environ, None)
-        self.assertTrue(req.is_xhr)
-
-    def test_is_xhr_false(self):
-        environ = self._make_environ()
-        req = Request(environ, None)
-        self.assertFalse(req.is_xhr)
 
     def test_base_url(self):
         environ = self._make_environ()
@@ -536,16 +524,6 @@ class ParseArgListTestCase(unittest.TestCase):
 
     def test_qs_str(self):
         args = parse_arg_list('k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
-        self.assertTrue(unicode, type(args[0][0]))
-        self.assertTrue(unicode, type(args[0][1]))
-        self.assertEqual(u'kéy', args[0][0])
-        self.assertEqual(u'resumé', args[0][1])
-        self.assertTrue(unicode, type(args[1][0]))
-        self.assertEqual(u'résumé', args[1][0])
-
-    def test_qs_str_with_prefix(self):
-        """The leading `?` should be stripped from the query string."""
-        args = parse_arg_list('?k%C3%A9y=resum%C3%A9&r%C3%A9sum%C3%A9')
         self.assertTrue(unicode, type(args[0][0]))
         self.assertTrue(unicode, type(args[0][1]))
         self.assertEqual(u'kéy', args[0][0])

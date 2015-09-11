@@ -18,22 +18,18 @@ import unittest
 
 from genshi.builder import tag
 import trac.tests.compat
-from trac.config import ConfigurationError
 from trac.core import Component, TracError, implements
-from trac.perm import PermissionCache, PermissionSystem
-from trac.test import EnvironmentStub, Mock, MockPerm, locale_en
+from trac.test import EnvironmentStub, locale_en
 from trac.tests.contentgen import random_sentence
-from trac.resource import Resource
 from trac.util import create_file
 from trac.web.chrome import (
     Chrome, INavigationContributor, add_link, add_meta, add_notice, add_script,
-    add_script_data, add_stylesheet, add_warning, web_context)
+    add_script_data, add_stylesheet, add_warning)
 from trac.web.href import Href
 
 
 class Request(object):
     locale = None
-    perm = MockPerm()
     args = {}
     def __init__(self, **kwargs):
         self.chrome = {}
@@ -41,25 +37,17 @@ class Request(object):
             setattr(self, k, v)
 
 
-def clear_component_registry(tc):
-    from trac.core import ComponentMeta
-    tc._old_registry = ComponentMeta._registry
-    ComponentMeta._registry = {}
-
-
-def restore_component_registry(tc):
-    from trac.core import ComponentMeta
-    ComponentMeta._registry = tc._old_registry
-
-
 class ChromeTestCase(unittest.TestCase):
 
     def setUp(self):
         self.env = EnvironmentStub()
-        clear_component_registry(self)
+        from trac.core import ComponentMeta
+        self._old_registry = ComponentMeta._registry
+        ComponentMeta._registry = {}
 
     def tearDown(self):
-        restore_component_registry(self)
+        from trac.core import ComponentMeta
+        ComponentMeta._registry = self._old_registry
 
     def _get_navigation_item(self, items, name):
         for item in items:
@@ -263,13 +251,14 @@ class ChromeTestCase(unittest.TestCase):
         links = chrome.prepare_request(req)['links']
         self.assertEqual('/trac.cgi/chrome/common/foo.ico',
                          links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('/trac.cgi/chrome/common/foo.ico',
+                         links['shortcut icon'][0]['href'])
 
         # URL relative to the server root for icon config option
         self.env.config.set('project', 'icon', '/favicon.ico')
         links = chrome.prepare_request(req)['links']
         self.assertEqual('/favicon.ico', links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('/favicon.ico', links['shortcut icon'][0]['href'])
 
         # Absolute URL for icon config option
         self.env.config.set('project', 'icon',
@@ -277,7 +266,8 @@ class ChromeTestCase(unittest.TestCase):
         links = chrome.prepare_request(req)['links']
         self.assertEqual('http://example.com/favicon.ico',
                          links['icon'][0]['href'])
-        self.assertNotIn('shortcut icon', links)
+        self.assertEqual('http://example.com/favicon.ico',
+                         links['shortcut icon'][0]['href'])
 
     def test_nav_contributor(self):
         class TestNavigationContributor(Component):
@@ -310,6 +300,50 @@ class ChromeTestCase(unittest.TestCase):
         self.assertEqual({'name': 'test', 'label': 'Test', 'active': True},
                          nav['metanav'][0])
 
+    def test_nav_contributor_order(self):
+        class TestNavigationContributor1(Component):
+            implements(INavigationContributor)
+            def get_active_navigation_item(self, req):
+                return None
+            def get_navigation_items(self, req):
+                yield 'metanav', 'test1', 'Test 1'
+        class TestNavigationContributor2(Component):
+            implements(INavigationContributor)
+            def get_active_navigation_item(self, req):
+                return None
+            def get_navigation_items(self, req):
+                yield 'metanav', 'test2', 'Test 2'
+        req = Request(abs_href=Href('http://example.org/trac.cgi'),
+                      href=Href('/trac.cgi'), base_path='/trac.cgi',
+                      path_info='/',
+                      add_redirect_listener=lambda listener: None)
+        chrome = Chrome(self.env)
+
+        # Test with both items set in the order option
+        self.env.config.set('trac', 'metanav', 'test2, test1')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test2', items[0]['name'])
+        self.assertEqual('test1', items[1]['name'])
+
+        # Test with only test1 in the order options
+        self.env.config.set('trac', 'metanav', 'test1')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test1', items[0]['name'])
+        self.assertEqual('test2', items[1]['name'])
+
+        # Test with only test2 in the order options
+        self.env.config.set('trac', 'metanav', 'test2')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test2', items[0]['name'])
+        self.assertEqual('test1', items[1]['name'])
+
+        # Test with none in the order options (order corresponds to
+        # registration order)
+        self.env.config.set('trac', 'metanav', 'foo, bar')
+        items = chrome.prepare_request(req)['nav']['metanav']
+        self.assertEqual('test1', items[0]['name'])
+        self.assertEqual('test2', items[1]['name'])
+
     def test_add_jquery_ui_timezone_list_has_z(self):
         chrome = Chrome(self.env)
 
@@ -322,14 +356,6 @@ class ChromeTestCase(unittest.TestCase):
         chrome.add_jquery_ui(req)
         self.assertIn({'value': 'Z', 'label': '+00:00'},
                       req.chrome['script_data']['jquery_ui']['timezone_list'])
-
-    def test_invalid_default_dateinfo_format_raises_exception(self):
-        self.env.config.set('trac', 'default_dateinfo_format', u'ābšolute')
-
-        self.assertEqual(u'ābšolute',
-                         self.env.config.get('trac', 'default_dateinfo_format'))
-        self.assertRaises(ConfigurationError, getattr, Chrome(self.env),
-                          'default_dateinfo_format')
 
     def test_navigation_item_customization(self):
         class TestNavigationContributor1(Component):
@@ -430,9 +456,6 @@ class ChromeTestCase2(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.env.path)
 
-    def test_permission_requestor(self):
-        self.assertIn('EMAIL_VIEW', PermissionSystem(self.env).get_actions())
-
     def test_malicious_filename_raises(self):
         req = Request(path_info='/chrome/site/../conf/trac.ini')
         self.assertTrue(self.chrome.match_request(req))
@@ -459,346 +482,10 @@ class ChromeTestCase2(unittest.TestCase):
         self.assertRaises(RequestDone, self.chrome.process_request, req)
 
 
-class NavigationOrderTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub()
-        clear_component_registry(self)
-        self.req = Request(abs_href=Href('http://example.org/trac.cgi'),
-                           href=Href('/trac.cgi'), base_path='/trac.cgi',
-                           path_info='/',
-                           add_redirect_listener=lambda listener: None)
-        self.chrome = Chrome(self.env)
-
-        class TestNavigationContributor1(Component):
-            implements(INavigationContributor)
-            def get_active_navigation_item(self, req):
-                return None
-            def get_navigation_items(self, req):
-                yield 'metanav', 'test1', 'Test 1'
-
-        class TestNavigationContributor2(Component):
-            implements(INavigationContributor)
-            def get_active_navigation_item(self, req):
-                return None
-            def get_navigation_items(self, req):
-                yield 'metanav', 'test2', 'Test 2'
-
-    def tearDown(self):
-        restore_component_registry(self)
-
-    def test_explicit_ordering(self):
-        """Ordering is explicitly specified."""
-        self.env.config.set('metanav', 'test1.order', 2)
-        self.env.config.set('metanav', 'test2.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
-
-    def test_partial_explicit_ordering_1(self):
-        """Ordering for one item is explicitly specified."""
-        self.env.config.set('metanav', 'test1.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
-
-    def test_partial_explicit_ordering_2(self):
-        """Ordering for one item is explicitly specified."""
-        self.env.config.set('metanav', 'test2.order', 1)
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test2', items[0]['name'])
-        self.assertEqual('test1', items[1]['name'])
-
-    def test_implicit_ordering(self):
-        """When not specified, ordering is alphabetical."""
-        self.env.config.set('metanav', 'foo.order', 1)
-        self.env.config.set('metanav', 'bar.order', 2)
-
-        items = self.chrome.prepare_request(self.req)['nav']['metanav']
-        self.assertEqual('test1', items[0]['name'])
-        self.assertEqual('test2', items[1]['name'])
-
-
-class FormatAuthorTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(enable=['trac.web.chrome.*',
-                                           'trac.perm.*',
-                                           'tracopt.perm.authz_policy'])
-        self.env.config.set('trac', 'permission_policies',
-                            'AuthzPolicy, DefaultPermissionPolicy')
-        fd, self.authz_file = tempfile.mkstemp()
-        with os.fdopen(fd, 'w') as f:
-            f.write("""\
-[wiki:WikiStart]
-user2 = EMAIL_VIEW
-[wiki:TracGuide]
-user2 =
-""")
-        PermissionSystem(self.env).grant_permission('user1', 'EMAIL_VIEW')
-        self.env.config.set('authz_policy', 'authz_file', self.authz_file)
-
-    def tearDown(self):
-        os.remove(self.authz_file)
-
-    def _insert_user(self, user):
-        with self.env.db_transaction as db:
-            db.execute("""
-                INSERT INTO session VALUES (%s,%s,0)
-                """, (user[0], user[3]))
-            db.executemany("""
-                INSERT INTO session_attribute VALUES (%s,%s,%s,%s)
-                """, [(user[0], user[3], 'name', user[1]),
-                      (user[0], user[3], 'email', user[2])])
-
-    def test_subject_is_anonymous(self):
-        format_author = Chrome(self.env).format_author
-        self.assertEqual('anonymous', format_author(None, 'anonymous'))
-
-    def test_subject_is_none(self):
-        format_author = Chrome(self.env).format_author
-        self.assertEqual('(none)', format_author(None, None))
-
-    def test_actor_has_email_view(self):
-        req = Mock(Request, username='user1',
-                   perm=PermissionCache(self.env, 'user1'))
-        author = Chrome(self.env).format_author(req, 'user@domain.com')
-        self.assertEqual('user@domain.com', author)
-
-    def test_actor_no_email_view(self):
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        author = Chrome(self.env).format_author(req, 'user@domain.com')
-        self.assertEqual(u'user@\u2026', author)
-
-    def test_actor_no_email_view_show_email_addresses(self):
-        self.env.config.set('trac', 'show_email_addresses', True)
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        author = Chrome(self.env).format_author(req, 'user@domain.com')
-        self.assertEqual('user@domain.com', author)
-
-    def test_actor_no_email_view_no_req(self):
-        author = Chrome(self.env).format_author(None, 'user@domain.com')
-        self.assertEqual('user@domain.com', author)
-
-    def test_actor_has_email_view_for_resource(self):
-        format_author = Chrome(self.env).format_author
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        resource = Resource('wiki', 'WikiStart')
-        author = format_author(req, 'user@domain.com', resource)
-        self.assertEqual('user@domain.com', author)
-
-    def test_actor_has_email_view_for_resource_negative(self):
-        format_author = Chrome(self.env).format_author
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        resource = Resource('wiki', 'TracGuide')
-        author = format_author(req, 'user@domain.com', resource)
-        self.assertEqual(u'user@\u2026', author)
-
-    def test_show_full_names_true(self):
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_full_names', True)
-        self._insert_user(('user1', 'User One', 'user1@example.org', 1))
-        self._insert_user(('user2', None, None, 1))
-
-        self.assertEqual('User One', format_author(None, 'user1'))
-        self.assertEqual('user2', format_author(None, 'user2'))
-
-    def test_show_full_names_false(self):
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_full_names', False)
-
-        self.assertEqual('user1', format_author(None, 'user1'))
-        self.assertEqual('user2', format_author(None, 'user2'))
-
-    def test_show_full_names_true_actor_has_email_view(self):
-        req = Mock(Request, username='user1',
-                   perm=PermissionCache(self.env, 'user1'))
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_full_names', True)
-        self._insert_user(('user1', 'User One', 'user1@example.org', 1))
-        self._insert_user(('user2', None, None, 1))
-
-        self.assertEqual('User One', format_author(None, 'user1'))
-        self.assertEqual('user2', format_author(None, 'user2'))
-
-    def test_show_full_names_false_actor_has_email_view(self):
-        req = Mock(Request, username='user1',
-                   perm=PermissionCache(self.env, 'user1'))
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_full_names', False)
-
-        self.assertEqual('user1', format_author(req, 'user1'))
-        self.assertEqual('user2', format_author(req, 'user2'))
-
-    def test_show_email_addresses_true(self):
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_email_addresses', True)
-
-        self.assertEqual('user3@example.org',
-                         format_author(None, 'user3@example.org'))
-        self.assertEqual('user3@example.org',
-                         format_author(Request(), 'user3@example.org'))
-
-    def test_show_email_addresses_false(self):
-        format_author = Chrome(self.env).format_author
-        self.env.config.set('trac', 'show_email_addresses', False)
-
-        self.assertEqual('user3@example.org',
-                         format_author(None, 'user3@example.org'))
-        self.assertEqual('user3@example.org',
-                         format_author(Request(), 'user3@example.org'))
-
-    def test_format_emails(self):
-        format_emails = Chrome(self.env).format_emails
-        to_format = 'user1@example.org, user2; user3@example.org'
-
-        self.assertEqual('user1@example.org, user2, user3@example.org',
-                         format_emails(None, to_format))
-
-    def test_format_emails_actor_has_email_view(self):
-        req = Mock(Request, username='user1', href=Href('/'),
-                   perm=PermissionCache(self.env, 'user1'))
-        context = web_context(req)
-        format_emails = Chrome(self.env).format_emails
-        to_format = 'user1@example.org, user2; user3@example.org'
-
-        self.assertEqual('user1@example.org, user2, user3@example.org',
-                         format_emails(context, to_format))
-
-    def test_format_emails_actor_no_email_view(self):
-        req = Mock(Request, username='user2', href=Href('/'),
-                   perm=PermissionCache(self.env, 'user2'))
-        context = web_context(req)
-        format_emails = Chrome(self.env).format_emails
-        to_format = 'user1@example.org, user2; user3@example.org'
-
-        self.assertEqual(u'user1@\u2026, user2, user3@\u2026',
-                         format_emails(context, to_format))
-
-
-class AuthorInfoTestCase(unittest.TestCase):
-
-    def setUp(self):
-        self.env = EnvironmentStub(enable=['trac.web.chrome.*',
-                                           'trac.perm.*',
-                                           'tracopt.perm.authz_policy'])
-        self.env.config.set('trac', 'permission_policies',
-                            'AuthzPolicy, DefaultPermissionPolicy')
-        fd, self.authz_file = tempfile.mkstemp()
-        with os.fdopen(fd, 'w') as f:
-            f.write("""\
-[wiki:WikiStart]
-user2 = EMAIL_VIEW
-[wiki:TracGuide]
-user2 =
-""")
-        PermissionSystem(self.env).grant_permission('user1', 'EMAIL_VIEW')
-        self.env.config.set('authz_policy', 'authz_file', self.authz_file)
-
-    def tearDown(self):
-        os.remove(self.authz_file)
-
-    def test_subject_is_anonymous(self):
-        chrome = Chrome(self.env)
-        req = Request()
-        self.assertEqual('<span class="trac-author-anonymous">anonymous</span>',
-                         str(chrome.authorinfo(req, 'anonymous')))
-        self.assertEqual('<span class="trac-author-anonymous">anonymous</span>',
-                         str(chrome.authorinfo_short('anonymous')))
-
-    def test_subject_is_none(self):
-        chrome = Chrome(self.env)
-        req = Request()
-        self.assertEqual('<span class="trac-author">(none)</span>',
-                         str(chrome.authorinfo(req, '(none)')))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo(req, None)))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo(req, '')))
-        self.assertEqual('<span class="trac-author">(none)</span>',
-                         str(chrome.authorinfo_short('(none)')))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo_short(None)))
-        self.assertEqual('<span class="trac-author-none">(none)</span>',
-                         str(chrome.authorinfo_short('')))
-
-    def test_actor_has_email_view(self):
-        chrome = Chrome(self.env)
-        req = Mock(Request, username='user1',
-                   perm=PermissionCache(self.env, 'user1'))
-        self.assertEqual('<span class="trac-author">user@domain.com</span>',
-                         unicode(chrome.authorinfo(req, 'user@domain.com')))
-        self.assertEqual('<span class="trac-author">User One &lt;user@example.org&gt;</span>',
-                         unicode(chrome.authorinfo(req, 'User One <user@example.org>')))
-        self.assertEqual('<span class="trac-author">user</span>',
-                         str(chrome.authorinfo_short('User One <user@example.org>')))
-        self.assertEqual('<span class="trac-author">user</span>',
-                         str(chrome.authorinfo_short('user@example.org')))
-
-    def test_actor_no_email_view(self):
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        authorinfo = Chrome(self.env).authorinfo
-        self.assertEqual(u'<span class="trac-author">user@\u2026</span>',
-                         unicode(authorinfo(req, 'user@domain.com')))
-        self.assertEqual(u'<span class="trac-author">User One &lt;user@\u2026&gt;</span>',
-                         unicode(authorinfo(req, 'User One <user@domain.com>')))
-
-    def test_actor_no_email_view_show_email_addresses(self):
-        self.env.config.set('trac', 'show_email_addresses', True)
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        authorinfo = Chrome(self.env).authorinfo
-        self.assertEqual('<span class="trac-author">user@domain.com</span>',
-                         unicode(authorinfo(req, 'user@domain.com')))
-        self.assertEqual('<span class="trac-author">User One &lt;user@domain.com&gt;</span>',
-                         unicode(authorinfo(req, 'User One <user@domain.com>')))
-
-    def test_actor_no_email_view_no_req(self):
-        authorinfo = Chrome(self.env).authorinfo
-        self.assertEqual('<span class="trac-author">user@domain.com</span>',
-                         unicode(authorinfo(None, 'user@domain.com')))
-        self.assertEqual('<span class="trac-author">User One &lt;user@domain.com&gt;</span>',
-                         unicode(authorinfo(None, 'User One <user@domain.com>')))
-
-    def test_actor_has_email_view_for_resource(self):
-        authorinfo = Chrome(self.env).authorinfo
-        authorinfo_short = Chrome(self.env).authorinfo_short
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        resource = Resource('wiki', 'WikiStart')
-        authorinfo = authorinfo(req, 'user@domain.com', resource=resource)
-        author_short = authorinfo_short('user@domain.com')
-        self.assertEqual(u'<span class="trac-author">user@domain.com</span>',
-                         unicode(authorinfo))
-        self.assertEqual(u'<span class="trac-author">user</span>',
-                         unicode(author_short))
-
-    def test_actor_has_email_view_for_resource_negative(self):
-        authorinfo = Chrome(self.env).authorinfo
-        authorinfo_short = Chrome(self.env).authorinfo_short
-        req = Mock(Request, username='user2',
-                   perm=PermissionCache(self.env, 'user2'))
-        resource = Resource('wiki', 'TracGuide')
-        author = authorinfo(req,  'user@domain.com', resource=resource)
-        author_short = authorinfo_short('user@domain.com')
-        self.assertEqual(u'<span class="trac-author">user@\u2026</span>',
-                         unicode(author))
-        self.assertEqual(u'<span class="trac-author">user</span>',
-                         unicode(author_short))
-
-
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(ChromeTestCase))
     suite.addTest(unittest.makeSuite(ChromeTestCase2))
-    suite.addTest(unittest.makeSuite(NavigationOrderTestCase))
-    suite.addTest(unittest.makeSuite(FormatAuthorTestCase))
-    suite.addTest(unittest.makeSuite(AuthorInfoTestCase))
     return suite
 
 

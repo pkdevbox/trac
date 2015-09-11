@@ -8,6 +8,7 @@ Email notification is useful to keep users up-to-date on tickets/issues of inter
 Disabled by default, notification can be activated and configured in [wiki:TracIni trac.ini].
 
 == Receiving Notification Mails
+
 When reporting a new ticket or adding a comment, enter a valid email address or your Trac username in the ''reporter'', ''assigned to/owner'' or ''cc'' field. Trac will automatically send you an email when changes are made to the ticket, depending on how notification is configured.
 
 === How to use your username to receive notification mails
@@ -31,11 +32,13 @@ trac.ticket.notification.TicketAttachmentNotifier = disabled
 '''Important:''' For TracNotification to work correctly, the `[trac] base_url` option must be set in [wiki:TracIni trac.ini]. 
 
 === Configuration Options
-These are the available options for the `[notification]` section in trac.ini:
+
+These are the available options for the `[notification]` section in `trac.ini`:
 
 [[TracIni(notification)]]
 
 === Example Configuration (SMTP)
+
 {{{#!ini
 [notification]
 smtp_enabled = true
@@ -46,6 +49,7 @@ smtp_always_cc = ticketmaster@example.com, theboss+myproj@example.com
 }}}
 
 === Example Configuration (`sendmail`)
+
 {{{#!ini
 [notification]
 smtp_enabled = true
@@ -56,20 +60,13 @@ smtp_replyto = myproj@projects.example.com
 smtp_always_cc = ticketmaster@example.com, theboss+myproj@example.com
 }}}
 
-=== Subscriber Configuration
-The default subscriptions are configured in the `[notification-subscriber]` section in trac.ini:
-
-[[TracIni(notification-subscriber)]]
-
-Each user can override these defaults in his ''Notifications'' preferences.
-
-For example to unsubscribe from notifications for one's own changes and comments, the rule "Never notify: I update a ticket" should be added above other subscription rules.
-
 === Customizing the e-mail subject
+
 The e-mail subject can be customized with the `ticket_subject_template` option, which contains a [http://genshi.edgewall.org/wiki/Documentation/text-templates.html Genshi text template] snippet. The default value is:
-{{{#!genshi
+{{{
 $prefix #$ticket.id: $summary
 }}}
+
 The following variables are available in the template:
 
  * `env`: The project environment (see [trac:source:/trunk/trac/env.py env.py]).
@@ -81,7 +78,7 @@ The following variables are available in the template:
 
 The notification e-mail content is generated based on `ticket_notify_email.txt` in `trac/ticket/templates`. You can add your own version of this template by adding a `ticket_notify_email.txt` to the templates directory of your environment. The default looks like this:
 
-{{{#!genshi
+{{{
 $ticket_body_hdr
 $ticket_props
 {% choose ticket.new %}\
@@ -117,6 +114,7 @@ $project.descr
 }}}
 
 == Sample Email
+
 {{{
 #42: testing
 ---------------------------+------------------------------------------------
@@ -226,6 +224,18 @@ where ''user'' and ''password'' match an existing GMail account, ie the ones you
 
 Alternatively, you can use `smtp_port = 25`.[[br]]
 You should not use `smtp_port = 465`. Doing so may deadlock your ticket submission. Port 465 is reserved for the SMTPS protocol, which is not supported by Trac. See [trac:comment:2:ticket:7107 #7107] for details.
+ 
+== Filtering notifications for one's own changes and comments
+
+To delete these notifications in Gmail, use the following filter:
+{{{
+from:(<smtp_from>) (("Reporter: <username>" -Changes -Comment) OR "Changes (by <username>)" OR "Comment (by <username>)")
+}}}
+
+In Thunderbird, there is no such solution if you use IMAP, see http://kb.mozillazine.org/Filters_(Thunderbird)#Filtering_the_message_body.
+
+You can also add this plugin:
+http://trac-hacks.org/wiki/NeverNotifyUpdaterPlugin, or vote for [trac:#2247] to be fixed.
 
 == Troubleshooting
 
@@ -236,7 +246,7 @@ Notification errors are not reported through the web interface, so the user who 
 === ''Permission denied'' error
 
 Typical error message:
-{{{#!sh
+{{{
   ...
   File ".../smtplib.py", line 303, in connect
     raise socket.error, msg
@@ -249,6 +259,7 @@ Many users get confused when their manual attempts to contact the SMTP server su
 {{{#!sh
 telnet localhost 25
 }}}
+
 This is because a regular user may connect to the SMTP server, but the web server cannot:
 {{{#!sh
 sudo -u www-data telnet localhost 25
@@ -256,12 +267,11 @@ sudo -u www-data telnet localhost 25
 
 In such a case, you need to configure your server so that the web server is authorized to post to the SMTP server. The actual settings depend on your Linux distribution and current security policy. You may find help in the Trac [trac:MailingList MailingList] archive.
 
-Relevant ML threads:
- * SELinux: http://article.gmane.org/gmane.comp.version-control.subversion.trac.general/7518
+Relevant mailing list thread on SELinux: http://article.gmane.org/gmane.comp.version-control.subversion.trac.general/7518
 
 For SELinux in Fedora 10:
 {{{#!sh
-$ setsebool -P httpd_can_sendmail 1
+setsebool -P httpd_can_sendmail 1
 }}}
 
 === ''Suspected spam'' error

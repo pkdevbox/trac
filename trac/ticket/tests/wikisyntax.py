@@ -130,10 +130,9 @@ def ticket_setup(tc):
     config.set('ticket-custom', 'custom1', 'text')
     config.save()
     ticket = Ticket(tc.env)
-
-    ticket.populate({'reporter': 'santa',
-                     'summary': 'This is the summary',
-                     'status': 'new'})
+    ticket.values.update({'reporter': 'santa',
+                          'summary': 'This is the summary',
+                          'status': 'new'})
     ticket.insert()
 
 def ticket_teardown(tc):
@@ -331,18 +330,11 @@ Reopened tickets: [[TicketQuery(status=reopened)]]
 Reopened tickets: <span class="query_no_results">No results</span>
 </p>
 ------------------------------
-============================== TicketQuery macro: no results, count 0 (raw)
-Reopened tickets: [[TicketQuery(status=reopened, format=rawcount)]]
-------------------------------
-<p>
-Reopened tickets: <span class="query_count" title="0 tickets matching status=reopened, max=0, order=id">0</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: no results, count 0
 Reopened tickets: [[TicketQuery(status=reopened, format=count)]]
 ------------------------------
 <p>
-Reopened tickets: <a href="/query?status=reopened&amp;max=0&amp;order=id" title="0 tickets matching status=reopened, max=0, order=id">0</a>
+Reopened tickets: <span class="query_count" title="0 tickets for which status=reopened&amp;max=0&amp;order=id">0</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: no results, compact form
@@ -359,18 +351,11 @@ New tickets: [[TicketQuery(status=new)]]
 New tickets: </p><div><dl class="wiki compact"><dt><a class="new" href="/ticket/1" title="This is the summary">#1</a></dt><dd>This is the summary</dd></dl></div><p>
 </p>
 ------------------------------
-============================== TicketQuery macro: one result, count 1 (raw)
-New tickets: [[TicketQuery(status=new, format=rawcount)]]
-------------------------------
-<p>
-New tickets: <span class="query_count" title="1 ticket matching status=new, max=0, order=id">1</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: one result, count 1
 New tickets: [[TicketQuery(status=new, format=count)]]
 ------------------------------
 <p>
-New tickets: <a href="/query?status=new&amp;max=0&amp;order=id" title="1 ticket matching status=new, max=0, order=id">1</a>
+New tickets: <span class="query_count" title="1 ticket for which status=new&amp;max=0&amp;order=id">1</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: one result, compact form
@@ -404,18 +389,11 @@ New tickets: [[TicketQuery(status=new, order=reporter)]]
 New tickets: </p><div><dl class="wiki compact"><dt><a class="new" href="/ticket/2" title="This is another summary">#2</a></dt><dd>This is another summary</dd><dt><a class="new" href="/ticket/1" title="This is the summary">#1</a></dt><dd>This is the summary</dd></dl></div><p>
 </p>
 ------------------------------
-============================== TicketQuery macro: two results, count 2 (raw)
-New tickets: [[TicketQuery(status=new, order=reporter, format=rawcount)]]
-------------------------------
-<p>
-New tickets: <span class="query_count" title="2 tickets matching status=new, max=0, order=reporter">2</span>
-</p>
-------------------------------
 ============================== TicketQuery macro: two results, count 2
 New tickets: [[TicketQuery(status=new, order=reporter, format=count)]]
 ------------------------------
 <p>
-New tickets: <a href="/query?status=new&amp;max=0&amp;order=reporter" title="2 tickets matching status=new, max=0, order=reporter">2</a>
+New tickets: <span class="query_count" title="2 tickets for which status=new&amp;max=0&amp;order=reporter">2</span>
 </p>
 ------------------------------
 ============================== TicketQuery macro: two results, compact form
@@ -429,14 +407,14 @@ New tickets: <span><a class="new" href="/ticket/2" title="This is another summar
 
 def query2_setup(tc):
     ticket = Ticket(tc.env)
-    ticket.populate({'reporter': 'santa',
-                     'summary': 'This is the summary',
-                     'status': 'new'})
+    ticket.values.update({'reporter': 'santa',
+                          'summary': 'This is the summary',
+                          'status': 'new'})
     ticket.insert()
     ticket = Ticket(tc.env)
-    ticket.populate({'reporter': 'claus',
-                     'summary': 'This is another summary',
-                     'status': 'new'})
+    ticket.values.update({'reporter': 'claus',
+                          'summary': 'This is another summary',
+                          'status': 'new'})
     ticket.insert()
 
 def query2_teardown(tc):
@@ -542,15 +520,15 @@ comment::ticket:
 
 def comment_setup(tc):
     ticket1 = Ticket(tc.env)
-    ticket1.populate({'reporter': 'santa',
-                      'summary': 'This is the summary for ticket 1',
-                      'status': 'new'})
+    ticket1.values.update({'reporter': 'santa',
+                            'summary': 'This is the summary for ticket 1',
+                            'status': 'new'})
     ticket1.insert()
     ticket1.save_changes(comment='This is the comment for ticket 1')
     ticket2 = Ticket(tc.env)
-    ticket2.populate({'reporter': 'claws',
-                      'summary': 'This is the summary for ticket 2',
-                      'status': 'closed'})
+    ticket2.values.update({'reporter': 'claws',
+                           'summary': 'This is the summary for ticket 2',
+                           'status': 'closed'})
     ticket2.insert()
     ticket2.save_changes(comment='This is the comment for ticket 2')
 

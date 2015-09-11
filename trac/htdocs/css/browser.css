@@ -75,6 +75,23 @@ table.dirlist td.name a.parent {
   background: url(../parent.png) 0 50% no-repeat;
   padding-left: 20px;
 }
+table.dirlist tr span.expander {
+  background: url(../expander_normal.png) 0 50% no-repeat;
+  cursor: pointer;
+  padding-left: 8px;
+  margin-left: 4px;
+}
+table.dirlist tr span.expander:hover {
+  background: url(../expander_normal_hover.png) 0 50% no-repeat;
+}
+table.dirlist tr.expanded span.expander {
+  background: url(../expander_open.png) 0 50% no-repeat;
+  padding-left: 12px;
+  margin-left: 0;
+}
+table.dirlist tr.expanded span.expander:hover {
+  background: url(../expander_open_hover.png) 0 50% no-repeat;
+}
 table.dirlist td.name a.dir {
   background: url(../folder.png) 0 50% no-repeat;
   padding-left: 20px;
@@ -197,9 +214,9 @@ table.chglist { margin-top: 0 }
 #preview .image-file { overflow: hidden }
 #preview .image-file img { max-width: 100% }
 
-/* Branch, tag and bookmark labels */
-.chglist td.summary .branch, .chglist td.summary .tag, .chglist td.summary .trac-bookmark,
-.browser .trac-tags .branch, .browser .trac-tags .tag, .browser .trac-tags .trac-bookmark {
+/* Branch and tag labels */
+.chglist td.summary .branch, .chglist td.summary .tag,
+.browser .trac-tags .branch, .browser .trac-tags .tag {
  color: #777;
  font-size: 80%;
  background: #f6f6f6;
@@ -214,8 +231,4 @@ table.chglist { margin-top: 0 }
 .chglist td.summary .tag, .browser .trac-tags .tag {
  background: #ffa;
  border: 1px solid #fe0;
-}
-.chglist td.summary .trac-bookmark, .browser .trac-tags .trac-bookmark {
- background: #bdf;
- border: 1px solid #9ae;
 }

@@ -71,7 +71,7 @@ class MilestoneToVersion(Component):
             version.name = version_name
             version.time = milestone.completed
             version.insert()
-            self.log.info('New version "%s" created from completed milestone '
+            self.log.info('New version "%s" created from completed milstone '
                           '"%s".', version.name, milestone.name)
 
     def milestone_deleted(self, milestone):
